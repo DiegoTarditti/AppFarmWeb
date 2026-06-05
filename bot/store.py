@@ -266,6 +266,7 @@ def crear_cliente_local(conv_id, datos, creado_por=None):
             apellido=(datos.get('apellido') or '').strip() or None,
             dni=(datos.get('dni') or '').strip() or None,
             domicilio=(datos.get('domicilio') or '').strip() or None,
+            ciudad=(datos.get('ciudad') or '').strip() or None,
             telefono=c.canal_user_id if c.canal == 'whatsapp' else None,
             creado_por=creado_por)
         s.add(cl)
@@ -273,6 +274,42 @@ def crear_cliente_local(conv_id, datos, creado_por=None):
         c.cliente_local_id = cl.id
         c.cliente_observer_id = None
         s.commit()
+        return {'ok': True}
+
+
+# ── Catálogo de ciudades ─────────────────────────────────────────────────────
+
+def listar_ciudades():
+    with database.get_db() as s:
+        cs = (s.query(database.Ciudad).filter(database.Ciudad.activa.is_(True))
+              .order_by(database.Ciudad.nombre).all())
+        return [{'id': c.id, 'nombre': c.nombre, 'provincia': c.provincia or ''} for c in cs]
+
+
+def crear_ciudad(nombre, provincia=None):
+    nombre = (nombre or '').strip()
+    if not nombre:
+        return {'ok': False, 'error': 'nombre vacío'}
+    with database.get_db() as s:
+        existe = s.query(database.Ciudad).filter(
+            database.Ciudad.nombre.ilike(nombre)).first()
+        if existe:
+            if not existe.activa:
+                existe.activa = True
+                s.commit()
+            return {'ok': True, 'id': existe.id}
+        c = database.Ciudad(nombre=nombre, provincia=(provincia or '').strip() or None)
+        s.add(c)
+        s.commit()
+        return {'ok': True, 'id': c.id}
+
+
+def eliminar_ciudad(ciudad_id):
+    with database.get_db() as s:
+        c = s.get(database.Ciudad, ciudad_id)
+        if c:
+            s.delete(c)
+            s.commit()
         return {'ok': True}
 
 
@@ -292,9 +329,10 @@ def get_ficha_de_conversacion(conv_id):
             cl = s.get(database.ClienteLocal, c.cliente_local_id)
             if cl:
                 nombre = ', '.join(x for x in [cl.apellido, cl.nombre] if x) or '(sin nombre)'
+                domic = ', '.join(x for x in [cl.domicilio, cl.ciudad] if x)
                 return {'fuente': 'local', 'observer_id': None,
                         'nombre': nombre, 'documento': cl.dni or '',
-                        'telefono': cl.telefono or '', 'domicilio': cl.domicilio or '',
+                        'telefono': cl.telefono or '', 'domicilio': domic,
                         'notas': cl.notas or '', 'tags': ''}
         return None
 

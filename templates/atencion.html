@@ -224,6 +224,24 @@
   </div>
 </div>
 
+<!-- Modal: gestión de ciudades -->
+<div id="modalCiudades" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:50; align-items:center; justify-content:center;">
+  <div class="card" style="width:380px; max-height:74vh; display:flex; flex-direction:column; border:1px solid; border-radius:12px; overflow:hidden;">
+    <div class="card-head" style="padding:11px 14px; display:flex; justify-content:space-between; align-items:center; border-bottom:0.5px solid;">
+      <span class="title" style="font-size:13px; font-weight:600;">Ciudades</span>
+      <span onclick="cerrarModalCiudades()" class="muted" style="cursor:pointer; font-size:14px;">✕</span>
+    </div>
+    <div style="padding:12px 14px; overflow-y:auto;">
+      <div id="listaCiudades" style="margin-bottom:10px;"></div>
+      <div style="display:flex; gap:6px;">
+        <input id="ciudadNombre" placeholder="Nueva ciudad" autocomplete="off" onkeydown="if(event.key==='Enter')crearCiudad()" class="input" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">
+        <input id="ciudadProv" placeholder="Prov." autocomplete="off" class="input" style="width:70px; border-radius:8px; padding:6px 9px; font-size:12px;">
+        <button onclick="crearCiudad()" class="hbtn hbtn-ok" style="border-radius:8px; padding:6px 11px; font-size:12px;">Agregar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 const YO = {{ current_user.id }};
 let convAbierta = null, convData = null, ultimoMsgId = 0, vista = 'sin_asignar', todasConvs = [];
@@ -473,11 +491,15 @@ function renderFicha() {
       <div id="resultadosCli" style="margin-bottom:14px;"></div>
       <div class="bt" style="border-top:0.5px solid; padding-top:10px;">
         <div class="muted" style="font-size:10px; margin-bottom:6px;">…o crear ficha nueva</div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
           <input id="nuevoNombre" placeholder="Nombre" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
           <input id="nuevoApellido" placeholder="Apellido" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
           <input id="nuevoDni" placeholder="DNI" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
           <input id="nuevoDom" placeholder="Domicilio" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
+        </div>
+        <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px;">
+          <select id="nuevoCiudad" class="${INP}" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">${optsCiudad()}</select>
+          <button onclick="abrirModalCiudades()" class="hbtn" title="Gestionar ciudades" style="border-radius:8px; padding:6px 9px; font-size:11px; flex-shrink:0;">⚙</button>
         </div>
         <button onclick="crearCliente()" class="hbtn hbtn-ok" style="border-radius:8px; padding:6px 11px; font-size:12px;">＋ Crear ficha</button>
       </div>`;
@@ -512,10 +534,47 @@ function renderFicha() {
 }
 function _val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
 async function crearCliente() {
-  const datos = {nombre:_val('nuevoNombre'), apellido:_val('nuevoApellido'), dni:_val('nuevoDni'), domicilio:_val('nuevoDom')};
+  const datos = {nombre:_val('nuevoNombre'), apellido:_val('nuevoApellido'), dni:_val('nuevoDni'),
+                 domicilio:_val('nuevoDom'), ciudad:_val('nuevoCiudad')};
   if (!datos.nombre && !datos.apellido) { alert('Poné al menos nombre o apellido.'); return; }
   await fetch(`/atencion/${convAbierta}/crear-cliente`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(datos)});
   await cargarFicha();
+}
+
+/* ── Catálogo de ciudades ── */
+let ciudades = [];
+function optsCiudad() {
+  return '<option value="">— Ciudad —</option>' +
+    ciudades.map(c => `<option value="${esc(c.nombre)}">${esc(c.nombre)}${c.provincia ? ' (' + esc(c.provincia) + ')' : ''}</option>`).join('');
+}
+async function cargarCiudades() {
+  ciudades = (await (await fetch('/atencion/api/ciudades')).json()).ciudades || [];
+  const sel = document.getElementById('nuevoCiudad');
+  if (sel) { const v = sel.value; sel.innerHTML = optsCiudad(); sel.value = v; }
+  renderModalCiudades();
+}
+function abrirModalCiudades() { document.getElementById('modalCiudades').style.display = 'flex'; renderModalCiudades(); }
+function cerrarModalCiudades() { document.getElementById('modalCiudades').style.display = 'none'; }
+function renderModalCiudades() {
+  const box = document.getElementById('listaCiudades');
+  if (!box) return;
+  box.innerHTML = ciudades.length ? ciudades.map(c => `
+    <div class="row" style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:0.5px solid;">
+      <span class="txt" style="font-size:12px;">${esc(c.nombre)}${c.provincia ? ` <span class="muted" style="font-size:10px;">(${esc(c.provincia)})</span>` : ''}</span>
+      <button onclick="eliminarCiudad(${c.id})" class="hbtn" style="font-size:10px; padding:3px 8px; border-radius:6px;">Quitar</button>
+    </div>`).join('') : '<div class="muted" style="font-size:11px;">Todavía no hay ciudades cargadas.</div>';
+}
+async function crearCiudad() {
+  const nombre = _val('ciudadNombre'), provincia = _val('ciudadProv');
+  if (!nombre) { alert('Escribí el nombre de la ciudad.'); return; }
+  await fetch('/atencion/ciudades', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nombre, provincia})});
+  document.getElementById('ciudadNombre').value = '';
+  document.getElementById('ciudadProv').value = '';
+  await cargarCiudades();
+}
+async function eliminarCiudad(id) {
+  await fetch(`/atencion/ciudades/${id}/delete`, {method:'POST'});
+  await cargarCiudades();
 }
 async function buscarClientes() {
   const q = document.getElementById('buscarCli').value.trim();
@@ -666,6 +725,7 @@ function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&l
 
 setVista('sin_asignar');
 cargarBandeja();
+cargarCiudades();
 heartbeat();
 cargarEquipo();
 setInterval(cargarBandeja, 5000);

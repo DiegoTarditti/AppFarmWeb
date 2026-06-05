@@ -419,9 +419,20 @@ class ClienteLocal(Base):
     dni = Column(String(20), nullable=True, index=True)
     domicilio = Column(String(200), nullable=True)
     telefono = Column(String(35), nullable=True)
+    ciudad = Column(String(120), nullable=True)
     notas = Column(Text, nullable=True)
     observer_id = Column(Integer, nullable=True)   # si luego se vincula a ObServer
     creado_por = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
+    creado_en = Column(DateTime, default=now_ar)
+
+
+class Ciudad(Base):
+    """Catálogo de ciudades/localidades para el alta de clientes (dropdown)."""
+    __tablename__ = 'ciudades'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(120), nullable=False, unique=True)
+    provincia = Column(String(80), nullable=True)
+    activa = Column(Boolean, nullable=False, default=True)
     creado_en = Column(DateTime, default=now_ar)
 
 
@@ -2373,7 +2384,8 @@ def init_db(database_url=None):
                         'compartido_importado', 'obs_operadores',
                         'parser_ofertas_lab', 'factura_faltante',
                         'analisis_ia_cache', 'panel_heartbeat',
-                        'bot_conversaciones', 'bot_mensajes', 'clientes_locales')
+                        'bot_conversaciones', 'bot_mensajes', 'clientes_locales',
+                        'ciudades')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -4093,6 +4105,8 @@ def _pg_add_columns(conn):
         # Presencia de agentes en el panel de atención.
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_presencia VARCHAR(12) NOT NULL DEFAULT 'online'",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",
+        # Ciudad en el lead local (alta de clientes del bot).
+        "ALTER TABLE clientes_locales ADD COLUMN IF NOT EXISTS ciudad VARCHAR(120)",
     ]:
         conn.execute(text(stmt))
     # Índices para queries frecuentes

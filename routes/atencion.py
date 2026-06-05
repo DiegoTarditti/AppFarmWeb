@@ -130,6 +130,24 @@ def init_app(app):
         store.crear_cliente_local(conv_id, datos, creado_por=current_user.id)
         return jsonify({'ok': True, 'ficha': store.get_ficha_de_conversacion(conv_id)})
 
+    # ── Catálogo de ciudades ─────────────────────────────────────────────────
+
+    @app.route('/atencion/api/ciudades')
+    @login_required
+    def atencion_ciudades():
+        return jsonify({'ciudades': store.listar_ciudades()})
+
+    @app.route('/atencion/ciudades', methods=['POST'])
+    @login_required
+    def atencion_ciudad_crear():
+        body = request.json or {}
+        return jsonify(store.crear_ciudad(body.get('nombre'), body.get('provincia')))
+
+    @app.route('/atencion/ciudades/<int:ciudad_id>/delete', methods=['POST'])
+    @login_required
+    def atencion_ciudad_eliminar(ciudad_id):
+        return jsonify(store.eliminar_ciudad(ciudad_id))
+
     @app.route('/atencion/<int:conv_id>/desvincular-cliente', methods=['POST'])
     @login_required
     def atencion_desvincular_cliente(conv_id):
