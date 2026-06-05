@@ -97,12 +97,14 @@ def test_get_conversacion_es_idempotente():
     assert a['id'] == b['id']
 
 
-def test_bandeja_solo_muestra_cola_y_humano():
+def test_bandeja_incluye_todas_las_conversaciones():
+    # Ahora la bandeja muestra TODO (incluido lo que maneja solo el bot), para
+    # poder supervisar/intervenir. El panel filtra por pestaña.
     solo_bot = store.get_conversacion('telegram', 'b1', nombre='Bot')
     en_cola = store.get_conversacion('telegram', 'b2', nombre='Cola')
     store.set_atencion(en_cola['id'], 'cola')
     ids = [c['id'] for c in store.listar_conversaciones()]
-    assert en_cola['id'] in ids and solo_bot['id'] not in ids
+    assert en_cola['id'] in ids and solo_bot['id'] in ids
 
 
 # ── Handoff end-to-end (procesar) ────────────────────────────────────────────
