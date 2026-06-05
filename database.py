@@ -407,6 +407,35 @@ class Cliente(Base):
     obs_cliente = relationship('ObsCliente')
 
 
+class ClienteLocal(Base):
+    """Cliente capturado localmente (lead) por el bot/panel cuando todavía no
+    existe en ObServer (ObServer es read-only desde la web). La farmacia luego
+    lo carga en su sistema; mientras tanto se usa para atender por el bot.
+    Si después se vincula a ObServer, se guarda el observer_id."""
+    __tablename__ = 'clientes_locales'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(80), nullable=True)
+    apellido = Column(String(80), nullable=True)
+    dni = Column(String(20), nullable=True, index=True)
+    domicilio = Column(String(200), nullable=True)
+    telefono = Column(String(35), nullable=True)
+    ciudad = Column(String(120), nullable=True)
+    notas = Column(Text, nullable=True)
+    observer_id = Column(Integer, nullable=True)   # si luego se vincula a ObServer
+    creado_por = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
+    creado_en = Column(DateTime, default=now_ar)
+
+
+class Ciudad(Base):
+    """Catálogo de ciudades/localidades para el alta de clientes (dropdown)."""
+    __tablename__ = 'ciudades'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(120), nullable=False, unique=True)
+    provincia = Column(String(80), nullable=True)
+    activa = Column(Boolean, nullable=False, default=True)
+    creado_en = Column(DateTime, default=now_ar)
+
+
 class ObsSyncLog(Base):
     """Log de cada corrida de sync por entidad (última ejecución + resultados)."""
     __tablename__ = 'obs_sync_log'
@@ -1709,6 +1738,9 @@ class Usuario(Base):
     creado_en = Column(DateTime, default=now_ar)
     # {"modo":"auto|fijo","orden":[...ids],"colores":{id:"#xxx"},"ocultos":[...ids]}
     preferencias_home_json = Column(Text, nullable=True)
+    # Presencia en el panel de atención: estado manual + heartbeat.
+    estado_presencia = Column(String(12), nullable=False, default='online')  # online|ocupado|ausente
+    ultima_actividad = Column(DateTime, nullable=True)
 
     def get_id(self):
         return str(self.id)
@@ -2277,6 +2309,13 @@ class BotConversacion(Base):
     # bot = lo atiende el bot · cola = derivada, esperando operador · humano = la tomó un operador
     estado_atencion = Column(String(20), nullable=False, default='bot', index=True)
     operador_user_id = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
+    # Vinculación con la ficha del cliente (ObServer). Se autocompleta por teléfono
+    # en WhatsApp; en Telegram queda NULL hasta que el operador la vincule a mano.
+    cliente_observer_id = Column(Integer, ForeignKey('obs_clientes.observer_id'),
+                                 nullable=True, index=True)
+    # Alternativa: cliente capturado localmente (lead) que aún no está en ObServer.
+    cliente_local_id = Column(Integer, ForeignKey('clientes_locales.id'),
+                              nullable=True, index=True)
     nodo = Column(String(50), default='inicio')      # estado del flujo conversacional
     esperando = Column(String(50))                   # acción esperando input del usuario
     creado_en = Column(DateTime, default=now_ar)
@@ -2345,7 +2384,8 @@ def init_db(database_url=None):
                         'compartido_importado', 'obs_operadores',
                         'parser_ofertas_lab', 'factura_faltante',
                         'analisis_ia_cache', 'panel_heartbeat',
-                        'bot_conversaciones', 'bot_mensajes')
+                        'bot_conversaciones', 'bot_mensajes', 'clientes_locales',
+                        'ciudades')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -4059,6 +4099,14 @@ def _pg_add_columns(conn):
         "ALTER TABLE rendicion_lote ADD COLUMN IF NOT EXISTS entregada BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE rendicion_lote ADD COLUMN IF NOT EXISTS entregada_en TIMESTAMP",
         "ALTER TABLE rendicion_lote ADD COLUMN IF NOT EXISTS entregada_por VARCHAR(100)",
+        # Bot: vinculación de la conversación con la ficha del cliente (ObsCliente).
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS cliente_observer_id INTEGER",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS cliente_local_id INTEGER",
+        # Presencia de agentes en el panel de atención.
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_presencia VARCHAR(12) NOT NULL DEFAULT 'online'",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",
+        # Ciudad en el lead local (alta de clientes del bot).
+        "ALTER TABLE clientes_locales ADD COLUMN IF NOT EXISTS ciudad VARCHAR(120)",
     ]:
         conn.execute(text(stmt))
     # Índices para queries frecuentes
