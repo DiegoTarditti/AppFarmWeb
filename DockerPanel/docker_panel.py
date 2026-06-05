@@ -47,6 +47,11 @@ KEEPALIVE_DEFAULT_MIN = 10
 COMMANDS = [
     ("⬇️  Pull código + Restart",  "git pull && docker-compose restart web",  "#10B981"),
     ("🔄  Reiniciar Web",         "docker-compose restart web",              "#2563EB"),
+    # Bot asistente (servicio aparte). "Reiniciar bot" lo arranca si estaba caído
+    # y recrea el proceso para tomar código/.env nuevos.
+    ("🤖  Arrancar/Reiniciar bot", "docker-compose up -d --force-recreate bot", "#2563EB"),
+    ("🤖  Parar bot",             "docker-compose stop bot",                 "#DC2626"),
+    ("🤖  Logs bot (50 líneas)",  "docker-compose logs --tail=50 bot",       "#D97706"),
     ("🏗️  Rebuild Web",           "docker-compose build web",                "#7C3AED"),
     ("🏗️  Rebuild Todo",          "docker-compose build",                    "#7C3AED"),
     ("▶️  Iniciar (up -d)",       "docker-compose up -d",                    "#16A34A"),
