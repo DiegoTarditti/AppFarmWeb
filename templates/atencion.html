@@ -120,13 +120,15 @@
         <span id="theme-text" style="font-size:10px;">Oscuro</span>
       </button>
 
+      <div id="equipo" style="display:flex; gap:12px; align-items:center;"></div>
+
       <div style="position:relative; display:flex; flex-direction:column; align-items:center; gap:4px;">
-        <button id="me-btn" aria-label="Mi estado" style="cursor:pointer; position:relative; width:26px; height:26px; border:none; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">{{ (current_user.nombre_completo or current_user.username)[:2]|upper }}<span id="me-dot" style="position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; background:#1D9E75; border:2px solid;"></span></button>
+        <button id="me-btn" aria-label="Mi estado" style="cursor:pointer; position:relative; width:26px; height:26px; border:none; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">{{ (current_user.nombre_completo or current_user.username)[:2]|upper }}<span id="me-dot" style="position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; background:#1D9E75; border:2px solid var(--topbar);"></span></button>
         <button id="me-toggle" style="cursor:pointer; border:none; background:transparent; display:flex; align-items:center; gap:3px; font-size:9px;"><span id="me-mini" style="width:5px;height:5px;border-radius:50%;background:#1D9E75;"></span><span id="me-label">Online</span><i class="ti ti-chevron-down" style="font-size:9px"></i></button>
         <div id="me-menu" style="display:none; position:absolute; top:54px; right:0; border:0.5px solid; border-radius:10px; padding:4px; min-width:118px; z-index:30;">
-          <div class="opt" data-s="online" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:11px;"><span style="width:7px;height:7px;border-radius:50%;background:#1D9E75;"></span>Online</div>
-          <div class="opt" data-s="busy" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:11px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--busy);"></span>Ocupado</div>
-          <div class="opt" data-s="away" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:11px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--away);"></span>Ausente</div>
+          <div class="opt" onclick="setEstado('online')" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:11px;"><span style="width:7px;height:7px;border-radius:50%;background:#1D9E75;"></span>Online</div>
+          <div class="opt" onclick="setEstado('ocupado')" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:11px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--busy);"></span>Ocupado</div>
+          <div class="opt" onclick="setEstado('ausente')" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:11px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--away);"></span>Ausente</div>
         </div>
       </div>
       <a href="{{ url_for('auth_logout') }}" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">Salir</a>
@@ -241,26 +243,46 @@ let convAbierta = null, convData = null, ultimoMsgId = 0, vista = 'sin_asignar',
   }
 })();
 
-/* ── Estado propio (cosmético por ahora; presencia real = próxima fase) ── */
+/* ── Presencia de agentes (estado persistido + heartbeat) ── */
+const PRES = {online:{c:'#1D9E75', l:'Online'}, ocupado:{c:'var(--busy)', l:'Ocupado'}, ausente:{c:'var(--away)', l:'Ausente'}};
 (function(){
   const menu = document.getElementById('me-menu');
   const tg = e => { e.stopPropagation(); menu.style.display = menu.style.display === 'none' ? 'block' : 'none'; };
   document.getElementById('me-toggle').addEventListener('click', tg);
   document.getElementById('me-btn').addEventListener('click', tg);
-  const cols = {online:'#1D9E75', busy:'var(--busy)', away:'var(--away)'};
-  const labels = {online:'Online', busy:'Ocupado', away:'Ausente'};
-  document.querySelectorAll('#me-menu .opt').forEach(o => o.addEventListener('click', e => {
-    e.stopPropagation();
-    const s = o.dataset.s;
-    document.getElementById('me-dot').style.background = cols[s];
-    document.getElementById('me-mini').style.background = cols[s];
-    document.getElementById('me-label').textContent = labels[s];
-    document.getElementById('me-btn').style.opacity = s === 'away' ? '0.55' : '1';
-    menu.style.display = 'none';
-    localStorage.setItem('atencion-estado', s);
-  }));
   document.addEventListener('click', () => { menu.style.display = 'none'; });
 })();
+
+async function setEstado(s) {
+  await fetch('/atencion/estado', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({estado: s})});
+  document.getElementById('me-menu').style.display = 'none';
+  cargarEquipo();
+}
+
+async function cargarEquipo() {
+  const d = await (await fetch('/atencion/api/operadores')).json();
+  const ops = d.operadores || [];
+  const yo = ops.find(o => o.id === YO);
+  if (yo) {
+    const p = PRES[yo.estado] || PRES.online;
+    document.getElementById('me-dot').style.background = p.c;
+    document.getElementById('me-mini').style.background = p.c;
+    document.getElementById('me-label').textContent = p.l;
+    document.getElementById('me-btn').style.opacity = yo.estado === 'ausente' ? '0.55' : '1';
+  }
+  document.getElementById('equipo').innerHTML = ops.filter(o => o.id !== YO).map(o => {
+    const p = PRES[o.estado] || PRES.online;
+    const col = o.conectado ? p.c : 'var(--away)';
+    const op = o.conectado ? '1' : '0.4';
+    const est = o.conectado ? p.l : 'desconectado';
+    return `<div title="${esc(o.nombre)} — ${est}" style="position:relative; width:26px; height:26px; opacity:${op};">
+        <div style="width:26px; height:26px; border-radius:50%; background:var(--cardic); color:var(--cardic-tx); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600;">${esc(o.iniciales)}</div>
+        <span style="position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; background:${col}; border:2px solid var(--topbar);"></span>
+      </div>`;
+  }).join('');
+}
+
+function heartbeat() { fetch('/atencion/heartbeat', {method: 'POST'}).catch(() => {}); }
 
 /* ── Bandeja ── */
 function setVista(v) {
@@ -380,16 +402,17 @@ async function devolverCola() {
   await fetch(`/atencion/${convAbierta}/devolver-cola`, {method: 'POST'});
   await refrescarChat(true); cargarBandeja();
 }
-let operadoresCargados = false;
 async function toggleTransfer() {
   const p = document.getElementById('panelTransfer');
   const abrir = p.style.display === 'none' || !p.style.display;
   p.style.display = abrir ? 'flex' : 'none';
-  if (abrir && !operadoresCargados) {
+  if (abrir) {
     const d = await (await fetch('/atencion/api/operadores')).json();
     document.getElementById('selOperador').innerHTML = (d.operadores || [])
-      .filter(o => o.id !== YO).map(o => `<option value="${o.id}">${esc(o.nombre)} (${esc(o.rol)})</option>`).join('');
-    operadoresCargados = true;
+      .filter(o => o.id !== YO).map(o => {
+        const tag = !o.conectado ? ' · desconectado' : (o.estado !== 'online' ? ' · ' + o.estado : '');
+        return `<option value="${o.id}">${esc(o.nombre)}${tag}</option>`;
+      }).join('');
   }
 }
 async function confirmarTransfer() {
@@ -643,8 +666,12 @@ function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&l
 
 setVista('sin_asignar');
 cargarBandeja();
+heartbeat();
+cargarEquipo();
 setInterval(cargarBandeja, 5000);
 setInterval(() => refrescarChat(false), 4000);
+setInterval(heartbeat, 30000);
+setInterval(cargarEquipo, 12000);
 </script>
 </body>
 </html>

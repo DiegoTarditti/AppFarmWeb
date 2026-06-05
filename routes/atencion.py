@@ -58,7 +58,18 @@ def init_app(app):
     @app.route('/atencion/api/operadores')
     @login_required
     def atencion_operadores():
-        return jsonify({'operadores': store.listar_operadores()})
+        return jsonify({'operadores': store.listar_operadores(), 'yo': current_user.id})
+
+    @app.route('/atencion/heartbeat', methods=['POST'])
+    @login_required
+    def atencion_heartbeat():
+        store.heartbeat(current_user.id)
+        return jsonify({'ok': True})
+
+    @app.route('/atencion/estado', methods=['POST'])
+    @login_required
+    def atencion_estado():
+        return jsonify(store.set_presencia(current_user.id, (request.json or {}).get('estado', '')))
 
     @app.route('/atencion/<int:conv_id>/tomar', methods=['POST'])
     @login_required

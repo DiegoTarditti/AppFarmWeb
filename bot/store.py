@@ -3,6 +3,8 @@
 Reemplaza el estado en memoria → habilita el handoff (panel de operadores),
 el historial, multi-línea y que sobreviva reinicios.
 """
+from datetime import timedelta
+
 import database
 
 
@@ -104,15 +106,48 @@ def get_conversacion_full(conv_id):
         return _conv_dict(c, _mapa_nombres(s, [c.operador_user_id]))
 
 
+def _iniciales(nombre):
+    parts = [p for p in (nombre or '').replace(',', ' ').split() if p]
+    return (''.join(p[0] for p in parts[:2]) or '?').upper()
+
+
 def listar_operadores():
-    """Usuarios que pueden atender (para el dropdown de transferencia)."""
+    """Usuarios que pueden atender, con su presencia (estado + conectado).
+    Conectado = mandó heartbeat en los últimos 70 s (panel abierto)."""
+    ahora = database.now_ar()
     with database.get_db() as s:
         us = (s.query(database.Usuario)
               .filter(database.Usuario.activo.is_(True),
                       database.Usuario.rol.in_(['operador', 'admin', 'farmacia', 'dev']))
               .order_by(database.Usuario.username).all())
-        return [{'id': u.id, 'nombre': u.nombre_completo or u.username, 'rol': u.rol}
+        return [{'id': u.id, 'nombre': u.nombre_completo or u.username, 'rol': u.rol,
+                 'iniciales': _iniciales(u.nombre_completo or u.username),
+                 'estado': u.estado_presencia or 'online',
+                 'conectado': bool(u.ultima_actividad
+                                   and (ahora - u.ultima_actividad) < timedelta(seconds=70))}
                 for u in us]
+
+
+def heartbeat(user_id):
+    """Marca actividad del operador (panel abierto)."""
+    with database.get_db() as s:
+        u = s.get(database.Usuario, user_id)
+        if u:
+            u.ultima_actividad = database.now_ar()
+            s.commit()
+
+
+def set_presencia(user_id, estado):
+    """Cambia el estado manual del operador (online/ocupado/ausente)."""
+    if estado not in ('online', 'ocupado', 'ausente'):
+        return {'ok': False, 'error': 'estado inválido'}
+    with database.get_db() as s:
+        u = s.get(database.Usuario, user_id)
+        if u:
+            u.estado_presencia = estado
+            u.ultima_actividad = database.now_ar()
+            s.commit()
+    return {'ok': True, 'estado': estado}
 
 
 # ── Vinculación con la ficha del cliente (ObServer) ──────────────────────────

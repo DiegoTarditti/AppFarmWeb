@@ -1727,6 +1727,9 @@ class Usuario(Base):
     creado_en = Column(DateTime, default=now_ar)
     # {"modo":"auto|fijo","orden":[...ids],"colores":{id:"#xxx"},"ocultos":[...ids]}
     preferencias_home_json = Column(Text, nullable=True)
+    # Presencia en el panel de atención: estado manual + heartbeat.
+    estado_presencia = Column(String(12), nullable=False, default='online')  # online|ocupado|ausente
+    ultima_actividad = Column(DateTime, nullable=True)
 
     def get_id(self):
         return str(self.id)
@@ -4087,6 +4090,9 @@ def _pg_add_columns(conn):
         # Bot: vinculación de la conversación con la ficha del cliente (ObsCliente).
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS cliente_observer_id INTEGER",
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS cliente_local_id INTEGER",
+        # Presencia de agentes en el panel de atención.
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_presencia VARCHAR(12) NOT NULL DEFAULT 'online'",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",
     ]:
         conn.execute(text(stmt))
     # Índices para queries frecuentes
