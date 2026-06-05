@@ -14,7 +14,11 @@ import time
 import requests
 
 import database
-from bot import audio, cerebro
+from bot import audio, cerebro, store
+
+# Re-enganche proactivo: minutos de silencio del cliente a mitad de un flujo
+# antes de que el bot le pregunte "¿Seguís ahí?". 0 = desactivado.
+REENGANCHE_MINUTOS = float(os.environ.get('ATENCION_REENGANCHE_MINUTOS', '5'))
 
 
 def _descargar_bytes(base, token, file_id):
@@ -179,6 +183,16 @@ def main():
             # resp None = la conversación la tomó un operador → el bot no responde.
             if resp is not None:
                 _enviar(base, chat_id, resp)
+
+        # Re-enganche proactivo: clientes que quedaron a mitad de un flujo y se
+        # fueron sin responder. Corre una vez por ciclo del polling (~30 s).
+        if REENGANCHE_MINUTOS > 0:
+            try:
+                for conv in store.conversaciones_para_reenganche(REENGANCHE_MINUTOS):
+                    if conv['canal'] == 'telegram':
+                        _enviar(base, conv['canal_user_id'], cerebro.preparar_reenganche(conv['id']))
+            except Exception as e:  # noqa: BLE001
+                print('reenganche error:', e)
 
 
 if __name__ == '__main__':

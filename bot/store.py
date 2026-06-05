@@ -59,6 +59,21 @@ def estado_atencion_de(canal, canal_user_id):
         return conv.estado_atencion if conv else 'bot'
 
 
+def conversaciones_para_reenganche(minutos):
+    """Conversaciones que el bot atiende, que quedaron a mitad de un flujo
+    (esperando input del cliente) y sin actividad por más de `minutos`.
+    `esperando IS NOT NULL` se limpia al re-enganchar → no vuelve a disparar."""
+    limite = database.now_ar() - timedelta(minutes=minutos)
+    with database.get_db() as s:
+        convs = (s.query(database.BotConversacion)
+                 .filter(database.BotConversacion.estado_atencion == 'bot',
+                         database.BotConversacion.esperando.isnot(None),
+                         database.BotConversacion.ultimo_en < limite)
+                 .limit(50).all())
+        return [{'id': c.id, 'canal': c.canal, 'canal_user_id': c.canal_user_id}
+                for c in convs]
+
+
 def revisar_inactividad(conv_id, minutos):
     """Auto-retorno al bot: si la conversación está derivada/atendida pero sin
     actividad por más de `minutos`, la devuelve al bot. True si la devolvió."""

@@ -119,6 +119,9 @@ services:
       # Auto-retorno al bot tras inactividad (minutos). Prod ~180 (3 hs); en .env
       # se puede bajar (ej. 1) para probar.
       ATENCION_AUTO_BOT_MINUTOS: ${ATENCION_AUTO_BOT_MINUTOS:-180}
+      # Re-enganche proactivo: minutos de silencio a mitad de un flujo antes del
+      # "¿Seguís ahí?". 0 = desactivado.
+      ATENCION_REENGANCHE_MINUTOS: ${ATENCION_REENGANCHE_MINUTOS:-5}
     depends_on:
       db:
         condition: service_healthy

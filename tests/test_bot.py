@@ -4,7 +4,7 @@ No tocan la IA (Claude) ni `product_analytics` (Postgres): los caminos cubiertos
 son los deterministas. El único punto que consulta stock (encargar) se mockea.
 """
 import bot.acciones
-from bot import audio, store
+from bot import audio, cerebro, store
 from bot.cerebro import _match_opcion, _resolver, procesar
 from bot.flujo import FLUJO, NODO_INICIO
 
@@ -145,6 +145,24 @@ def test_alta_cliente_local():
     assert store.get_ficha_de_conversacion(conv['id'])['notas'] == 'lead del bot'
     assert store.desvincular_cliente(conv['id'])['ok']
     assert store.get_ficha_de_conversacion(conv['id']) is None
+
+
+def test_reenganche_a_mitad_de_flujo():
+    import datetime as _dt
+
+    import database
+    conv = store.get_conversacion('telegram', 'reengtest', nombre='T')
+    cid = conv['id']
+    store.set_estado_flujo(cid, 'encargar', 'encargar')   # a mitad de un flujo
+    with database.get_db() as s:
+        c = s.get(database.BotConversacion, cid)
+        c.ultimo_en = database.now_ar() - _dt.timedelta(minutes=5)
+        s.commit()
+    assert any(p['id'] == cid for p in store.conversaciones_para_reenganche(1))
+    resp = cerebro.preparar_reenganche(cid)
+    assert resp['opciones'] == ['Sí', 'No']
+    # tras re-enganchar, esperando=None → no vuelve a dispararse
+    assert not any(p['id'] == cid for p in store.conversaciones_para_reenganche(1))
 
 
 def test_procesar_guarda_mensaje_entrante_aunque_este_en_humano():

@@ -28,6 +28,17 @@ def esta_con_humano(canal, canal_user_id):
     return store.estado_atencion_de(canal, canal_user_id) in ('cola', 'humano')
 
 
+def preparar_reenganche(conv_id):
+    """Arma el mensaje de re-enganche (¿Seguís ahí? Sí/No), deja la conversación
+    en el nodo 'reenganche' (esperando=None → no vuelve a dispararse) y lo guarda.
+    Devuelve {texto, opciones} para que el adaptador lo envíe."""
+    nodo = FLUJO['reenganche']
+    resp = {'texto': nodo['mensaje'], 'opciones': _opciones_de(nodo)}
+    store.set_estado_flujo(conv_id, 'reenganche', None)
+    store.guardar_mensaje(conv_id, 'bot', resp['texto'])
+    return resp
+
+
 def _opciones_de(nodo):
     return [o['label'] for o in nodo.get('opciones', [])]
 
