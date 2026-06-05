@@ -97,6 +97,33 @@ services:
     volumes:
       - ./:/app
 
+  # Bot asistente (Telegram, long polling). Levanta solo con el stack y se
+  # reinicia si crashea o al reiniciar la máquina (restart: unless-stopped).
+  # Misma imagen que web; comparte la DB local. NO necesita observer_db ni puerto.
+  # El proceso de WhatsApp (Fase 2) será un webhook dentro de `web`, no acá.
+  bot:
+    build: .
+    restart: unless-stopped
+    command: python -m bot.telegram_bot
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/farmacia
+      TZ: America/Argentina/Buenos_Aires
+      # IA (conversación + visión de recetas).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Token del bot. Ponelo en el .env (gitignored) para que arranque solo.
+      # Sin token, el proceso sale con error claro (y restart lo reintenta).
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # Transcripción de notas de voz: Whisper local por defecto.
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      web:
+        condition: service_started   # web corre init_db (crea las tablas del bot)
+    volumes:
+      - ./:/app
+
 volumes:
   pgdata:
   observer_pgdata:
