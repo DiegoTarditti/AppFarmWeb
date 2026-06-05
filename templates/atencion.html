@@ -4,10 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Atención · Badia</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
 <style>
   :root { --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
   * { box-sizing: border-box; }
+  /* Iconos como emoji (sin depender de una CDN de fuentes: render garantizado offline) */
+  .ti { font-style:normal; line-height:1; display:inline-block; }
+  .ti-pill::before{content:"💊"} .ti-send::before{content:"➤"} .ti-plus::before{content:"＋"}
+  .ti-minus::before{content:"−"} .ti-search::before{content:"🔍"} .ti-x::before{content:"✕"}
+  .ti-robot::before{content:"🤖"} .ti-clipboard-list::before{content:"🧾"} .ti-prescription::before{content:"℞"}
+  .ti-alert-triangle::before{content:"⚠️"} .ti-moon::before{content:"🌙"} .ti-sun::before{content:"☀️"}
+  .ti-chevron-down::before{content:"▾"} .ti-id::before{content:"🪪"} .ti-phone::before{content:"☎"} .ti-map-pin::before{content:"📍"}
   body { margin:0; height:100vh; overflow:hidden; font-family:var(--font-sans); background:#0d0d12; }
   #app { height:100vh; display:flex; flex-direction:column; }
 
