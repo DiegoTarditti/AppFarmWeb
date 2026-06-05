@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caja · Badia</title>
+<style>
+  :root {
+    --bg:#14141a; --surface:#1a1a22; --card:#16161d; --card-bd:#185FA5;
+    --txt:#e0e0e6; --title:#f0f0f3; --muted:#8a8a92; --muted2:#6a6a72;
+    --border:rgba(255,255,255,0.08); --accent:#1D9E75; --accent-ink:#06241a;
+    --row-bd:rgba(255,255,255,0.05); --total:#f0f0f3; --hov:#23232d;
+    --warn:#EF9F27; --danger:#DC2626; --info:#185FA5;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--txt); font-family:var(--font); }
+  .topbar { height:54px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:14px; padding:0 18px; }
+  .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .logo .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border);
+          background:var(--hov); color:var(--txt); cursor:pointer; }
+  .hbtn:hover { filter:brightness(1.12); }
+  .hbtn-ok { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700; }
+  .hbtn-warn { background:var(--warn); color:#1a1206; border-color:var(--warn); font-weight:700; }
+  .hbtn-danger { background:transparent; color:#F09595; border-color:#5a2a2a; }
+  .input { background:var(--hov); color:var(--txt); border:1px solid var(--border); border-radius:8px; padding:6px 9px; font-size:12px; }
+  .wrap { max-width:1100px; margin:0 auto; padding:18px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; }
+  .card { background:var(--card); border:1px solid var(--card-bd); border-radius:14px; overflow:hidden; display:flex; flex-direction:column; }
+  .card.cobrado { border-color:var(--accent); }
+  .card-head { padding:10px 13px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); }
+  .badge { font-size:10px; padding:2px 8px; border-radius:999px; font-weight:700; }
+  .b-conf { background:var(--warn); color:#1a1206; } .b-cob { background:var(--accent); color:var(--accent-ink); }
+  .row { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--row-bd); font-size:12px; }
+  .muted { color:var(--muted); } .muted2 { color:var(--muted2); }
+  .total { font-size:17px; font-weight:700; color:var(--total); }
+  .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:50; align-items:center; justify-content:center; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo"><span class="dot"></span>💵 Caja · Badia</div>
+    <div style="flex:1"></div>
+    {% if current_user.rol in ('admin', 'dev') %}
+    <button onclick="abrirFormas()" class="hbtn">Formas de pago</button>
+    {% endif %}
+    <label class="muted" style="font-size:12px; display:flex; align-items:center; gap:6px;">
+      <input type="checkbox" id="verCerrados" onchange="cargar()"> ver cerrados
+    </label>
+    <span class="muted" style="font-size:12px;">{{ current_user.nombre_completo or current_user.username }}</span>
+    <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
+  </div>
+
+  <div class="wrap">
+    <div id="tickets" class="grid">
+      <div class="muted">Cargando…</div>
+    </div>
+  </div>
+
+  <!-- Modal formas de pago -->
+  <div id="modalFormas" class="modal">
+    <div class="card" style="width:360px; border-color:var(--border);">
+      <div class="card-head"><span class="title" style="font-weight:600;">Formas de pago</span>
+        <span onclick="cerrarFormas()" class="muted" style="cursor:pointer;">✕</span></div>
+      <div style="padding:12px 13px;">
+        <div id="listaFormas" style="margin-bottom:10px;"></div>
+        <div style="display:flex; gap:6px;">
+          <input id="formaNombre" placeholder="Nueva forma de pago" class="input" style="flex:1;" onkeydown="if(event.key==='Enter')crearForma()">
+          <button onclick="crearForma()" class="hbtn hbtn-ok">Agregar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let formas = [];
+
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmt(n){ return '$' + Math.round(n||0).toLocaleString('es-AR'); }
+
+async function cargarFormas(){
+  formas = (await (await fetch('/caja/api/formas-pago')).json()).formas || [];
+  renderFormas();
+}
+function optsFormas(){ return formas.map(f=>`<option value="${esc(f.nombre)}">${esc(f.nombre)}</option>`).join(''); }
+
+async function cargar(){
+  const cerr = document.getElementById('verCerrados').checked ? '?cerrados=1' : '';
+  const ts = (await (await fetch('/caja/api/tickets'+cerr)).json()).tickets || [];
+  const box = document.getElementById('tickets');
+  if(!ts.length){ box.innerHTML = '<div class="muted">No hay tickets en caja ✨</div>'; return; }
+  box.innerHTML = ts.map(ticketCard).join('');
+}
+
+function ticketCard(t){
+  const items = (t.items||[]).map(i=>`
+    <div class="row"><span>${esc(i.nombre)} <span class="muted2">x${i.cantidad}</span>
+      ${i.detalle?`<div class="muted2" style="font-size:10px;">${esc(i.detalle)}</div>`:''}</span>
+      <span>${fmt(i.subtotal)}</span></div>`).join('');
+  let badge='', acciones='';
+  if(t.estado==='confirmado'){
+    badge='<span class="badge b-conf">en caja</span>';
+    acciones=`<div style="display:flex; gap:6px; margin-top:8px;">
+        <select id="fp-${t.id}" class="input" style="flex:1;">${optsFormas()}</select>
+        <button onclick="cobrar(${t.id})" class="hbtn hbtn-ok">Cobrar</button>
+      </div>
+      <button onclick="anular(${t.id})" class="hbtn hbtn-danger" style="margin-top:6px; width:100%;">Anular</button>`;
+  } else if(t.estado==='cobrado'){
+    badge='<span class="badge b-cob">cobrado</span>';
+    acciones=`<div class="muted2" style="font-size:11px; margin-top:6px;">Pagó con <b>${esc(t.forma_pago||'—')}</b> · cobró ${esc(t.cajero||'?')}</div>
+      <button onclick="entregar(${t.id})" class="hbtn hbtn-warn" style="margin-top:6px; width:100%;">Marcar entregado</button>`;
+  } else {
+    badge=`<span class="badge" style="background:var(--hov); color:var(--muted);">${esc(t.estado)}</span>`;
+  }
+  return `<div class="card ${t.estado==='cobrado'?'cobrado':''}">
+    <div class="card-head"><span class="title" style="font-weight:600; font-size:13px;">${esc(t.cliente)}</span>${badge}</div>
+    <div style="padding:8px 13px;">
+      ${items}
+      <div style="display:flex; justify-content:space-between; align-items:center; padding-top:8px;">
+        <span class="muted2" style="font-size:11px;">${esc(t.operador||'')} · ${esc(t.creado_en)}</span>
+        <span class="total">${fmt(t.total)}</span>
+      </div>
+      ${acciones}
+    </div>
+  </div>`;
+}
+
+async function cobrar(id){
+  const forma = document.getElementById('fp-'+id).value;
+  await fetch(`/caja/${id}/cobrar`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({forma_pago:forma})});
+  cargar();
+}
+async function entregar(id){ await fetch(`/caja/${id}/entregar`, {method:'POST'}); cargar(); }
+async function anular(id){ if(confirm('¿Anular este ticket?')){ await fetch(`/caja/${id}/anular`, {method:'POST'}); cargar(); } }
+
+/* Formas de pago (admin) */
+function abrirFormas(){ document.getElementById('modalFormas').style.display='flex'; renderFormas(); }
+function cerrarFormas(){ document.getElementById('modalFormas').style.display='none'; }
+function renderFormas(){
+  const box = document.getElementById('listaFormas'); if(!box) return;
+  box.innerHTML = formas.length ? formas.map(f=>`
+    <div class="row"><span>${esc(f.nombre)}</span>
+      <button onclick="eliminarForma(${f.id})" class="hbtn hbtn-danger" style="font-size:10px; padding:2px 7px;">Quitar</button></div>`).join('')
+    : '<div class="muted" style="font-size:11px;">Sin formas cargadas.</div>';
+}
+async function crearForma(){
+  const nombre = document.getElementById('formaNombre').value.trim();
+  if(!nombre) return;
+  const d = await (await fetch('/caja/formas-pago', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nombre})})).json();
+  if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
+  document.getElementById('formaNombre').value='';
+  await cargarFormas();
+}
+async function eliminarForma(id){ await fetch(`/caja/formas-pago/${id}/delete`, {method:'POST'}); await cargarFormas(); }
+
+cargarFormas();
+cargar();
+setInterval(cargar, 5000);
+</script>
+</body>
+</html>
