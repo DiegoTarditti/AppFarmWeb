@@ -7,13 +7,14 @@
 <style>
   :root { --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
   * { box-sizing: border-box; }
-  /* Iconos como emoji (sin depender de una CDN de fuentes: render garantizado offline) */
+  /* Sin CDN de iconos: glifos de texto para los funcionales; el resto es
+     decorativo y se omite (los labels de texto alcanzan). */
   .ti { font-style:normal; line-height:1; display:inline-block; }
-  .ti-pill::before{content:"💊"} .ti-send::before{content:"➤"} .ti-plus::before{content:"＋"}
-  .ti-minus::before{content:"−"} .ti-search::before{content:"🔍"} .ti-x::before{content:"✕"}
-  .ti-robot::before{content:"🤖"} .ti-clipboard-list::before{content:"🧾"} .ti-prescription::before{content:"℞"}
-  .ti-alert-triangle::before{content:"⚠️"} .ti-moon::before{content:"🌙"} .ti-sun::before{content:"☀️"}
-  .ti-chevron-down::before{content:"▾"} .ti-id::before{content:"🪪"} .ti-phone::before{content:"☎"} .ti-map-pin::before{content:"📍"}
+  .ti-plus::before{content:"+"} .ti-minus::before{content:"−"} .ti-x::before{content:"✕"} .ti-chevron-down::before{content:"▾"}
+  .ti-pill::before{content:"💊"}   /* la pastilla se queda 🙂 */
+  .ti-send::before,.ti-search::before,.ti-robot::before,.ti-clipboard-list::before,
+  .ti-prescription::before,.ti-alert-triangle::before,.ti-moon::before,.ti-sun::before,
+  .ti-id::before,.ti-phone::before,.ti-map-pin::before{ content:""; }
   body { margin:0; height:100vh; overflow:hidden; font-family:var(--font-sans); background:#0d0d12; }
   #app { height:100vh; display:flex; flex-direction:column; }
 
@@ -152,10 +153,10 @@
       <div class="chat-head" style="padding:9px 16px; border-bottom:0.5px solid; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:50px;">
         <div id="chatHeadInner" class="muted" style="font-size:13px;">Elegí una conversación 👈</div>
         <div id="chatAcciones" style="display:none; align-items:center; gap:7px; flex-shrink:0;">
-          <button id="btnTomar" onclick="tomar()" class="hbtn hbtn-ok" style="display:none; font-size:12px; padding:5px 11px; border-radius:8px;">🙋 Tomar</button>
-          <button onclick="toggleTransfer()" class="hbtn hbtn-info" style="font-size:12px; padding:5px 11px; border-radius:8px;">🔄 Transferir</button>
-          <button onclick="devolverCola()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">↩️ A la cola</button>
-          <button onclick="cerrarConv()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">🤖 Al bot</button>
+          <button id="btnTomar" onclick="tomar()" class="hbtn hbtn-ok" style="display:none; font-size:12px; padding:5px 11px; border-radius:8px;">Tomar</button>
+          <button onclick="toggleTransfer()" class="hbtn hbtn-info" style="font-size:12px; padding:5px 11px; border-radius:8px;">Transferir</button>
+          <button onclick="devolverCola()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">A la cola</button>
+          <button onclick="cerrarConv()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">Al bot</button>
         </div>
       </div>
 
@@ -206,7 +207,7 @@
         <div style="padding:10px 14px; display:flex; align-items:center; gap:8px;">
           <div class="btn-prod" title="Buscar producto" onclick="toggleBuscador()" style="width:34px; height:34px; border-radius:50%; border:0.5px solid; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;"><i class="ti ti-pill" style="font-size:16px"></i></div>
           <input id="inputMsg" type="text" placeholder="Escribí un mensaje…" autocomplete="off" onkeydown="if(event.key==='Enter')enviar()" class="input" style="flex:1; border-radius:18px; padding:9px 14px; font-size:13px;">
-          <div class="btn-send" onclick="enviar()" title="Enviar" style="width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;"><i class="ti ti-send" style="font-size:15px"></i></div>
+          <div class="btn-send" onclick="enviar()" title="Enviar" style="padding:9px 18px; border-radius:18px; display:flex; align-items:center; cursor:pointer; flex-shrink:0; font-size:13px; font-weight:600;">Enviar</div>
         </div>
       </div>
     </div>
