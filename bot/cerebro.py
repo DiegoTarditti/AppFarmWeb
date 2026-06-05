@@ -17,6 +17,22 @@ from bot.ia import leer_receta
 # Palabras que siempre vuelven al menú principal.
 _GLOBALES = {'menu', 'menú', 'inicio', 'hola', 'buenas', 'start', '/start'}
 
+# Frases que indican que el cliente quiere hablar con una PERSONA (en texto libre,
+# no solo con el botón). Si aparecen, derivamos de verdad (no que la IA lo diga).
+_DERIVAR_FRASES = (
+    'operador', 'operadora', 'pasame con', 'pásame con', 'paseme con',
+    'comunicame con', 'comunicar con', 'hablar con una persona', 'hablar con alguien',
+    'hablar con un humano', 'con una persona', 'con un humano', 'con alguien',
+    'atencion humana', 'atención humana', 'una persona real', 'quiero un humano',
+    'derivame', 'derivar', 'derivá', 'no me atiende', 'me atiende nadie',
+    'atienda alguien', 'atienda una persona', 'atienda una persona',
+)
+
+
+def _quiere_humano(texto):
+    t = ' ' + (texto or '').lower().strip() + ' '
+    return any(f in t for f in _DERIVAR_FRASES)
+
 # Auto-retorno al bot: si una conversación derivada/atendida queda sin actividad
 # por más de estos minutos, el próximo mensaje del cliente la devuelve al bot.
 # Default 180 (3 hs); bajalo con ATENCION_AUTO_BOT_MINUTOS (ej. 1 para probar).
@@ -74,6 +90,12 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type):
     # 1) Comandos globales → menú principal.
     if texto.lower() in _GLOBALES:
         return (_render(FLUJO[NODO_INICIO]), NODO_INICIO, None, False)
+
+    # 1.5) Pedido explícito de un humano, en cualquier estado → handoff REAL.
+    # (Antes esto iba a la IA, que "decía" que derivaba sin hacerlo.)
+    if _quiere_humano(texto):
+        return ({'texto': FLUJO['derivar']['mensaje'], 'opciones': []},
+                NODO_INICIO, None, True)
 
     # 2) Esperando input para una acción (ej. nombre de producto).
     if esperando:

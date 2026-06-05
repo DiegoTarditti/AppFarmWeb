@@ -39,6 +39,23 @@ def test_derivar_marca_handoff_y_no_repega_menu():
     assert resp['opciones'] == []   # al derivar no volvemos a mostrar el menú
 
 
+def test_pide_humano_en_texto_libre_deriva():
+    # "Pásame con operador" (texto libre, no botón) debe derivar de verdad.
+    resp, nodo, esp, deriv = _resolver(NODO_INICIO, None, 'Pásame con operador', None, IMG)
+    assert deriv is True and resp['opciones'] == []
+    # incluso a mitad de un flujo (esperando) el pedido de humano gana.
+    resp2, _, _, deriv2 = _resolver('encargar', 'encargar', 'no me atiende nadie', None, IMG)
+    assert deriv2 is True
+
+
+def test_quiere_humano_sin_falsos_positivos():
+    from bot.cerebro import _quiere_humano
+    assert _quiere_humano('pasame con operador')
+    assert _quiere_humano('quiero hablar con una persona')
+    assert not _quiere_humano('necesito ibuprofeno')
+    assert not _quiere_humano('algo para una persona con diabetes')
+
+
 def test_horarios_es_hoja_y_vuelve_al_inicio():
     resp, nodo, esp, deriv = _resolver(NODO_INICIO, None, 'Horarios y dirección', None, IMG)
     assert nodo == NODO_INICIO and not deriv
