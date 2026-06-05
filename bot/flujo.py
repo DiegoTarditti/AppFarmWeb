@@ -69,4 +69,18 @@ FLUJO = {
             'En un ratito te responden por acá. ¡Gracias!'
         ),
     },
+    # Re-enganche proactivo: el bot lo manda solo cuando el cliente queda a
+    # mitad de un flujo (ver bot/cerebro.preparar_reenganche).
+    'reenganche': {
+        'tipo': 'menu',
+        'mensaje': '¿Seguís ahí? ¿Querés avanzar con tu consulta?',
+        'opciones': [
+            {'label': 'Sí', 'va_a': 'inicio'},
+            {'label': 'No', 'va_a': 'despedida'},
+        ],
+    },
+    'despedida': {
+        'tipo': 'texto',
+        'mensaje': '¡Dale! Cuando quieras seguir, escribime y te ayudo 🙂',
+    },
 }

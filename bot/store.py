@@ -51,6 +51,45 @@ def set_atencion(conv_id, estado_atencion, operador_user_id=None):
             s.commit()
 
 
+def estado_atencion_de(canal, canal_user_id):
+    """Estado de atención de una conversación SIN crearla (bot si no existe)."""
+    with database.get_db() as s:
+        conv = (s.query(database.BotConversacion)
+                .filter_by(canal=canal, canal_user_id=str(canal_user_id)).first())
+        return conv.estado_atencion if conv else 'bot'
+
+
+def conversaciones_para_reenganche(minutos):
+    """Conversaciones que el bot atiende, que quedaron a mitad de un flujo
+    (esperando input del cliente) y sin actividad por más de `minutos`.
+    `esperando IS NOT NULL` se limpia al re-enganchar → no vuelve a disparar."""
+    limite = database.now_ar() - timedelta(minutes=minutos)
+    with database.get_db() as s:
+        convs = (s.query(database.BotConversacion)
+                 .filter(database.BotConversacion.estado_atencion == 'bot',
+                         database.BotConversacion.esperando.isnot(None),
+                         database.BotConversacion.ultimo_en < limite)
+                 .limit(50).all())
+        return [{'id': c.id, 'canal': c.canal, 'canal_user_id': c.canal_user_id}
+                for c in convs]
+
+
+def revisar_inactividad(conv_id, minutos):
+    """Auto-retorno al bot: si la conversación está derivada/atendida pero sin
+    actividad por más de `minutos`, la devuelve al bot. True si la devolvió."""
+    with database.get_db() as s:
+        c = s.get(database.BotConversacion, conv_id)
+        if not c or c.estado_atencion not in ('cola', 'humano'):
+            return False
+        if not c.ultimo_en or (database.now_ar() - c.ultimo_en) <= timedelta(minutes=minutos):
+            return False
+        c.estado_atencion = 'bot'
+        c.operador_user_id = None
+        _nota_sistema(s, conv_id, '↩️ Volvió al bot por inactividad')
+        s.commit()
+        return True
+
+
 def guardar_mensaje(conv_id, origen, texto, tiene_imagen=False):
     """origen: cliente | bot | operador."""
     with database.get_db() as s:
@@ -121,6 +160,7 @@ def listar_operadores():
                       database.Usuario.rol.in_(['operador', 'admin', 'farmacia', 'dev']))
               .order_by(database.Usuario.username).all())
         return [{'id': u.id, 'nombre': u.nombre_completo or u.username, 'rol': u.rol,
+                 'username': u.username,
                  'iniciales': _iniciales(u.nombre_completo or u.username),
                  'estado': u.estado_presencia or 'online',
                  'conectado': bool(u.ultima_actividad

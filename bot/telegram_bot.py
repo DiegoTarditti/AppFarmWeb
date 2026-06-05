@@ -14,7 +14,11 @@ import time
 import requests
 
 import database
-from bot import audio, cerebro
+from bot import audio, cerebro, store
+
+# Re-enganche proactivo: minutos de silencio del cliente a mitad de un flujo
+# antes de que el bot le pregunte "¿Seguís ahí?". 0 = desactivado.
+REENGANCHE_MINUTOS = float(os.environ.get('ATENCION_REENGANCHE_MINUTOS', '5'))
 
 
 def _descargar_bytes(base, token, file_id):
@@ -142,19 +146,28 @@ def main():
                 elif msg.get('voice') or msg.get('audio'):
                     # Nota de voz: transcribimos y lo tratamos como texto.
                     a = msg.get('voice') or msg.get('audio')
-                    if chat_id and not audio.disponible():
-                        _enviar(base, chat_id, {'texto': 'Por ahora no puedo escuchar '
-                                'audios 🙉 Escribime tu consulta por texto y te ayudo 🙂',
-                                'opciones': []})
-                        continue
-                    if chat_id:
-                        _aviso(base, chat_id, '🎙️ Escuchando tu audio…')
-                        _typing(base, chat_id)
-                    texto = _transcribir_voz(base, token, a['file_id']) or ''
-                    if chat_id and not texto:
-                        _enviar(base, chat_id, {'texto': 'No pude entender el audio 😕 '
-                                'Probá de nuevo o escribímelo por texto.', 'opciones': []})
-                        continue
+                    # ¿Ya la atiende un humano? Entonces NO avisamos "Escuchando…"
+                    # (el bot no va a contestar), pero igual transcribimos para que
+                    # el operador vea el texto en el panel.
+                    derivada = bool(chat_id) and cerebro.esta_con_humano('telegram', str(chat_id))
+                    if not audio.disponible():
+                        if not derivada and chat_id:
+                            _enviar(base, chat_id, {'texto': 'Por ahora no puedo escuchar '
+                                    'audios 🙉 Escribime tu consulta por texto y te ayudo 🙂',
+                                    'opciones': []})
+                            continue
+                        texto = '[nota de voz]'
+                    else:
+                        if chat_id and not derivada:
+                            _aviso(base, chat_id, '🎙️ Escuchando tu audio…')
+                            _typing(base, chat_id)
+                        texto = _transcribir_voz(base, token, a['file_id']) or ''
+                        if not texto:
+                            if not derivada and chat_id:
+                                _enviar(base, chat_id, {'texto': 'No pude entender el audio 😕 '
+                                        'Probá de nuevo o escribímelo por texto.', 'opciones': []})
+                                continue
+                            texto = '[audio no transcripto]'
             if not chat_id:
                 continue
             # 'escribiendo…' mientras el cerebro piensa (IA, búsqueda, visión).
@@ -170,6 +183,16 @@ def main():
             # resp None = la conversación la tomó un operador → el bot no responde.
             if resp is not None:
                 _enviar(base, chat_id, resp)
+
+        # Re-enganche proactivo: clientes que quedaron a mitad de un flujo y se
+        # fueron sin responder. Corre una vez por ciclo del polling (~30 s).
+        if REENGANCHE_MINUTOS > 0:
+            try:
+                for conv in store.conversaciones_para_reenganche(REENGANCHE_MINUTOS):
+                    if conv['canal'] == 'telegram':
+                        _enviar(base, conv['canal_user_id'], cerebro.preparar_reenganche(conv['id']))
+            except Exception as e:  # noqa: BLE001
+                print('reenganche error:', e)
 
 
 if __name__ == '__main__':
