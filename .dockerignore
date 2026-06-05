@@ -47,6 +47,10 @@ docs/
 docker_panel/
 memory/
 
+# Modelos de Whisper local (se bajan en runtime al volumen montado; los symlinks
+# del cache de HuggingFace además rompen el build context en Windows).
+.whisper_cache/
+
 # No necesarios dentro de la imagen
 Dockerfile
 docker-compose.yml
