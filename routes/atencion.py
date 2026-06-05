@@ -91,11 +91,7 @@ def init_app(app):
     @app.route('/atencion/api/<int:conv_id>/cliente')
     @login_required
     def atencion_cliente(conv_id):
-        conv = store.get_conversacion_full(conv_id)
-        if not conv:
-            return jsonify({'error': 'no existe'}), 404
-        oid = conv.get('cliente_observer_id')
-        return jsonify({'observer_id': oid, 'ficha': store.get_ficha_cliente(oid)})
+        return jsonify({'ficha': store.get_ficha_de_conversacion(conv_id)})
 
     @app.route('/atencion/api/clientes/buscar')
     @login_required
@@ -106,21 +102,28 @@ def init_app(app):
     @login_required
     def atencion_vincular_cliente(conv_id):
         oid = (request.json or {}).get('observer_id')
-        r = store.vincular_cliente(conv_id, oid)
-        r['ficha'] = store.get_ficha_cliente(oid)
-        return jsonify(r)
+        store.vincular_cliente(conv_id, oid)
+        return jsonify({'ok': True, 'ficha': store.get_ficha_de_conversacion(conv_id)})
+
+    @app.route('/atencion/<int:conv_id>/crear-cliente', methods=['POST'])
+    @login_required
+    def atencion_crear_cliente(conv_id):
+        datos = request.json or {}
+        if not (datos.get('nombre') or datos.get('apellido')):
+            return jsonify({'ok': False, 'error': 'falta nombre/apellido'}), 400
+        store.crear_cliente_local(conv_id, datos, creado_por=current_user.id)
+        return jsonify({'ok': True, 'ficha': store.get_ficha_de_conversacion(conv_id)})
 
     @app.route('/atencion/<int:conv_id>/desvincular-cliente', methods=['POST'])
     @login_required
     def atencion_desvincular_cliente(conv_id):
         return jsonify(store.desvincular_cliente(conv_id))
 
-    @app.route('/atencion/cliente/<int:observer_id>/ficha', methods=['POST'])
+    @app.route('/atencion/<int:conv_id>/ficha-notas', methods=['POST'])
     @login_required
-    def atencion_guardar_ficha(observer_id):
-        body = request.json or {}
-        return jsonify(store.guardar_ficha_local(
-            observer_id, notas=body.get('notas'), tags=body.get('tags')))
+    def atencion_guardar_notas(conv_id):
+        return jsonify(store.guardar_notas_conversacion(
+            conv_id, (request.json or {}).get('notas', '')))
 
     @app.route('/atencion/<int:conv_id>/responder', methods=['POST'])
     @login_required

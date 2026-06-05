@@ -133,6 +133,20 @@ def test_cliente_vincular_buscar_y_ficha():
     assert store.get_conversacion_full(conv['id'])['cliente_observer_id'] is None
 
 
+def test_alta_cliente_local():
+    conv = store.get_conversacion('telegram', 'altatest', nombre='Nuevo')
+    assert store.crear_cliente_local(conv['id'], {
+        'nombre': 'Marcos', 'apellido': 'Gimenez',
+        'dni': '35888999', 'domicilio': 'San Martín 456'})['ok']
+    f = store.get_ficha_de_conversacion(conv['id'])
+    assert f['fuente'] == 'local'
+    assert f['nombre'] == 'Gimenez, Marcos' and f['documento'] == '35888999'
+    assert store.guardar_notas_conversacion(conv['id'], 'lead del bot')['ok']
+    assert store.get_ficha_de_conversacion(conv['id'])['notas'] == 'lead del bot'
+    assert store.desvincular_cliente(conv['id'])['ok']
+    assert store.get_ficha_de_conversacion(conv['id']) is None
+
+
 def test_procesar_guarda_mensaje_entrante_aunque_este_en_humano():
     conv = store.get_conversacion('telegram', '444', nombre='C')
     store.set_atencion(conv['id'], 'humano')

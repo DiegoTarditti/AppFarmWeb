@@ -70,6 +70,7 @@ def _conv_dict(c, nombres=None):
             'estado': c.estado_atencion, 'operador_id': c.operador_user_id,
             'operador_nombre': nombres.get(c.operador_user_id),
             'cliente_observer_id': c.cliente_observer_id,
+            'cliente_local_id': c.cliente_local_id,
             'ultimo_en': c.ultimo_en.strftime('%d/%m %H:%M') if c.ultimo_en else ''}
 
 
@@ -194,17 +195,90 @@ def get_ficha_cliente(observer_id):
 
 
 def vincular_cliente(conv_id, observer_id):
+    """Vincula a un cliente de ObServer (limpia el lead local si había)."""
     with database.get_db() as s:
         c = s.get(database.BotConversacion, conv_id)
         if not c:
             return {'ok': False, 'error': 'no existe'}
         c.cliente_observer_id = observer_id
+        if observer_id:
+            c.cliente_local_id = None
         s.commit()
         return {'ok': True}
 
 
 def desvincular_cliente(conv_id):
-    return vincular_cliente(conv_id, None)
+    """Desvincula cualquier ficha (ObServer o local)."""
+    with database.get_db() as s:
+        c = s.get(database.BotConversacion, conv_id)
+        if not c:
+            return {'ok': False}
+        c.cliente_observer_id = None
+        c.cliente_local_id = None
+        s.commit()
+        return {'ok': True}
+
+
+def crear_cliente_local(conv_id, datos, creado_por=None):
+    """Alta de un cliente nuevo (lead local) desde el panel + lo vincula al chat.
+    En WhatsApp guarda el teléfono del chat automáticamente."""
+    with database.get_db() as s:
+        c = s.get(database.BotConversacion, conv_id)
+        if not c:
+            return {'ok': False, 'error': 'no existe'}
+        cl = database.ClienteLocal(
+            nombre=(datos.get('nombre') or '').strip() or None,
+            apellido=(datos.get('apellido') or '').strip() or None,
+            dni=(datos.get('dni') or '').strip() or None,
+            domicilio=(datos.get('domicilio') or '').strip() or None,
+            telefono=c.canal_user_id if c.canal == 'whatsapp' else None,
+            creado_por=creado_por)
+        s.add(cl)
+        s.flush()
+        c.cliente_local_id = cl.id
+        c.cliente_observer_id = None
+        s.commit()
+        return {'ok': True}
+
+
+def get_ficha_de_conversacion(conv_id):
+    """Ficha del cliente vinculado a la conversación, sea de ObServer o local.
+    Devuelve un dict uniforme con `fuente` ('observer' | 'local') o None."""
+    with database.get_db() as s:
+        c = s.get(database.BotConversacion, conv_id)
+        if not c:
+            return None
+        if c.cliente_observer_id:
+            f = get_ficha_cliente(c.cliente_observer_id)
+            if f:
+                f['fuente'] = 'observer'
+            return f
+        if c.cliente_local_id:
+            cl = s.get(database.ClienteLocal, c.cliente_local_id)
+            if cl:
+                nombre = ', '.join(x for x in [cl.apellido, cl.nombre] if x) or '(sin nombre)'
+                return {'fuente': 'local', 'observer_id': None,
+                        'nombre': nombre, 'documento': cl.dni or '',
+                        'telefono': cl.telefono or '', 'domicilio': cl.domicilio or '',
+                        'notas': cl.notas or '', 'tags': ''}
+        return None
+
+
+def guardar_notas_conversacion(conv_id, notas):
+    """Guarda las notas en la ficha vinculada (ObServer → Cliente; local → ClienteLocal)."""
+    with database.get_db() as s:
+        c = s.get(database.BotConversacion, conv_id)
+        if not c:
+            return {'ok': False}
+        if c.cliente_observer_id:
+            return guardar_ficha_local(c.cliente_observer_id, notas=notas)
+        if c.cliente_local_id:
+            cl = s.get(database.ClienteLocal, c.cliente_local_id)
+            if cl:
+                cl.notas = notas
+                s.commit()
+                return {'ok': True}
+        return {'ok': False}
 
 
 def guardar_ficha_local(observer_id, notas=None, tags=None):

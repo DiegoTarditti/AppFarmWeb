@@ -314,35 +314,60 @@ function toggleFicha() {
   if (abrir) renderFicha();
 }
 
+const INP = 'w-full bg-[#2c2c2e] text-white rounded-lg px-2 py-1.5 border border-gray-700 text-xs';
+
 function renderFicha() {
   const p = document.getElementById('panelFicha');
   const f = fichaData && fichaData.ficha;
   if (!f) {
     p.innerHTML = `
-      <div class="text-gray-400 mb-2">Sin cliente vinculado. Buscalo para vincular 👇</div>
-      <div class="flex gap-2 mb-2">
-        <input id="buscarCli" placeholder="Nombre o DNI…" autocomplete="off"
-               onkeydown="if(event.key==='Enter')buscarClientes()"
-               class="flex-1 bg-[#2c2c2e] text-white rounded-lg px-3 py-1.5 border border-gray-700">
-        <button onclick="buscarClientes()" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs">Buscar</button>
+      <div class="text-gray-400 mb-2">Sin cliente vinculado.</div>
+      <div class="flex gap-2 mb-1">
+        <input id="buscarCli" placeholder="Buscar por nombre o DNI…" autocomplete="off"
+               onkeydown="if(event.key==='Enter')buscarClientes()" class="${INP}">
+        <button onclick="buscarClientes()" class="px-3 py-1 rounded-lg bg-blue-600 text-white text-xs flex-shrink-0">Buscar</button>
       </div>
-      <div id="resultadosCli" class="space-y-1"></div>`;
+      <div id="resultadosCli" class="space-y-1 mb-3"></div>
+      <div class="border-t border-gray-700 pt-2">
+        <div class="text-[11px] text-gray-400 mb-1">…o crear ficha nueva (cliente que no está en el sistema):</div>
+        <div class="grid grid-cols-2 gap-2 mb-2">
+          <input id="nuevoNombre" placeholder="Nombre" class="${INP}">
+          <input id="nuevoApellido" placeholder="Apellido" class="${INP}">
+          <input id="nuevoDni" placeholder="DNI" class="${INP}">
+          <input id="nuevoDom" placeholder="Domicilio" class="${INP}">
+        </div>
+        <button onclick="crearCliente()" class="text-xs px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white">＋ Crear ficha</button>
+      </div>`;
     return;
   }
+  const esLocal = f.fuente === 'local';
+  const badge = esLocal
+    ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-600 text-white">lead local</span>'
+    : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-600 text-white">ObServer</span>';
   p.innerHTML = `
     <div class="flex items-start justify-between mb-2 gap-2">
       <div>
-        <div class="text-white font-semibold">${esc(f.nombre)}</div>
-        <div class="text-xs text-gray-400">${esc(f.documento || '')}${f.telefono ? ' · ' + esc(f.telefono) : ''}</div>
+        <div class="text-white font-semibold">${esc(f.nombre)} ${badge}</div>
+        <div class="text-xs text-gray-400">${f.documento ? 'DNI ' + esc(f.documento) : ''}${f.telefono ? ' · ' + esc(f.telefono) : ''}</div>
         ${f.domicilio ? `<div class="text-xs text-gray-500">${esc(f.domicilio)}</div>` : ''}
       </div>
       <button onclick="desvincularCliente()" class="text-[11px] px-2 py-1 rounded bg-gray-700 text-gray-300 flex-shrink-0">Desvincular</button>
     </div>
     <label class="text-[11px] text-gray-400">Notas</label>
-    <textarea id="fichaNotas" rows="2" class="w-full bg-[#2c2c2e] text-white rounded-lg px-2 py-1 border border-gray-700 mb-1 text-xs">${esc(f.notas || '')}</textarea>
-    <label class="text-[11px] text-gray-400">Tags</label>
-    <input id="fichaTags" value="${esc(f.tags || '')}" class="w-full bg-[#2c2c2e] text-white rounded-lg px-2 py-1 border border-gray-700 mb-2 text-xs">
-    <button id="btnGuardarFicha" onclick="guardarFicha()" class="text-xs px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white">Guardar ficha</button>`;
+    <textarea id="fichaNotas" rows="2" class="${INP} mb-2">${esc(f.notas || '')}</textarea>
+    <button id="btnGuardarFicha" onclick="guardarFicha()" class="text-xs px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white">Guardar notas</button>`;
+}
+
+function _val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
+
+async function crearCliente() {
+  const datos = {nombre: _val('nuevoNombre'), apellido: _val('nuevoApellido'),
+                 dni: _val('nuevoDni'), domicilio: _val('nuevoDom')};
+  if (!datos.nombre && !datos.apellido) { alert('Poné al menos nombre o apellido.'); return; }
+  await fetch(`/atencion/${convAbierta}/crear-cliente`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(datos)
+  });
+  await cargarFicha(); renderFicha();
 }
 
 async function buscarClientes() {
@@ -373,15 +398,14 @@ async function desvincularCliente() {
 }
 
 async function guardarFicha() {
-  if (!fichaData || !fichaData.observer_id) return;
+  if (!convAbierta) return;
   const notas = document.getElementById('fichaNotas').value;
-  const tags = document.getElementById('fichaTags').value;
-  await fetch(`/atencion/cliente/${fichaData.observer_id}/ficha`, {
+  await fetch(`/atencion/${convAbierta}/ficha-notas`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({notas, tags})
+    body: JSON.stringify({notas})
   });
   const b = document.getElementById('btnGuardarFicha');
-  if (b) { b.textContent = 'Guardado ✓'; setTimeout(() => { b.textContent = 'Guardar ficha'; }, 1500); }
+  if (b) { b.textContent = 'Guardado ✓'; setTimeout(() => { b.textContent = 'Guardar notas'; }, 1500); }
   cargarFicha();
 }
 

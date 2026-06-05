@@ -407,6 +407,24 @@ class Cliente(Base):
     obs_cliente = relationship('ObsCliente')
 
 
+class ClienteLocal(Base):
+    """Cliente capturado localmente (lead) por el bot/panel cuando todavía no
+    existe en ObServer (ObServer es read-only desde la web). La farmacia luego
+    lo carga en su sistema; mientras tanto se usa para atender por el bot.
+    Si después se vincula a ObServer, se guarda el observer_id."""
+    __tablename__ = 'clientes_locales'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(80), nullable=True)
+    apellido = Column(String(80), nullable=True)
+    dni = Column(String(20), nullable=True, index=True)
+    domicilio = Column(String(200), nullable=True)
+    telefono = Column(String(35), nullable=True)
+    notas = Column(Text, nullable=True)
+    observer_id = Column(Integer, nullable=True)   # si luego se vincula a ObServer
+    creado_por = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
+    creado_en = Column(DateTime, default=now_ar)
+
+
 class ObsSyncLog(Base):
     """Log de cada corrida de sync por entidad (última ejecución + resultados)."""
     __tablename__ = 'obs_sync_log'
@@ -2281,6 +2299,9 @@ class BotConversacion(Base):
     # en WhatsApp; en Telegram queda NULL hasta que el operador la vincule a mano.
     cliente_observer_id = Column(Integer, ForeignKey('obs_clientes.observer_id'),
                                  nullable=True, index=True)
+    # Alternativa: cliente capturado localmente (lead) que aún no está en ObServer.
+    cliente_local_id = Column(Integer, ForeignKey('clientes_locales.id'),
+                              nullable=True, index=True)
     nodo = Column(String(50), default='inicio')      # estado del flujo conversacional
     esperando = Column(String(50))                   # acción esperando input del usuario
     creado_en = Column(DateTime, default=now_ar)
@@ -2349,7 +2370,7 @@ def init_db(database_url=None):
                         'compartido_importado', 'obs_operadores',
                         'parser_ofertas_lab', 'factura_faltante',
                         'analisis_ia_cache', 'panel_heartbeat',
-                        'bot_conversaciones', 'bot_mensajes')
+                        'bot_conversaciones', 'bot_mensajes', 'clientes_locales')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -4065,6 +4086,7 @@ def _pg_add_columns(conn):
         "ALTER TABLE rendicion_lote ADD COLUMN IF NOT EXISTS entregada_por VARCHAR(100)",
         # Bot: vinculación de la conversación con la ficha del cliente (ObsCliente).
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS cliente_observer_id INTEGER",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS cliente_local_id INTEGER",
     ]:
         conn.execute(text(stmt))
     # Índices para queries frecuentes
