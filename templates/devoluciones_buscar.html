@@ -12,7 +12,7 @@
 {% endif %}
 {% block title %}{{ _titulo_corto }}{% endblock %}
 {% block main %}
-<div class="max-w-7xl mx-auto p-4 space-y-4">
+<div class="max-w-[1800px] mx-auto p-4 space-y-4">
   {# Flash messages — el handler devoluciones_guardar usa flash()+redirect()
      para errores de validación. Sin este bloque el usuario ve la pantalla
      "como si nada" y piensa que falló silenciosamente. #}
@@ -121,9 +121,10 @@
        title="Imprimir PDF de la rendición seleccionada (con firma)"
        class="px-2.5 py-1.5 border border-amber-300 rounded text-sm bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold {% if not lote_id %}opacity-40 pointer-events-none{% endif %}">📄 PDF</a>
 
-    {# Grupo de OS (opcional): filtra recetas a las OS de un grupo de rendición.
-       Configurable en /rend-recetas/config-grupos. Siempre se muestra para que
-       el feature sea descubrible (si no hay grupos, el link ⚙️ va al ABM). #}
+    {# Grupo de OS: para rol rendicion NO se elige tipo — se trae todo y al
+       registrar se reparte solo en lotes {nro}-{grupo}. Para otros roles
+       (auditor/admin) sigue disponible el filtro por tipo. #}
+    {% if _rol != 'rendicion' %}
     <label class="text-xs uppercase text-gray-500 font-semibold">Tipo<span class="text-red-600">*</span></label>
     <select name="grupo_id" required class="border {% if not grupo_sel %}border-red-400 bg-red-50{% else %}border-gray-300{% endif %} rounded px-2 py-1.5 text-sm min-w-[160px]"
             title="Obligatorio: un tipo de rendición, o 'Otras' (las OS que no están en ningún tipo). Nunca se traen todas sin filtro.">
@@ -138,6 +139,7 @@
     <a href="{{ url_for('rendicion_grupos') }}" target="_blank"
        title="{% if grupos_rendicion %}Configurar grupos{% else %}Crear el primer grupo de OS{% endif %}"
        class="px-2 py-1.5 border {% if not grupos_rendicion %}border-amber-400 bg-amber-50 hover:bg-amber-100{% else %}border-gray-300 bg-white hover:bg-gray-50{% endif %} rounded text-sm">⚙️</a>
+    {% endif %}
 
     <button type="submit" class="bg-brand hover:bg-brand-hover text-white px-4 py-1.5 rounded text-sm font-semibold">
       Traer recetas
@@ -249,7 +251,7 @@
               <td class="px-2 py-2 align-top text-xs">{{ r.obra_social }}</td>
               <td class="px-2 py-2 align-top text-xs">
                 {% if grp %}
-                <span class="inline-block bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap">{{ grp.nombre }}</span>
+                <span class="inline-block bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap" title="{{ grp.nombre }}">{{ grp.nombre[:8] }}{% if grp.nombre|length > 8 %}…{% endif %}</span>
                 {% else %}
                 <span class="text-gray-400 italic">—</span>
                 {% endif %}

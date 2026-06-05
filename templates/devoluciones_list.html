@@ -11,7 +11,7 @@
 {% endif %}
 {% block title %}{{ _titulo }}{% endblock %}
 {% block main %}
-<div class="max-w-7xl mx-auto p-4 space-y-4">
+<div class="max-w-[1800px] mx-auto p-4 space-y-4">
   <div class="flex items-center justify-between flex-wrap gap-2">
     <h1 class="text-2xl font-bold">{{ _titulo }}</h1>
     <div class="flex gap-2">
@@ -104,7 +104,7 @@
                        ('devuelta', 'Devueltas', 'bg-orange-100 text-orange-800'),
                        ('descartada', 'Descartadas', 'bg-gray-200 text-gray-700')] %}
     {% for val, label, cls in estados %}
-    <a href="{{ url_for('devoluciones_list', estado=val, presentacion=q_presentacion, vendedor=q_vendedor, auditoria=q_auditoria) }}"
+    <a href="{{ url_for('devoluciones_list', estado=val, presentacion=q_presentacion, vendedor=q_vendedor, auditoria=q_auditoria, grupo=q_grupo) }}"
        class="px-3 py-1 rounded-full text-xs font-semibold border
               {% if q_estado == val %}border-brand text-brand bg-white{% else %}border-gray-300 text-gray-600 bg-white hover:border-brand{% endif %}">
       {{ label }}
@@ -114,12 +114,12 @@
     {% if rol_actual in ('auditor', 'admin', 'dev') %}
     {# Filtros de auditoría — solo visibles para auditor/admin/dev #}
     <span class="px-2 text-gray-300">|</span>
-    <a href="{{ url_for('devoluciones_list', auditoria='pend', estado=q_estado, presentacion=q_presentacion, vendedor=q_vendedor) }}"
+    <a href="{{ url_for('devoluciones_list', auditoria='pend', estado=q_estado, presentacion=q_presentacion, vendedor=q_vendedor, grupo=q_grupo) }}"
        class="px-3 py-1 rounded-full text-xs font-semibold border
               {% if q_auditoria == 'pend' %}border-purple-600 text-purple-700 bg-white{% else %}border-purple-300 text-purple-600 bg-white hover:border-purple-600{% endif %}">
       🔍 Pend. auditar ({{ pend_auditor }})
     </a>
-    <a href="{{ url_for('devoluciones_list', auditoria='ok', estado=q_estado, presentacion=q_presentacion, vendedor=q_vendedor) }}"
+    <a href="{{ url_for('devoluciones_list', auditoria='ok', estado=q_estado, presentacion=q_presentacion, vendedor=q_vendedor, grupo=q_grupo) }}"
        class="px-3 py-1 rounded-full text-xs font-semibold border
               {% if q_auditoria == 'ok' %}border-purple-600 text-purple-700 bg-white{% else %}border-purple-300 text-purple-600 bg-white hover:border-purple-600{% endif %}">
       ✓ Auditadas
@@ -132,7 +132,7 @@
     <div>
       <label class="block text-xs uppercase text-gray-500 mb-1">Nro. rendición</label>
       {% if nros_filtro %}
-      <select name="presentacion" class="border border-gray-300 rounded px-2 py-1.5 text-sm w-56">
+      <select name="presentacion" onchange="this.form.submit()" class="border border-gray-300 rounded px-2 py-1.5 text-sm w-56">
         <option value="">— Todas —</option>
         {% for nro in nros_filtro %}
         <option value="{{ nro }}" {% if q_presentacion == nro %}selected{% endif %}>#{{ nro }}</option>
@@ -147,7 +147,11 @@
     </div>
     <div>
       <label class="block text-xs uppercase text-gray-500 mb-1">Vendedor</label>
-      {% if vendedores_filtro %}
+      {% if _rol == 'rendicion' %}
+      {# El listado ya está acotado a su propio vendedor → se muestra bloqueado. #}
+      <div class="border border-gray-300 bg-gray-100 text-gray-700 font-semibold rounded px-2 py-1.5 text-sm w-44 truncate"
+           title="Solo ves tus propias recetas">🔒 {{ current_user.nombre_completo or current_user.username }}</div>
+      {% elif vendedores_filtro %}
       <select name="vendedor" class="border border-gray-300 rounded px-2 py-1.5 text-sm w-44">
         <option value="">— Todos —</option>
         {% for v in vendedores_filtro %}
@@ -168,13 +172,13 @@
     {% if grupos %}
     <div class="flex flex-col">
       <label class="block text-[10px] uppercase font-bold text-[#555] mb-0.5">Tipo de rendición</label>
-      <select id="grupo-filter-list" onchange="filtrarPorGrupo()"
+      <select id="grupo-filter-list" name="grupo" onchange="this.form.submit()"
               class="border border-gray-300 rounded px-2 py-1.5 text-sm">
         <option value="">— Todos —</option>
         {% for g in grupos %}
-        <option value="{{ g.id }}">{{ g.nombre }}</option>
+        <option value="{{ g.id }}" {% if q_grupo == g.id|string %}selected{% endif %}>{{ g.nombre }}</option>
         {% endfor %}
-        <option value="__sin__">— Sin grupo —</option>
+        <option value="__sin__" {% if q_grupo == '__sin__' %}selected{% endif %}>— Sin grupo —</option>
       </select>
     </div>
     {% endif %}
@@ -202,11 +206,10 @@
           <th class="px-2 py-1.5 text-left">Estado</th>
           <th class="px-2 py-1.5 text-left">Reg.</th>
           <th class="px-2 py-1.5 text-left">Rend.</th>
-          <th class="px-2 py-1.5 text-left">Vendedor</th>
+          {% if _rol != 'rendicion' %}<th class="px-2 py-1.5 text-left">Vendedor</th>{% endif %}
           <th class="px-2 py-1.5 text-left">Op#</th>
           <th class="px-2 py-1.5 text-left">Receta</th>
           <th class="px-2 py-1.5 text-left">OS</th>
-          <th class="px-2 py-1.5 text-left" title="Tipo de rendición (grupo)">Tipo</th>
           <th class="px-2 py-1.5 text-right">OS $</th>
           <th class="px-2 py-1.5 text-left">Motivo</th>
           <th class="px-2 py-1.5 text-left">Obs.</th>
@@ -243,22 +246,17 @@
           </td>
           <td class="px-2 py-1.5 text-xs whitespace-nowrap">{{ d.creado_en.strftime('%d/%m/%y %H:%M') if d.creado_en else '' }}</td>
           <td class="px-2 py-1.5 text-xs font-mono">{{ d.nro_presentacion or '—' }}</td>
+          {% if _rol != 'rendicion' %}
           <td class="px-2 py-1.5 text-xs">
             {{ d.vendedor_nombre or '—' }}
             {% if d.creado_por and d.creado_por.upper() != (d.vendedor_nombre or '').upper() %}
             <div class="text-[10px] text-gray-400">cargó: {{ d.creado_por }}</div>
             {% endif %}
           </td>
+          {% endif %}
           <td class="px-2 py-1.5 text-xs font-mono">{{ d.id_operacion_observer }}</td>
           <td class="px-2 py-1.5 text-xs whitespace-nowrap">{{ d.fecha_operacion.strftime('%d/%m/%y') if d.fecha_operacion else '—' }}</td>
           <td class="px-2 py-1.5 text-xs">{{ d.obra_social_nombre or '—' }}</td>
-          <td class="px-2 py-1.5 text-xs">
-            {% if _grp %}
-            <span class="inline-block bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap">{{ _grp.nombre }}</span>
-            {% else %}
-            <span class="text-gray-300 italic">—</span>
-            {% endif %}
-          </td>
           <td class="px-2 py-1.5 text-xs text-right font-mono">{{ '%.2f'|format(d.importe_a_cargo_os) if d.importe_a_cargo_os else '—' }}</td>
           <td class="px-2 py-1.5 text-xs">{{ d.motivo.nombre if d.motivo else '—' }}</td>
           <td class="px-2 py-1.5 text-xs max-w-xs">
@@ -283,7 +281,7 @@
             {% endif %}
             {% endif %}
           </td>
-          <td class="px-2 py-1.5 text-xs bg-purple-50/30" style="min-width:240px;">
+          <td class="px-2 py-1.5 text-xs bg-purple-50/30" style="min-width:170px;">
             {% if rol_actual in ('auditor', 'admin', 'dev') %}
               {# Modo editable: dropdown + input con autosave #}
               <select onchange="autoAuditar(this, {{ d.id }})"
@@ -322,7 +320,7 @@
               {% endif %}
             {% endif %}
           </td>
-          <td class="px-2 py-1.5">
+          <td class="px-2 py-1.5" style="min-width:155px;">
             {% if rol_actual == 'rendicion' %}
               {# El vendedor trabaja en "Traer recetas" (motivo/obs/rendir).
                  Acá solo ve el estado de cada receta. #}
@@ -332,22 +330,22 @@
                 <span class="text-xs text-gray-400">en tu poder</span>
               {% endif %}
             {% elif d.estado == 'pendiente' %}
-              <div class="flex items-center gap-1.5">
+              <div class="flex flex-wrap items-center gap-1">
                 {# OK = todo bien, sin observaciones. Submit directo (no necesita
-                   nota de cierre). Es la acción más común → grande y a la izq. #}
+                   nota de cierre). Es la acción más común → primera y destacada. #}
                 <form method="post" action="{{ url_for('devolucion_cambiar_estado', id=d.id) }}" class="inline">
                   <input type="hidden" name="estado" value="ok">
                   <button type="submit"
-                          class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded font-bold text-sm shadow-sm">
+                          class="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded font-bold text-xs shadow-sm">
                     ✓ OK
                   </button>
                 </form>
                 <button type="button" onclick="abrirCierre({{ d.id }}, 'resuelta')"
-                        class="text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2 py-0.5 rounded font-semibold">Resuelta</button>
+                        class="text-[11px] bg-green-100 hover:bg-green-200 text-green-800 px-1.5 py-0.5 rounded font-semibold">Resuelta</button>
                 <button type="button" onclick="abrirCierre({{ d.id }}, 'devuelta')"
-                        class="text-xs bg-orange-100 hover:bg-orange-200 text-orange-800 px-2 py-0.5 rounded font-semibold">↩ Devuelta</button>
+                        class="text-[11px] bg-orange-100 hover:bg-orange-200 text-orange-800 px-1.5 py-0.5 rounded font-semibold">↩ Devuelta</button>
                 <button type="button" onclick="abrirCierre({{ d.id }}, 'descartada')"
-                        class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded font-semibold">Descartar</button>
+                        class="text-[11px] bg-gray-200 hover:bg-gray-300 text-gray-700 px-1.5 py-0.5 rounded font-semibold">Descartar</button>
               </div>
             {% else %}
               <form method="post" action="{{ url_for('devolucion_cambiar_estado', id=d.id) }}" class="inline">
@@ -395,20 +393,17 @@
     // Filtros client-side combinados (AND):
     //  - Procesar: toggle que oculta las filas ya despachadas (OK + resueltas)
     //  - Grupo: dropdown "Tipo de rendición" (data-grupo-id por fila)
+    // El filtro por TIPO/grupo ahora es server-side (el dropdown submitea el
+    // form). Acá solo quedan los filtros client-side: Procesar + Importe exacto.
     let _procesarOn = false;
     function _aplicarFiltrosLista() {
-      const sel = document.getElementById('grupo-filter-list');
-      const grupo = sel ? sel.value : '';
       const impEl = document.getElementById('imp-filter-list');
       const impRaw = impEl ? impEl.value.trim().replace(',', '.') : '';
       const impVal = impRaw === '' ? null : parseFloat(impRaw);
       document.querySelectorAll('.dev-row').forEach(tr => {
         const est = tr.dataset.estado;
-        const gid = tr.dataset.grupoId || '';
         let visible = true;
         if (_procesarOn && (est === 'ok' || est === 'resuelta')) visible = false;
-        if (grupo === '__sin__' && gid) visible = false;
-        else if (grupo && grupo !== '__sin__' && gid !== grupo) visible = false;
         // Lupa de importe total exacto (tolerancia 1 centavo).
         if (visible && impVal !== null && !isNaN(impVal)) {
           const total = parseFloat(tr.dataset.total);
@@ -417,7 +412,6 @@
         tr.style.display = visible ? '' : 'none';
       });
     }
-    function filtrarPorGrupo() { _aplicarFiltrosLista(); }
     function toggleProcesar() {
       _procesarOn = !_procesarOn;
       const btn = document.getElementById('btn-procesar');
@@ -538,9 +532,9 @@
 
   {% if last_page > 1 %}
   <div class="flex items-center gap-2 text-sm">
-    {% if page > 1 %}<a href="?page={{ page-1 }}&presentacion={{ q_presentacion }}&vendedor={{ q_vendedor }}" class="px-3 py-1 border border-gray-300 rounded">← Ant</a>{% endif %}
+    {% if page > 1 %}<a href="?page={{ page-1 }}&presentacion={{ q_presentacion }}&vendedor={{ q_vendedor }}&estado={{ q_estado }}&auditoria={{ q_auditoria }}&grupo={{ q_grupo }}" class="px-3 py-1 border border-gray-300 rounded">← Ant</a>{% endif %}
     <span class="text-gray-500">Pág {{ page }} / {{ last_page }}</span>
-    {% if page < last_page %}<a href="?page={{ page+1 }}&presentacion={{ q_presentacion }}&vendedor={{ q_vendedor }}" class="px-3 py-1 border border-gray-300 rounded">Sig →</a>{% endif %}
+    {% if page < last_page %}<a href="?page={{ page+1 }}&presentacion={{ q_presentacion }}&vendedor={{ q_vendedor }}&estado={{ q_estado }}&auditoria={{ q_auditoria }}&grupo={{ q_grupo }}" class="px-3 py-1 border border-gray-300 rounded">Sig →</a>{% endif %}
   </div>
   {% endif %}
 </div>
