@@ -1,164 +1,277 @@
-{% extends 'base.html' %}
-{% block title %}Atención · Bot{% endblock %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atención · Badia</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
+<style>
+  :root { --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin:0; height:100vh; overflow:hidden; font-family:var(--font-sans); background:#0d0d12; }
+  #app { height:100vh; display:flex; flex-direction:column; }
 
-{% block main %}
-<div class="max-w-7xl mx-auto px-4 py-6">
-  <div class="flex items-center justify-between mb-4">
-    <div>
-      <h1 class="text-2xl font-bold text-white">💬 Atención al cliente</h1>
-      <p class="text-sm text-gray-400">Cola compartida: tomá una y atendela. Mientras la atendés, el bot no responde.</p>
+  /* ── Paleta (de la maqueta de Diego: dark + light) ── */
+  #app.dark {
+    --bg:#14141a; --bd:rgba(255,255,255,0.08); --topbar:#1a1a22; --side:#16161d; --chat:#14141a;
+    --title:#f0f0f3; --txt:#c8c8ce; --muted:#6a6a72; --muted2:#8a8a92; --accent:#1D9E75; --accenttxt:#5DCAA5;
+    --logo-bg:#534AB7; --logo-tx:#EEEDFE; --me-bg:#534AB7; --me-tx:#EEEDFE; --dot-bd:#1a1a22;
+    --bubin:#23232d; --bubin-tx:#e0e0e6; --bubbot:#1f1d2e; --bubbot-tx:#d8d4f0; --bot:#7F77DD;
+    --card:#16161d; --card-bd:#185FA5; --cardhead-bd:rgba(255,255,255,0.06); --cardic:#0c2236; --cardic-tx:#85B7EB;
+    --row-bd:rgba(255,255,255,0.05); --total-bg:#191921; --total:#f0f0f3; --qm:#23232d; --qm-tx:#9a9aa2; --qp:#1f1d2e; --qp-tx:#AFA9EC;
+    --pop:#1a1a22; --pop-bd:rgba(255,255,255,0.1); --caret:#85B7EB; --rx-bg:#3a1f1f; --rx-tx:#F09595;
+    --prod-bg:#0c2236; --prod-bd:#185FA5; --prod-tx:#85B7EB; --clip-bg:#1f1f29; --clip-tx:#9a9aa2;
+    --input:#1f1f29; --input-tx:#e0e0e6; --send-bg:#534AB7; --send-tx:#EEEDFE;
+    --badge-bg:#534AB7; --badge-tx:#EEEDFE; --day-bg:#1a1a22; --hov:#2e2e3a; --menu:#23232d; --menu-tx:#e0e0e6;
+    --busy:#EF9F27; --busytx:#EF9F27; --busyav:#0F6E56; --busyav-tx:#E1F5EE; --away:#5F5E5A; --awaytx:#8a8a92; --awayav:#3a3a42; --awayav-tx:#9a9aa2;
+    --alert-bg:#2a1812; --alert-tx:#F0997B; --tagb-bg:#1f1d2e; --tagb-tx:#AFA9EC; --tagg-bg:#102a22; --tagg-tx:#5DCAA5;
+    --theme-bd:rgba(255,255,255,0.15); --active-bd:#D85A30;
+  }
+  #app.light {
+    --bg:#dbe5e6; --bd:#b8c8c9; --topbar:#cdd9da; --side:#d2dedf; --chat:#dde7e8;
+    --title:#1f3a36; --txt:#2c3e3b; --muted:#6f807d; --muted2:#5f6e6b; --accent:#0F6E56; --accenttxt:#0F6E56;
+    --logo-bg:#0F6E56; --logo-tx:#E1F5EE; --me-bg:#0F6E56; --me-tx:#E1F5EE; --dot-bd:#cdd9da;
+    --bubin:#eef4f4; --bubin-tx:#2c3e3b; --bubbot:#dceaf5; --bubbot-tx:#0c447c; --bot:#185FA5;
+    --card:#eef4f4; --card-bd:#5DCAA5; --cardhead-bd:#d0dcdc; --cardic:#d6efe6; --cardic-tx:#0F6E56;
+    --row-bd:#dde7e7; --total-bg:#e2eeed; --total:#0F6E56; --qm:#d8e3e3; --qm-tx:#5f6e6b; --qp:#d6efe6; --qp-tx:#0F6E56;
+    --pop:#eef4f4; --pop-bd:#c2d0d1; --caret:#0F6E56; --rx-bg:#f6dada; --rx-tx:#a32d2d;
+    --prod-bg:#d6efe6; --prod-bd:#5DCAA5; --prod-tx:#0F6E56; --clip-bg:#e2eeed; --clip-tx:#5f6e6b;
+    --input:#eef4f4; --input-tx:#2c3e3b; --send-bg:#0F6E56; --send-tx:#E1F5EE;
+    --badge-bg:#0F6E56; --badge-tx:#E1F5EE; --day-bg:#cdd9da; --hov:#dbe8e8; --menu:#eef4f4; --menu-tx:#2c3e3b;
+    --busy:#BA7517; --busytx:#854F0B; --busyav:#185FA5; --busyav-tx:#E6F1FB; --away:#888780; --awaytx:#5f6e6b; --awayav:#a8b4b5; --awayav-tx:#5a6664;
+    --alert-bg:#f6e0d6; --alert-tx:#993c1d; --tagb-bg:#dceaf5; --tagb-tx:#0c447c; --tagg-bg:#d6efe6; --tagg-tx:#0F6E56;
+    --theme-bd:#b8c8c9; --active-bd:#D85A30;
+  }
+
+  /* ── Mapeo de clases a tokens ── */
+  #app { background:var(--bg); color:var(--txt); }
+  .topbar { background:var(--topbar); border-color:var(--bd); }
+  .logo { background:var(--logo-bg); color:var(--logo-tx); }
+  .title { color:var(--title); } .txt { color:var(--txt); } .muted { color:var(--muted); } .muted2 { color:var(--muted2); }
+  .accent-txt { color:var(--accenttxt); }
+  #theme-btn { border-color:var(--theme-bd); color:var(--muted2); }
+  #me-btn { background:var(--me-bg); color:var(--me-tx); } #me-dot { border-color:var(--dot-bd); }
+  #me-toggle { color:var(--accenttxt); }
+  #me-menu { background:var(--menu); border-color:var(--pop-bd); } #me-menu .opt { color:var(--menu-tx); }
+  .opt:hover { background:var(--hov); }
+  .col-side { background:var(--side); border-color:var(--bd); } .side-head { border-color:var(--bd); }
+  .conv { border-color:var(--bd); cursor:pointer; } .conv:hover { background:var(--hov); }
+  .conv-active { background:var(--bubin); border:1px solid var(--active-bd) !important; }
+  .badge { background:var(--badge-bg); color:var(--badge-tx); }
+  .col-chat { background:var(--chat); } .chat-head { border-color:var(--bd); }
+  .daypill { background:var(--day-bg); color:var(--muted); }
+  .bub-in { background:var(--bubin); color:var(--bubin-tx); } .bub-bot { background:var(--bubbot); color:var(--bubbot-tx); } .bot-ic { color:var(--bot); }
+  .bub-me { background:var(--me-bg); color:var(--me-tx); }
+  .sys { color:var(--muted); }
+  .composer { background:var(--side); border-color:var(--bd); }
+  .input { background:var(--input); color:var(--input-tx); border:0.5px solid var(--bd); }
+  .input::placeholder { color:var(--muted); }
+  .btn-prod { background:var(--prod-bg); border-color:var(--prod-bd); color:var(--prod-tx); }
+  .btn-clip { background:var(--clip-bg); color:var(--clip-tx); }
+  .btn-send { background:var(--send-bg); color:var(--send-tx); }
+  .seg { background:var(--bubin); color:var(--muted2); border:0.5px solid var(--bd); cursor:pointer; }
+  .seg.on { background:var(--me-bg); color:var(--me-tx); border-color:var(--me-bg); }
+  .hbtn { border:0.5px solid var(--bd); background:var(--bubin); color:var(--txt); cursor:pointer; }
+  .hbtn:hover { background:var(--hov); }
+  .hbtn-ok { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .hbtn-info { background:#2563eb; color:#fff; border-color:#2563eb; }
+  .bt { border-color:var(--bd); }
+  .alert { background:var(--alert-bg); color:var(--alert-tx); }
+  .tag-blue { background:var(--tagb-bg); color:var(--tagb-tx); } .tag-green { background:var(--tagg-bg); color:var(--tagg-tx); }
+  ::-webkit-scrollbar{ width:9px; } ::-webkit-scrollbar-thumb{ background:var(--hov); border-radius:9px; }
+</style>
+</head>
+<body>
+<div id="app" class="dark">
+
+  <!-- ── Topbar ─────────────────────────────────────────────────────────── -->
+  <div class="topbar" style="display:flex; align-items:center; justify-content:space-between; padding:10px 18px; border-bottom:0.5px solid; flex-shrink:0;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="logo" style="width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center;"><i class="ti ti-plus" style="font-size:18px"></i></div>
+      <span class="title" style="font-size:14px; font-weight:600;">Atención · Badia</span>
     </div>
-    <div class="flex items-center gap-3">
-      <label class="text-sm text-gray-400">Línea:</label>
-      <select id="filtroLinea" onchange="cargarBandeja()" aria-label="Filtrar por línea"
-              class="bg-[#2c2c2e] text-white text-sm rounded-lg px-3 py-1.5 border border-gray-700">
-        <option value="">Todas</option>
+    <div style="display:flex; align-items:center; gap:16px;">
+      <select id="filtroLinea" onchange="cargarBandeja()" aria-label="Línea" class="input" style="border-radius:8px; padding:5px 10px; font-size:12px;">
+        <option value="">Todas las líneas</option>
         {% for l in lineas %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
       </select>
-      <span class="text-xs text-gray-500 hidden sm:inline">{{ current_user.nombre_completo or current_user.username }}</span>
-      <a href="{{ url_for('auth_logout') }}" class="text-xs px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200">Salir</a>
+
+      <button id="theme-btn" aria-label="Cambiar tema" style="cursor:pointer; display:flex; align-items:center; gap:6px; padding:5px 10px; border-radius:20px; border:0.5px solid; background:transparent;">
+        <i id="theme-icon" class="ti ti-moon" style="font-size:14px"></i>
+        <span id="theme-text" style="font-size:10px;">Oscuro</span>
+      </button>
+
+      <div style="position:relative; display:flex; flex-direction:column; align-items:center; gap:4px;">
+        <button id="me-btn" aria-label="Mi estado" style="cursor:pointer; position:relative; width:26px; height:26px; border:none; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">{{ (current_user.nombre_completo or current_user.username)[:2]|upper }}<span id="me-dot" style="position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; background:#1D9E75; border:2px solid;"></span></button>
+        <button id="me-toggle" style="cursor:pointer; border:none; background:transparent; display:flex; align-items:center; gap:3px; font-size:9px;"><span id="me-mini" style="width:5px;height:5px;border-radius:50%;background:#1D9E75;"></span><span id="me-label">Online</span><i class="ti ti-chevron-down" style="font-size:9px"></i></button>
+        <div id="me-menu" style="display:none; position:absolute; top:54px; right:0; border:0.5px solid; border-radius:10px; padding:4px; min-width:118px; z-index:30;">
+          <div class="opt" data-s="online" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:11px;"><span style="width:7px;height:7px;border-radius:50%;background:#1D9E75;"></span>Online</div>
+          <div class="opt" data-s="busy" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:11px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--busy);"></span>Ocupado</div>
+          <div class="opt" data-s="away" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:11px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--away);"></span>Ausente</div>
+        </div>
+      </div>
+      <a href="{{ url_for('auth_logout') }}" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">Salir</a>
     </div>
   </div>
 
-  <div class="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4" style="height:72vh">
-    <!-- Bandeja -->
-    <div class="bg-[#2c2c2e] rounded-xl border border-gray-700 overflow-hidden flex flex-col">
-      <div class="px-3 pt-2.5 pb-2 border-b border-gray-700">
-        <div class="flex gap-1 text-xs">
-          <button data-vista="sin_asignar" onclick="setVista('sin_asignar')"
-                  class="tabBtn flex-1 px-2 py-1.5 rounded-lg">Sin asignar <span id="cnt-sin_asignar" class="opacity-70">0</span></button>
-          <button data-vista="mias" onclick="setVista('mias')"
-                  class="tabBtn flex-1 px-2 py-1.5 rounded-lg">Mías <span id="cnt-mias" class="opacity-70">0</span></button>
-          <button data-vista="todas" onclick="setVista('todas')"
-                  class="tabBtn flex-1 px-2 py-1.5 rounded-lg">Todas <span id="cnt-todas" class="opacity-70">0</span></button>
-        </div>
+  <!-- ── 3 columnas ─────────────────────────────────────────────────────── -->
+  <div style="display:grid; grid-template-columns:300px 1fr 330px; flex:1; min-height:0;">
+
+    <!-- Lista de conversaciones -->
+    <div class="col-side" style="border-right:0.5px solid; display:flex; flex-direction:column; min-height:0;">
+      <div class="side-head" style="padding:9px 10px; display:flex; gap:6px; border-bottom:0.5px solid;">
+        <button data-vista="sin_asignar" onclick="setVista('sin_asignar')" class="seg" style="flex:1; padding:6px 4px; border-radius:7px; font-size:11px;">Sin asignar <b id="cnt-sin_asignar">0</b></button>
+        <button data-vista="mias" onclick="setVista('mias')" class="seg" style="flex:1; padding:6px 4px; border-radius:7px; font-size:11px;">Mías <b id="cnt-mias">0</b></button>
+        <button data-vista="todas" onclick="setVista('todas')" class="seg" style="flex:1; padding:6px 4px; border-radius:7px; font-size:11px;">Todas <b id="cnt-todas">0</b></button>
       </div>
-      <div id="bandeja" class="flex-1 overflow-y-auto divide-y divide-gray-800">
-        <div class="p-4 text-sm text-gray-500">Cargando…</div>
+      <div id="bandeja" style="flex:1; overflow-y:auto; min-height:0;">
+        <div class="muted" style="padding:16px; font-size:13px;">Cargando…</div>
       </div>
     </div>
 
     <!-- Chat -->
-    <div class="bg-[#2c2c2e] rounded-xl border border-gray-700 overflow-hidden flex flex-col">
-      <div id="chatHeader" class="px-4 py-2.5 border-b border-gray-700 flex items-center justify-between gap-2">
-        <span class="text-sm text-gray-500">Elegí una conversación 👈</span>
-        <div id="chatAcciones" class="hidden items-center gap-2 flex-shrink-0">
-          <button id="btnTomar" onclick="tomar()" class="hidden text-xs px-3 py-1 rounded-lg bg-green-600 hover:bg-green-500 text-white font-bold">🙋 Tomar</button>
-          <button id="btnFicha" onclick="toggleFicha()" class="text-xs px-3 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200">👤 Cliente</button>
-          <button onclick="toggleTransfer()" class="text-xs px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white">🔄 Transferir</button>
-          <button onclick="devolverCola()" class="text-xs px-3 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200">↩️ A la cola</button>
-          <button onclick="cerrarConv()" class="text-xs px-3 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200">🤖 Al bot</button>
+    <div class="col-chat" style="display:flex; flex-direction:column; min-height:0;">
+      <div class="chat-head" style="padding:9px 16px; border-bottom:0.5px solid; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:50px;">
+        <div id="chatHeadInner" class="muted" style="font-size:13px;">Elegí una conversación 👈</div>
+        <div id="chatAcciones" style="display:none; align-items:center; gap:7px; flex-shrink:0;">
+          <button id="btnTomar" onclick="tomar()" class="hbtn hbtn-ok" style="display:none; font-size:12px; padding:5px 11px; border-radius:8px;">🙋 Tomar</button>
+          <button onclick="toggleTransfer()" class="hbtn hbtn-info" style="font-size:12px; padding:5px 11px; border-radius:8px;">🔄 Transferir</button>
+          <button onclick="devolverCola()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">↩️ A la cola</button>
+          <button onclick="cerrarConv()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">🤖 Al bot</button>
         </div>
       </div>
 
-      <!-- Panel de transferencia (oculto) -->
-      <div id="panelTransfer" class="hidden border-b border-gray-700 p-3 bg-[#1c1c1e] flex flex-wrap items-center gap-2">
-        <span class="text-xs text-gray-400">Pasar a:</span>
-        <select id="selOperador" aria-label="Operador destino"
-                class="bg-[#2c2c2e] text-white text-sm rounded-lg px-3 py-1.5 border border-gray-700"></select>
-        <input id="notaTransfer" type="text" placeholder="Nota (opcional)…" autocomplete="off"
-               class="flex-1 min-w-[140px] bg-[#2c2c2e] text-white text-sm rounded-lg px-3 py-1.5 border border-gray-700">
-        <button onclick="confirmarTransfer()" class="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold">Pasar ▸</button>
-        <button onclick="toggleTransfer()" class="text-xs px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200">Cancelar</button>
+      <div id="panelTransfer" style="display:none; gap:8px; align-items:center; flex-wrap:wrap; padding:9px 16px; border-bottom:0.5px solid; border-color:var(--bd); background:var(--side);">
+        <span class="muted" style="font-size:12px;">Pasar a:</span>
+        <select id="selOperador" aria-label="Operador" class="input" style="border-radius:8px; padding:5px 9px; font-size:12px;"></select>
+        <input id="notaTransfer" type="text" placeholder="Nota (opcional)…" autocomplete="off" class="input" style="flex:1; min-width:140px; border-radius:8px; padding:5px 9px; font-size:12px;">
+        <button onclick="confirmarTransfer()" class="hbtn hbtn-info" style="font-size:12px; padding:5px 11px; border-radius:8px;">Pasar ▸</button>
+        <button onclick="toggleTransfer()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">Cancelar</button>
       </div>
 
-      <!-- Ficha del cliente (oculta) -->
-      <div id="panelFicha" class="hidden border-b border-gray-700 p-3 bg-[#1c1c1e] text-sm"
-           style="max-height:280px; overflow-y:auto"></div>
-
-      <div id="chat" class="flex-1 overflow-y-auto p-4 space-y-2">
-        <div class="text-sm text-gray-500 text-center mt-10">No hay conversación abierta.</div>
+      <div id="chat" style="flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; min-height:0;">
+        <div class="muted" style="text-align:center; margin-top:40px; font-size:13px;">No hay conversación abierta.</div>
       </div>
-      <div id="barraEnvio" class="hidden border-t border-gray-700 p-3 flex gap-2">
-        <input id="inputMsg" type="text" placeholder="Escribí tu respuesta…" autocomplete="off"
-               onkeydown="if(event.key==='Enter')enviar()"
-               class="flex-1 bg-[#1c1c1e] text-white text-sm rounded-lg px-3 py-2 border border-gray-700 focus:border-[#EAB308] outline-none">
-        <button onclick="enviar()" class="px-4 py-2 rounded-lg bg-[#EAB308] text-black text-sm font-bold hover:brightness-110">Enviar ▸</button>
+
+      <div id="composer" class="composer" style="display:none; border-top:0.5px solid;">
+        <div style="padding:10px 14px; display:flex; align-items:center; gap:8px;">
+          <div class="btn-prod" title="Buscar producto (próximamente)" onclick="alert('Buscador de productos: próxima fase 🙂')" style="width:34px; height:34px; border-radius:50%; border:0.5px solid; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;"><i class="ti ti-pill" style="font-size:16px"></i></div>
+          <input id="inputMsg" type="text" placeholder="Escribí un mensaje…" autocomplete="off" onkeydown="if(event.key==='Enter')enviar()" class="input" style="flex:1; border-radius:18px; padding:9px 14px; font-size:13px;">
+          <div class="btn-send" onclick="enviar()" title="Enviar" style="width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;"><i class="ti ti-send" style="font-size:15px"></i></div>
+        </div>
       </div>
     </div>
+
+    <!-- Ficha del cliente -->
+    <div class="col-side" style="border-left:0.5px solid; overflow-y:auto; min-height:0;">
+      <div id="ficha" style="padding:16px 14px; font-size:11px;">
+        <div class="muted">Abrí una conversación para ver al cliente.</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
-<style>
-  .tabBtn { background:#1c1c1e; color:#9ca3af; border:1px solid #3a3a3c; }
-  .tabBtn.activa { background:#EAB308; color:#000; border-color:#EAB308; font-weight:700; }
-</style>
-
 <script>
 const YO = {{ current_user.id }};
-let convAbierta = null;     // id de la conversación abierta
-let convData = null;        // datos de la conversación abierta (estado/operador)
-let ultimoMsgId = 0;        // último mensaje renderizado (polling incremental)
-let vista = 'sin_asignar';  // sin_asignar | mias | todas
-let todasConvs = [];        // último snapshot de la bandeja
+let convAbierta = null, convData = null, ultimoMsgId = 0, vista = 'sin_asignar', todasConvs = [];
 
-const ESTADO_BADGE = {
-  cola:   '<span class="text-[11px] px-2 py-0.5 rounded-full bg-[#EAB308] text-black font-bold">En cola</span>',
-  humano: '<span class="text-[11px] px-2 py-0.5 rounded-full bg-green-600 text-white font-bold">Atendiendo</span>',
-};
+/* ── Tema (claro/oscuro) ── */
+(function(){
+  const app = document.getElementById('app');
+  const saved = localStorage.getItem('atencion-theme') || 'dark';
+  setTheme(saved);
+  document.getElementById('theme-btn').addEventListener('click', () =>
+    setTheme(app.classList.contains('dark') ? 'light' : 'dark'));
+  function setTheme(t){
+    app.className = t;
+    document.getElementById('theme-icon').className = 'ti ' + (t === 'dark' ? 'ti-moon' : 'ti-sun');
+    document.getElementById('theme-text').textContent = t === 'dark' ? 'Oscuro' : 'Claro';
+    localStorage.setItem('atencion-theme', t);
+  }
+})();
 
+/* ── Estado propio (cosmético por ahora; presencia real = próxima fase) ── */
+(function(){
+  const menu = document.getElementById('me-menu');
+  const tg = e => { e.stopPropagation(); menu.style.display = menu.style.display === 'none' ? 'block' : 'none'; };
+  document.getElementById('me-toggle').addEventListener('click', tg);
+  document.getElementById('me-btn').addEventListener('click', tg);
+  const cols = {online:'#1D9E75', busy:'var(--busy)', away:'var(--away)'};
+  const labels = {online:'Online', busy:'Ocupado', away:'Ausente'};
+  document.querySelectorAll('#me-menu .opt').forEach(o => o.addEventListener('click', e => {
+    e.stopPropagation();
+    const s = o.dataset.s;
+    document.getElementById('me-dot').style.background = cols[s];
+    document.getElementById('me-mini').style.background = cols[s];
+    document.getElementById('me-label').textContent = labels[s];
+    document.getElementById('me-btn').style.opacity = s === 'away' ? '0.55' : '1';
+    menu.style.display = 'none';
+    localStorage.setItem('atencion-estado', s);
+  }));
+  document.addEventListener('click', () => { menu.style.display = 'none'; });
+})();
+
+/* ── Bandeja ── */
 function setVista(v) {
   vista = v;
-  document.querySelectorAll('.tabBtn').forEach(b => b.classList.toggle('activa', b.dataset.vista === v));
+  document.querySelectorAll('.seg').forEach(b => b.classList.toggle('on', b.dataset.vista === v));
   renderBandeja();
 }
-
-function _filtrar(convs) {
-  if (vista === 'sin_asignar') return convs.filter(c => c.estado === 'cola');
-  if (vista === 'mias')        return convs.filter(c => c.estado === 'humano' && c.operador_id === YO);
-  return convs;
+function _filtrar(c) {
+  if (vista === 'sin_asignar') return c.filter(x => x.estado === 'cola');
+  if (vista === 'mias')        return c.filter(x => x.estado === 'humano' && x.operador_id === YO);
+  return c;
 }
-
 async function cargarBandeja() {
   const linea = document.getElementById('filtroLinea').value;
-  const r = await fetch('/atencion/api/conversaciones?linea=' + encodeURIComponent(linea));
-  const d = await r.json();
+  const d = await (await fetch('/atencion/api/conversaciones?linea=' + encodeURIComponent(linea))).json();
   todasConvs = d.conversaciones || [];
   document.getElementById('cnt-sin_asignar').textContent = todasConvs.filter(c => c.estado === 'cola').length;
   document.getElementById('cnt-mias').textContent = todasConvs.filter(c => c.estado === 'humano' && c.operador_id === YO).length;
   document.getElementById('cnt-todas').textContent = todasConvs.length;
   renderBandeja();
 }
-
 function renderBandeja() {
   const convs = _filtrar(todasConvs);
   const box = document.getElementById('bandeja');
-  if (!convs.length) { box.innerHTML = '<div class="p-4 text-sm text-gray-500">Nada por acá ✨</div>'; return; }
+  if (!convs.length) { box.innerHTML = '<div class="muted" style="padding:16px; font-size:13px;">Nada por acá ✨</div>'; return; }
   box.innerHTML = convs.map(c => {
+    const activa = c.id === convAbierta;
     let asign = '';
     if (c.estado === 'humano' && c.operador_id) {
       const mio = c.operador_id === YO;
-      asign = `<span class="text-[11px] ${mio ? 'text-green-400' : 'text-orange-400'}">👤 ${esc(mio ? 'Vos' : (c.operador_nombre || 'otro'))}</span>`;
+      asign = `<span style="font-size:10px; color:${mio ? 'var(--accenttxt)' : 'var(--busytx)'}">· ${esc(mio ? 'Vos' : (c.operador_nombre || 'otro'))}</span>`;
     }
+    const badge = c.estado === 'cola'
+      ? '<span class="badge" style="font-size:9px; padding:1px 7px; border-radius:8px;">cola</span>'
+      : '<span class="accent-txt" style="font-size:9px;">●</span>';
     return `
-    <button onclick="abrirConv(${c.id})"
-      class="w-full text-left px-4 py-3 hover:bg-[#3a3a3c] ${c.id === convAbierta ? 'bg-[#3a3a3c]' : ''}">
-      <div class="flex items-center justify-between gap-2">
-        <span class="text-sm font-semibold text-white truncate">${esc(c.nombre)}</span>
-        ${ESTADO_BADGE[c.estado] || ''}
+    <div onclick="abrirConv(${c.id})" class="conv ${activa ? 'conv-active' : ''}"
+         style="margin:${activa ? '7px' : '0'}; padding:9px 12px; ${activa ? 'border-radius:8px;' : 'border-bottom:0.5px solid;'}">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+        <span class="${activa ? 'title' : 'txt'}" style="font-size:13px; font-weight:${activa ? 600 : 400}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(c.nombre)}</span>
+        <span class="muted" style="font-size:10px;">${esc(c.ultimo_en)}</span>
       </div>
-      <div class="flex items-center justify-between mt-0.5">
-        <span class="text-xs text-gray-500">${esc(c.linea)} ${asign}</span>
-        <span class="text-xs text-gray-600">${esc(c.ultimo_en)}</span>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+        <span class="muted" style="font-size:11px;">${esc(c.linea)} ${asign}</span>
+        ${badge}
       </div>
-    </button>`;
+    </div>`;
   }).join('');
 }
 
+/* ── Chat ── */
 async function abrirConv(id) {
-  convAbierta = id;
-  ultimoMsgId = 0;
-  document.getElementById('panelTransfer').classList.add('hidden');
-  document.getElementById('panelFicha').classList.add('hidden');
-  document.getElementById('chat').innerHTML = '<div class="text-sm text-gray-500 text-center mt-10">Cargando…</div>';
+  convAbierta = id; ultimoMsgId = 0;
+  document.getElementById('panelTransfer').style.display = 'none';
+  document.getElementById('chat').innerHTML = '<div class="muted" style="text-align:center; margin-top:40px; font-size:13px;">Cargando…</div>';
   await refrescarChat(true);
   cargarFicha();
-  document.getElementById('barraEnvio').classList.remove('hidden');
-  document.getElementById('chatAcciones').classList.remove('hidden');
-  document.getElementById('chatAcciones').classList.add('flex');
+  document.getElementById('composer').style.display = 'block';
+  document.getElementById('chatAcciones').style.display = 'flex';
   renderBandeja();
 }
-
 async function refrescarChat(reset) {
   if (!convAbierta) return;
   const r = await fetch(`/atencion/api/${convAbierta}/mensajes?desde=${reset ? 0 : ultimoMsgId}`);
@@ -168,242 +281,190 @@ async function refrescarChat(reset) {
   const chat = document.getElementById('chat');
   if (reset) chat.innerHTML = '';
   pintarHeader();
-  for (const m of (d.mensajes || [])) {
-    chat.appendChild(burbuja(m));
-    ultimoMsgId = Math.max(ultimoMsgId, m.id);
-  }
+  for (const m of (d.mensajes || [])) { chat.appendChild(burbuja(m)); ultimoMsgId = Math.max(ultimoMsgId, m.id); }
   if (d.mensajes && d.mensajes.length) chat.scrollTop = chat.scrollHeight;
 }
-
 function pintarHeader() {
   const c = convData; if (!c) return;
   const mio = c.estado === 'humano' && c.operador_id === YO;
-  let estado = '';
-  if (c.estado === 'humano' && !mio) estado = `<span class="text-orange-400 text-xs ml-1">· atendiendo ${esc(c.operador_nombre || 'otro')}</span>`;
-  else if (mio) estado = '<span class="text-green-400 text-xs ml-1">· vos</span>';
-  else if (c.estado === 'cola') estado = '<span class="text-[#EAB308] text-xs ml-1">· en cola</span>';
-  document.getElementById('chatHeader').querySelector('span').innerHTML =
-    `<span class="text-white font-semibold">${esc(c.nombre)}</span> <span class="text-gray-500 text-xs">· ${esc(c.linea)}</span>${estado}`;
-  // Botón Tomar: solo si no es mía.
-  document.getElementById('btnTomar').classList.toggle('hidden', mio);
+  let sub = '';
+  if (c.estado === 'humano' && !mio) sub = `<span style="color:var(--busytx)">Atendida por ${esc(c.operador_nombre || 'otro')}</span>`;
+  else if (mio) sub = '<span class="accent-txt">Te la asignaste</span>';
+  else if (c.estado === 'cola') sub = '<span class="accent-txt">En cola</span>';
+  document.getElementById('chatHeadInner').innerHTML =
+    `<div class="title" style="font-size:13px; font-weight:600;">${esc(c.nombre)}</div>
+     <div style="font-size:10px;">${esc(c.linea)} · ${sub}</div>`;
+  document.getElementById('btnTomar').style.display = mio ? 'none' : 'inline-block';
 }
-
 function burbuja(m) {
   const div = document.createElement('div');
   if (m.origen === 'sistema') {
-    div.className = 'flex justify-center';
-    div.innerHTML = `<div class="text-[11px] text-gray-500 bg-[#1c1c1e] border border-gray-700 rounded-full px-3 py-1">${esc(m.texto)}</div>`;
+    div.style.alignSelf = 'center';
+    div.innerHTML = `<div class="daypill" style="font-size:10px; padding:3px 12px; border-radius:10px;">${esc(m.texto)}</div>`;
     return div;
   }
-  const cliente = m.origen === 'cliente';
-  const esBot = m.origen === 'bot';
-  div.className = 'flex ' + (cliente ? 'justify-start' : 'justify-end');
-  const color = cliente ? 'bg-[#3a3a3c] text-gray-100'
-              : esBot   ? 'bg-[#1c1c1e] text-gray-400 border border-gray-700'
-                        : 'bg-[#EAB308] text-black';
-  const quien = cliente ? '' : esBot ? '🤖 bot' : '👤 vos';
-  div.innerHTML = `<div class="max-w-[75%] rounded-2xl px-3 py-2 ${color}">
-      ${quien ? `<div class="text-[10px] opacity-70 mb-0.5">${quien}</div>` : ''}
-      <div class="text-sm whitespace-pre-wrap">${m.tiene_imagen ? '📷 ' : ''}${esc(m.texto)}</div>
-      <div class="text-[10px] opacity-60 text-right mt-0.5">${esc(m.hora)}</div>
-    </div>`;
+  const cliente = m.origen === 'cliente', esBot = m.origen === 'bot';
+  div.style.alignSelf = cliente ? 'flex-start' : 'flex-end';
+  div.style.maxWidth = '78%';
+  const cls = cliente ? 'bub-in' : esBot ? 'bub-bot' : 'bub-me';
+  const radius = cliente ? '14px 14px 14px 4px' : '14px 14px 4px 14px';
+  const head = esBot
+    ? '<div style="display:flex; align-items:center; gap:5px; margin-bottom:3px;"><i class="ti ti-robot bot-ic" style="font-size:11px"></i><span class="bot-ic" style="font-size:9px;">Bot</span></div>'
+    : '';
+  div.innerHTML = `${head}
+    <div class="${cls}" style="padding:8px 12px; border-radius:${radius}; font-size:12px; line-height:1.5; white-space:pre-wrap;">${m.tiene_imagen ? '📷 ' : ''}${esc(m.texto)}</div>
+    <div class="muted" style="font-size:9px; margin-top:3px; ${cliente ? 'margin-left:4px;' : 'text-align:right; margin-right:4px;'}">${esc(m.hora)}</div>`;
   return div;
 }
 
 async function tomar() {
   if (!convAbierta) return;
   const r = await fetch(`/atencion/${convAbierta}/tomar`, {method: 'POST'});
-  if (r.status === 409) {
-    const d = await r.json();
-    alert('⚠️ Ya la está atendiendo ' + (d.conflicto || 'otro operador') + '.');
-  }
-  await refrescarChat(true);
-  cargarBandeja();
+  if (r.status === 409) { const d = await r.json(); alert('⚠️ Ya la está atendiendo ' + (d.conflicto || 'otro operador') + '.'); }
+  await refrescarChat(true); cargarBandeja();
 }
-
 async function devolverCola() {
   if (!convAbierta) return;
   await fetch(`/atencion/${convAbierta}/devolver-cola`, {method: 'POST'});
-  await refrescarChat(true);
-  cargarBandeja();
+  await refrescarChat(true); cargarBandeja();
 }
-
 let operadoresCargados = false;
 async function toggleTransfer() {
   const p = document.getElementById('panelTransfer');
-  const abrir = p.classList.contains('hidden');
-  p.classList.toggle('hidden');
+  const abrir = p.style.display === 'none' || !p.style.display;
+  p.style.display = abrir ? 'flex' : 'none';
   if (abrir && !operadoresCargados) {
-    const r = await fetch('/atencion/api/operadores');
-    const d = await r.json();
-    const sel = document.getElementById('selOperador');
-    sel.innerHTML = (d.operadores || [])
-      .filter(o => o.id !== YO)
-      .map(o => `<option value="${o.id}">${esc(o.nombre)} (${esc(o.rol)})</option>`).join('');
+    const d = await (await fetch('/atencion/api/operadores')).json();
+    document.getElementById('selOperador').innerHTML = (d.operadores || [])
+      .filter(o => o.id !== YO).map(o => `<option value="${o.id}">${esc(o.nombre)} (${esc(o.rol)})</option>`).join('');
     operadoresCargados = true;
   }
 }
-
 async function confirmarTransfer() {
   if (!convAbierta) return;
-  const sel = document.getElementById('selOperador');
-  const operador_id = parseInt(sel.value, 10);
+  const operador_id = parseInt(document.getElementById('selOperador').value, 10);
   if (!operador_id) { alert('Elegí un operador.'); return; }
   const nota = document.getElementById('notaTransfer').value.trim();
   await fetch(`/atencion/${convAbierta}/transferir`, {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({operador_id, nota})
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({operador_id, nota})
   });
   document.getElementById('notaTransfer').value = '';
-  toggleTransfer();
-  await refrescarChat(true);
-  cargarBandeja();
+  toggleTransfer(); await refrescarChat(true); cargarBandeja();
 }
-
 async function enviar() {
   const inp = document.getElementById('inputMsg');
   const texto = inp.value.trim();
   if (!texto || !convAbierta) return;
   inp.value = '';
-  const r = await fetch(`/atencion/${convAbierta}/responder`, {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({texto})
-  });
-  const d = await r.json();
+  const d = await (await fetch(`/atencion/${convAbierta}/responder`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto})
+  })).json();
   if (!d.enviado) alert('⚠️ El mensaje se guardó pero no se pudo enviar al canal (revisá el token del bot).');
-  await refrescarChat(false);
-  cargarBandeja();
+  await refrescarChat(false); cargarBandeja();
 }
-
 async function cerrarConv() {
   if (!convAbierta) return;
   await fetch(`/atencion/${convAbierta}/cerrar`, {method: 'POST'});
   convAbierta = null; convData = null;
-  document.getElementById('barraEnvio').classList.add('hidden');
-  document.getElementById('chatAcciones').classList.add('hidden');
-  document.getElementById('panelTransfer').classList.add('hidden');
-  document.getElementById('panelFicha').classList.add('hidden');
-  document.getElementById('chat').innerHTML = '<div class="text-sm text-gray-500 text-center mt-10">Devuelta al bot ✅</div>';
-  document.getElementById('chatHeader').querySelector('span').innerHTML = '<span class="text-sm text-gray-500">Elegí una conversación 👈</span>';
+  document.getElementById('composer').style.display = 'none';
+  document.getElementById('chatAcciones').style.display = 'none';
+  document.getElementById('panelTransfer').style.display = 'none';
+  document.getElementById('chat').innerHTML = '<div class="muted" style="text-align:center; margin-top:40px; font-size:13px;">Devuelta al bot ✅</div>';
+  document.getElementById('chatHeadInner').innerHTML = '<span class="muted" style="font-size:13px;">Elegí una conversación 👈</span>';
+  document.getElementById('ficha').innerHTML = '<div class="muted">Abrí una conversación para ver al cliente.</div>';
   cargarBandeja();
 }
 
-// ── Ficha del cliente ────────────────────────────────────────────────────
-let fichaData = null;   // {observer_id, ficha}
-
+/* ── Ficha del cliente ── */
+let fichaData = null;
 async function cargarFicha() {
   if (!convAbierta) { fichaData = null; return; }
   const r = await fetch(`/atencion/api/${convAbierta}/cliente`);
   fichaData = r.ok ? await r.json() : null;
-  pintarBtnFicha();
+  renderFicha();
 }
-
-function pintarBtnFicha() {
-  const b = document.getElementById('btnFicha');
-  const f = fichaData && fichaData.ficha;
-  b.innerHTML = f ? '👤 ' + esc((f.nombre || '').split(',')[0]) : '👤 Cliente';
-  b.classList.toggle('bg-purple-600', !!f);
-  b.classList.toggle('hover:bg-purple-500', !!f);
-  b.classList.toggle('bg-gray-700', !f);
-}
-
-function toggleFicha() {
-  const p = document.getElementById('panelFicha');
-  const abrir = p.classList.contains('hidden');
-  p.classList.toggle('hidden');
-  if (abrir) renderFicha();
-}
-
-const INP = 'w-full bg-[#2c2c2e] text-white rounded-lg px-2 py-1.5 border border-gray-700 text-xs';
-
+const INP = 'input';
 function renderFicha() {
-  const p = document.getElementById('panelFicha');
+  const p = document.getElementById('ficha');
   const f = fichaData && fichaData.ficha;
   if (!f) {
     p.innerHTML = `
-      <div class="text-gray-400 mb-2">Sin cliente vinculado.</div>
-      <div class="flex gap-2 mb-1">
-        <input id="buscarCli" placeholder="Buscar por nombre o DNI…" autocomplete="off"
-               onkeydown="if(event.key==='Enter')buscarClientes()" class="${INP}">
-        <button onclick="buscarClientes()" class="px-3 py-1 rounded-lg bg-blue-600 text-white text-xs flex-shrink-0">Buscar</button>
+      <div class="muted" style="margin-bottom:8px; font-size:12px;">Sin cliente vinculado.</div>
+      <div style="display:flex; gap:6px; margin-bottom:6px;">
+        <input id="buscarCli" placeholder="Buscar nombre o DNI…" autocomplete="off" onkeydown="if(event.key==='Enter')buscarClientes()" class="${INP}" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">
+        <button onclick="buscarClientes()" class="hbtn hbtn-info" style="border-radius:8px; padding:6px 9px; font-size:11px; flex-shrink:0;">Buscar</button>
       </div>
-      <div id="resultadosCli" class="space-y-1 mb-3"></div>
-      <div class="border-t border-gray-700 pt-2">
-        <div class="text-[11px] text-gray-400 mb-1">…o crear ficha nueva (cliente que no está en el sistema):</div>
-        <div class="grid grid-cols-2 gap-2 mb-2">
-          <input id="nuevoNombre" placeholder="Nombre" class="${INP}">
-          <input id="nuevoApellido" placeholder="Apellido" class="${INP}">
-          <input id="nuevoDni" placeholder="DNI" class="${INP}">
-          <input id="nuevoDom" placeholder="Domicilio" class="${INP}">
+      <div id="resultadosCli" style="margin-bottom:14px;"></div>
+      <div class="bt" style="border-top:0.5px solid; padding-top:10px;">
+        <div class="muted" style="font-size:10px; margin-bottom:6px;">…o crear ficha nueva</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px;">
+          <input id="nuevoNombre" placeholder="Nombre" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
+          <input id="nuevoApellido" placeholder="Apellido" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
+          <input id="nuevoDni" placeholder="DNI" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
+          <input id="nuevoDom" placeholder="Domicilio" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
         </div>
-        <button onclick="crearCliente()" class="text-xs px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white">＋ Crear ficha</button>
+        <button onclick="crearCliente()" class="hbtn hbtn-ok" style="border-radius:8px; padding:6px 11px; font-size:12px;">＋ Crear ficha</button>
       </div>`;
     return;
   }
+  const ini = (f.nombre || '?').replace(/[^A-Za-zÀ-ÿ ]/g,'').split(/[ ,]+/).filter(Boolean).slice(0,2).map(s=>s[0]).join('').toUpperCase() || '?';
   const esLocal = f.fuente === 'local';
   const badge = esLocal
-    ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-600 text-white">lead local</span>'
-    : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-600 text-white">ObServer</span>';
+    ? '<span class="tag-blue" style="font-size:9px; padding:2px 7px; border-radius:8px;">lead local</span>'
+    : '<span class="tag-green" style="font-size:9px; padding:2px 7px; border-radius:8px;">ObServer</span>';
+  const fila = (ic, lab, val) => val ? `
+    <div><div class="muted" style="margin-bottom:2px;"><i class="ti ti-${ic}" style="font-size:12px; vertical-align:-1px; margin-right:5px"></i>${lab}</div><div class="txt">${esc(val)}</div></div>` : '';
   p.innerHTML = `
-    <div class="flex items-start justify-between mb-2 gap-2">
-      <div>
-        <div class="text-white font-semibold">${esc(f.nombre)} ${badge}</div>
-        <div class="text-xs text-gray-400">${f.documento ? 'DNI ' + esc(f.documento) : ''}${f.telefono ? ' · ' + esc(f.telefono) : ''}</div>
-        ${f.domicilio ? `<div class="text-xs text-gray-500">${esc(f.domicilio)}</div>` : ''}
-      </div>
-      <button onclick="desvincularCliente()" class="text-[11px] px-2 py-1 rounded bg-gray-700 text-gray-300 flex-shrink-0">Desvincular</button>
+    <div style="display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:14px;">
+      <div style="width:48px; height:48px; border-radius:50%; background:#185FA5; color:#E6F1FB; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:600; margin-bottom:8px;">${esc(ini)}</div>
+      <div class="title" style="font-size:13px; font-weight:600;">${esc(f.nombre)}</div>
+      <div style="margin-top:4px;">${badge}</div>
     </div>
-    <label class="text-[11px] text-gray-400">Notas</label>
-    <textarea id="fichaNotas" rows="2" class="${INP} mb-2">${esc(f.notas || '')}</textarea>
-    <button id="btnGuardarFicha" onclick="guardarFicha()" class="text-xs px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white">Guardar notas</button>`;
+    <div style="display:flex; flex-direction:column; gap:10px; font-size:11px;">
+      ${fila('id', 'Documento', f.documento ? 'DNI ' + f.documento : '')}
+      ${fila('phone', 'Teléfono', f.telefono)}
+      ${fila('map-pin', 'Domicilio', f.domicilio)}
+    </div>
+    <div class="bt" style="margin-top:14px; padding-top:12px; border-top:0.5px solid;">
+      <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas</div>
+      <textarea id="fichaNotas" rows="3" class="${INP}" style="width:100%; border-radius:8px; padding:6px 9px; font-size:11px; margin-bottom:6px;">${esc(f.notas || '')}</textarea>
+      <div style="display:flex; gap:6px;">
+        <button id="btnGuardarFicha" onclick="guardarFicha()" class="hbtn hbtn-ok" style="border-radius:8px; padding:5px 11px; font-size:11px;">Guardar notas</button>
+        <button onclick="desvincularCliente()" class="hbtn" style="border-radius:8px; padding:5px 11px; font-size:11px;">Desvincular</button>
+      </div>
+    </div>`;
 }
-
 function _val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
-
 async function crearCliente() {
-  const datos = {nombre: _val('nuevoNombre'), apellido: _val('nuevoApellido'),
-                 dni: _val('nuevoDni'), domicilio: _val('nuevoDom')};
+  const datos = {nombre:_val('nuevoNombre'), apellido:_val('nuevoApellido'), dni:_val('nuevoDni'), domicilio:_val('nuevoDom')};
   if (!datos.nombre && !datos.apellido) { alert('Poné al menos nombre o apellido.'); return; }
-  await fetch(`/atencion/${convAbierta}/crear-cliente`, {
-    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(datos)
-  });
-  await cargarFicha(); renderFicha();
+  await fetch(`/atencion/${convAbierta}/crear-cliente`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(datos)});
+  await cargarFicha();
 }
-
 async function buscarClientes() {
   const q = document.getElementById('buscarCli').value.trim();
-  const r = await fetch('/atencion/api/clientes/buscar?q=' + encodeURIComponent(q));
-  const d = await r.json();
+  const d = await (await fetch('/atencion/api/clientes/buscar?q=' + encodeURIComponent(q))).json();
   const box = document.getElementById('resultadosCli');
   const cs = d.clientes || [];
-  if (!cs.length) { box.innerHTML = '<div class="text-xs text-gray-500">Sin resultados.</div>'; return; }
+  if (!cs.length) { box.innerHTML = '<div class="muted" style="font-size:11px;">Sin resultados.</div>'; return; }
   box.innerHTML = cs.map(c => `
-    <button onclick="vincularCliente(${c.observer_id})" class="w-full text-left px-2 py-1 rounded hover:bg-[#3a3a3c] text-xs">
-      <span class="text-white">${esc(c.nombre)}</span>
-      <span class="text-gray-500">${esc(String(c.documento || ''))}${c.telefono ? ' · ' + esc(c.telefono) : ''}</span>
-    </button>`).join('');
+    <div onclick="vincularCliente(${c.observer_id})" class="conv" style="padding:6px 8px; border-bottom:0.5px solid;">
+      <span class="txt" style="font-size:12px;">${esc(c.nombre)}</span>
+      <span class="muted" style="font-size:10px;"> ${esc(String(c.documento || ''))}${c.telefono ? ' · ' + esc(c.telefono) : ''}</span>
+    </div>`).join('');
 }
-
 async function vincularCliente(oid) {
-  await fetch(`/atencion/${convAbierta}/vincular-cliente`, {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({observer_id: oid})
-  });
-  await cargarFicha(); renderFicha();
+  await fetch(`/atencion/${convAbierta}/vincular-cliente`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({observer_id: oid})});
+  await cargarFicha();
 }
-
 async function desvincularCliente() {
-  await fetch(`/atencion/${convAbierta}/desvincular-cliente`, {method: 'POST'});
-  await cargarFicha(); renderFicha();
+  await fetch(`/atencion/${convAbierta}/desvincular-cliente`, {method:'POST'});
+  await cargarFicha();
 }
-
 async function guardarFicha() {
   if (!convAbierta) return;
   const notas = document.getElementById('fichaNotas').value;
-  await fetch(`/atencion/${convAbierta}/ficha-notas`, {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({notas})
-  });
+  await fetch(`/atencion/${convAbierta}/ficha-notas`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({notas})});
   const b = document.getElementById('btnGuardarFicha');
   if (b) { b.textContent = 'Guardado ✓'; setTimeout(() => { b.textContent = 'Guardar notas'; }, 1500); }
   cargarFicha();
@@ -416,4 +477,5 @@ cargarBandeja();
 setInterval(cargarBandeja, 5000);
 setInterval(() => refrescarChat(false), 4000);
 </script>
-{% endblock %}
+</body>
+</html>
