@@ -69,6 +69,12 @@
   .btn-prod { background:var(--prod-bg); border-color:var(--prod-bd); color:var(--prod-tx); }
   .btn-clip { background:var(--clip-bg); color:var(--clip-tx); }
   .btn-send { background:var(--send-bg); color:var(--send-tx); }
+  .search-pop { background:var(--pop); border-color:var(--pop-bd); }
+  .sp-head { border-color:var(--cardhead-bd); }
+  .sp-row { border-color:var(--row-bd); }
+  .sp-row.click { cursor:pointer; } .sp-row.click:hover { background:var(--hov); }
+  .rx { background:var(--rx-bg); color:var(--rx-tx); }
+  .card-ic { background:var(--cardic); color:var(--cardic-tx); }
   .seg { background:var(--bubin); color:var(--muted2); border:0.5px solid var(--bd); cursor:pointer; }
   .seg.on { background:var(--me-bg); color:var(--me-tx); border-color:var(--me-bg); }
   .hbtn { border:0.5px solid var(--bd); background:var(--bubin); color:var(--txt); cursor:pointer; }
@@ -153,9 +159,21 @@
         <div class="muted" style="text-align:center; margin-top:40px; font-size:13px;">No hay conversación abierta.</div>
       </div>
 
-      <div id="composer" class="composer" style="display:none; border-top:0.5px solid;">
+      <div id="composer" class="composer" style="display:none; border-top:0.5px solid; position:relative;">
+        <!-- Popup buscador de productos -->
+        <div id="searchPop" class="search-pop" style="display:none; margin:10px 14px 0; border:0.5px solid; border-radius:12px; overflow:hidden;">
+          <div class="sp-head" style="padding:8px 12px; display:flex; align-items:center; gap:8px; border-bottom:0.5px solid;">
+            <i class="ti ti-search accent-txt" style="font-size:13px"></i>
+            <input id="prodQuery" type="text" placeholder="Buscar producto…" autocomplete="off" oninput="onProdInput()"
+                   class="txt" style="flex:1; background:transparent; border:none; outline:none; font-size:12px;">
+            <span id="prodCount" class="muted" style="font-size:9px; flex-shrink:0;"></span>
+            <i class="ti ti-x muted" onclick="toggleBuscador()" style="font-size:13px; cursor:pointer;"></i>
+          </div>
+          <div id="prodResultados" style="max-height:280px; overflow-y:auto;"></div>
+        </div>
+
         <div style="padding:10px 14px; display:flex; align-items:center; gap:8px;">
-          <div class="btn-prod" title="Buscar producto (próximamente)" onclick="alert('Buscador de productos: próxima fase 🙂')" style="width:34px; height:34px; border-radius:50%; border:0.5px solid; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;"><i class="ti ti-pill" style="font-size:16px"></i></div>
+          <div class="btn-prod" title="Buscar producto" onclick="toggleBuscador()" style="width:34px; height:34px; border-radius:50%; border:0.5px solid; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;"><i class="ti ti-pill" style="font-size:16px"></i></div>
           <input id="inputMsg" type="text" placeholder="Escribí un mensaje…" autocomplete="off" onkeydown="if(event.key==='Enter')enviar()" class="input" style="flex:1; border-radius:18px; padding:9px 14px; font-size:13px;">
           <div class="btn-send" onclick="enviar()" title="Enviar" style="width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;"><i class="ti ti-send" style="font-size:15px"></i></div>
         </div>
@@ -265,6 +283,7 @@ function renderBandeja() {
 async function abrirConv(id) {
   convAbierta = id; ultimoMsgId = 0;
   document.getElementById('panelTransfer').style.display = 'none';
+  document.getElementById('searchPop').style.display = 'none';
   document.getElementById('chat').innerHTML = '<div class="muted" style="text-align:center; margin-top:40px; font-size:13px;">Cargando…</div>';
   await refrescarChat(true);
   cargarFicha();
@@ -468,6 +487,69 @@ async function guardarFicha() {
   const b = document.getElementById('btnGuardarFicha');
   if (b) { b.textContent = 'Guardado ✓'; setTimeout(() => { b.textContent = 'Guardar notas'; }, 1500); }
   cargarFicha();
+}
+
+/* ── Buscador de productos ── */
+let prodTimer = null;
+function fmtPrecio(n) { return (n == null) ? 's/precio' : '$' + Math.round(n).toLocaleString('es-AR'); }
+
+function toggleBuscador() {
+  const pop = document.getElementById('searchPop');
+  const abrir = pop.style.display === 'none' || !pop.style.display;
+  pop.style.display = abrir ? 'block' : 'none';
+  if (abrir) { document.getElementById('prodQuery').focus(); }
+}
+function onProdInput() { clearTimeout(prodTimer); prodTimer = setTimeout(buscarProductos, 250); }
+
+async function buscarProductos() {
+  const q = document.getElementById('prodQuery').value.trim();
+  const box = document.getElementById('prodResultados');
+  const cnt = document.getElementById('prodCount');
+  if (q.length < 2) { box.innerHTML = ''; cnt.textContent = ''; return; }
+  const d = await (await fetch('/atencion/api/productos/buscar?q=' + encodeURIComponent(q))).json();
+  const ps = d.productos || [];
+  cnt.textContent = ps.length ? ps.length + ' resultado' + (ps.length > 1 ? 's' : '') : 'sin resultados';
+  box.innerHTML = ps.map(rowProducto).join('') ||
+    '<div class="muted" style="padding:10px 12px; font-size:11px;">Sin resultados.</div>';
+}
+
+function rowProducto(p) {
+  const sin = p.nivel === 'none';
+  const dotCol = p.nivel === 'ok' ? '#1D9E75' : p.nivel === 'low' ? 'var(--busy)' : 'var(--away)';
+  const stockTxt = p.nivel === 'ok' ? `En stock · ${p.stock} u.`
+                 : p.nivel === 'low' ? `Últimas ${p.stock} u.` : 'Sin stock';
+  const stockCls = sin ? 'muted2' : (p.nivel === 'low' ? 'busy-txt' : 'accent-txt');
+  const rx = p.receta
+    ? '<span class="rx" style="font-size:8px; padding:2px 6px; border-radius:8px; display:inline-flex; align-items:center; gap:3px;"><i class="ti ti-prescription" style="font-size:9px"></i>Receta</span>'
+    : '';
+  const sub = [esc(p.droga), esc(p.presentacion)].filter(Boolean).join(' · ');
+  const arg = `'${esc(p.nombre).replace(/'/g, "\\'")}', ${p.precio == null ? 'null' : p.precio}`;
+  const plus = sin ? ''
+    : `<div class="card-ic" onclick="agregarProducto(${arg})" title="Agregar al mensaje" style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; margin-top:4px; margin-left:auto; cursor:pointer;"><i class="ti ti-plus" style="font-size:13px"></i></div>`;
+  return `
+    <div class="sp-row" style="display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:0.5px solid; ${sin ? 'opacity:0.5;' : ''}">
+      <div style="flex:1; min-width:0;">
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span class="title" style="font-size:12px;">${esc(p.nombre)}</span> ${rx}
+        </div>
+        ${sub ? `<div class="muted" style="font-size:10px; margin-top:1px;">${sub}</div>` : ''}
+        <div style="display:flex; align-items:center; gap:5px; margin-top:3px;">
+          <span style="width:5px; height:5px; border-radius:50%; background:${dotCol};"></span>
+          <span class="${stockCls}" style="font-size:9px; color:${p.nivel === 'low' ? 'var(--busytx)' : ''};">${stockTxt}</span>
+        </div>
+      </div>
+      <div style="text-align:right; flex-shrink:0;">
+        <div class="${sin ? 'muted2' : 'title'}" style="font-size:12px;">${fmtPrecio(p.precio)}</div>
+        ${plus}
+      </div>
+    </div>`;
+}
+
+function agregarProducto(nombre, precio) {
+  const inp = document.getElementById('inputMsg');
+  const linea = nombre + (precio != null ? ' — ' + fmtPrecio(precio) : '');
+  inp.value = inp.value ? inp.value + ', ' + linea : linea;
+  inp.focus();
 }
 
 function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }

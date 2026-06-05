@@ -98,6 +98,11 @@ def init_app(app):
     def atencion_clientes_buscar():
         return jsonify({'clientes': store.buscar_clientes(request.args.get('q', ''))})
 
+    @app.route('/atencion/api/productos/buscar')
+    @login_required
+    def atencion_productos_buscar():
+        return jsonify({'productos': store.buscar_productos_detalle(request.args.get('q', ''))})
+
     @app.route('/atencion/<int:conv_id>/vincular-cliente', methods=['POST'])
     @login_required
     def atencion_vincular_cliente(conv_id):

@@ -298,6 +298,68 @@ def guardar_ficha_local(observer_id, notas=None, tags=None):
         return {'ok': True}
 
 
+# ── Buscador de productos (panel de atención) ────────────────────────────────
+
+def _fmt_presentacion(r):
+    partes = []
+    if r.concentracion_mg:
+        c = r.concentracion_mg
+        c = int(c) if c == int(c) else c
+        partes.append(f"{c} {r.concentracion_unidad or 'mg'}")
+    if r.cantidad_envase:
+        n = r.cantidad_envase
+        n = int(n) if n == int(n) else n
+        partes.append(f"{n} {r.forma_farma or 'u.'}")
+    elif r.forma_farma:
+        partes.append(r.forma_farma)
+    return ' · '.join(partes)
+
+
+def buscar_productos_detalle(query, limite=12):
+    """Búsqueda rica para el popup del panel: nombre, droga, presentación,
+    precio, stock (con nivel ok/low/none) y flag de receta.
+
+    Junta product_analytics (stock/precio) + productos (monodroga) +
+    producto_atributos (concentración/forma) + obs_productos (tipo venta → receta)."""
+    palabras = [p for p in (query or '').split() if p][:6]
+    if not palabras:
+        return []
+    conds = ' AND '.join(f"pa.descripcion ILIKE :p{i}" for i in range(len(palabras)))
+    params = {f'p{i}': f'%{w}%' for i, w in enumerate(palabras)}
+    params['lim'] = limite
+    sql = database.text(f"""
+        SELECT pa.descripcion, pa.stock, pa.precio_pvp,
+               p.monodroga AS droga,
+               atr.concentracion_mg, atr.concentracion_unidad, atr.forma_farma, atr.cantidad_envase,
+               op.id_tipo_venta_control AS tvc
+          FROM product_analytics pa
+          LEFT JOIN productos p          ON p.codigo_barra = pa.codigo_barra
+          LEFT JOIN obs_productos op     ON op.observer_id = p.observer_id
+          LEFT JOIN producto_atributos atr ON atr.producto_id = p.id
+         WHERE {conds}
+         ORDER BY (pa.stock > 0) DESC, pa.stock DESC, pa.descripcion
+         LIMIT :lim
+    """)
+    try:
+        with database.get_db() as s:
+            rows = s.execute(sql, params).fetchall()
+    except Exception:  # noqa: BLE001 (SQLite en tests no tiene estas tablas/funciones)
+        return []
+    out = []
+    for r in rows:
+        stock = int(r.stock or 0)
+        nivel = 'none' if stock <= 0 else ('low' if stock <= 5 else 'ok')
+        tvc = (r.tvc or '').strip()
+        out.append({
+            'nombre': r.descripcion, 'droga': r.droga or '',
+            'presentacion': _fmt_presentacion(r),
+            'precio': float(r.precio_pvp) if r.precio_pvp is not None else None,
+            'stock': stock, 'nivel': nivel,
+            'receta': bool(tvc and tvc != 'L'),
+        })
+    return out
+
+
 def _nota_sistema(session, conv_id, texto):
     session.add(database.BotMensaje(conversacion_id=conv_id, origen='sistema', texto=texto))
 
