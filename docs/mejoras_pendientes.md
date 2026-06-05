@@ -6,6 +6,43 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## 🤖 Bot asistente / Atención / Caja — pendientes (2026-06-05)
+
+Hecho: bot Telegram, handoff/panel `/atencion`, ficha cliente, alta lead, UI
+Helpdesk aislada, buscador de productos, card de pedido, presencia de agentes,
+ciudades, **caja + cajero + formas de pago**, re-enganche con Sí/No, derivar por
+texto libre. Lo que falta:
+
+- [ ] **Visibilidad total en el panel** (EN CURSO): ver TODAS las conversaciones,
+  incluidas las que maneja **solo el bot** (hoy el panel solo muestra cola/humano)
+  + poder **intervenir** una charla del bot aunque el cliente no lo haya pedido.
+- [ ] **Resumen del día**: embudo (consultas → pedido → caja → cobro, $ total) +
+  resumen con IA de los chats. (Viene después de caja.)
+- [ ] **⚠️ Valores de PROD en el `.env` de la LAN antes de salir en serio**: hoy en
+  local están en testing → `ATENCION_AUTO_BOT_MINUTOS=30` (prod ~180) y
+  `ATENCION_REENGANCHE_MINUTOS=1` (prod ~5). El default del código/compose ya es
+  prod (180/5); el override de pruebas vive solo en el `.env` local.
+- [ ] **Ficha real de Badia**: `bot/info.py` tiene DATOS DE PRUEBA → cargar
+  horarios, servicios, obras sociales, formas de pago, delivery reales.
+- [ ] **Regenerar token de Telegram** (quedó expuesto en el chat de desarrollo).
+- [ ] **WhatsApp (Fase 2)**: número dedicado + verificación Meta + adaptador Cloud
+  API + webhook expuesto (túnel Cloudflare/Tailscale o relay). Ver
+  `docs/asistente_whatsapp.md` §10-13. El cerebro NO cambia, solo el adaptador.
+- [ ] **Datos de droga/presentación incompletos**: `productos.monodroga` +
+  `producto_atributos` no están cargados para todos → el buscador muestra solo el
+  nombre en muchos. Poblar (backfill).
+- [ ] **Caja → contabilidad**: enganchar los cobros con `flujo_fondos`/`cuentas`
+  (hoy el ticket queda en `tickets_caja`, aislado).
+- [ ] **Encargo**: capturar datos del cliente + enganchar con el módulo de pedidos
+  (hoy el encargo solo deriva a la bandeja).
+- [ ] **Búsqueda por síntoma/droga** (mejorar el matcher; la IA ya ayuda parcial).
+- [ ] **Derivar por IA con tool**: darle a la IA una herramienta `derivar_a_humano`
+  para los casos que el matcher por keywords no capta.
+- [ ] **UI de flujos** (Fase 3): editor del menú del bot sin tocar código.
+- [ ] **Migración**: cuando funcione, bajar Trii y subir esto al número principal.
+
+---
+
 ## ✅ HECHO — Adoptar Alembic para migraciones (2026-05-28 → completado 2026-06-02)
 
 > **HECHO** (PRs #145-147): baseline `alembic/versions/ae43763059ec_baseline_schema.py` con las 93 tablas (review 93/93 ✅ en `docs/alembic_baseline_review.md`), `init_db` adoptó Alembic vía `_alembic_sync()` (bootstrap stamp/upgrade), `stamp head` aplicado en Local + Render, drift reconciliado en ambas. Pendiente gradual (no urgente): migrar los `_pg_add_columns` inline a revisiones dedicadas y borrar el zombie handler cuando haya confianza.
