@@ -145,6 +145,7 @@ def listar_operadores():
                       database.Usuario.rol.in_(['operador', 'admin', 'farmacia', 'dev']))
               .order_by(database.Usuario.username).all())
         return [{'id': u.id, 'nombre': u.nombre_completo or u.username, 'rol': u.rol,
+                 'username': u.username,
                  'iniciales': _iniciales(u.nombre_completo or u.username),
                  'estado': u.estado_presencia or 'online',
                  'conectado': bool(u.ultima_actividad

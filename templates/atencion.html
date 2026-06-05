@@ -115,6 +115,11 @@
         {% for l in lineas %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
       </select>
 
+      <button onclick="abrirModalClientes()" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Clientes</button>
+      {% if current_user.rol in ('admin', 'dev') %}
+      <button onclick="abrirModalOperadores()" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Operadores</button>
+      {% endif %}
+
       <button id="theme-btn" aria-label="Cambiar tema" style="cursor:pointer; display:flex; align-items:center; gap:6px; padding:5px 10px; border-radius:20px; border:0.5px solid; background:transparent;">
         <i id="theme-icon" class="ti ti-moon" style="font-size:14px"></i>
         <span id="theme-text" style="font-size:10px;">Oscuro</span>
@@ -240,6 +245,45 @@
     </div>
   </div>
 </div>
+
+  <!-- Modal: buscar clientes -->
+  <div id="modalClientes" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:50; align-items:center; justify-content:center;">
+    <div class="card" style="width:480px; max-height:78vh; display:flex; flex-direction:column; border:1px solid; border-radius:12px; overflow:hidden;">
+      <div class="card-head" style="padding:11px 14px; display:flex; justify-content:space-between; align-items:center; border-bottom:0.5px solid;">
+        <span class="title" style="font-size:13px; font-weight:600;">Clientes</span>
+        <span onclick="cerrarModalClientes()" class="muted" style="cursor:pointer; font-size:14px;">✕</span>
+      </div>
+      <div style="padding:12px 14px; overflow-y:auto;">
+        <div style="display:flex; gap:6px; margin-bottom:10px;">
+          <input id="cliBuscar" placeholder="Buscar por nombre o DNI…" autocomplete="off" onkeydown="if(event.key==='Enter')buscarClientesModal()" class="input" style="flex:1; border-radius:8px; padding:7px 10px; font-size:12px;">
+          <button onclick="buscarClientesModal()" class="hbtn hbtn-info" style="border-radius:8px; padding:7px 12px; font-size:12px;">Buscar</button>
+        </div>
+        <div id="cliResultados"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: operadores (alta + lista) -->
+  <div id="modalOperadores" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:50; align-items:center; justify-content:center;">
+    <div class="card" style="width:440px; max-height:80vh; display:flex; flex-direction:column; border:1px solid; border-radius:12px; overflow:hidden;">
+      <div class="card-head" style="padding:11px 14px; display:flex; justify-content:space-between; align-items:center; border-bottom:0.5px solid;">
+        <span class="title" style="font-size:13px; font-weight:600;">Operadores</span>
+        <span onclick="cerrarModalOperadores()" class="muted" style="cursor:pointer; font-size:14px;">✕</span>
+      </div>
+      <div style="padding:12px 14px; overflow-y:auto;">
+        <div id="opLista" style="margin-bottom:14px;"></div>
+        <div class="bt" style="border-top:0.5px solid; padding-top:10px;">
+          <div class="muted" style="font-size:10px; margin-bottom:6px;">Alta de operador</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
+            <input id="opUser" placeholder="Usuario" autocomplete="off" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">
+            <input id="opNombre" placeholder="Nombre completo" autocomplete="off" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">
+          </div>
+          <input id="opPass" type="password" placeholder="Contraseña (mín. 6)" autocomplete="new-password" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px; margin-bottom:8px;">
+          <button onclick="crearOperador()" class="hbtn hbtn-ok" style="border-radius:8px; padding:6px 11px; font-size:12px;">＋ Crear operador</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -575,6 +619,55 @@ async function crearCiudad() {
 async function eliminarCiudad(id) {
   await fetch(`/atencion/ciudades/${id}/delete`, {method:'POST'});
   await cargarCiudades();
+}
+
+/* ── Modal: buscar clientes ── */
+function abrirModalClientes() {
+  document.getElementById('modalClientes').style.display = 'flex';
+  document.getElementById('cliResultados').innerHTML = '';
+  setTimeout(() => document.getElementById('cliBuscar').focus(), 50);
+}
+function cerrarModalClientes() { document.getElementById('modalClientes').style.display = 'none'; }
+async function buscarClientesModal() {
+  const q = document.getElementById('cliBuscar').value.trim();
+  const box = document.getElementById('cliResultados');
+  if (q.length < 2) { box.innerHTML = '<div class="muted" style="font-size:11px;">Escribí al menos 2 letras.</div>'; return; }
+  const d = await (await fetch('/atencion/api/clientes/buscar?q=' + encodeURIComponent(q))).json();
+  const cs = d.clientes || [];
+  if (!cs.length) { box.innerHTML = '<div class="muted" style="font-size:12px;">Sin resultados.</div>'; return; }
+  box.innerHTML = cs.map(c => `
+    <div class="row" style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 0; border-bottom:0.5px solid;">
+      <span class="txt" style="font-size:12px;">${esc(c.nombre)}</span>
+      <span class="muted" style="font-size:11px; flex-shrink:0;">${esc(String(c.documento || ''))}${c.telefono ? ' · ' + esc(c.telefono) : ''}</span>
+    </div>`).join('');
+}
+
+/* ── Modal: operadores ── */
+function abrirModalOperadores() { document.getElementById('modalOperadores').style.display = 'flex'; renderOpLista(); }
+function cerrarModalOperadores() { document.getElementById('modalOperadores').style.display = 'none'; }
+async function renderOpLista() {
+  const d = await (await fetch('/atencion/api/operadores')).json();
+  document.getElementById('opLista').innerHTML = (d.operadores || []).map(o => {
+    const p = PRES[o.estado] || PRES.online;
+    const col = o.conectado ? p.c : 'var(--away)';
+    return `<div class="row" style="display:flex; align-items:center; gap:7px; padding:6px 0; border-bottom:0.5px solid;">
+        <span style="width:7px; height:7px; border-radius:50%; background:${col}; flex-shrink:0;"></span>
+        <span class="txt" style="font-size:12px;">${esc(o.nombre)}</span>
+        <span class="muted" style="font-size:10px;">@${esc(o.username)} · ${esc(o.rol)}</span>
+      </div>`;
+  }).join('');
+}
+async function crearOperador() {
+  const username = _val('opUser'), nombre = _val('opNombre');
+  const password = document.getElementById('opPass').value || '';
+  if (!username || password.length < 6) { alert('Usuario y contraseña (mín. 6 caracteres).'); return; }
+  const d = await (await fetch('/atencion/operadores/crear', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username, nombre, password})
+  })).json();
+  if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo crear')); return; }
+  ['opUser', 'opNombre', 'opPass'].forEach(i => { document.getElementById(i).value = ''; });
+  renderOpLista(); cargarEquipo();
 }
 async function buscarClientes() {
   const q = document.getElementById('buscarCli').value.trim();

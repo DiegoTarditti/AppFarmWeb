@@ -26,6 +26,7 @@ Rutas:
 from flask import jsonify, render_template, request
 from flask_login import current_user, login_required
 
+import database
 from bot import canales, store
 
 
@@ -59,6 +60,28 @@ def init_app(app):
     @login_required
     def atencion_operadores():
         return jsonify({'operadores': store.listar_operadores(), 'yo': current_user.id})
+
+    @app.route('/atencion/operadores/crear', methods=['POST'])
+    @login_required
+    def atencion_operador_crear():
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'ok': False, 'error': 'solo un admin puede dar de alta operadores'}), 403
+        from routes.auth_routes import hash_password
+        b = request.json or {}
+        username = (b.get('username') or '').strip().lower()
+        nombre = (b.get('nombre') or '').strip()
+        password = b.get('password') or ''
+        if not username or len(password) < 6:
+            return jsonify({'ok': False, 'error': 'usuario y contraseña (mín. 6) requeridos'}), 400
+        with database.get_db() as s:
+            if s.query(database.Usuario).filter_by(username=username).first():
+                return jsonify({'ok': False, 'error': 'ese usuario ya existe'}), 400
+            s.add(database.Usuario(
+                username=username, nombre_completo=nombre or username, rol='operador',
+                activo=True, password_hash=hash_password(password),
+                permisos_json='{}', debe_cambiar_password=False))
+            s.commit()
+        return jsonify({'ok': True})
 
     @app.route('/atencion/heartbeat', methods=['POST'])
     @login_required
