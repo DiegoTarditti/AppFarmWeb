@@ -142,19 +142,28 @@ def main():
                 elif msg.get('voice') or msg.get('audio'):
                     # Nota de voz: transcribimos y lo tratamos como texto.
                     a = msg.get('voice') or msg.get('audio')
-                    if chat_id and not audio.disponible():
-                        _enviar(base, chat_id, {'texto': 'Por ahora no puedo escuchar '
-                                'audios 🙉 Escribime tu consulta por texto y te ayudo 🙂',
-                                'opciones': []})
-                        continue
-                    if chat_id:
-                        _aviso(base, chat_id, '🎙️ Escuchando tu audio…')
-                        _typing(base, chat_id)
-                    texto = _transcribir_voz(base, token, a['file_id']) or ''
-                    if chat_id and not texto:
-                        _enviar(base, chat_id, {'texto': 'No pude entender el audio 😕 '
-                                'Probá de nuevo o escribímelo por texto.', 'opciones': []})
-                        continue
+                    # ¿Ya la atiende un humano? Entonces NO avisamos "Escuchando…"
+                    # (el bot no va a contestar), pero igual transcribimos para que
+                    # el operador vea el texto en el panel.
+                    derivada = bool(chat_id) and cerebro.esta_con_humano('telegram', str(chat_id))
+                    if not audio.disponible():
+                        if not derivada and chat_id:
+                            _enviar(base, chat_id, {'texto': 'Por ahora no puedo escuchar '
+                                    'audios 🙉 Escribime tu consulta por texto y te ayudo 🙂',
+                                    'opciones': []})
+                            continue
+                        texto = '[nota de voz]'
+                    else:
+                        if chat_id and not derivada:
+                            _aviso(base, chat_id, '🎙️ Escuchando tu audio…')
+                            _typing(base, chat_id)
+                        texto = _transcribir_voz(base, token, a['file_id']) or ''
+                        if not texto:
+                            if not derivada and chat_id:
+                                _enviar(base, chat_id, {'texto': 'No pude entender el audio 😕 '
+                                        'Probá de nuevo o escribímelo por texto.', 'opciones': []})
+                                continue
+                            texto = '[audio no transcripto]'
             if not chat_id:
                 continue
             # 'escribiendo…' mientras el cerebro piensa (IA, búsqueda, visión).

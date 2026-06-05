@@ -7,6 +7,8 @@ handoff (panel de operadores): si la conversación la tomó un operador
 
   procesar(canal, canal_user_id, texto, imagen_b64=None, ...) → {texto, opciones} | None
 """
+import os
+
 from bot import store
 from bot.acciones import ACCIONES
 from bot.flujo import FLUJO, NODO_INICIO
@@ -14,6 +16,16 @@ from bot.ia import leer_receta
 
 # Palabras que siempre vuelven al menú principal.
 _GLOBALES = {'menu', 'menú', 'inicio', 'hola', 'buenas', 'start', '/start'}
+
+# Auto-retorno al bot: si una conversación derivada/atendida queda sin actividad
+# por más de estos minutos, el próximo mensaje del cliente la devuelve al bot.
+# Default 180 (3 hs); bajalo con ATENCION_AUTO_BOT_MINUTOS (ej. 1 para probar).
+AUTO_BOT_MINUTOS = float(os.environ.get('ATENCION_AUTO_BOT_MINUTOS', '180'))
+
+
+def esta_con_humano(canal, canal_user_id):
+    """True si la conversación está derivada o atendida por un operador (sin crearla)."""
+    return store.estado_atencion_de(canal, canal_user_id) in ('cola', 'humano')
 
 
 def _opciones_de(nodo):
@@ -98,6 +110,12 @@ def procesar(canal, canal_user_id, texto, imagen_b64=None,
     texto = (texto or '').strip()
     conv = store.get_conversacion(canal, canal_user_id, nombre, linea)
     cid = conv['id']
+
+    # Auto-retorno: si estaba derivada/atendida pero sin actividad por mucho
+    # tiempo, la devolvemos al bot (así ningún cliente queda huérfano).
+    if conv['estado_atencion'] in ('cola', 'humano') and \
+            store.revisar_inactividad(cid, AUTO_BOT_MINUTOS):
+        conv['estado_atencion'] = 'bot'
 
     # Guardar el mensaje entrante.
     store.guardar_mensaje(cid, 'cliente',

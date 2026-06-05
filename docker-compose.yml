@@ -116,6 +116,9 @@ services:
       # Transcripción de notas de voz: Whisper local por defecto.
       WHISPER_MODEL: ${WHISPER_MODEL:-base}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Auto-retorno al bot tras inactividad (minutos). Prod ~180 (3 hs); en .env
+      # se puede bajar (ej. 1) para probar.
+      ATENCION_AUTO_BOT_MINUTOS: ${ATENCION_AUTO_BOT_MINUTOS:-180}
     depends_on:
       db:
         condition: service_healthy
