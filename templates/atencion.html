@@ -75,6 +75,12 @@
   .sp-row.click { cursor:pointer; } .sp-row.click:hover { background:var(--hov); }
   .rx { background:var(--rx-bg); color:var(--rx-tx); }
   .card-ic { background:var(--cardic); color:var(--cardic-tx); }
+  .card { background:var(--card); border-color:var(--card-bd); }
+  .card-head { border-color:var(--cardhead-bd); }
+  .row { border-color:var(--row-bd); }
+  .card-total { background:var(--total-bg); border-color:var(--bd); } .total-amt { color:var(--total); }
+  .qbtn-m { background:var(--qm); color:var(--qm-tx); cursor:pointer; }
+  .qbtn-p { background:var(--qp); color:var(--qp-tx); cursor:pointer; }
   .seg { background:var(--bubin); color:var(--muted2); border:0.5px solid var(--bd); cursor:pointer; }
   .seg.on { background:var(--me-bg); color:var(--me-tx); border-color:var(--me-bg); }
   .hbtn { border:0.5px solid var(--bd); background:var(--bubin); color:var(--txt); cursor:pointer; }
@@ -160,6 +166,25 @@
       </div>
 
       <div id="composer" class="composer" style="display:none; border-top:0.5px solid; position:relative;">
+        <!-- Card "Detalle del pedido" en construcción -->
+        <div id="pedidoCard" style="display:none; margin:10px 14px 0;">
+          <div class="card" style="border:1px solid; border-radius:14px; overflow:hidden;">
+            <div class="card-head" style="padding:8px 13px; display:flex; align-items:center; justify-content:space-between; border-bottom:0.5px solid;">
+              <div style="display:flex; align-items:center; gap:9px;">
+                <div class="card-ic" style="width:24px; height:24px; border-radius:7px; display:flex; align-items:center; justify-content:center;"><i class="ti ti-clipboard-list" style="font-size:13px"></i></div>
+                <span class="txt" style="font-size:11px;">Detalle del pedido</span>
+              </div>
+              <button onclick="vaciarPedido()" class="muted" style="background:none; border:none; cursor:pointer; font-size:10px;">Vaciar</button>
+            </div>
+            <div id="pedidoRows" style="padding:2px 13px;"></div>
+            <div class="card-total" style="padding:9px 13px; border-top:0.5px solid; display:flex; justify-content:space-between; align-items:center;">
+              <span class="muted2" style="font-size:11px;">Total</span>
+              <span id="pedidoTotal" class="total-amt" style="font-size:16px; font-weight:600;">$0</span>
+            </div>
+          </div>
+          <button onclick="enviarPedido()" class="hbtn hbtn-ok" style="margin-top:6px; width:100%; border-radius:9px; padding:7px; font-size:12px;">Enviar pedido al cliente ▸</button>
+        </div>
+
         <!-- Popup buscador de productos -->
         <div id="searchPop" class="search-pop" style="display:none; margin:10px 14px 0; border:0.5px solid; border-radius:12px; overflow:hidden;">
           <div class="sp-head" style="padding:8px 12px; display:flex; align-items:center; gap:8px; border-bottom:0.5px solid;">
@@ -284,6 +309,7 @@ async function abrirConv(id) {
   convAbierta = id; ultimoMsgId = 0;
   document.getElementById('panelTransfer').style.display = 'none';
   document.getElementById('searchPop').style.display = 'none';
+  vaciarPedido();
   document.getElementById('chat').innerHTML = '<div class="muted" style="text-align:center; margin-top:40px; font-size:13px;">Cargando…</div>';
   await refrescarChat(true);
   cargarFicha();
@@ -385,6 +411,7 @@ async function cerrarConv() {
   if (!convAbierta) return;
   await fetch(`/atencion/${convAbierta}/cerrar`, {method: 'POST'});
   convAbierta = null; convData = null;
+  vaciarPedido();
   document.getElementById('composer').style.display = 'none';
   document.getElementById('chatAcciones').style.display = 'none';
   document.getElementById('panelTransfer').style.display = 'none';
@@ -523,9 +550,9 @@ function rowProducto(p) {
     ? '<span class="rx" style="font-size:8px; padding:2px 6px; border-radius:8px; display:inline-flex; align-items:center; gap:3px;"><i class="ti ti-prescription" style="font-size:9px"></i>Receta</span>'
     : '';
   const sub = [esc(p.droga), esc(p.presentacion)].filter(Boolean).join(' · ');
-  const arg = `'${esc(p.nombre).replace(/'/g, "\\'")}', ${p.precio == null ? 'null' : p.precio}`;
+  const arg = encodeURIComponent(JSON.stringify({n: p.nombre, pr: p.precio, s: sub}));
   const plus = sin ? ''
-    : `<div class="card-ic" onclick="agregarProducto(${arg})" title="Agregar al mensaje" style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; margin-top:4px; margin-left:auto; cursor:pointer;"><i class="ti ti-plus" style="font-size:13px"></i></div>`;
+    : `<div class="card-ic" onclick="agregarProductoEnc('${arg}')" title="Agregar al pedido" style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; margin-top:4px; margin-left:auto; cursor:pointer;"><i class="ti ti-plus" style="font-size:13px"></i></div>`;
   return `
     <div class="sp-row" style="display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:0.5px solid; ${sin ? 'opacity:0.5;' : ''}">
       <div style="flex:1; min-width:0;">
@@ -545,11 +572,64 @@ function rowProducto(p) {
     </div>`;
 }
 
-function agregarProducto(nombre, precio) {
-  const inp = document.getElementById('inputMsg');
-  const linea = nombre + (precio != null ? ' — ' + fmtPrecio(precio) : '');
-  inp.value = inp.value ? inp.value + ', ' + linea : linea;
-  inp.focus();
+/* ── Detalle del pedido (Fase C) ── */
+let pedido = [];
+const _kprod = n => (n || '').trim().toLowerCase();
+
+function agregarProductoEnc(enc) {
+  const o = JSON.parse(decodeURIComponent(enc));
+  agregarProducto(o.n, o.pr, o.s);
+}
+function agregarProducto(nombre, precio, sub) {
+  const it = pedido.find(x => _kprod(x.nombre) === _kprod(nombre));
+  if (it) it.cant++;
+  else pedido.push({nombre, precio: precio || 0, sub: sub || '', cant: 1});
+  renderPedido();
+}
+function cambiarCant(i, d) {
+  if (!pedido[i]) return;
+  pedido[i].cant += d;
+  if (pedido[i].cant <= 0) pedido.splice(i, 1);
+  renderPedido();
+}
+function vaciarPedido() { pedido = []; renderPedido(); }
+
+function renderPedido() {
+  const card = document.getElementById('pedidoCard');
+  if (!pedido.length) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  const total = pedido.reduce((s, it) => s + it.precio * it.cant, 0);
+  const qb = 'width:18px; height:18px; border-radius:5px; display:inline-flex; align-items:center; justify-content:center;';
+  document.getElementById('pedidoRows').innerHTML = pedido.map((it, i) => `
+    <div class="row" style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid;">
+      <div style="flex:1; min-width:0;">
+        <div class="title" style="font-size:12px;">${esc(it.nombre)}</div>
+        ${it.sub ? `<div class="muted" style="font-size:10px;">${esc(it.sub)}</div>` : ''}
+      </div>
+      <div style="display:flex; align-items:center; gap:7px; margin-left:8px;">
+        <div style="display:flex; align-items:center; gap:5px;">
+          <span class="qbtn-m" onclick="cambiarCant(${i},-1)" style="${qb}"><i class="ti ti-minus" style="font-size:11px"></i></span>
+          <span class="txt" style="font-size:11px; min-width:12px; text-align:center;">${it.cant}</span>
+          <span class="qbtn-p" onclick="cambiarCant(${i},1)" style="${qb}"><i class="ti ti-plus" style="font-size:11px"></i></span>
+        </div>
+        <div class="title" style="font-size:12px; min-width:54px; text-align:right;">${fmtPrecio(it.precio * it.cant)}</div>
+      </div>
+    </div>`).join('');
+  document.getElementById('pedidoTotal').textContent = fmtPrecio(total);
+}
+
+async function enviarPedido() {
+  if (!pedido.length || !convAbierta) return;
+  const lineas = pedido.map(it => `• ${it.nombre} x${it.cant} — ${fmtPrecio(it.precio * it.cant)}`);
+  const total = pedido.reduce((s, it) => s + it.precio * it.cant, 0);
+  const texto = '🧾 Detalle de tu pedido:\n' + lineas.join('\n') + '\nTotal: ' + fmtPrecio(total) +
+                '\n\n(El pago y la entrega se coordinan por fuera.)';
+  const d = await (await fetch(`/atencion/${convAbierta}/responder`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto})
+  })).json();
+  if (!d.enviado) alert('⚠️ No se pudo enviar al canal (revisá el token del bot).');
+  vaciarPedido();
+  await refrescarChat(false); cargarBandeja();
 }
 
 function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
