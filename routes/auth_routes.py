@@ -114,6 +114,25 @@ def init_app(app):
             return None
         return redirect(url_for('atencion_panel'))
 
+    # Rol 'cajero': cobra los tickets. Solo accede a /caja/*.
+    _CAJERO_PATHS_OK = ('/caja/', '/static/')
+    _CAJERO_PATHS_OK_EXACT = {
+        '/caja', '/login', '/logout', '/cambiar-password', '/health',
+    }
+
+    @app.before_request
+    def _restrict_rol_cajero():
+        if not current_user.is_authenticated:
+            return None
+        if getattr(current_user, 'rol', None) != 'cajero':
+            return None
+        p = request.path or '/'
+        if p in _CAJERO_PATHS_OK_EXACT:
+            return None
+        if any(p.startswith(pref) for pref in _CAJERO_PATHS_OK):
+            return None
+        return redirect(url_for('caja_panel'))
+
     @app.route('/login', methods=['GET', 'POST'])
     def auth_login():
         if current_user.is_authenticated:
@@ -144,6 +163,8 @@ def init_app(app):
                 return redirect(request.args.get('next') or url_for('devoluciones_por_vendedor'))
             if user.rol == 'operador':
                 return redirect(request.args.get('next') or url_for('atencion_panel'))
+            if user.rol == 'cajero':
+                return redirect(request.args.get('next') or url_for('caja_panel'))
             return redirect(request.args.get('next') or url_for('index'))
         return render_template('login.html')
 
@@ -181,6 +202,8 @@ def init_app(app):
                 return redirect(url_for('devoluciones_buscar'))
             if current_user.rol == 'operador':
                 return redirect(url_for('atencion_panel'))
+            if current_user.rol == 'cajero':
+                return redirect(url_for('caja_panel'))
             return redirect(url_for('index'))
         return render_template('cambiar_password.html')
 
@@ -198,7 +221,7 @@ def init_app(app):
             } for u in users]
         return render_template('usuarios_list.html', usuarios=data,
                                modulos=MODULOS, niveles=NIVELES,
-                               roles=['farmacia', 'dev', 'remoto', 'admin', 'pedidos', 'auditor', 'rendicion', 'operador'])
+                               roles=['farmacia', 'dev', 'remoto', 'admin', 'pedidos', 'auditor', 'rendicion', 'operador', 'cajero'])
 
     @app.route('/usuarios/crear', methods=['POST'])
     @requiere_permiso('usuarios', 'admin')
@@ -293,4 +316,4 @@ def init_app(app):
 
 
 # Lista de roles válidos usada en crear/editar
-PERMISOS_ROLES = {'farmacia', 'dev', 'remoto', 'admin', 'pedidos', 'auditor', 'rendicion', 'operador'}
+PERMISOS_ROLES = {'farmacia', 'dev', 'remoto', 'admin', 'pedidos', 'auditor', 'rendicion', 'operador', 'cajero'}

@@ -118,6 +118,7 @@
       <button onclick="abrirModalClientes()" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Clientes</button>
       {% if current_user.rol in ('admin', 'dev') %}
       <button onclick="abrirModalOperadores()" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Operadores</button>
+      <a href="{{ url_for('caja_panel') }}" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Caja</a>
       {% endif %}
 
       <button id="theme-btn" aria-label="Cambiar tema" style="cursor:pointer; display:flex; align-items:center; gap:6px; padding:5px 10px; border-radius:20px; border:0.5px solid; background:transparent;">
@@ -196,7 +197,10 @@
               <span id="pedidoTotal" class="total-amt" style="font-size:16px; font-weight:600;">$0</span>
             </div>
           </div>
-          <button onclick="enviarPedido()" class="hbtn hbtn-ok" style="margin-top:6px; width:100%; border-radius:9px; padding:7px; font-size:12px;">Enviar pedido al cliente ▸</button>
+          <div style="display:flex; gap:6px; margin-top:6px;">
+            <button onclick="enviarPedido()" class="hbtn" style="flex:1; border-radius:9px; padding:7px; font-size:12px;">Enviar al cliente</button>
+            <button onclick="confirmarPedidoCaja()" class="hbtn hbtn-ok" style="flex:1; border-radius:9px; padding:7px; font-size:12px;">Confirmar a caja ▸</button>
+          </div>
         </div>
 
         <!-- Popup buscador de productos -->
@@ -812,6 +816,17 @@ async function enviarPedido() {
   if (!d.enviado) alert('⚠️ No se pudo enviar al canal (revisá el token del bot).');
   vaciarPedido();
   await refrescarChat(false); cargarBandeja();
+}
+
+async function confirmarPedidoCaja() {
+  if (!pedido.length || !convAbierta) return;
+  const items = pedido.map(it => ({nombre: it.nombre, detalle: it.sub, precio: it.precio, cantidad: it.cant}));
+  const d = await (await fetch(`/atencion/${convAbierta}/ticket`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({items})
+  })).json();
+  if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo confirmar')); return; }
+  vaciarPedido();
+  alert('✅ Pedido enviado a caja (#' + d.id + ' · ' + fmtPrecio(d.total) + ').');
 }
 
 function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }

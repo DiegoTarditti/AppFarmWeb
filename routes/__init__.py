@@ -6,6 +6,7 @@ from routes import (
     auth_routes,
     batch,
     bi,
+    caja,
     claims,
     clientes,
     comparativa_ventas,
@@ -64,6 +65,7 @@ from routes import help as help_module
 _modules = [
     auth_routes,
     atencion,
+    caja,
     observer,
     observer_sync,
     admin,

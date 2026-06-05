@@ -27,7 +27,7 @@ from flask import jsonify, render_template, request
 from flask_login import current_user, login_required
 
 import database
-from bot import canales, store
+from bot import caja, canales, store
 
 
 def init_app(app):
@@ -175,6 +175,16 @@ def init_app(app):
     @login_required
     def atencion_desvincular_cliente(conv_id):
         return jsonify(store.desvincular_cliente(conv_id))
+
+    @app.route('/atencion/<int:conv_id>/ticket', methods=['POST'])
+    @login_required
+    def atencion_crear_ticket(conv_id):
+        """El operador confirma el pedido → va a la cola de caja."""
+        items = (request.json or {}).get('items') or []
+        ficha = store.get_ficha_de_conversacion(conv_id)
+        return jsonify(caja.crear_ticket(
+            conv_id, items, current_user.id,
+            cliente_nombre=ficha['nombre'] if ficha else None))
 
     @app.route('/atencion/<int:conv_id>/ficha-notas', methods=['POST'])
     @login_required

@@ -4,7 +4,7 @@ No tocan la IA (Claude) ni `product_analytics` (Postgres): los caminos cubiertos
 son los deterministas. El único punto que consulta stock (encargar) se mockea.
 """
 import bot.acciones
-from bot import audio, cerebro, store
+from bot import audio, caja, cerebro, store
 from bot.cerebro import _match_opcion, _resolver, procesar
 from bot.flujo import FLUJO, NODO_INICIO
 
@@ -180,6 +180,27 @@ def test_reenganche_a_mitad_de_flujo():
     assert resp['opciones'] == ['Sí', 'No']
     # tras re-enganchar, esperando=None → no vuelve a dispararse
     assert not any(p['id'] == cid for p in store.conversaciones_para_reenganche(1))
+
+
+def test_caja_ticket_flujo():
+    conv = store.get_conversacion('telegram', 'cajatest', nombre='C')
+    r = caja.crear_ticket(conv['id'], [
+        {'nombre': 'Ibupirac', 'precio': 100, 'cantidad': 2},
+        {'nombre': 'Notos', 'precio': 50, 'cantidad': 1},
+    ], operador_id=None, cliente_nombre='C')
+    assert r['ok'] and r['total'] == 250
+    tid = r['id']
+    assert any(t['id'] == tid for t in caja.listar_tickets())
+    assert caja.cobrar_ticket(tid, 'Efectivo', None)['ok']
+    t = next(x for x in caja.listar_tickets() if x['id'] == tid)
+    assert t['estado'] == 'cobrado' and t['forma_pago'] == 'Efectivo'
+    caja.entregar_ticket(tid)
+    assert not any(t['id'] == tid for t in caja.listar_tickets())   # sale de la cola
+
+
+def test_caja_formas_pago_seed():
+    nombres = [f['nombre'] for f in caja.listar_formas_pago()]
+    assert 'Efectivo' in nombres and len(nombres) >= 3
 
 
 def test_procesar_guarda_mensaje_entrante_aunque_este_en_humano():

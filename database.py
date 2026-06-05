@@ -436,6 +436,49 @@ class Ciudad(Base):
     creado_en = Column(DateTime, default=now_ar)
 
 
+class TicketCaja(Base):
+    """Pedido confirmado por un operador que pasa a la cola de caja para cobrar.
+    El cobro/entrega lo hace un cajero. NO procesa pago online (Meta lo prohíbe
+    para farmacia): solo registra el medio de pago, como un POS interno."""
+    __tablename__ = 'tickets_caja'
+    id = Column(Integer, primary_key=True)
+    conversacion_id = Column(Integer, ForeignKey('bot_conversaciones.id', ondelete='SET NULL'),
+                             nullable=True, index=True)
+    cliente_nombre = Column(String(160), nullable=True)
+    cliente_observer_id = Column(Integer, nullable=True)
+    cliente_local_id = Column(Integer, nullable=True)
+    total = Column(DECIMAL(14, 2), nullable=False, default=0)
+    # confirmado → cobrado → entregado · anulado
+    estado = Column(String(15), nullable=False, default='confirmado', index=True)
+    forma_pago = Column(String(40), nullable=True)
+    nota = Column(Text, nullable=True)
+    operador_id = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
+    cajero_id = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
+    creado_en = Column(DateTime, default=now_ar, index=True)
+    cobrado_en = Column(DateTime, nullable=True)
+
+
+class TicketItem(Base):
+    __tablename__ = 'ticket_items'
+    id = Column(Integer, primary_key=True)
+    ticket_id = Column(Integer, ForeignKey('tickets_caja.id', ondelete='CASCADE'),
+                       nullable=False, index=True)
+    nombre = Column(String(200), nullable=False)
+    detalle = Column(String(200), nullable=True)   # droga / presentación
+    precio = Column(DECIMAL(14, 2), nullable=False, default=0)
+    cantidad = Column(Integer, nullable=False, default=1)
+    subtotal = Column(DECIMAL(14, 2), nullable=False, default=0)
+
+
+class FormaPago(Base):
+    """Catálogo de medios de pago (editable). Se registra al cobrar en caja."""
+    __tablename__ = 'formas_pago'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(40), nullable=False, unique=True)
+    activa = Column(Boolean, nullable=False, default=True)
+    orden = Column(Integer, nullable=False, default=0)
+
+
 class ObsSyncLog(Base):
     """Log de cada corrida de sync por entidad (última ejecución + resultados)."""
     __tablename__ = 'obs_sync_log'
@@ -2385,7 +2428,7 @@ def init_db(database_url=None):
                         'parser_ofertas_lab', 'factura_faltante',
                         'analisis_ia_cache', 'panel_heartbeat',
                         'bot_conversaciones', 'bot_mensajes', 'clientes_locales',
-                        'ciudades')
+                        'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
