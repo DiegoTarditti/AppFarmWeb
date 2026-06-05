@@ -2277,6 +2277,10 @@ class BotConversacion(Base):
     # bot = lo atiende el bot · cola = derivada, esperando operador · humano = la tomó un operador
     estado_atencion = Column(String(20), nullable=False, default='bot', index=True)
     operador_user_id = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
+    # Vinculación con la ficha del cliente (ObServer). Se autocompleta por teléfono
+    # en WhatsApp; en Telegram queda NULL hasta que el operador la vincule a mano.
+    cliente_observer_id = Column(Integer, ForeignKey('obs_clientes.observer_id'),
+                                 nullable=True, index=True)
     nodo = Column(String(50), default='inicio')      # estado del flujo conversacional
     esperando = Column(String(50))                   # acción esperando input del usuario
     creado_en = Column(DateTime, default=now_ar)
@@ -4059,6 +4063,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE rendicion_lote ADD COLUMN IF NOT EXISTS entregada BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE rendicion_lote ADD COLUMN IF NOT EXISTS entregada_en TIMESTAMP",
         "ALTER TABLE rendicion_lote ADD COLUMN IF NOT EXISTS entregada_por VARCHAR(100)",
+        # Bot: vinculación de la conversación con la ficha del cliente (ObsCliente).
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS cliente_observer_id INTEGER",
     ]:
         conn.execute(text(stmt))
     # Índices para queries frecuentes

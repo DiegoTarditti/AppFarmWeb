@@ -109,6 +109,30 @@ def test_audio_sin_motor_no_transcribe(monkeypatch):
     assert audio.transcribir(b'fake-bytes') is None
 
 
+def test_cliente_vincular_buscar_y_ficha():
+    import database
+    with database.get_db() as s:
+        s.add(database.ObsCliente(observer_id=5001, apellido_nombre='Gomez, Ana',
+                                  documento_numero=27123456, telefono='3415551234',
+                                  id_farmacia=1))
+        s.commit()
+    assert any(c['observer_id'] == 5001 for c in store.buscar_clientes('gomez'))
+    assert store.buscar_clientes('27123456')[0]['observer_id'] == 5001
+
+    conv = store.get_conversacion('telegram', 'clitest', nombre='Ana')
+    assert store.vincular_cliente(conv['id'], 5001)['ok']
+    full = store.get_conversacion_full(conv['id'])
+    assert full['cliente_observer_id'] == 5001
+
+    f = store.get_ficha_cliente(5001)
+    assert f['nombre'] == 'Gomez, Ana' and '27123456' in f['documento']
+    assert store.guardar_ficha_local(5001, notas='alérgico a penicilina', tags='vip')['ok']
+    assert store.get_ficha_cliente(5001)['notas'] == 'alérgico a penicilina'
+
+    assert store.desvincular_cliente(conv['id'])['ok']
+    assert store.get_conversacion_full(conv['id'])['cliente_observer_id'] is None
+
+
 def test_procesar_guarda_mensaje_entrante_aunque_este_en_humano():
     conv = store.get_conversacion('telegram', '444', nombre='C')
     store.set_atencion(conv['id'], 'humano')

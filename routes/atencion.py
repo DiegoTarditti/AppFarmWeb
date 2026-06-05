@@ -86,6 +86,42 @@ def init_app(app):
     def atencion_devolver_cola(conv_id):
         return jsonify(store.devolver_a_cola(conv_id, _nombre_actual()))
 
+    # ── Ficha del cliente ────────────────────────────────────────────────────
+
+    @app.route('/atencion/api/<int:conv_id>/cliente')
+    @login_required
+    def atencion_cliente(conv_id):
+        conv = store.get_conversacion_full(conv_id)
+        if not conv:
+            return jsonify({'error': 'no existe'}), 404
+        oid = conv.get('cliente_observer_id')
+        return jsonify({'observer_id': oid, 'ficha': store.get_ficha_cliente(oid)})
+
+    @app.route('/atencion/api/clientes/buscar')
+    @login_required
+    def atencion_clientes_buscar():
+        return jsonify({'clientes': store.buscar_clientes(request.args.get('q', ''))})
+
+    @app.route('/atencion/<int:conv_id>/vincular-cliente', methods=['POST'])
+    @login_required
+    def atencion_vincular_cliente(conv_id):
+        oid = (request.json or {}).get('observer_id')
+        r = store.vincular_cliente(conv_id, oid)
+        r['ficha'] = store.get_ficha_cliente(oid)
+        return jsonify(r)
+
+    @app.route('/atencion/<int:conv_id>/desvincular-cliente', methods=['POST'])
+    @login_required
+    def atencion_desvincular_cliente(conv_id):
+        return jsonify(store.desvincular_cliente(conv_id))
+
+    @app.route('/atencion/cliente/<int:observer_id>/ficha', methods=['POST'])
+    @login_required
+    def atencion_guardar_ficha(observer_id):
+        body = request.json or {}
+        return jsonify(store.guardar_ficha_local(
+            observer_id, notas=body.get('notas'), tags=body.get('tags')))
+
     @app.route('/atencion/<int:conv_id>/responder', methods=['POST'])
     @login_required
     def atencion_responder(conv_id):
