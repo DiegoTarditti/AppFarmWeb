@@ -6,7 +6,7 @@
   <div class="flex items-center justify-between mb-4">
     <div>
       <h1 class="text-2xl font-bold text-white">💬 Atención al cliente</h1>
-      <p class="text-sm text-gray-400">Consultas derivadas por el bot. Mientras atendés una, el bot no responde.</p>
+      <p class="text-sm text-gray-400">Cola compartida: tomá una y atendela. Mientras la atendés, el bot no responde.</p>
     </div>
     <div class="flex items-center gap-3">
       <label class="text-sm text-gray-400">Línea:</label>
@@ -23,9 +23,15 @@
   <div class="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4" style="height:72vh">
     <!-- Bandeja -->
     <div class="bg-[#2c2c2e] rounded-xl border border-gray-700 overflow-hidden flex flex-col">
-      <div class="px-4 py-2.5 border-b border-gray-700 flex items-center justify-between">
-        <span class="text-sm font-semibold text-gray-300">Bandeja</span>
-        <span id="contadorCola" class="text-xs px-2 py-0.5 rounded-full bg-[#EAB308] text-black font-bold">0</span>
+      <div class="px-3 pt-2.5 pb-2 border-b border-gray-700">
+        <div class="flex gap-1 text-xs">
+          <button data-vista="sin_asignar" onclick="setVista('sin_asignar')"
+                  class="tabBtn flex-1 px-2 py-1.5 rounded-lg">Sin asignar <span id="cnt-sin_asignar" class="opacity-70">0</span></button>
+          <button data-vista="mias" onclick="setVista('mias')"
+                  class="tabBtn flex-1 px-2 py-1.5 rounded-lg">Mías <span id="cnt-mias" class="opacity-70">0</span></button>
+          <button data-vista="todas" onclick="setVista('todas')"
+                  class="tabBtn flex-1 px-2 py-1.5 rounded-lg">Todas <span id="cnt-todas" class="opacity-70">0</span></button>
+        </div>
       </div>
       <div id="bandeja" class="flex-1 overflow-y-auto divide-y divide-gray-800">
         <div class="p-4 text-sm text-gray-500">Cargando…</div>
@@ -34,12 +40,27 @@
 
     <!-- Chat -->
     <div class="bg-[#2c2c2e] rounded-xl border border-gray-700 overflow-hidden flex flex-col">
-      <div id="chatHeader" class="px-4 py-2.5 border-b border-gray-700 flex items-center justify-between">
+      <div id="chatHeader" class="px-4 py-2.5 border-b border-gray-700 flex items-center justify-between gap-2">
         <span class="text-sm text-gray-500">Elegí una conversación 👈</span>
-        <div id="chatAcciones" class="hidden flex items-center gap-2">
-          <button onclick="cerrarConv()" class="text-xs px-3 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200">Devolver al bot</button>
+        <div id="chatAcciones" class="hidden items-center gap-2 flex-shrink-0">
+          <button id="btnTomar" onclick="tomar()" class="hidden text-xs px-3 py-1 rounded-lg bg-green-600 hover:bg-green-500 text-white font-bold">🙋 Tomar</button>
+          <button onclick="toggleTransfer()" class="text-xs px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white">🔄 Transferir</button>
+          <button onclick="devolverCola()" class="text-xs px-3 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200">↩️ A la cola</button>
+          <button onclick="cerrarConv()" class="text-xs px-3 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200">🤖 Al bot</button>
         </div>
       </div>
+
+      <!-- Panel de transferencia (oculto) -->
+      <div id="panelTransfer" class="hidden border-b border-gray-700 p-3 bg-[#1c1c1e] flex flex-wrap items-center gap-2">
+        <span class="text-xs text-gray-400">Pasar a:</span>
+        <select id="selOperador" aria-label="Operador destino"
+                class="bg-[#2c2c2e] text-white text-sm rounded-lg px-3 py-1.5 border border-gray-700"></select>
+        <input id="notaTransfer" type="text" placeholder="Nota (opcional)…" autocomplete="off"
+               class="flex-1 min-w-[140px] bg-[#2c2c2e] text-white text-sm rounded-lg px-3 py-1.5 border border-gray-700">
+        <button onclick="confirmarTransfer()" class="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold">Pasar ▸</button>
+        <button onclick="toggleTransfer()" class="text-xs px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200">Cancelar</button>
+      </div>
+
       <div id="chat" class="flex-1 overflow-y-auto p-4 space-y-2">
         <div class="text-sm text-gray-500 text-center mt-10">No hay conversación abierta.</div>
       </div>
@@ -53,24 +74,58 @@
   </div>
 </div>
 
+<style>
+  .tabBtn { background:#1c1c1e; color:#9ca3af; border:1px solid #3a3a3c; }
+  .tabBtn.activa { background:#EAB308; color:#000; border-color:#EAB308; font-weight:700; }
+</style>
+
 <script>
+const YO = {{ current_user.id }};
 let convAbierta = null;     // id de la conversación abierta
+let convData = null;        // datos de la conversación abierta (estado/operador)
 let ultimoMsgId = 0;        // último mensaje renderizado (polling incremental)
+let vista = 'sin_asignar';  // sin_asignar | mias | todas
+let todasConvs = [];        // último snapshot de la bandeja
 
 const ESTADO_BADGE = {
-  cola:   '<span class="text-xs px-2 py-0.5 rounded-full bg-[#EAB308] text-black font-bold">En cola</span>',
-  humano: '<span class="text-xs px-2 py-0.5 rounded-full bg-green-600 text-white font-bold">Atendiendo</span>',
+  cola:   '<span class="text-[11px] px-2 py-0.5 rounded-full bg-[#EAB308] text-black font-bold">En cola</span>',
+  humano: '<span class="text-[11px] px-2 py-0.5 rounded-full bg-green-600 text-white font-bold">Atendiendo</span>',
 };
+
+function setVista(v) {
+  vista = v;
+  document.querySelectorAll('.tabBtn').forEach(b => b.classList.toggle('activa', b.dataset.vista === v));
+  renderBandeja();
+}
+
+function _filtrar(convs) {
+  if (vista === 'sin_asignar') return convs.filter(c => c.estado === 'cola');
+  if (vista === 'mias')        return convs.filter(c => c.estado === 'humano' && c.operador_id === YO);
+  return convs;
+}
 
 async function cargarBandeja() {
   const linea = document.getElementById('filtroLinea').value;
   const r = await fetch('/atencion/api/conversaciones?linea=' + encodeURIComponent(linea));
   const d = await r.json();
-  const convs = d.conversaciones || [];
-  document.getElementById('contadorCola').textContent = convs.filter(c => c.estado === 'cola').length;
+  todasConvs = d.conversaciones || [];
+  document.getElementById('cnt-sin_asignar').textContent = todasConvs.filter(c => c.estado === 'cola').length;
+  document.getElementById('cnt-mias').textContent = todasConvs.filter(c => c.estado === 'humano' && c.operador_id === YO).length;
+  document.getElementById('cnt-todas').textContent = todasConvs.length;
+  renderBandeja();
+}
+
+function renderBandeja() {
+  const convs = _filtrar(todasConvs);
   const box = document.getElementById('bandeja');
-  if (!convs.length) { box.innerHTML = '<div class="p-4 text-sm text-gray-500">Nada pendiente ✨</div>'; return; }
-  box.innerHTML = convs.map(c => `
+  if (!convs.length) { box.innerHTML = '<div class="p-4 text-sm text-gray-500">Nada por acá ✨</div>'; return; }
+  box.innerHTML = convs.map(c => {
+    let asign = '';
+    if (c.estado === 'humano' && c.operador_id) {
+      const mio = c.operador_id === YO;
+      asign = `<span class="text-[11px] ${mio ? 'text-green-400' : 'text-orange-400'}">👤 ${esc(mio ? 'Vos' : (c.operador_nombre || 'otro'))}</span>`;
+    }
+    return `
     <button onclick="abrirConv(${c.id})"
       class="w-full text-left px-4 py-3 hover:bg-[#3a3a3c] ${c.id === convAbierta ? 'bg-[#3a3a3c]' : ''}">
       <div class="flex items-center justify-between gap-2">
@@ -78,20 +133,23 @@ async function cargarBandeja() {
         ${ESTADO_BADGE[c.estado] || ''}
       </div>
       <div class="flex items-center justify-between mt-0.5">
-        <span class="text-xs text-gray-500">${esc(c.linea)}</span>
+        <span class="text-xs text-gray-500">${esc(c.linea)} ${asign}</span>
         <span class="text-xs text-gray-600">${esc(c.ultimo_en)}</span>
       </div>
-    </button>`).join('');
+    </button>`;
+  }).join('');
 }
 
 async function abrirConv(id) {
   convAbierta = id;
   ultimoMsgId = 0;
+  document.getElementById('panelTransfer').classList.add('hidden');
   document.getElementById('chat').innerHTML = '<div class="text-sm text-gray-500 text-center mt-10">Cargando…</div>';
   await refrescarChat(true);
   document.getElementById('barraEnvio').classList.remove('hidden');
   document.getElementById('chatAcciones').classList.remove('hidden');
-  cargarBandeja();
+  document.getElementById('chatAcciones').classList.add('flex');
+  renderBandeja();
 }
 
 async function refrescarChat(reset) {
@@ -99,11 +157,10 @@ async function refrescarChat(reset) {
   const r = await fetch(`/atencion/api/${convAbierta}/mensajes?desde=${reset ? 0 : ultimoMsgId}`);
   if (!r.ok) return;
   const d = await r.json();
+  convData = d.conversacion;
   const chat = document.getElementById('chat');
   if (reset) chat.innerHTML = '';
-  const c = d.conversacion;
-  document.getElementById('chatHeader').querySelector('span').innerHTML =
-    `<span class="text-white font-semibold">${esc(c.nombre)}</span> <span class="text-gray-500 text-xs">· ${esc(c.linea)}</span>`;
+  pintarHeader();
   for (const m of (d.mensajes || [])) {
     chat.appendChild(burbuja(m));
     ultimoMsgId = Math.max(ultimoMsgId, m.id);
@@ -111,8 +168,26 @@ async function refrescarChat(reset) {
   if (d.mensajes && d.mensajes.length) chat.scrollTop = chat.scrollHeight;
 }
 
+function pintarHeader() {
+  const c = convData; if (!c) return;
+  const mio = c.estado === 'humano' && c.operador_id === YO;
+  let estado = '';
+  if (c.estado === 'humano' && !mio) estado = `<span class="text-orange-400 text-xs ml-1">· atendiendo ${esc(c.operador_nombre || 'otro')}</span>`;
+  else if (mio) estado = '<span class="text-green-400 text-xs ml-1">· vos</span>';
+  else if (c.estado === 'cola') estado = '<span class="text-[#EAB308] text-xs ml-1">· en cola</span>';
+  document.getElementById('chatHeader').querySelector('span').innerHTML =
+    `<span class="text-white font-semibold">${esc(c.nombre)}</span> <span class="text-gray-500 text-xs">· ${esc(c.linea)}</span>${estado}`;
+  // Botón Tomar: solo si no es mía.
+  document.getElementById('btnTomar').classList.toggle('hidden', mio);
+}
+
 function burbuja(m) {
   const div = document.createElement('div');
+  if (m.origen === 'sistema') {
+    div.className = 'flex justify-center';
+    div.innerHTML = `<div class="text-[11px] text-gray-500 bg-[#1c1c1e] border border-gray-700 rounded-full px-3 py-1">${esc(m.texto)}</div>`;
+    return div;
+  }
   const cliente = m.origen === 'cliente';
   const esBot = m.origen === 'bot';
   div.className = 'flex ' + (cliente ? 'justify-start' : 'justify-end');
@@ -126,6 +201,56 @@ function burbuja(m) {
       <div class="text-[10px] opacity-60 text-right mt-0.5">${esc(m.hora)}</div>
     </div>`;
   return div;
+}
+
+async function tomar() {
+  if (!convAbierta) return;
+  const r = await fetch(`/atencion/${convAbierta}/tomar`, {method: 'POST'});
+  if (r.status === 409) {
+    const d = await r.json();
+    alert('⚠️ Ya la está atendiendo ' + (d.conflicto || 'otro operador') + '.');
+  }
+  await refrescarChat(true);
+  cargarBandeja();
+}
+
+async function devolverCola() {
+  if (!convAbierta) return;
+  await fetch(`/atencion/${convAbierta}/devolver-cola`, {method: 'POST'});
+  await refrescarChat(true);
+  cargarBandeja();
+}
+
+let operadoresCargados = false;
+async function toggleTransfer() {
+  const p = document.getElementById('panelTransfer');
+  const abrir = p.classList.contains('hidden');
+  p.classList.toggle('hidden');
+  if (abrir && !operadoresCargados) {
+    const r = await fetch('/atencion/api/operadores');
+    const d = await r.json();
+    const sel = document.getElementById('selOperador');
+    sel.innerHTML = (d.operadores || [])
+      .filter(o => o.id !== YO)
+      .map(o => `<option value="${o.id}">${esc(o.nombre)} (${esc(o.rol)})</option>`).join('');
+    operadoresCargados = true;
+  }
+}
+
+async function confirmarTransfer() {
+  if (!convAbierta) return;
+  const sel = document.getElementById('selOperador');
+  const operador_id = parseInt(sel.value, 10);
+  if (!operador_id) { alert('Elegí un operador.'); return; }
+  const nota = document.getElementById('notaTransfer').value.trim();
+  await fetch(`/atencion/${convAbierta}/transferir`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({operador_id, nota})
+  });
+  document.getElementById('notaTransfer').value = '';
+  toggleTransfer();
+  await refrescarChat(true);
+  cargarBandeja();
 }
 
 async function enviar() {
@@ -146,9 +271,10 @@ async function enviar() {
 async function cerrarConv() {
   if (!convAbierta) return;
   await fetch(`/atencion/${convAbierta}/cerrar`, {method: 'POST'});
-  convAbierta = null;
+  convAbierta = null; convData = null;
   document.getElementById('barraEnvio').classList.add('hidden');
   document.getElementById('chatAcciones').classList.add('hidden');
+  document.getElementById('panelTransfer').classList.add('hidden');
   document.getElementById('chat').innerHTML = '<div class="text-sm text-gray-500 text-center mt-10">Devuelta al bot ✅</div>';
   document.getElementById('chatHeader').querySelector('span').innerHTML = '<span class="text-sm text-gray-500">Elegí una conversación 👈</span>';
   cargarBandeja();
@@ -156,6 +282,7 @@ async function cerrarConv() {
 
 function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+setVista('sin_asignar');
 cargarBandeja();
 setInterval(cargarBandeja, 5000);
 setInterval(() => refrescarChat(false), 4000);

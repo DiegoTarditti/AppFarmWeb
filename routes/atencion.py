@@ -8,11 +8,18 @@ del operador sale al canal real (Telegram hoy, WhatsApp mañana) vía bot.canale
 Mientras una conversación está en 'humano', el cerebro del bot NO responde
 (ver bot/cerebro.procesar) → no pisa al operador.
 
+Distribución: cola compartida (pull). Todo lo derivado cae en una bandeja; el
+operador libre toca "Tomar" (anti-colisión: si ya la tomó otro, no la pisa).
+Se puede transferir a otro operador o devolver a la cola.
+
 Rutas:
   GET  /atencion                          → panel (bandeja + chat)
   GET  /atencion/api/conversaciones       → JSON bandeja (polling)
+  GET  /atencion/api/operadores           → JSON operadores (dropdown transferir)
   GET  /atencion/api/<id>/mensajes        → JSON mensajes (polling)
-  POST /atencion/<id>/tomar               → operador toma la conversación
+  POST /atencion/<id>/tomar               → operador toma la conversación (pull)
+  POST /atencion/<id>/transferir          → pasa a otro operador (+ nota)
+  POST /atencion/<id>/devolver-cola       → libera a la cola
   POST /atencion/<id>/responder           → operador envía un mensaje al cliente
   POST /atencion/<id>/cerrar              → libera (vuelve al bot)
 """
@@ -45,11 +52,39 @@ def init_app(app):
         return jsonify({'conversacion': conv,
                         'mensajes': store.get_mensajes(conv_id, desde)})
 
+    def _nombre_actual():
+        return getattr(current_user, 'nombre_completo', None) or current_user.username
+
+    @app.route('/atencion/api/operadores')
+    @login_required
+    def atencion_operadores():
+        return jsonify({'operadores': store.listar_operadores()})
+
     @app.route('/atencion/<int:conv_id>/tomar', methods=['POST'])
     @login_required
     def atencion_tomar(conv_id):
-        store.set_atencion(conv_id, 'humano', operador_user_id=current_user.id)
-        return jsonify({'ok': True, 'conversacion': store.get_conversacion_full(conv_id)})
+        r = store.tomar(conv_id, current_user.id, _nombre_actual())
+        if not r['ok'] and r.get('conflicto'):
+            return jsonify({'ok': False, 'conflicto': r['conflicto']}), 409
+        r['conversacion'] = store.get_conversacion_full(conv_id)
+        return jsonify(r)
+
+    @app.route('/atencion/<int:conv_id>/transferir', methods=['POST'])
+    @login_required
+    def atencion_transferir(conv_id):
+        body = request.json or {}
+        nuevo_id = body.get('operador_id')
+        nota = (body.get('nota') or '').strip()
+        ops = {o['id']: o['nombre'] for o in store.listar_operadores()}
+        if nuevo_id not in ops:
+            return jsonify({'ok': False, 'error': 'operador inválido'}), 400
+        r = store.transferir(conv_id, nuevo_id, ops[nuevo_id], _nombre_actual(), nota)
+        return jsonify(r)
+
+    @app.route('/atencion/<int:conv_id>/devolver-cola', methods=['POST'])
+    @login_required
+    def atencion_devolver_cola(conv_id):
+        return jsonify(store.devolver_a_cola(conv_id, _nombre_actual()))
 
     @app.route('/atencion/<int:conv_id>/responder', methods=['POST'])
     @login_required
@@ -62,7 +97,7 @@ def init_app(app):
             return jsonify({'ok': False, 'error': 'no existe'}), 404
         # Si nadie la había tomado, la toma este operador al responder.
         if conv['estado'] != 'humano':
-            store.set_atencion(conv_id, 'humano', operador_user_id=current_user.id)
+            store.tomar(conv_id, current_user.id, _nombre_actual())
         enviado = canales.enviar(conv['canal'], conv['canal_user_id'], texto)
         store.guardar_mensaje(conv_id, 'operador', texto)
         return jsonify({'ok': True, 'enviado': enviado})
