@@ -19,7 +19,8 @@ Para pasar de Telegram a WhatsApp se reemplaza solo el adaptador.
 |---|---|
 | `flujo.py` | Definición del flujo (nodos: menú / texto / pedir_input). Editable a mano (Fase 0); va a DB + UI en Fase 1 |
 | `acciones.py` | Acciones que tocan la data (`consultar_producto` → `product_analytics`) |
-| `cerebro.py` | Router + estado de conversación (en memoria; TODO: DB) |
+| `cerebro.py` | Router del flujo (estado de conversación persistido en DB vía `store.py`) |
+| `store.py` | Persistencia: conversaciones + mensajes en DB (habilita handoff, historial y que sobreviva reinicios) |
 | `telegram_bot.py` | Adaptador Telegram + long polling |
 
 ## Correr (Fase 0)
@@ -43,10 +44,13 @@ print(cerebro.procesar('u1', 'ibuprofeno'))
 "
 ```
 
-## Pendiente (próximas iteraciones)
-- Nodo de **IA libre** (Claude entiende "algo para la tos") sobre el de búsqueda directa.
-- **Hacer pedido** (toma producto + cantidad + datos → módulo de pedidos).
+## Hecho
+- Nodo de **IA libre** (Claude entiende "algo para la tos") con tool use sobre el stock real, y **memoria** del hilo de conversación.
 - **Foto de receta** → Claude visión extrae medicamentos → cruza con stock.
-- **Derivación a humano** real (notificar al personal).
-- Estado de conversación en **DB** (multi-worker / sobrevive reinicios).
+- **Notas de voz** → Whisper local → texto → cerebro.
+- **Derivación a humano** (handoff) + **panel de operadores**, con estado de conversación persistido en **DB** (sobrevive reinicios / multi-worker).
+- **Encargar un producto** → cae en la bandeja del operador con contexto.
+
+## Pendiente (próximas iteraciones)
+- **Hacer pedido** integrado al módulo de pedidos real (hoy el encargo se deriva al operador, no crea el pedido en el sistema).
 - Adaptador **WhatsApp Cloud API** (Fase 1) + **UI de edición de flujos**.

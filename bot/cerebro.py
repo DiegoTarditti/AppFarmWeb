@@ -79,9 +79,12 @@ def _match_opcion(nodo, texto):
     return None
 
 
-def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type):
+def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=None):
     """Lógica PURA del flujo (sin DB). Devuelve
-    (resp{texto,opciones}, nuevo_nodo, nueva_esperando, derivar)."""
+    (resp{texto,opciones}, nuevo_nodo, nueva_esperando, derivar).
+
+    `historial` (turnos previos en formato Anthropic) se le pasa al nodo de IA
+    para que recuerde el hilo; el resto de las acciones lo ignora."""
     # 0) Foto (receta): la procesa la IA visión, sin importar el nodo.
     if imagen_b64:
         return ({'texto': leer_receta(imagen_b64, media_type),
@@ -101,7 +104,7 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type):
     if esperando:
         accion = ACCIONES.get(esperando)
         if accion:
-            out = accion(texto)
+            out = accion(texto, historial) if esperando == 'consulta_ia' else accion(texto)
             # Una acción puede devolver un string (sigue en el mismo loop) o un
             # dict {texto, esperando, derivar} para cortar el loop o derivar.
             if isinstance(out, dict):
@@ -117,7 +120,7 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type):
         # menú: es una charla, los botones del saludo siguen visibles más arriba.
         ia = ACCIONES.get('consulta_ia')
         if ia and len(texto) >= 3:
-            return ({'texto': ia(texto), 'opciones': []}, nodo_actual, None, False)
+            return ({'texto': ia(texto, historial), 'opciones': []}, nodo_actual, None, False)
         return ({'texto': 'No te entendí 🤔 Escribí "menú" para ver las opciones.',
                  'opciones': []}, nodo_actual, None, False)
 
@@ -161,8 +164,11 @@ def procesar(canal, canal_user_id, texto, imagen_b64=None,
     if conv['estado_atencion'] in ('cola', 'humano'):
         return None
 
+    # Historial (incluye el mensaje recién guardado) para que el nodo de IA
+    # recuerde el hilo de la conversación.
+    historial = store.get_historial_ia(cid)
     resp, nuevo_nodo, nueva_esperando, derivar = _resolver(
-        conv['nodo'], conv['esperando'], texto, imagen_b64, media_type)
+        conv['nodo'], conv['esperando'], texto, imagen_b64, media_type, historial)
 
     store.set_estado_flujo(cid, nuevo_nodo, nueva_esperando)
     if derivar:
