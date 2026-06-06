@@ -76,6 +76,11 @@ BASE_CONFIGS = {
                    'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
                    'base_demanda': 'u12m_estacional', 'cant_fija_efecto': 'override',
                    'oferta_min_efecto': 'indicador', 'valor_piso': 0, 'dias_valor_piso': 60},
+    'PEDIDO_ROEMMERS': {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
+                        'buffer_pct': 0, 'universo': 'lab_x',
+                        'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
+                        'base_demanda': 'u3m', 'cant_fija_efecto': 'override',
+                        'oferta_min_efecto': 'piso', 'valor_piso': 0, 'dias_valor_piso': 60},
 }
 
 ENUMS_FLAG = {

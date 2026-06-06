@@ -2859,7 +2859,13 @@ def init_db(database_url=None):
     # upgrade head en las siguientes). Migraciones futuras entran por Alembic;
     # los _pg_add_columns inline se irán migrando gradualmente (conviven, son IF
     # NOT EXISTS). Fail-soft: no rompe el boot. Ver docs/alembic_baseline_review.md.
-    _alembic_sync(database_url)
+    # Gateado por env var ALEMBIC_AUTO_SYNC (default 0 = off). En pieristei
+    # arranca prendido; acá local sigue con init_db inline hasta que decidamos
+    # normalizar y meter Alembic. Evita el ruido de "FALLÓ" y la tabla
+    # alembic_version creada sin querer.
+    import os as _os
+    if _os.environ.get('ALEMBIC_AUTO_SYNC', '0').lower() in ('1', 'true', 'yes'):
+        _alembic_sync(database_url)
 
     # One-shot: importar plantillas legacy a la tabla plantillas nueva
     _migrate_legacy_plantillas()
@@ -3724,6 +3730,17 @@ def _pg_add_columns(conn):
           'base_demanda': 'u12m_estacional',
           'cant_fija_efecto': 'override',
           'oferta_min_efecto': 'indicador'}),
+        ('PEDIDO_ROEMMERS', 'Pedido Roemmers (módulos + ofertas)', 'pedido',
+         'Flujo exclusivo Roemmers: módulos de descuento primero + ofertas con '
+         'mínimo después + saldo final. Ventana de promedio = 3 meses recientes. '
+         'En step 2 (ofertas), el mínimo de oferta sube la cantidad (piso). '
+         'Excluye productos sin deal por default (toggle para ver).',
+         {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
+          'buffer_pct': 0, 'universo': 'lab_x',
+          'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
+          'base_demanda': 'u3m',
+          'cant_fija_efecto': 'override',
+          'oferta_min_efecto': 'piso'}),
         ('DISCONTINUADO', 'Discontinuado', 'flag',
          'Producto fuera de línea. Vender hasta agotar stock, no reponer.',
          {'efecto_armado': 'badge_cero', 'icono': '🚫', 'color': 'red',

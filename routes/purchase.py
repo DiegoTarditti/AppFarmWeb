@@ -1691,6 +1691,20 @@ def init_app(app):
                 for bc in _all_eans(p):
                     if bc and bc not in obs_ids_directos:
                         obs_ids_directos[bc] = p.observer_id
+            # Fallback raíz: EANs que no resolvieron vía Producto local — ir
+            # directo a obs_codigos_barras (ObServer es la verdad). Esto elimina
+            # duplicados cuando productos.observer_id es NULL o el EAN ni
+            # existe en productos.
+            _cbs_sin_resolver = [cb for cb in cbs_pedido
+                                 if cb and cb not in obs_ids_directos]
+            if _cbs_sin_resolver:
+                for cb, oid in (session.query(database.ObsCodigoBarras.codigo_barras,
+                                              database.ObsCodigoBarras.producto_observer)
+                                .filter(database.ObsCodigoBarras.codigo_barras.in_(_cbs_sin_resolver),
+                                        database.ObsCodigoBarras.fecha_baja.is_(None))
+                                .all()):
+                    if cb and oid and cb not in obs_ids_directos:
+                        obs_ids_directos[cb] = oid
             todos_obs_ids = list({oid for oid in obs_ids_directos.values()})
             droga_id_by_cb = {}
             if todos_obs_ids:
@@ -1738,8 +1752,78 @@ def init_app(app):
                         if ce is not None:
                             envase_by_cb[bc] = ce
 
-            data['productos'] = [
-                {
+            # ── Consolidación por observer_id ──────────────────────────────
+            # ObServer es la fuente de verdad: cada producto tiene UN
+            # observer_id que agrupa N EANs alts. El pedido puede traer N
+            # items para el mismo producto (caso TERMOFREN GTS x 20 con 3
+            # EANs). Consolidamos antes de mandar a frontend: una entrada
+            # por observer_id con la suma de cantidades y un EAN canónico
+            # (preferir EAN real, no OBS:N pseudo).
+            #
+            # Beneficio: el step 3 (resumen) sale limpio sin dedup en JS;
+            # el export al proveedor manda EANs únicos y reales.
+            # Las propagaciones de EQUIV_GROUPS en el template se encargan
+            # de que steps 1/2 sigan funcionando — pedidoQty[alt] se llena
+            # desde pedidoQty[canónico] via los grupos.
+            from collections import defaultdict as _dd
+
+            _items_por_obs = _dd(list)
+            _items_huerfanos = []   # sin observer_id resoluble
+            for it in pedido.items:
+                _oid = obs_ids_directos.get(it.codigo_barra)
+                if _oid:
+                    _items_por_obs[_oid].append(it)
+                else:
+                    _items_huerfanos.append(it)
+
+            # EAN canónico por observer_id: preferir un EAN real de
+            # obs_codigos_barras vigente (orden mínimo).
+            _canonical_eans = {}
+            if _items_por_obs:
+                _obs_ids_list = list(_items_por_obs.keys())
+                for oid, ean in (session.query(database.ObsCodigoBarras.producto_observer,
+                                               database.ObsCodigoBarras.codigo_barras)
+                                 .filter(database.ObsCodigoBarras.producto_observer.in_(_obs_ids_list),
+                                         database.ObsCodigoBarras.fecha_baja.is_(None))
+                                 .order_by(database.ObsCodigoBarras.producto_observer,
+                                           database.ObsCodigoBarras.orden).all()):
+                    if oid not in _canonical_eans and ean and not ean.startswith('OBS:'):
+                        _canonical_eans[oid] = ean
+
+            _productos = []
+            for _oid, _items in _items_por_obs.items():
+                _ean_canon = _canonical_eans.get(_oid)
+                if not _ean_canon:
+                    # Sin EAN real para ese obs → caemos al primer codigo_barra
+                    # del item (puede ser OBS:N). Sigue siendo único por obs.
+                    _ean_canon = _items[0].codigo_barra or f'OBS:{_oid}'
+                _primero = _items[0]
+                _cant_tot = sum(int(_x.cantidad or 0) for _x in _items)
+                _subtot   = sum(float(_x.subtotal or 0) for _x in _items)
+                _productos.append({
+                    'codigo_barra': _ean_canon,
+                    'nombre': _primero.nombre,
+                    'cantidad': _cant_tot,
+                    'precio_pvp': float(_primero.precio_pvp or 0),
+                    'subtotal': _subtot,
+                    'rotacion': _primero.rotacion or '',
+                    'avg_monthly': float(_primero.avg_monthly) if _primero.avg_monthly else None,
+                    'erp_qty': erp_stock_map.get(_ean_canon)
+                               or erp_stock_map.get(_primero.codigo_barra),
+                    'stock_actual': stock_actual_by_obs.get(_oid),
+                    'fraccionado': fraccionado_by_cb.get(_ean_canon,
+                                   fraccionado_by_cb.get(_primero.codigo_barra, False)),
+                    'cantidad_envase': envase_by_cb.get(_ean_canon)
+                                       or envase_by_cb.get(_primero.codigo_barra),
+                    'monodroga': monodroga_by_bc.get(_primero.codigo_barra, ''),
+                    'tvc': tvc_by_cb.get(_primero.codigo_barra, ''),
+                    'monodroga_id': droga_id_by_cb.get(_primero.codigo_barra),
+                })
+            # Huérfanos (sin obs_id resoluble): los dejamos como están — son
+            # productos no linkeados a ObServer (deberían ser pocos tras el
+            # script materializar_huerfanos).
+            for it in _items_huerfanos:
+                _productos.append({
                     'codigo_barra': it.codigo_barra,
                     'nombre': it.nombre,
                     'cantidad': it.cantidad,
@@ -1748,16 +1832,14 @@ def init_app(app):
                     'rotacion': it.rotacion or '',
                     'avg_monthly': float(it.avg_monthly) if it.avg_monthly else None,
                     'erp_qty': erp_stock_map.get(it.codigo_barra),
-                    'stock_actual': stock_actual_by_obs.get(
-                        obs_ids_directos.get(it.codigo_barra)),
+                    'stock_actual': None,
                     'fraccionado': fraccionado_by_cb.get(it.codigo_barra, False),
                     'cantidad_envase': envase_by_cb.get(it.codigo_barra),
                     'monodroga': monodroga_by_bc.get(it.codigo_barra, ''),
                     'tvc': tvc_by_cb.get(it.codigo_barra, ''),
                     'monodroga_id': droga_id_by_cb.get(it.codigo_barra),
-                }
-                for it in pedido.items
-            ]
+                })
+            data['productos'] = _productos
             equiv = [
                 {'barcodes': [b for b in _all_eans(p) if b]}
                 for p in all_prods
@@ -2590,49 +2672,22 @@ def init_app(app):
         elif step == 'summary':
             rows = data if isinstance(data, list) else []
 
-            hrow(ws, ['EAN', 'Producto', 'Stock ERP', 'Stock ObServer',
-                      'Rot.', 'Prom.mes', 'Precio PVP',
-                      'Cant. módulo', 'Packs módulo', 'Oferta c/mín', 'Sin Deal',
-                      'Total Pedido', 'Cob. actual (d)', 'Cob. post (d)',
-                      'Gap vs obj. (d)', 'Objetivo (d)',
-                      'Sugerido', 'Saldo'])
-            for col, w in zip('ABCDEFGHIJKLMNOPQR',
-                              [16, 40, 10, 12, 6, 10, 12,
-                               12, 12, 12, 10,
-                               12, 14, 12, 14, 12,
-                               10, 10]):
+            # Excel del "Pedido extra" — saldos fuera de módulos. Solo lo
+            # esencial para mandar al proveedor por el canal extra: EAN,
+            # descripción y cantidad. Los módulos se exportan aparte (step
+            # 'modules'). Si el operador clickea con toggle 'ver todo', el
+            # JS manda también los productos cubiertos por módulo (cantidad=0)
+            # — quedan listados pero con qty 0.
+            hrow(ws, ['EAN', 'Descripción', 'Cantidad'])
+            for col, w in zip('ABC', [18, 60, 12]):
                 ws.column_dimensions[col].width = w
 
             for row in rows:
-                saldo = row.get('saldo', '')
                 ws.append([
                     row.get('ean', ''),
                     row.get('nombre', ''),
-                    row.get('erp_qty', '') if row.get('erp_qty') is not None else '',
-                    row.get('stock_obs', '') if row.get('stock_obs') is not None else '',
-                    row.get('rotacion', ''),
-                    row.get('avg_monthly', '') if row.get('avg_monthly') is not None else '',
-                    row.get('precio_pvp', '') if row.get('precio_pvp') else '',
-                    row.get('cant_modulo', '') if row.get('cant_modulo') else '',
-                    row.get('cant_modulo_packs', '') if row.get('cant_modulo_packs') else '',
-                    row.get('cant_oferta_min', '') if row.get('cant_oferta_min') else '',
-                    row.get('cant_nodeal', '') if row.get('cant_nodeal') else '',
-                    row.get('total', ''),
-                    row.get('cobertura_actual_d', '') if row.get('cobertura_actual_d') is not None else '',
-                    row.get('cobertura_post_d', '') if row.get('cobertura_post_d') is not None else '',
-                    row.get('gap_vs_objetivo_d', '') if row.get('gap_vs_objetivo_d') is not None else '',
-                    row.get('objetivo_d', '') if row.get('objetivo_d') is not None else '',
-                    row.get('cant_pedida', ''),
-                    saldo if saldo != '' else '',
+                    row.get('cantidad', 0) or 0,
                 ])
-                saldo_val = row.get('saldo')
-                if saldo_val is not None:
-                    from openpyxl.styles import PatternFill as _PF
-                    # Saldo es la última columna (R = 18).
-                    if saldo_val > 0:
-                        ws.cell(row=ws.max_row, column=18).fill = _PF(fill_type='solid', fgColor='FEE2E2')
-                    elif saldo_val < 0:
-                        ws.cell(row=ws.max_row, column=18).fill = _PF(fill_type='solid', fgColor='D1FAE5')
 
         if fmt == 'xlsx':
             buf = BytesIO()
