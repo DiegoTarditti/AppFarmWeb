@@ -543,6 +543,35 @@ def get_mensajes(conv_id, desde_id=0):
                 for m in msgs]
 
 
+def get_historial_ia(conv_id, limite=10):
+    """Últimos mensajes cliente/bot en formato Anthropic (lista de
+    {role, content}), para darle MEMORIA de conversación al nodo de IA.
+
+    Incluye el mensaje entrante (ya guardado por `procesar`). Colapsa turnos
+    consecutivos del mismo rol (evita el 400 de la API por roles no alternados,
+    p.ej. tras un handoff donde quedaron varios mensajes del cliente seguidos) y
+    arranca siempre en 'user'."""
+    with database.get_db() as s:
+        msgs = (s.query(database.BotMensaje)
+                .filter(database.BotMensaje.conversacion_id == conv_id,
+                        database.BotMensaje.origen.in_(['cliente', 'bot']))
+                .order_by(database.BotMensaje.id.desc())
+                .limit(limite).all())
+    historial = []
+    for m in reversed(msgs):  # cronológico
+        texto = (m.texto or '').strip()
+        if not texto:
+            continue
+        rol = 'user' if m.origen == 'cliente' else 'assistant'
+        if historial and historial[-1]['role'] == rol:
+            historial[-1]['content'] += '\n' + texto
+        else:
+            historial.append({'role': rol, 'content': texto})
+    while historial and historial[0]['role'] != 'user':
+        historial.pop(0)
+    return historial
+
+
 def lineas_distintas():
     """Las líneas/números de entrada que aparecieron (para el filtro del panel)."""
     with database.get_db() as s:

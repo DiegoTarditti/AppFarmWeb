@@ -205,6 +205,29 @@ def test_caja_formas_pago_seed():
     assert 'Efectivo' in nombres and len(nombres) >= 3
 
 
+def test_historial_ia_alterna_roles_y_colapsa_consecutivos():
+    conv = store.get_conversacion('telegram', 'h1', nombre='Hist')
+    cid = conv['id']
+    # Dos del cliente seguidos (p.ej. tras un handoff) → se colapsan en un 'user'.
+    store.guardar_mensaje(cid, 'cliente', 'hola')
+    store.guardar_mensaje(cid, 'cliente', 'tenés ibuprofeno?')
+    store.guardar_mensaje(cid, 'bot', 'sí, tengo')
+    store.guardar_mensaje(cid, 'operador', 'no debe aparecer')
+    h = store.get_historial_ia(cid)
+    assert [m['role'] for m in h] == ['user', 'assistant']   # alterna, sin operador
+    assert h[0]['content'] == 'hola\ntenés ibuprofeno?'        # colapsado
+    assert h[0]['role'] == 'user'                             # arranca en user
+
+
+def test_historial_ia_descarta_assistant_inicial():
+    conv = store.get_conversacion('telegram', 'h2', nombre='Hist2')
+    cid = conv['id']
+    store.guardar_mensaje(cid, 'bot', 'menú de bienvenida')   # arranca con bot
+    store.guardar_mensaje(cid, 'cliente', 'algo para la tos')
+    h = store.get_historial_ia(cid)
+    assert h and h[0]['role'] == 'user'   # se descarta el assistant del arranque
+
+
 def test_procesar_guarda_mensaje_entrante_aunque_este_en_humano():
     conv = store.get_conversacion('telegram', '444', nombre='C')
     store.set_atencion(conv['id'], 'humano')

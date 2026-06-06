@@ -109,7 +109,10 @@ def leer_receta(imagen_b64, media_type='image/jpeg'):
                 'Probá de nuevo o acercate a la farmacia con ella.')
 
 
-def consulta_ia(texto):
+def consulta_ia(texto, historial=None):
+    """`historial`: turnos previos en formato Anthropic ([{role, content}], ya
+    incluye el mensaje actual). Si viene, la IA recuerda el hilo; si no, cae al
+    mensaje suelto (stateless)."""
     api_key = (os.environ.get('ANTHROPIC_API_KEY') or '').strip()
     if not api_key:
         return ('Por ahora no puedo responder consultas libres 🙈\n'
@@ -117,7 +120,7 @@ def consulta_ia(texto):
     try:
         from anthropic import Anthropic
         client = Anthropic(api_key=api_key)
-        messages = [{'role': 'user', 'content': texto}]
+        messages = list(historial) if historial else [{'role': 'user', 'content': texto}]
         texto_resp = _conversar_con_tool(client, SYSTEM, messages, max_vueltas=4, max_tokens=600)
         return texto_resp or '¿Me lo reformulás? 🙂'
     except Exception as e:  # noqa: BLE001
