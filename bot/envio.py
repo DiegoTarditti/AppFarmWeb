@@ -9,6 +9,7 @@ Las cuadras las provee el operador (Fase 1) o el bot desde la ubicación
 (Fase 2). lat/lng/radio_km de las zonas quedan NULL hasta Fase 2 (pin → círculo).
 """
 import math
+import re
 import unicodedata
 
 import requests
@@ -273,27 +274,46 @@ def cotizar_por_coords(lat, lng):
     return r
 
 
+def _variantes_direccion(direccion):
+    """georef quiere 'calle altura'. Si pegaron CP/ciudad/provincia, probamos
+    también una versión recortada: calle + primer número."""
+    d = (direccion or '').strip()
+    variantes = [d]
+    m = re.match(r'^(.*?\d{1,6})(?:\D|$)', d)
+    if m and m.group(1).strip() and m.group(1).strip() != d:
+        variantes.append(m.group(1).strip())
+    return variantes
+
+
+def _georef_una(direccion, provincia, localidad):
+    """Una consulta a georef (timeout amplio + 1 reintento). (lat,lng) | None."""
+    params = {'direccion': direccion, 'provincia': provincia, 'max': 1}
+    if localidad:
+        params['localidad'] = localidad
+    for intento in range(2):
+        try:
+            data = requests.get(GEOREF_URL, params=params, timeout=15).json()
+            ds = data.get('direcciones') or []
+            if not ds:
+                return None
+            u = ds[0].get('ubicacion') or {}
+            lat, lon = u.get('lat'), u.get('lon')
+            return (float(lat), float(lon)) if lat is not None and lon is not None else None
+        except Exception as e:  # noqa: BLE001
+            print(f'geocodificar intento {intento + 1} error:', e)
+    return None
+
+
 def geocodificar(direccion, provincia='santa fe', localidad=None):
-    """Dirección escrita → (lat, lng) vía georef-ar (gratis, AR). None si falla."""
-    direccion = (direccion or '').strip()
-    if not direccion:
+    """Dirección escrita → (lat, lng) vía georef-ar (gratis, AR). None si falla.
+    Tolera que peguen CP/ciudad/provincia: prueba 'calle altura' recortado."""
+    if not (direccion or '').strip():
         return None
-    try:
-        params = {'direccion': direccion, 'provincia': provincia, 'max': 1}
-        if localidad:
-            params['localidad'] = localidad
-        data = requests.get(GEOREF_URL, params=params, timeout=8).json()
-        ds = data.get('direcciones') or []
-        if not ds:
-            return None
-        u = ds[0].get('ubicacion') or {}
-        lat, lon = u.get('lat'), u.get('lon')
-        if lat is None or lon is None:
-            return None
-        return (float(lat), float(lon))
-    except Exception as e:  # noqa: BLE001
-        print('geocodificar error:', e)
-        return None
+    for var in _variantes_direccion(direccion):
+        coords = _georef_una(var, provincia, localidad)
+        if coords:
+            return coords
+    return None
 
 
 def cotizar_por_direccion(direccion, localidad=None):
