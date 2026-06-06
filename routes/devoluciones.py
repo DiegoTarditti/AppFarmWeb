@@ -293,15 +293,29 @@ def init_app(app):
     # ──────────────────────────────────────────────────────────────────
     def _vendedor_sugerido_actual(vendedores):
         """Retorna (uuid, nombre) del vendedor que matchea con
-        current_user.nombre_completo. None si no matchea."""
-        nombre_user = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
-        if not nombre_user:
+        current_user.nombre_completo. None si no matchea.
+
+        Prioridad: igualdad exacta > prefijo con borde de palabra > primer
+        token (nombre de pila). Sin esta prioridad, un usuario 'ROCIO B'
+        matchearía con el vendedor 'ROCIO' (prefijo) antes que con el suyo
+        exacto — clave cuando hay varios vendedores con el mismo nombre de pila."""
+        u = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
+        if not u:
             return None, None
+        exacto = prefijo = token = None
         for v in vendedores:
-            v_nombre = (v.get('nombre') or '').strip().upper()
-            if v_nombre == nombre_user or v_nombre.startswith(nombre_user) or nombre_user in v_nombre:
-                return v['id_usuario'], v['nombre']
-        return None, None
+            vn = (v.get('nombre') or '').strip().upper()
+            if not vn:
+                continue
+            if vn == u:
+                exacto = v
+                break
+            if (u.startswith(vn + ' ') or vn.startswith(u + ' ')) and prefijo is None:
+                prefijo = v
+            elif u.split()[0] == vn.split()[0] and token is None:
+                token = v
+        v = exacto or prefijo or token
+        return (v['id_usuario'], v['nombre']) if v else (None, None)
 
     @app.route('/rend-recetas/lotes', methods=['GET'])
     @login_required
@@ -326,6 +340,17 @@ def init_app(app):
             ).filter(D.rendicion_lote_id.isnot(None),
                      D.auditor_motivo_id.isnot(None))
              .group_by(D.rendicion_lote_id).all())
+            # Grupo(s)/tipo de rendición por lote: se deriva de las OS de sus
+            # recetas (el lote no guarda grupo). Mapeo OS→grupo por nombre.
+            _, grupo_por_nombre_os = _grupos_filtro_ctx()
+            os_por_lote = session.query(
+                D.rendicion_lote_id, D.obra_social_nombre
+            ).filter(D.rendicion_lote_id.isnot(None)).distinct().all()
+            grupos_por_lote = {}
+            for lote_id_, os_nombre in os_por_lote:
+                g = grupo_por_nombre_os.get((os_nombre or '').strip().upper())
+                if g:
+                    grupos_por_lote.setdefault(lote_id_, set()).add(g['nombre'])
             items = []
             from datetime import datetime
             now = datetime.utcnow()
@@ -339,6 +364,7 @@ def init_app(app):
                     'lote': lote,
                     'n_recetas': n_rec,
                     'n_auditadas': conteos_audit.get(lote.id, 0),
+                    'grupos': sorted(grupos_por_lote.get(lote.id, [])),
                     'dias_sin_actividad': (now - lote.creado_en).days if lote.creado_en else 0,
                 })
         return render_template('rendicion_lotes_list.html',
@@ -371,9 +397,14 @@ def init_app(app):
         if rol == 'rendicion':
             try:
                 vendedores = observer_source.listar_vendedores(solo_habilitados=False)
-                vendedor_id, vendedor_nombre = _vendedor_sugerido_actual(vendedores)
+                vendedor_id, _ = _vendedor_sugerido_actual(vendedores)
             except Exception as e:
                 current_app.logger.warning('No se pudo resolver vendedor sugerido (ObServer): %s', e)
+            # El lote SIEMPRE se ata al nombre_completo del usuario (no al nombre
+            # corto de ObServer). Las vistas de rol=rendicion filtran por
+            # vendedor_nombre == nombre_completo; si guardáramos el alias corto
+            # ("CELINA" en vez de "CELINA FERRERO") el lote quedaría invisible.
+            vendedor_nombre = (getattr(current_user, 'nombre_completo', '') or '').strip() or None
 
         with database.get_db() as session:
             existe = (session.query(database.RendicionLote)
@@ -710,6 +741,9 @@ def init_app(app):
         q_estado = (request.args.get('estado') or '').strip()
         # Filtro extra: 'pend_auditor' = sin auditor_motivo_id seteado
         q_auditoria = (request.args.get('auditoria') or '').strip()
+        # Tipo de rendición (grupo de OS): filtro client-side, pero lo recordamos
+        # para re-aplicarlo tras Filtrar (sino el submit lo reseteaba).
+        q_grupo = (request.args.get('grupo') or '').strip()
         try:
             page = max(1, int(request.args.get('page', '1')))
         except ValueError:
@@ -750,6 +784,29 @@ def init_app(app):
                         _fu.upper(database.DevolucionReceta.vendedor_nombre) == nombre_user
                     )
                 base = base.filter(database.DevolucionReceta.estado != 'ok')
+
+            # Filtro server-side por TIPO/grupo de rendición (antes era solo
+            # client-side sobre la página visible → "no traía nada" si las
+            # recetas del grupo estaban en otra página o sin agrupar). Mapea por
+            # nombre de OS (RendicionGrupoOS.nombre_cached).
+            def _aplicar_filtro_grupo(q):
+                if not q_grupo:
+                    return q
+                from sqlalchemy import func as _fg
+                col = _fg.upper(database.DevolucionReceta.obra_social_nombre)
+                if q_grupo == '__sin__':
+                    agrup = {(o.nombre_cached or '').strip().upper()
+                             for o in session.query(database.RendicionGrupoOS).all()}
+                    return q.filter(col.notin_(agrup)) if agrup else q
+                if q_grupo.isdigit():
+                    nombres = [(o.nombre_cached or '').strip().upper()
+                               for o in session.query(database.RendicionGrupoOS)
+                               .filter_by(grupo_id=int(q_grupo)).all()]
+                    # grupo sin OS → no devolver nada (evita mostrar todo)
+                    return q.filter(col.in_(nombres)) if nombres \
+                        else q.filter(database.DevolucionReceta.id == -1)
+                return q
+            base = _aplicar_filtro_grupo(base)
 
             total = base.count()
             devoluciones = (base.order_by(database.DevolucionReceta.creado_en.desc())
@@ -796,6 +853,7 @@ def init_app(app):
                 if _nu:
                     _scope = _scope.filter(_f.upper(database.DevolucionReceta.vendedor_nombre) == _nu)
                 _scope = _scope.filter(database.DevolucionReceta.estado != 'ok')
+            _scope = _aplicar_filtro_grupo(_scope)
             _scope_sub = _scope.subquery()
             cuentas_estado = dict(session.query(
                 _scope_sub.c.estado, _f.count(_scope_sub.c.id)
@@ -927,6 +985,7 @@ def init_app(app):
                                    page=page, last_page=last_page,
                                    q_presentacion=q_presentacion, q_vendedor=q_vendedor,
                                    q_estado=q_estado, q_auditoria=q_auditoria,
+                                   q_grupo=q_grupo,
                                    cuentas_estado=cuentas_estado,
                                    pend_auditor=pend_auditor,
                                    motivos_auditor=motivos_auditor,
@@ -987,11 +1046,10 @@ def init_app(app):
         nombre_user = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
         vendedor_sugerido = ''
         if rol_actual_get == 'rendicion' and nombre_user:
-            for v in vendedores:
-                v_nombre = (v.get('nombre') or '').strip().upper()
-                if v_nombre == nombre_user or v_nombre.startswith(nombre_user) or nombre_user in v_nombre:
-                    vendedor_sugerido = v['id_usuario']
-                    break
+            # Misma prioridad que _vendedor_sugerido_actual (exacto > prefijo >
+            # primer token) para no confundir 'ROCIO B' con 'ROCIO'.
+            _vid, _ = _vendedor_sugerido_actual(vendedores)
+            vendedor_sugerido = _vid or ''
 
         # Lotes de rendición abiertos para el dropdown. Para rol=rendicion
         # solo los suyos (filtra por vendedor matcheado).
@@ -1162,6 +1220,12 @@ def init_app(app):
                       'Pedile al admin que ajuste tu nombre completo para que '
                       'matchee con un OperadorVenta.', 'error')
                 return redirect(url_for('devoluciones_buscar'))
+            # Rol rendicion: se trae TODO (desde la última hasta hoy) y al
+            # registrar se reparte solo por grupo en lotes {base}-{grupo}. No se
+            # elige tipo manualmente → ignoramos cualquier grupo/os del form.
+            grupo_id = None
+            obra_social_id = None
+            modo_otras = False
 
         # Resolver lista de OS a buscar. Tipo de rendición OBLIGATORIO: un grupo,
         # o "otras" (las OS que no están en ningún grupo). Prioridad: grupo >
@@ -1191,7 +1255,8 @@ def init_app(app):
                                      for o in _s.query(database.RendicionGrupoOS).all()
                                      if o.nombre_cached}
 
-        if not grupo_id and not obra_social_id and not modo_otras:
+        if (rol_actual_get != 'rendicion'
+                and not grupo_id and not obra_social_id and not modo_otras):
             flash('Elegí un tipo de rendición, o "Otras (sin tipo)".', 'error')
             return redirect(url_for('devoluciones_buscar'))
         if modo_otras and not vendedor_id:
@@ -1380,6 +1445,13 @@ def init_app(app):
         # desde el lote para compat con queries viejas.
         lote_id = request.form.get('lote_id', type=int)
         rol_g = getattr(current_user, 'rol', None)
+        # Para rol=rendicion las recetas SIEMPRE se guardan con el nombre_completo
+        # del usuario (no el alias corto de ObServer que viene en el hidden). Los
+        # listados de este rol filtran por vendedor_nombre == nombre_completo; si
+        # guardáramos "CELINA" en vez de "CELINA FERRERO" las recetas quedarían
+        # guardadas pero invisibles. Mismo criterio que el lote.
+        if rol_g == 'rendicion':
+            vendedor_nombre = (getattr(current_user, 'nombre_completo', '') or '').strip() or vendedor_nombre
 
         # Fallback defensivo: si el form NO mandó lote_id (bug viejo del
         # template), intentamos resolverlo. 1ro por nro_presentacion del
@@ -1413,6 +1485,11 @@ def init_app(app):
                 _lote = _s.get(database.RendicionLote, lote_id)
                 if _lote:
                     nro_presentacion = _lote.nro
+        # Base de la rendición = el número ingresado, sin el sufijo de grupo.
+        # Cada receta se reparte luego en un lote {base}-{etiqueta_grupo[:8]}
+        # (o {base}-Otras si su OS no está en ningún grupo). Si el lote elegido
+        # ya tenía sufijo (ej "63105-AMR/Iapo"), recuperamos "63105".
+        base_nro = (nro_presentacion or '').split('-', 1)[0].strip() or None
         # Modelo nuevo: se guarda TODO el lote (todas las recetas traídas), no
         # solo las marcadas. `op_all` = todas las op de la pantalla; `marcar` =
         # las que el vendedor marcó "Rendida" (en_auditoria=True → pasan al
@@ -1483,6 +1560,39 @@ def init_app(app):
                     else:
                         no_editables.add(d.id_operacion_observer)
 
+            # Auto-split por grupo: cada receta nueva va a un lote
+            # {base}-{etiqueta_grupo[:8]} según el grupo de su OS (o {base}-Otras
+            # si la OS no está en ningún grupo). El nombre del lote ya dice el
+            # grupo. find-or-create por (nro, vendedor); cache en memoria.
+            _, _grupo_por_nombre_os_g = _grupos_filtro_ctx()
+            _lote_cache = {}
+            _last_lote_id = lote_id
+
+            def _suffix_grupo(os_nombre):
+                g = _grupo_por_nombre_os_g.get((os_nombre or '').strip().upper())
+                return g['nombre'][:8] if g else 'Otras'
+
+            def _lote_para(nro_lote):
+                if nro_lote in _lote_cache:
+                    return _lote_cache[nro_lote]
+                from sqlalchemy import func as _fln
+                q = session.query(database.RendicionLote).filter_by(nro=nro_lote)
+                if vendedor_id:
+                    q = q.filter_by(vendedor_observer_id=vendedor_id)
+                elif vendedor_nombre:
+                    q = q.filter(_fln.upper(database.RendicionLote.vendedor_nombre)
+                                 == vendedor_nombre.upper())
+                lote = q.first()
+                if not lote:
+                    lote = database.RendicionLote(
+                        nro=nro_lote, vendedor_observer_id=vendedor_id,
+                        vendedor_nombre=vendedor_nombre, etiqueta=f'Rendición #{nro_lote}',
+                        estado='abierta', creado_por=str(creador) if creador else None)
+                    session.add(lote)
+                    session.flush()
+                _lote_cache[nro_lote] = lote
+                return lote
+
             for op_id_str in todas_op:
                 try:
                     op_id = int(op_id_str)
@@ -1547,9 +1657,19 @@ def init_app(app):
                 except Exception:
                     imp_os = None
 
+                # Lote destino por grupo de la OS de esta receta.
+                if base_nro:
+                    _target_nro = f'{base_nro}-{_suffix_grupo(os_nombre)}'
+                    _target_lote = _lote_para(_target_nro)
+                    _target_lote_id = _target_lote.id
+                    _last_lote_id = _target_lote_id
+                else:
+                    _target_nro = nro_presentacion
+                    _target_lote_id = lote_id
+
                 dev = database.DevolucionReceta(
-                    nro_presentacion=nro_presentacion,
-                    rendicion_lote_id=lote_id,
+                    nro_presentacion=_target_nro,
+                    rendicion_lote_id=_target_lote_id,
                     vendedor_observer_id=vendedor_id,
                     vendedor_nombre=vendedor_nombre,
                     id_operacion_observer=op_id,
@@ -1594,9 +1714,27 @@ def init_app(app):
                         session.add(bm)
                     bm.ultima_op_id = ult_op[0]
                     bm.ultima_fecha_op = ult_op[1]
-                    bm.ultimo_lote_id = lote_id
+                    bm.ultimo_lote_id = _last_lote_id
                     bm.actualizado_en = database.now_ar()
                     session.commit()
+
+            # Limpieza: el lote "base" (sin sufijo de grupo) que creó el modal
+            # queda vacío tras el split → lo borramos para no ensuciar la lista.
+            # Solo si su nro es exactamente base_nro (no un {base}-grupo) y no
+            # tiene recetas.
+            if base_nro and n_creadas:
+                from sqlalchemy import func as _fcl
+                q_base = session.query(database.RendicionLote).filter_by(nro=base_nro)
+                if vendedor_id:
+                    q_base = q_base.filter_by(vendedor_observer_id=vendedor_id)
+                elif vendedor_nombre:
+                    q_base = q_base.filter(_fcl.upper(database.RendicionLote.vendedor_nombre)
+                                           == vendedor_nombre.upper())
+                for lb in q_base.all():
+                    if session.query(database.DevolucionReceta).filter_by(
+                            rendicion_lote_id=lb.id).count() == 0:
+                        session.delete(lb)
+                session.commit()
 
         if errores:
             for e in errores:
