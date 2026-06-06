@@ -12,20 +12,31 @@ def _fmt_precio(p):
 
 
 def consultar_producto(texto):
-    """Búsqueda directa por nombre (sin IA): precio + stock."""
+    """Búsqueda directa por nombre (sin IA): precio + stock.
+
+    Devuelve dict {texto, meta}. `meta` alimenta la analítica de no-resueltos:
+    si no hay match —o todo está sin stock— es demanda perdida (motivo sin_stock)."""
     texto = (texto or '').strip()
     if len(texto) < 3:
-        return 'Escribime el nombre del producto (al menos 3 letras) 🙂'
+        return {'texto': 'Escribime el nombre del producto (al menos 3 letras) 🙂',
+                'meta': {'camino': 'precio', 'resuelto': True}}
     rows = buscar_productos(texto, limite=6)
     if not rows:
-        return (f'No encontré "{texto}" en el sistema. 😕\n'
-                'Probá con otro nombre, o escribí "menú" y elegí "Hablar con una persona".')
+        return {'texto': (f'No encontré "{texto}" en el sistema. 😕\n'
+                          'Probá con otro nombre, o escribí "menú" y elegí "Hablar con una persona".'),
+                'meta': {'camino': 'precio', 'resuelto': False,
+                         'motivo': 'sin_stock', 'producto': texto}}
+    hay_stock = any(r['stock'] > 0 for r in rows)
     lineas = []
     for r in rows:
         disp = f'✅ {r["stock"]} en stock' if r['stock'] > 0 else '❌ sin stock'
         lineas.append(f'• {r["producto"]} — {_fmt_precio(r["precio"])} — {disp}')
-    return ('Esto encontré 👇\n' + '\n'.join(lineas)
-            + '\n\nEscribí "menú" para volver, o el nombre de otro producto.')
+    meta = {'camino': 'precio', 'resuelto': hay_stock}
+    if not hay_stock:  # lo encontró pero todo en cero → también es demanda perdida
+        meta.update({'motivo': 'sin_stock', 'producto': texto})
+    return {'texto': ('Esto encontré 👇\n' + '\n'.join(lineas)
+                      + '\n\nEscribí "menú" para volver, o el nombre de otro producto.'),
+            'meta': meta}
 
 
 def encargar(texto):
@@ -34,7 +45,8 @@ def encargar(texto):
     para que la consulta caiga en la bandeja del panel con todo el contexto."""
     texto = (texto or '').strip()
     if len(texto) < 3:
-        return 'Decime qué querés encargar: producto y cantidad 🙂\n(ej: "2 cajas de amoxidal 500")'
+        return {'texto': 'Decime qué querés encargar: producto y cantidad 🙂\n(ej: "2 cajas de amoxidal 500")',
+                'meta': {'camino': 'encargar', 'resuelto': True}}
     # Si tenemos algo parecido en stock, lo adelantamos (sin prometer nada).
     extra = ''
     if any(r['stock'] > 0 for r in buscar_productos(texto, limite=3)):
@@ -47,6 +59,7 @@ def encargar(texto):
                   '🛵 Si lo querés con envío a domicilio, avisales y lo coordinamos.' + extra),
         'esperando': None,   # corta el loop de captura
         'derivar': True,     # → cae en la bandeja del operador
+        'meta': {'camino': 'encargar', 'resuelto': False, 'motivo': 'derivado'},
     }
 
 

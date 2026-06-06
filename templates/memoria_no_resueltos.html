@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bot · No resueltos</title>
+<style>
+  :root {
+    --bg:#14141a; --surface:#1a1a22; --card:#16161d; --card-bd:#185FA5;
+    --txt:#e0e0e6; --title:#f0f0f3; --muted:#8a8a92; --muted2:#6a6a72;
+    --border:rgba(255,255,255,0.08); --accent:#1D9E75; --accent-ink:#06241a;
+    --row-bd:rgba(255,255,255,0.05); --hov:#23232d;
+    --warn:#EF9F27; --danger:#DC2626; --info:#185FA5;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--txt); font-family:var(--font); }
+  .topbar { height:54px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:14px; padding:0 18px; }
+  .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .logo .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border);
+          background:var(--hov); color:var(--txt); cursor:pointer; }
+  .hbtn:hover { filter:brightness(1.12); }
+  .hbtn-ok { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700; }
+  .input { background:var(--hov); color:var(--txt); border:1px solid var(--border); border-radius:8px; padding:6px 9px; font-size:12px; }
+  label.fl { font-size:11px; color:var(--muted); display:flex; flex-direction:column; gap:3px; }
+  .wrap { max-width:1200px; margin:0 auto; padding:18px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:16px; }
+  .card h2 { margin:0 0 10px; font-size:14px; color:var(--title); font-weight:700; }
+  .filtros { display:flex; flex-wrap:wrap; align-items:flex-end; gap:10px; }
+  .kpis { display:flex; gap:22px; flex-wrap:wrap; margin-bottom:10px; }
+  .kpi { display:flex; flex-direction:column; }
+  .kpi b { font-size:22px; color:var(--title); } .kpi span { font-size:11px; color:var(--muted); }
+  .resumen li { margin:3px 0; font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th { text-align:left; color:var(--muted); font-weight:600; padding:7px 8px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--card); }
+  td { padding:7px 8px; border-bottom:1px solid var(--row-bd); vertical-align:top; }
+  tr:hover td { background:var(--hov); }
+  .badge { font-size:10px; padding:2px 8px; border-radius:999px; font-weight:700; white-space:nowrap; }
+  .b-sin_stock { background:var(--warn); color:#1a1206; }
+  .b-no_entendido { background:var(--hov); color:var(--muted); }
+  .b-derivado { background:var(--info); color:#fff; }
+  .b-receta_ilegible { background:#6d28d9; color:#fff; }
+  .b-falta_info { background:#0891b2; color:#fff; }
+  .b-rechazado_malicioso { background:var(--danger); color:#fff; }
+  .b-ok { background:var(--accent); color:var(--accent-ink); }
+  .muted { color:var(--muted); }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo"><span class="dot"></span>🧠 Bot · Memoria de no-resueltos</div>
+    <div style="flex:1"></div>
+    <span class="muted" style="font-size:12px;">{{ current_user.nombre_completo or current_user.username }}</span>
+    <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
+  </div>
+
+  <div class="wrap">
+    <!-- Resumen del día -->
+    <div class="card">
+      <h2>Resumen del día</h2>
+      <div class="filtros" style="margin-bottom:12px;">
+        <label class="fl">Fecha<input type="date" id="rFecha" class="input" onchange="cargarResumen()"></label>
+        <label class="fl">Línea
+          <select id="rLinea" class="input" onchange="cargarResumen()">
+            <option value="">Todas</option>
+            {% for l in lineas %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="kpis" id="rKpis"></div>
+      <ul class="resumen" id="rTexto"><li class="muted">Cargando…</li></ul>
+    </div>
+
+    <!-- Listado -->
+    <div class="card">
+      <h2>Interacciones</h2>
+      <div class="filtros" style="margin-bottom:12px;">
+        <label class="fl">Desde<input type="date" id="fDesde" class="input"></label>
+        <label class="fl">Hasta<input type="date" id="fHasta" class="input"></label>
+        <label class="fl">Línea
+          <select id="fLinea" class="input">
+            <option value="">Todas</option>
+            {% for l in lineas %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="fl">Motivo
+          <select id="fMotivo" class="input">
+            <option value="">Todos</option>
+            {% for k, v in motivos.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="fl" style="flex-direction:row; align-items:center; gap:6px;">
+          <input type="checkbox" id="fSoloNo"> solo no resueltas
+        </label>
+        <button onclick="cargarLista()" class="hbtn hbtn-ok">Aplicar</button>
+        <button onclick="exportar()" class="hbtn">Exportar Excel</button>
+      </div>
+      <div style="overflow:auto; max-height:60vh;">
+        <table>
+          <thead><tr>
+            <th>Fecha</th><th>Línea</th><th>Camino</th><th>Estado</th>
+            <th>Motivo</th><th>Producto / Tema</th><th>Texto</th>
+          </tr></thead>
+          <tbody id="tbody"><tr><td colspan="7" class="muted">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+const MOTIVOS = {{ motivos | tojson }};
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function hoyISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
+function filtrosLista(){
+  const p = new URLSearchParams();
+  const d=document.getElementById('fDesde').value, h=document.getElementById('fHasta').value;
+  const l=document.getElementById('fLinea').value, m=document.getElementById('fMotivo').value;
+  if(d) p.set('desde',d); if(h) p.set('hasta',h);
+  if(l) p.set('linea',l); if(m) p.set('motivo',m);
+  if(document.getElementById('fSoloNo').checked) p.set('solo_no_resueltas','1');
+  return p.toString();
+}
+
+async function cargarLista(){
+  const d = await (await fetch('/bot/no-resueltos/api/lista?'+filtrosLista())).json();
+  const filas = d.interacciones||[];
+  const tb = document.getElementById('tbody');
+  if(!filas.length){ tb.innerHTML='<tr><td colspan="7" class="muted">Sin interacciones para el filtro.</td></tr>'; return; }
+  tb.innerHTML = filas.map(f=>{
+    const estado = f.resuelto ? '<span class="badge b-ok">resuelto</span>'
+                              : '<span class="badge b-no_entendido">no</span>';
+    const mot = f.motivo ? `<span class="badge b-${f.motivo}">${esc(MOTIVOS[f.motivo]||f.motivo)}</span>` : '';
+    const pt = esc(f.producto || f.tema || '');
+    return `<tr>
+      <td class="muted" style="white-space:nowrap;">${esc(f.fecha)}</td>
+      <td>${esc(f.linea||'')}</td>
+      <td>${esc(f.camino||'')}</td>
+      <td>${estado}</td>
+      <td>${mot}</td>
+      <td>${pt}</td>
+      <td>${esc(f.texto||'')}</td>
+    </tr>`;
+  }).join('');
+}
+
+function exportar(){ window.location = '/bot/no-resueltos/export.xlsx?'+filtrosLista(); }
+
+async function cargarResumen(){
+  const p = new URLSearchParams();
+  const f=document.getElementById('rFecha').value, l=document.getElementById('rLinea').value;
+  if(f) p.set('fecha',f); if(l) p.set('linea',l);
+  const d = await (await fetch('/bot/no-resueltos/api/resumen?'+p.toString())).json();
+  const r = d.resumen||{};
+  document.getElementById('rKpis').innerHTML = `
+    <div class="kpi"><b>${r.total||0}</b><span>consultas</span></div>
+    <div class="kpi"><b>${r.resueltas||0}</b><span>resueltas</span></div>
+    <div class="kpi"><b>${r.no_resueltas||0}</b><span>sin resolver</span></div>`;
+  document.getElementById('rTexto').innerHTML = (d.texto||[]).map(t=>`<li>${esc(t)}</li>`).join('') || '<li class="muted">—</li>';
+}
+
+document.getElementById('rFecha').value = hoyISO();
+cargarResumen();
+cargarLista();
+</script>
+</body>
+</html>

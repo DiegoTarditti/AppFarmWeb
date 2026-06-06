@@ -234,3 +234,67 @@ def test_procesar_guarda_mensaje_entrante_aunque_este_en_humano():
     procesar('telegram', '444', 'una pregunta para el humano')
     textos = [m['texto'] for m in store.get_mensajes(conv['id'])]
     assert 'una pregunta para el humano' in textos
+
+
+# ── Analítica: memoria de no-resueltos (bot_interacciones) ───────────────────
+
+def test_resolver_marca_sin_stock_y_preserva_loop(monkeypatch):
+    # Producto no encontrado → meta sin_stock, y NO corta el loop de búsqueda.
+    monkeypatch.setattr(bot.acciones, 'buscar_productos', lambda *a, **k: [])
+    resp, nodo, esp, deriv = _resolver('consultar_producto', 'consultar_producto',
+                                       'xyzzy', None, IMG)
+    assert resp['meta']['motivo'] == 'sin_stock'
+    assert resp['meta']['producto'] == 'xyzzy' and resp['meta']['resuelto'] is False
+    assert esp == 'consultar_producto' and not deriv   # loop preservado
+
+
+def test_resolver_no_entendido_y_derivado_meta():
+    r1, *_ = _resolver(NODO_INICIO, None, 'aa', None, IMG)        # texto corto, sin match
+    assert r1['meta']['motivo'] == 'no_entendido' and r1['meta']['resuelto'] is False
+    r2, _, _, deriv = _resolver(NODO_INICIO, None, 'Hablar con una persona', None, IMG)
+    assert deriv and r2['meta']['motivo'] == 'derivado'
+
+
+def test_procesar_registra_interaccion():
+    procesar('telegram', 'int1', 'hola', nombre='X', linea='Telegram')
+    filas = store.listar_interacciones()
+    assert any(f['camino'] == 'menu' and f['linea'] == 'Telegram' for f in filas)
+
+
+def test_procesar_en_humano_no_registra_interaccion():
+    conv = store.get_conversacion('telegram', 'h9', nombre='C')
+    store.set_atencion(conv['id'], 'humano')
+    procesar('telegram', 'h9', 'hola igual')
+    filas = store.listar_interacciones()
+    assert all(f['conversacion_id'] != conv['id'] for f in filas)
+
+
+def test_listar_interacciones_y_resumen_del_dia():
+    conv = store.get_conversacion('telegram', 'r1', nombre='C', linea='Telegram')
+    cid = conv['id']
+    store.registrar_interaccion(cid, 'telegram', 'Telegram', 'ibuprofeno',
+                                'precio', False, 'sin_stock', None, 'ibuprofeno')
+    store.registrar_interaccion(cid, 'telegram', 'Telegram', 'gracias', 'menu', True)
+    assert len(store.listar_interacciones()) == 2
+    solo_no = store.listar_interacciones(solo_no_resueltas=True)
+    assert len(solo_no) == 1 and solo_no[0]['motivo'] == 'sin_stock'
+    r = store.resumen_del_dia()
+    assert r['total'] == 2 and r['no_resueltas'] == 1
+    assert r['por_motivo'].get('sin_stock') == 1
+    assert r['productos_sin_stock'][0]['producto'] == 'ibuprofeno'
+
+
+def test_panel_no_resueltos_renderiza(client):
+    r = client.get('/bot/no-resueltos')
+    assert r.status_code == 200
+    assert b'Memoria de no-resueltos' in r.data
+
+
+def test_api_resumen_y_lista_json(client):
+    rr = client.get('/bot/no-resueltos/api/resumen')
+    assert rr.status_code == 200
+    d = rr.get_json()
+    assert 'resumen' in d and 'texto' in d
+    rl = client.get('/bot/no-resueltos/api/lista?solo_no_resueltas=1')
+    assert rl.status_code == 200
+    assert 'interacciones' in rl.get_json()

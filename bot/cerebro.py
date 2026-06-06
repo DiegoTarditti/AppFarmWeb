@@ -88,16 +88,20 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
     # 0) Foto (receta): la procesa la IA visión, sin importar el nodo.
     if imagen_b64:
         return ({'texto': leer_receta(imagen_b64, media_type),
-                 'opciones': _opciones_de(FLUJO[NODO_INICIO])}, NODO_INICIO, None, False)
+                 'opciones': _opciones_de(FLUJO[NODO_INICIO]),
+                 'meta': {'camino': 'receta', 'resuelto': True}}, NODO_INICIO, None, False)
 
     # 1) Comandos globales → menú principal.
     if texto.lower() in _GLOBALES:
-        return (_render(FLUJO[NODO_INICIO]), NODO_INICIO, None, False)
+        resp = _render(FLUJO[NODO_INICIO])
+        resp['meta'] = {'camino': 'menu', 'resuelto': True}
+        return (resp, NODO_INICIO, None, False)
 
     # 1.5) Pedido explícito de un humano, en cualquier estado → handoff REAL.
     # (Antes esto iba a la IA, que "decía" que derivaba sin hacerlo.)
     if _quiere_humano(texto):
-        return ({'texto': FLUJO['derivar']['mensaje'], 'opciones': []},
+        return ({'texto': FLUJO['derivar']['mensaje'], 'opciones': [],
+                 'meta': {'camino': 'derivar', 'resuelto': False, 'motivo': 'derivado'}},
                 NODO_INICIO, None, True)
 
     # 2) Esperando input para una acción (ej. nombre de producto).
@@ -105,12 +109,21 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
         accion = ACCIONES.get(esperando)
         if accion:
             out = accion(texto, historial) if esperando == 'consulta_ia' else accion(texto)
+            # camino por defecto según la acción; el dict de la acción puede
+            # refinar la meta (motivo sin_stock/derivado, producto).
+            camino_def = {'consultar_producto': 'precio', 'encargar': 'encargar',
+                          'consulta_ia': 'consulta_ia'}.get(esperando, 'otro')
             # Una acción puede devolver un string (sigue en el mismo loop) o un
-            # dict {texto, esperando, derivar} para cortar el loop o derivar.
+            # dict {texto, esperando, derivar, meta} para cortar el loop o derivar.
             if isinstance(out, dict):
-                return ({'texto': out['texto'], 'opciones': out.get('opciones', [])},
-                        nodo_actual, out.get('esperando'), out.get('derivar', False))
-            return ({'texto': out, 'opciones': []}, nodo_actual, esperando, False)
+                # esperando: solo se cambia si la acción lo dice (sin la key → loop sigue).
+                nueva_esp = out['esperando'] if 'esperando' in out else esperando
+                resp = {'texto': out['texto'], 'opciones': out.get('opciones', []),
+                        'meta': {'camino': camino_def, 'resuelto': True, **(out.get('meta') or {})}}
+                return (resp, nodo_actual, nueva_esp, out.get('derivar', False))
+            return ({'texto': out, 'opciones': [],
+                     'meta': {'camino': camino_def, 'resuelto': True}},
+                    nodo_actual, esperando, False)
 
     # 3) Selección dentro del menú actual.
     nodo = FLUJO.get(nodo_actual, FLUJO[NODO_INICIO])
@@ -120,25 +133,40 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
         # menú: es una charla, los botones del saludo siguen visibles más arriba.
         ia = ACCIONES.get('consulta_ia')
         if ia and len(texto) >= 3:
-            return ({'texto': ia(texto, historial), 'opciones': []}, nodo_actual, None, False)
+            return ({'texto': ia(texto, historial), 'opciones': [],
+                     'meta': {'camino': 'consulta_ia', 'resuelto': True}},
+                    nodo_actual, None, False)
         return ({'texto': 'No te entendí 🤔 Escribí "menú" para ver las opciones.',
-                 'opciones': []}, nodo_actual, None, False)
+                 'opciones': [], 'meta': {'camino': 'otro', 'resuelto': False,
+                                          'motivo': 'no_entendido'}},
+                nodo_actual, None, False)
 
     destino_key = op['va_a']
     destino = FLUJO.get(destino_key)
     if not destino:
-        return (_render(FLUJO[NODO_INICIO]), NODO_INICIO, None, False)
+        resp = _render(FLUJO[NODO_INICIO])
+        resp['meta'] = {'camino': 'menu', 'resuelto': True}
+        return (resp, NODO_INICIO, None, False)
 
     tipo = destino['tipo']
     if tipo == 'menu':
-        return (_render(destino), destino_key, None, False)
+        resp = _render(destino)
+        resp['meta'] = {'camino': 'menu', 'resuelto': True}
+        return (resp, destino_key, None, False)
     if tipo == 'pedir_input':
-        return ({'texto': destino['mensaje'], 'opciones': []}, destino_key, destino['accion'], False)
+        # Navegó a un nodo que pide input; el resultado real llega en el próximo mensaje.
+        return ({'texto': destino['mensaje'], 'opciones': [],
+                 'meta': {'camino': 'menu', 'resuelto': True}},
+                destino_key, destino['accion'], False)
     # 'texto' (hoja) → mostrar y volver al menú. Si es "derivar", marca handoff.
     # Al derivar NO mostramos el menú: el cliente queda esperando al operador.
     derivar = (destino_key == 'derivar')
     opciones = [] if derivar else _opciones_de(FLUJO[NODO_INICIO])
-    return ({'texto': destino['mensaje'], 'opciones': opciones}, NODO_INICIO, None, derivar)
+    meta = ({'camino': 'derivar', 'resuelto': False, 'motivo': 'derivado'} if derivar
+            else {'camino': destino_key if destino_key in ('horarios', 'receta') else 'menu',
+                  'resuelto': True})
+    return ({'texto': destino['mensaje'], 'opciones': opciones, 'meta': meta},
+            NODO_INICIO, None, derivar)
 
 
 def _fmt_monto(m):
@@ -415,4 +443,13 @@ def procesar(canal, canal_user_id, texto, imagen_b64=None,
         store.set_atencion(cid, 'cola')
     if resp and resp.get('texto'):
         store.guardar_mensaje(cid, 'bot', resp['texto'])
+
+    # Analítica: registrar la interacción con su camino/motivo (lo que el bot
+    # resolvió o no). Solo acá — el bot efectivamente procesó; nunca en el
+    # return None de cola/humano (ahí responde una persona, no el bot).
+    meta = (resp or {}).get('meta') or {}
+    store.registrar_interaccion(
+        conv_id=cid, canal=canal, linea=linea, texto=texto,
+        camino=meta.get('camino', 'otro'), resuelto=meta.get('resuelto', True),
+        motivo=meta.get('motivo'), tema=meta.get('tema'), producto=meta.get('producto'))
     return resp
