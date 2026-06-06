@@ -53,24 +53,25 @@
     <div class="card">
       <h2>Cotizador de envío</h2>
       <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
-        <label class="fl">Dirección (geolocaliza)
-          <input id="cDir" class="input" placeholder="ej: Córdoba 3400" style="width:200px;" onkeydown="if(event.key==='Enter')cotizar()">
+        <label class="fl" style="flex:1 1 260px;">Dirección (geolocaliza)
+          <input id="cDir" class="input" placeholder="ej: Córdoba 3400" style="width:100%;" onkeydown="if(event.key==='Enter')cotizar()">
         </label>
-        <label class="fl">Localidad / zona
-          <input id="cLocalidad" class="input" placeholder="ej: Roldán, centro…" style="width:160px;" onkeydown="if(event.key==='Enter')cotizar()">
+        <label class="fl">Ciudad
+          <select id="cCiudad" class="input" style="width:150px;"></select>
         </label>
         <label class="fl">o Cuadras
-          <input id="cCuadras" type="number" min="0" class="input" placeholder="ej: 22" style="width:100px;" onkeydown="if(event.key==='Enter')cotizar()">
+          <input id="cCuadras" type="number" min="0" class="input" placeholder="ej: 22" style="width:90px;" onkeydown="if(event.key==='Enter')cotizar()">
         </label>
         <button onclick="cotizar()" class="hbtn hbtn-ok" style="padding:9px 16px;">Cotizar</button>
-        <div style="flex:1"></div>
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:10px; justify-content:space-between; align-items:flex-end; margin-top:8px;">
+        <div class="muted" style="font-size:11px; flex:1 1 240px;">
+          La ciudad/zona nombrada (Roldán, Kentucky…) pisa al resto. Dirección → geocodifica y mide cuadras; o cargá las cuadras a mano. Los barrios (centro, refinería) se detectan por la dirección.
+        </div>
         <div style="text-align:right;">
-          <div class="cot-monto" id="cMonto">—</div>
+          <span class="cot-monto" id="cMonto">—</span>
           <div class="cot-det" id="cDet"></div>
         </div>
-      </div>
-      <div class="muted" style="font-size:11px; margin-top:8px;">
-        La zona nombrada (refinería, Roldán…) pisa al resto. Dirección → geocodifica y mide cuadras; o cargá las cuadras a mano.
       </div>
     </div>
 
@@ -143,6 +144,10 @@ async function cargar(){
   document.getElementById('cfAviso').textContent = (c.farmacia_lat==null)
     ? '⚠️ Falta la ubicación de la farmacia: sin eso no se puede estimar cuadras desde el pin.'
     : 'Origen configurado ✓';
+  // Dropdown de ciudades (conserva la selección actual)
+  const sel = document.getElementById('cCiudad'); const prev = sel.value;
+  sel.innerHTML = '<option value="">— ciudad —</option>' +
+    (d.ciudades||[]).map(c=>`<option ${c===prev?'selected':''}>${esc(c)}</option>`).join('');
   // Tramos
   document.getElementById('tbTramos').innerHTML = (d.tramos||[]).map(t=>`
     <tr>
@@ -165,7 +170,7 @@ async function cargar(){
 
 async function cotizar(){
   const dir = document.getElementById('cDir').value.trim();
-  const loc = document.getElementById('cLocalidad').value.trim();
+  const loc = document.getElementById('cCiudad').value.trim();
   const cua = document.getElementById('cCuadras').value.trim();
   const p = new URLSearchParams();
   if(dir) p.set('direccion',dir);

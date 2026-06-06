@@ -22,6 +22,9 @@ GEOREF_URL = 'https://apis.datos.gob.ar/georef/api/direcciones'
 DEFAULT_TRAMOS = [(14, 2500), (24, 3000), (34, 3500), (49, 4000), (9999, 4500)]
 DEFAULT_ZONAS = [('refinería', 8000), ('centro', 8000), ('Kentucky', 10000),
                  ('haras', 12000), ('Roldán', 15000)]
+# Ciudades/destinos del dropdown del cotizador (catálogo compartido con alta de
+# clientes). Los que coincidan con una zona nombrada cobran tarifa fija.
+DEFAULT_CIUDADES = ['Rosario', 'Funes', 'Funes Hills', 'Roldán', 'Kentucky', 'Haras']
 
 
 def _norm(s):
@@ -41,6 +44,24 @@ def seed_si_vacio():
             for i, (nombre, monto) in enumerate(DEFAULT_ZONAS):
                 s.add(database.EnvioZona(nombre=nombre, monto=monto, orden=i))
             s.commit()
+
+
+def seed_ciudades_si_vacio():
+    """Carga las ciudades/destinos por defecto si el catálogo está vacío."""
+    with database.get_db() as s:
+        if s.query(database.Ciudad).count() == 0:
+            for n in DEFAULT_CIUDADES:
+                s.add(database.Ciudad(nombre=n, provincia='Santa Fe'))
+            s.commit()
+
+
+def listar_ciudades():
+    """Nombres del catálogo de ciudades (para el dropdown del cotizador)."""
+    seed_ciudades_si_vacio()
+    with database.get_db() as s:
+        cs = (s.query(database.Ciudad).filter(database.Ciudad.activa.is_(True))
+              .order_by(database.Ciudad.nombre).all())
+        return [c.nombre for c in cs]
 
 
 def cotizar(localidad=None, cuadras=None):
@@ -78,6 +99,7 @@ def listar_tarifas():
     """Para el panel: config + tramos (ordenados) + zonas. Siembra si vacío."""
     seed_si_vacio()
     cfg = get_config()
+    ciudades = listar_ciudades()
     with database.get_db() as s:
         tramos = (s.query(database.EnvioTramo)
                   .order_by(database.EnvioTramo.hasta_cuadras).all())
@@ -85,6 +107,7 @@ def listar_tarifas():
                  .order_by(database.EnvioZona.orden, database.EnvioZona.nombre).all())
         return {
             'config': cfg,
+            'ciudades': ciudades,
             'tramos': [{'id': t.id, 'hasta_cuadras': t.hasta_cuadras,
                         'monto': float(t.monto or 0)} for t in tramos],
             'zonas': [{'id': z.id, 'nombre': z.nombre, 'monto': float(z.monto or 0),
