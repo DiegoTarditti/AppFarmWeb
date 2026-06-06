@@ -11,7 +11,10 @@ import os
 from bot.data import buscar_productos
 from bot.info import FICHA
 
-MODEL = 'claude-sonnet-4-6'
+# Texto libre ("algo para la tos", "tenés protector?"): Haiku alcanza de sobra
+# y sale ~3x más barato. Recetas (visión) usan Sonnet, que lee mejor la foto.
+MODEL_TEXTO = 'claude-haiku-4-5'
+MODEL_RECETA = 'claude-sonnet-4-6'
 
 SYSTEM = """Sos el asistente por chat de Farmacia Badia (Rosario). Atendés clientes de forma amable, breve y en español rioplatense (de vos).
 
@@ -62,11 +65,12 @@ SYSTEM += _INFO
 SYSTEM_RECETA += _INFO
 
 
-def _conversar_con_tool(client, system, messages, max_vueltas=6, max_tokens=800):
+def _conversar_con_tool(client, system, messages, model=MODEL_TEXTO,
+                        max_vueltas=6, max_tokens=800):
     """Loop de tool use compartido: corre la conversación resolviendo las
     llamadas a buscar_producto hasta que el modelo responde texto."""
     for _ in range(max_vueltas):
-        resp = client.messages.create(model=MODEL, max_tokens=max_tokens,
+        resp = client.messages.create(model=model, max_tokens=max_tokens,
                                       system=system, tools=TOOLS, messages=messages)
         if resp.stop_reason != 'tool_use':
             txt = ''.join(b.text for b in resp.content
@@ -100,7 +104,8 @@ def leer_receta(imagen_b64, media_type='image/jpeg'):
                                          'media_type': media_type, 'data': imagen_b64}},
             {'type': 'text', 'text': 'Acá va la foto de mi receta.'},
         ]}]
-        texto = _conversar_con_tool(client, SYSTEM_RECETA, messages, max_tokens=800)
+        texto = _conversar_con_tool(client, SYSTEM_RECETA, messages,
+                                    model=MODEL_RECETA, max_tokens=800)
         return texto or ('Recibí la foto pero no pude leerla bien 😕\n'
                          'Probá con una más clara o acercate a la farmacia con la receta.')
     except Exception as e:  # noqa: BLE001
