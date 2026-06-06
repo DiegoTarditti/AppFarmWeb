@@ -119,7 +119,7 @@ def main():
             continue
         for u in updates:
             offset = u['update_id'] + 1
-            imagen_b64, media_type = None, 'image/jpeg'
+            imagen_b64, media_type, ubicacion = None, 'image/jpeg', None
             if 'callback_query' in u:
                 # Tocaron un botón inline.
                 cq = u['callback_query']
@@ -136,7 +136,11 @@ def main():
                 chat_id = (msg.get('chat') or {}).get('id')
                 texto = msg.get('text', '') or msg.get('caption', '')
                 nombre = (msg.get('from') or {}).get('first_name')
-                if msg.get('photo'):
+                if msg.get('location'):
+                    # Pin de ubicación → el cerebro cotiza el envío.
+                    loc = msg['location']
+                    ubicacion = {'lat': loc.get('latitude'), 'lng': loc.get('longitude')}
+                elif msg.get('photo'):
                     # Foto (receta): tomamos la de mayor resolución.
                     if chat_id:
                         _aviso(base, chat_id, '📸 Leyendo tu receta, dame unos segundos…')
@@ -175,7 +179,7 @@ def main():
             try:
                 resp = cerebro.procesar('telegram', str(chat_id), texto,
                                         imagen_b64=imagen_b64, media_type=media_type,
-                                        nombre=nombre, linea='Telegram')
+                                        nombre=nombre, linea='Telegram', ubicacion=ubicacion)
             except Exception as e:  # noqa: BLE001
                 print('cerebro error:', e)
                 resp = {'texto': 'Uy, tuve un problema. Probá de nuevo en un ratito 🙏',

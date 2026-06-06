@@ -9,7 +9,7 @@ handoff (panel de operadores): si la conversación la tomó un operador
 """
 import os
 
-from bot import store
+from bot import envio, store
 from bot.acciones import ACCIONES
 from bot.flujo import FLUJO, NODO_INICIO
 from bot.ia import leer_receta
@@ -141,8 +141,25 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
     return ({'texto': destino['mensaje'], 'opciones': opciones}, NODO_INICIO, None, derivar)
 
 
+def _fmt_monto(m):
+    return f'${m:,.0f}'.replace(',', '.')
+
+
+def _resp_envio(ubicacion):
+    """Cotiza el envío desde un pin de ubicación y arma la respuesta."""
+    r = envio.cotizar_por_coords(ubicacion.get('lat'), ubicacion.get('lng'))
+    if r.get('monto') is not None:
+        det = f" ({r['detalle']})" if r.get('detalle') else ''
+        txt = (f"🛵 El envío a tu ubicación sale {_fmt_monto(r['monto'])}{det}.\n"
+               'Para coordinarlo escribí "operador" y te ayudamos 🙂')
+    else:
+        txt = ('📍 ¡Gracias! Recibí tu ubicación, pero no pude calcular el envío '
+               'automáticamente 🙈\nEscribí "operador" y el equipo te pasa el costo.')
+    return {'texto': txt, 'opciones': _opciones_de(FLUJO[NODO_INICIO])}
+
+
 def procesar(canal, canal_user_id, texto, imagen_b64=None,
-             media_type='image/jpeg', nombre=None, linea=None):
+             media_type='image/jpeg', nombre=None, linea=None, ubicacion=None):
     texto = (texto or '').strip()
     conv = store.get_conversacion(canal, canal_user_id, nombre, linea)
     cid = conv['id']
@@ -154,15 +171,22 @@ def procesar(canal, canal_user_id, texto, imagen_b64=None,
         conv['estado_atencion'] = 'bot'
 
     # Guardar el mensaje entrante.
-    store.guardar_mensaje(cid, 'cliente',
-                          texto or ('[imagen recibida]' if imagen_b64 else ''),
-                          tiene_imagen=bool(imagen_b64))
+    entrante = texto or ('[imagen recibida]' if imagen_b64
+                         else ('[ubicación recibida]' if ubicacion else ''))
+    store.guardar_mensaje(cid, 'cliente', entrante, tiene_imagen=bool(imagen_b64))
 
     # Si ya está derivada (en cola) o la tomó un operador (humano), el bot NO
     # responde: el cliente espera a la persona, no queremos meter el menú en el
     # medio. Los mensajes igual se guardan arriba para que el operador los vea.
     if conv['estado_atencion'] in ('cola', 'humano'):
         return None
+
+    # Ubicación (pin) → cotizar envío al toque (Fase 2).
+    if ubicacion and ubicacion.get('lat') is not None:
+        resp = _resp_envio(ubicacion)
+        if resp.get('texto'):
+            store.guardar_mensaje(cid, 'bot', resp['texto'])
+        return resp
 
     # Historial (incluye el mensaje recién guardado) para que el nodo de IA
     # recuerde el hilo de la conversación.

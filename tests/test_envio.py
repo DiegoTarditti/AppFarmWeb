@@ -1,6 +1,7 @@
-"""Tests de cotización de envío (Fase 1): zonas pisan, tramos por cuadras,
-seed, CRUD y endpoints del panel."""
+"""Tests de cotización de envío: zonas pisan, tramos por cuadras, seed, CRUD,
+endpoints (Fase 1) + coords/geocoder/config/pin (Fase 2)."""
 from bot import envio
+from bot.cerebro import procesar
 
 
 # ── cotizar (lógica pura sobre la grilla) ────────────────────────────────────
@@ -69,3 +70,59 @@ def test_api_cotizar_json(client):
     assert r.status_code == 200 and r.get_json()['monto'] == 15000
     r2 = client.get('/envio/api/tarifas')
     assert r2.status_code == 200 and 'tramos' in r2.get_json()
+
+
+# ── Fase 2: coords / geocoder / config / pin ─────────────────────────────────
+
+def test_guardar_config_no_pisa_coords():
+    envio.guardar_config(farmacia_lat=-32.9, farmacia_lng=-60.6)
+    envio.guardar_config(factor_cuadras=1.5)   # editar solo el factor
+    c = envio.get_config()
+    assert c['farmacia_lat'] == -32.9 and c['farmacia_lng'] == -60.6
+    assert c['factor_cuadras'] == 1.5
+
+
+def test_cuadras_desde_coords():
+    envio.guardar_config(farmacia_lat=-32.95, farmacia_lng=-60.65,
+                         factor_cuadras=1.3, metros_por_cuadra=100)
+    assert envio.cuadras_desde_coords(-32.95, -60.65) == 0
+    cu = envio.cuadras_desde_coords(-32.959, -60.65)   # ~1 km al sur
+    assert 8 <= cu <= 18                                # ~13 cuadras
+
+
+def test_cotizar_por_coords_circulo_pisa_y_tramo():
+    envio.seed_si_vacio()
+    envio.guardar_config(farmacia_lat=-32.95, farmacia_lng=-60.65)
+    z = next(x for x in envio.listar_tarifas()['zonas'] if x['nombre'] == 'Roldán')
+    envio.guardar_zona(z['id'], 'Roldán', 15000, lat=-32.90, lng=-60.91, radio_km=5)
+    dentro = envio.cotizar_por_coords(-32.90, -60.91)   # dentro del círculo
+    assert dentro['monto'] == 15000 and dentro['fuente'] == 'zona'
+    cerca = envio.cotizar_por_coords(-32.952, -60.652)  # cerca de la farmacia
+    assert cerca['fuente'] == 'tramo' and cerca['cuadras'] is not None
+
+
+def test_cotizar_por_coords_sin_config_no_revienta():
+    envio.seed_si_vacio()   # sin guardar coords de farmacia
+    r = envio.cotizar_por_coords(-32.95, -60.65)
+    assert r['monto'] is None   # no puede estimar cuadras → a convenir
+
+
+def test_cotizar_por_direccion(monkeypatch):
+    envio.seed_si_vacio()
+    envio.guardar_config(farmacia_lat=-32.95, farmacia_lng=-60.65)
+    # atajo por zona (sin geocodificar)
+    assert envio.cotizar_por_direccion('lo que sea', localidad='Roldán')['monto'] == 15000
+    # con geocoder (mockeado) → tramo
+    monkeypatch.setattr(envio, 'geocodificar', lambda *a, **k: (-32.952, -60.652))
+    assert envio.cotizar_por_direccion('Córdoba 1500')['fuente'] == 'tramo'
+    # geocoder falla → no se puede
+    monkeypatch.setattr(envio, 'geocodificar', lambda *a, **k: None)
+    assert envio.cotizar_por_direccion('dir rara')['monto'] is None
+
+
+def test_procesar_pin_cotiza_envio():
+    envio.seed_si_vacio()
+    envio.guardar_config(farmacia_lat=-32.95, farmacia_lng=-60.65)
+    resp = procesar('telegram', 'PIN1', '', nombre='C', linea='Telegram',
+                    ubicacion={'lat': -32.952, 'lng': -60.652})
+    assert resp and 'envío' in resp['texto'].lower()

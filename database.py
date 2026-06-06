@@ -505,6 +505,19 @@ class EnvioZona(Base):
     orden = Column(Integer, nullable=False, default=0)
 
 
+class EnvioConfig(Base):
+    """Config de envío (fila única). Coordenadas de la farmacia (origen) +
+    parámetros para convertir distancia en línea recta a 'cuadras' del cadete:
+    cuadras ≈ (metros / metros_por_cuadra) × factor_cuadras (rodeo de la grilla)."""
+    __tablename__ = 'envio_config'
+    id = Column(Integer, primary_key=True)
+    farmacia_lat = Column(Float, nullable=True)
+    farmacia_lng = Column(Float, nullable=True)
+    factor_cuadras = Column(Float, nullable=False, default=1.3)
+    metros_por_cuadra = Column(Integer, nullable=False, default=100)
+    actualizado_en = Column(DateTime, default=now_ar)
+
+
 class ObsSyncLog(Base):
     """Log de cada corrida de sync por entidad (última ejecución + resultados)."""
     __tablename__ = 'obs_sync_log'
@@ -2455,7 +2468,7 @@ def init_db(database_url=None):
                         'analisis_ia_cache', 'panel_heartbeat',
                         'bot_conversaciones', 'bot_mensajes', 'clientes_locales',
                         'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago',
-                        'envio_tramos', 'envio_zonas')
+                        'envio_tramos', 'envio_zonas', 'envio_config')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.

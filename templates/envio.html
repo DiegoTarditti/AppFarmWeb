@@ -53,11 +53,14 @@
     <div class="card">
       <h2>Cotizador de envío</h2>
       <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
-        <label class="fl">Localidad / zona (opcional)
-          <input id="cLocalidad" class="input" placeholder="ej: Roldán, centro…" style="width:220px;" onkeydown="if(event.key==='Enter')cotizar()">
+        <label class="fl">Dirección (geolocaliza)
+          <input id="cDir" class="input" placeholder="ej: Córdoba 3400" style="width:200px;" onkeydown="if(event.key==='Enter')cotizar()">
         </label>
-        <label class="fl">Cuadras
-          <input id="cCuadras" type="number" min="0" class="input" placeholder="ej: 22" style="width:120px;" onkeydown="if(event.key==='Enter')cotizar()">
+        <label class="fl">Localidad / zona
+          <input id="cLocalidad" class="input" placeholder="ej: Roldán, centro…" style="width:160px;" onkeydown="if(event.key==='Enter')cotizar()">
+        </label>
+        <label class="fl">o Cuadras
+          <input id="cCuadras" type="number" min="0" class="input" placeholder="ej: 22" style="width:100px;" onkeydown="if(event.key==='Enter')cotizar()">
         </label>
         <button onclick="cotizar()" class="hbtn hbtn-ok" style="padding:9px 16px;">Cotizar</button>
         <div style="flex:1"></div>
@@ -67,8 +70,28 @@
         </div>
       </div>
       <div class="muted" style="font-size:11px; margin-top:8px;">
-        La zona nombrada (refinería, centro, Roldán…) tiene prioridad sobre las cuadras.
+        La zona nombrada (refinería, Roldán…) pisa al resto. Dirección → geocodifica y mide cuadras; o cargá las cuadras a mano.
       </div>
+    </div>
+
+    <!-- Config de la farmacia (origen) -->
+    <div class="card">
+      <h2>Ubicación de la farmacia (origen) y conversión</h2>
+      <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+        <label class="fl">Lat<input id="cfLat" class="input" style="width:130px;" placeholder="-32.95"></label>
+        <label class="fl">Lng<input id="cfLng" class="input" style="width:130px;" placeholder="-60.65"></label>
+        <label class="fl">Factor rodeo<input id="cfFactor" type="number" step="0.05" class="input" style="width:90px;"></label>
+        <label class="fl">Metros/cuadra<input id="cfMpc" type="number" class="input" style="width:100px;"></label>
+        <button onclick="guardarConfig()" class="hbtn hbtn-ok">Guardar</button>
+        <div style="flex:1"></div>
+        <label class="fl">Geolocalizar por dirección
+          <div style="display:flex; gap:6px;">
+            <input id="cfDir" class="input" style="width:170px;" placeholder="ej: Córdoba 1234, Rosario">
+            <button onclick="geoFarmacia()" class="hbtn">📍 Ubicar</button>
+          </div>
+        </label>
+      </div>
+      <div class="muted" id="cfAviso" style="font-size:11px; margin-top:8px;"></div>
     </div>
 
     <div class="grid2">
@@ -91,9 +114,10 @@
       <div class="card">
         <h2>Zonas con tarifa fija</h2>
         <table>
-          <thead><tr><th>Zona</th><th>Monto</th><th></th></tr></thead>
+          <thead><tr><th>Zona</th><th>Monto</th><th>Radio km</th><th>Pin</th><th></th></tr></thead>
           <tbody id="tbZonas"></tbody>
         </table>
+        <div class="muted" style="font-size:11px; margin-top:6px;">El "Pin" (📍) geolocaliza la zona para detectarla desde la ubicación del cliente (Fase 2).</div>
         <div style="display:flex; gap:6px; margin-top:10px;">
           <input id="nZonaNombre" class="input" placeholder="nombre (ej: Roldán)" style="flex:1;">
           <input id="nZonaMonto" type="number" min="0" class="input" placeholder="monto" style="flex:1;">
@@ -110,6 +134,16 @@ async function jpost(url, body){ return (await fetch(url,{method:'POST',headers:
 
 async function cargar(){
   const d = await (await fetch('/envio/api/tarifas')).json();
+  // Config
+  const c = d.config||{};
+  document.getElementById('cfLat').value = c.farmacia_lat ?? '';
+  document.getElementById('cfLng').value = c.farmacia_lng ?? '';
+  document.getElementById('cfFactor').value = c.factor_cuadras ?? '';
+  document.getElementById('cfMpc').value = c.metros_por_cuadra ?? '';
+  document.getElementById('cfAviso').textContent = (c.farmacia_lat==null)
+    ? '⚠️ Falta la ubicación de la farmacia: sin eso no se puede estimar cuadras desde el pin.'
+    : 'Origen configurado ✓';
+  // Tramos
   document.getElementById('tbTramos').innerHTML = (d.tramos||[]).map(t=>`
     <tr>
       <td><input class="input" type="number" value="${t.hasta_cuadras}" onchange="saveTramo(${t.id}, this.value, null)"></td>
@@ -117,23 +151,52 @@ async function cargar(){
       <td><button class="hbtn hbtn-danger" onclick="delTramo(${t.id})">Quitar</button></td>
     </tr>`).join('') || '<tr><td colspan="3" class="muted">Sin tramos.</td></tr>';
   window._tramos = {}; (d.tramos||[]).forEach(t=>window._tramos[t.id]=t);
+  // Zonas
   document.getElementById('tbZonas').innerHTML = (d.zonas||[]).map(z=>`
     <tr>
-      <td><input class="input" value="${esc(z.nombre)}" onchange="saveZona(${z.id}, this.value, null)"></td>
-      <td><input class="input" type="number" value="${z.monto}" onchange="saveZona(${z.id}, null, this.value)"></td>
+      <td><input class="input" value="${esc(z.nombre)}" onchange="saveZona(${z.id}, this.value, null, null)"></td>
+      <td><input class="input" type="number" value="${z.monto}" onchange="saveZona(${z.id}, null, this.value, null)"></td>
+      <td><input class="input" type="number" step="0.5" value="${z.radio_km ?? ''}" placeholder="2" onchange="saveZona(${z.id}, null, null, this.value)" style="width:70px;"></td>
+      <td>${z.lat!=null ? '✓' : '<span class="muted">—</span>'} <button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="geoZona(${z.id})">📍</button></td>
       <td><button class="hbtn hbtn-danger" onclick="delZona(${z.id})">Quitar</button></td>
-    </tr>`).join('') || '<tr><td colspan="3" class="muted">Sin zonas.</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="5" class="muted">Sin zonas.</td></tr>';
   window._zonas = {}; (d.zonas||[]).forEach(z=>window._zonas[z.id]=z);
 }
 
 async function cotizar(){
+  const dir = document.getElementById('cDir').value.trim();
   const loc = document.getElementById('cLocalidad').value.trim();
   const cua = document.getElementById('cCuadras').value.trim();
-  const p = new URLSearchParams(); if(loc) p.set('localidad',loc); if(cua) p.set('cuadras',cua);
+  const p = new URLSearchParams();
+  if(dir) p.set('direccion',dir);
+  if(loc) p.set('localidad',loc);
+  if(cua) p.set('cuadras',cua);
+  document.getElementById('cMonto').textContent = '…';
   const d = await (await fetch('/envio/api/cotizar?'+p.toString())).json();
   document.getElementById('cMonto').textContent = fmt(d.monto);
   const pill = d.fuente ? `<span class="pill ${d.fuente}">${d.fuente}</span> ` : '';
-  document.getElementById('cDet').innerHTML = pill + esc(d.detalle||'');
+  const cu = d.cuadras!=null ? ` · ${d.cuadras} cuadras` : '';
+  document.getElementById('cDet').innerHTML = pill + esc(d.detalle||'') ;
+}
+
+async function guardarConfig(){
+  await jpost('/envio/config', {
+    farmacia_lat: document.getElementById('cfLat').value,
+    farmacia_lng: document.getElementById('cfLng').value,
+    factor_cuadras: document.getElementById('cfFactor').value,
+    metros_por_cuadra: document.getElementById('cfMpc').value });
+  cargar();
+}
+async function geoFarmacia(){
+  const dir = document.getElementById('cfDir').value.trim(); if(!dir) return;
+  const d = await jpost('/envio/config/geolocalizar', {direccion: dir});
+  if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
+  cargar();
+}
+async function geoZona(id){
+  const d = await jpost(`/envio/zona/${id}/geolocalizar`);
+  if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo geolocalizar')); return; }
+  cargar();
 }
 
 async function saveTramo(id, hasta, monto){
@@ -149,9 +212,11 @@ async function addTramo(){
 }
 async function delTramo(id){ if(confirm('¿Quitar tramo?')){ await jpost(`/envio/tramo/${id}/delete`); cargar(); } }
 
-async function saveZona(id, nombre, monto){
+async function saveZona(id, nombre, monto, radio){
   const z = window._zonas[id] || {};
-  await jpost('/envio/zona', {id, nombre: nombre!=null?nombre:z.nombre, monto: monto!=null?monto:z.monto});
+  const body = {id, nombre: nombre!=null?nombre:z.nombre, monto: monto!=null?monto:z.monto};
+  if(radio!=null && radio!=='') body.radio_km = radio;
+  await jpost('/envio/zona', body);
   cargar();
 }
 async function addZona(){
