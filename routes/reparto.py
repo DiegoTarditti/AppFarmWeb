@@ -36,6 +36,7 @@ def _pedido_dict(p):
     return {'id': p.id, 'cliente_nombre': p.cliente_nombre or 's/cliente',
             'direccion': p.direccion or '', 'nota': p.nota or '',
             'cuadrante': p.cuadrante, 'ruta_id': p.ruta_id, 'estado': p.estado,
+            'prioridad': p.prioridad or 'normal',
             'orden': p.orden_en_ruta or 0, 'lat': p.lat, 'lng': p.lng}
 
 
@@ -164,6 +165,8 @@ def init_app(app):
                 direccion=direccion or None, lat=lat, lng=lng,
                 nota=(b.get('nota') or '').strip() or None,
                 cuadrante=cuad, ruta_id=(ruta.id if ruta else None),
+                prioridad=(b.get('prioridad') if b.get('prioridad') in
+                           ('urgente', 'normal', 'programado') else 'normal'),
                 estado='pendiente')
             s.add(p)
             s.commit()
@@ -219,7 +222,8 @@ def init_app(app):
         with database.get_db() as s:
             ps = (s.query(P).filter(P.ruta_id == rid, P.fecha == fecha,
                                     P.estado.in_(['pendiente', 'en_ruta'])).all())
-            items = [{'id': p.id, 'lat': p.lat, 'lng': p.lng} for p in ps]
+            items = [{'id': p.id, 'lat': p.lat, 'lng': p.lng,
+                      'prioridad': p.prioridad} for p in ps]
             orden = reparto.secuenciar(items)
             pos = {it['id']: i for i, it in enumerate(orden, start=1)}
             for p in ps:
