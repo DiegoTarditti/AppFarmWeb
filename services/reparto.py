@@ -65,6 +65,28 @@ def seed_rutas_si_vacio():
             s.commit()
 
 
+def secuenciar(items, origen=None):
+    """Ordena las paradas por 'vecino más cercano' arrancando desde la farmacia
+    (heurística simple para acortar el recorrido). `items`: lista de dicts con
+    'id','lat','lng'. Devuelve la lista reordenada (las sin coords van al final)."""
+    cfg = envio.get_config()
+    o = origen or ((cfg['farmacia_lat'], cfg['farmacia_lng'])
+                   if cfg['farmacia_lat'] is not None else None)
+    con = [it for it in items if it.get('lat') is not None and it.get('lng') is not None]
+    sin = [it for it in items if it.get('lat') is None or it.get('lng') is None]
+    if not o or not con:
+        return con + sin
+    orden, actual = [], o
+    restantes = list(con)
+    while restantes:
+        nxt = min(restantes, key=lambda it: envio._haversine_m(
+            actual[0], actual[1], it['lat'], it['lng']))
+        orden.append(nxt)
+        restantes.remove(nxt)
+        actual = (nxt['lat'], nxt['lng'])
+    return orden + sin
+
+
 def ruta_para_cuadrante(s, cuadrante):
     """Ruta activa cuyo criterio es ese cuadrante (None si no hay)."""
     if not cuadrante:

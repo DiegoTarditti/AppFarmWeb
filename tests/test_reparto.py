@@ -91,3 +91,39 @@ def test_export_arma_link(client):
 def test_paneles_renderizan(client):
     assert b'Armar reparto' in client.get('/reparto').data
     assert client.get('/rutas').status_code == 200
+
+
+# ── Fase 2: secuenciación + mapa ─────────────────────────────────────────────
+
+def test_secuenciar_vecino_mas_cercano():
+    _set_farmacia()   # farmacia en lng -60.65
+    items = [{'id': 3, 'lat': -32.95, 'lng': -60.62},
+             {'id': 1, 'lat': -32.95, 'lng': -60.64},
+             {'id': 2, 'lat': -32.95, 'lng': -60.63}]
+    assert [it['id'] for it in reparto.secuenciar(items)] == [1, 2, 3]
+
+
+def test_secuenciar_sin_coords_al_final():
+    _set_farmacia()
+    items = [{'id': 1, 'lat': -32.95, 'lng': -60.64}, {'id': 2, 'lat': None, 'lng': None}]
+    assert [it['id'] for it in reparto.secuenciar(items)] == [1, 2]
+
+
+def test_optimizar_setea_orden(client):
+    _set_farmacia()
+    reparto.seed_rutas_si_vacio()
+    conv = store.get_conversacion('telegram', 'REPO', nombre='C')
+    d_lejos = store.guardar_domicilio(conv['id'], etiqueta='a', lat=-32.95, lng=-60.62, origen='pin')
+    d_cerca = store.guardar_domicilio(conv['id'], etiqueta='b', lat=-32.95, lng=-60.64, origen='pin')
+    for d in (d_lejos, d_cerca):
+        client.post('/reparto/pedido', json={'cliente_nombre': 'x', 'domicilio_id': d['id']})
+    ruta_e = next(x for x in client.get('/reparto/api').get_json()['rutas'] if x['cuadrante'] == 'E')
+    assert client.post(f"/reparto/ruta/{ruta_e['id']}/optimizar", json={}).get_json()['ok']
+    peds = sorted(client.get('/reparto/api').get_json()['pedidos'], key=lambda p: p['orden'])
+    assert [p['orden'] for p in peds] == [1, 2]
+    assert peds[0]['lng'] == -60.64   # el más cercano a la farmacia va primero
+
+
+def test_api_incluye_farmacia(client):
+    _set_farmacia()
+    assert client.get('/reparto/api').get_json()['farmacia']['lat'] == -32.95
