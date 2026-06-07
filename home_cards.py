@@ -245,6 +245,18 @@ ACCIONES_HOME = [
         'bg_default': '#E8F3ED',
         'fg_default': '#2E7D5B',
     },
+    {
+        'id': 'reparto',
+        'titulo': 'Reparto',
+        'desc': 'Armar rutas de reparto y asignar pedidos del día',
+        'endpoint': 'reparto_panel',
+        'emoji': '🚚',
+        'tone': 'mint',
+        'badge_key': None,
+        'icono_path': 'M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1',
+        'bg_default': '#E8F3ED',
+        'fg_default': '#2E7D5B',
+    },
 ]
 
 ACCIONES_HOME_BY_ID = {c['id']: c for c in ACCIONES_HOME}
@@ -269,6 +281,7 @@ CARD_CATEGORIA = {
     'procesos':             'operativo',
     'consulta_stock':       'operativo',
     'envio':                'operativo',
+    'reparto':              'operativo',
     # Laboratorios
     'ofertas_import':       'laboratorios',
     'consulta_lab':         'laboratorios',

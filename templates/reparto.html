@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Armar reparto · Badia</title>
+<style>
+  :root {
+    --bg:#14141a; --surface:#1a1a22; --card:#16161d; --txt:#e0e0e6; --title:#f0f0f3;
+    --muted:#8a8a92; --muted2:#6a6a72; --border:rgba(255,255,255,0.08); --accent:#1D9E75;
+    --accent-ink:#06241a; --row-bd:rgba(255,255,255,0.06); --hov:#23232d; --warn:#EF9F27;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--txt); font-family:var(--font); }
+  .topbar { height:54px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:12px; padding:0 18px; flex-wrap:wrap; }
+  .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .logo .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border); background:var(--hov); color:var(--txt); cursor:pointer; text-decoration:none; }
+  .hbtn-ok { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700; }
+  .hbtn-danger { background:transparent; color:#F09595; border-color:#5a2a2a; font-size:10px; padding:2px 7px; }
+  .input { background:var(--hov); color:var(--txt); border:1px solid var(--border); border-radius:8px; padding:7px 9px; font-size:13px; }
+  .wrap { padding:16px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:16px; }
+  .muted { color:var(--muted); } .muted2 { color:var(--muted2); }
+  .cols { display:flex; gap:12px; overflow-x:auto; padding-bottom:8px; align-items:flex-start; }
+  .col { background:var(--card); border:1px solid var(--border); border-radius:14px; min-width:240px; max-width:280px; flex:0 0 auto; display:flex; flex-direction:column; max-height:72vh; }
+  .col-head { padding:10px 12px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
+  .dotc { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .col-body { padding:8px; overflow-y:auto; display:flex; flex-direction:column; gap:7px; }
+  .ped { border:1px solid var(--row-bd); border-radius:10px; padding:8px 9px; font-size:12px; }
+  .ped.entregado { opacity:.5; }
+  .badge { font-size:9px; padding:1px 7px; border-radius:999px; font-weight:700; background:var(--hov); color:var(--muted); }
+  .res { background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:4px; max-height:160px; overflow:auto; }
+  .res .it { padding:6px 9px; cursor:pointer; font-size:12px; border-bottom:1px solid var(--row-bd); }
+  .res .it:hover { background:var(--hov); }
+  a.link { color:#7fb0e0; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo"><span class="dot"></span>🚚 Armar reparto · Badia</div>
+    <div style="flex:1"></div>
+    <label class="muted" style="font-size:12px;">Día <input type="date" id="fecha" class="input" onchange="cargar()"></label>
+    <a href="/rutas" class="hbtn">Definir rutas</a>
+    <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
+  </div>
+
+  <div class="wrap">
+    <!-- Alta de pedido -->
+    <div class="card">
+      <h2 style="margin:0 0 10px; font-size:14px; color:var(--title);">Agregar pedido</h2>
+      <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end;">
+        <label class="muted" style="font-size:11px;">Cliente
+          <div style="display:flex; gap:5px;">
+            <input id="pCliente" class="input" placeholder="Nombre" style="width:170px;" oninput="window._oid=null">
+            <button onclick="buscarCli()" class="hbtn">🔎</button>
+          </div>
+        </label>
+        <label class="muted" style="font-size:11px;">Domicilio guardado
+          <select id="pDom" class="input" style="width:200px;"><option value="">— escribir dirección —</option></select>
+        </label>
+        <label class="muted" style="font-size:11px;">Dirección
+          <input id="pDir" class="input" placeholder="ej: Córdoba 3400" style="width:200px;">
+        </label>
+        <label class="muted" style="font-size:11px;">Nota
+          <input id="pNota" class="input" placeholder="ítems / referencia" style="width:170px;" onkeydown="if(event.key==='Enter')agregar()">
+        </label>
+        <button onclick="agregar()" class="hbtn hbtn-ok" style="padding:9px 16px;">Agregar</button>
+      </div>
+      <div id="resCli" class="res" style="display:none;"></div>
+      <div class="muted" id="avisoCfg" style="font-size:11px; margin-top:8px;"></div>
+    </div>
+
+    <div class="cols" id="cols"><div class="muted">Cargando…</div></div>
+  </div>
+
+<script>
+const CUAD = {N:'Norte', S:'Sur', E:'Este', O:'Oeste'};
+window._oid = null;
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+async function jpost(u,b){ return (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json(); }
+function hoyISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fechaVal(){ return document.getElementById('fecha').value || hoyISO(); }
+
+async function cargar(){
+  const d = await (await fetch('/reparto/api?fecha='+fechaVal())).json();
+  window._rutas = d.rutas||[];
+  const peds = d.pedidos||[];
+  // selector de reasignación
+  const optRutas = '<option value="">(sin asignar)</option>' + window._rutas.map(r=>`<option value="${r.id}">${esc(r.nombre)}</option>`).join('');
+  // columnas: sin asignar + una por ruta
+  const grupos = [{id:null, nombre:'Sin asignar', color:'#6a6a72'}].concat(window._rutas);
+  document.getElementById('cols').innerHTML = grupos.map(g=>{
+    const items = peds.filter(p=> (p.ruta_id||null) === (g.id||null));
+    const filas = items.map(p=>pedCard(p, optRutas)).join('') || '<div class="muted2" style="font-size:11px; padding:6px;">—</div>';
+    const exp = g.id ? `<button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="exportar(${g.id})">Exportar</button>` : '';
+    const cad = g.cadete ? `<span class="muted2" style="font-size:10px;">· ${esc(g.cadete)}</span>` : '';
+    return `<div class="col">
+      <div class="col-head">
+        <span class="dotc" style="background:${esc(g.color||'#6a6a72')}"></span>
+        <b style="font-size:12px;">${esc(g.nombre)}</b> <span class="muted2" style="font-size:11px;">(${items.length})</span> ${cad}
+        <div style="flex:1"></div>${exp}
+      </div>
+      <div class="col-body">${filas}</div>
+    </div>`;
+  }).join('');
+}
+
+function pedCard(p, optRutas){
+  const ent = p.estado==='entregado';
+  const bcuad = p.cuadrante ? `<span class="badge">${esc(CUAD[p.cuadrante]||p.cuadrante)}</span>` : '<span class="badge" style="background:#5a2a2a;color:#F09595;">s/ubicar</span>';
+  return `<div class="ped ${ent?'entregado':''}">
+    <div style="display:flex; justify-content:space-between; gap:6px;">
+      <b>${esc(p.cliente_nombre)}</b> ${bcuad}
+    </div>
+    <div class="muted" style="margin:2px 0;">${esc(p.direccion)}</div>
+    ${p.nota?`<div class="muted2" style="font-size:11px;">📝 ${esc(p.nota)}</div>`:''}
+    <div style="display:flex; gap:5px; margin-top:6px; align-items:center;">
+      <select class="input" style="flex:1; padding:3px 6px; font-size:11px;" onchange="reasignar(${p.id}, this.value)">
+        ${optRutas.replace('value="'+(p.ruta_id||'')+'"', 'value="'+(p.ruta_id||'')+'" selected')}
+      </select>
+      ${ent? `<button class="hbtn" style="font-size:10px;padding:3px 6px;" onclick="estado(${p.id},'pendiente')">↩</button>`
+           : `<button class="hbtn hbtn-ok" style="font-size:10px;padding:3px 6px;" onclick="estado(${p.id},'entregado')">✓</button>`}
+      <button class="hbtn hbtn-danger" onclick="delPed(${p.id})">✕</button>
+    </div>
+  </div>`;
+}
+
+async function buscarCli(){
+  const q = document.getElementById('pCliente').value.trim(); if(q.length<2) return;
+  const d = await (await fetch('/reparto/api/buscar-cliente?q='+encodeURIComponent(q))).json();
+  const box = document.getElementById('resCli');
+  const cs = d.clientes||[];
+  box.style.display = cs.length?'block':'none';
+  box.innerHTML = cs.map(c=>`<div class="it" onclick='pickCli(${c.observer_id}, ${JSON.stringify(c.nombre)})'>${esc(c.nombre)} <span class="muted2">${esc(String(c.documento||''))}</span></div>`).join('');
+}
+async function pickCli(oid, nombre){
+  window._oid = oid;
+  document.getElementById('pCliente').value = nombre;
+  document.getElementById('resCli').style.display='none';
+  const d = await (await fetch(`/reparto/api/${oid}/domicilios`)).json();
+  const sel = document.getElementById('pDom');
+  sel.innerHTML = '<option value="">— escribir dirección —</option>' +
+    (d.domicilios||[]).map(x=>`<option value="${x.id}">${esc(x.etiqueta)} — ${esc(x.direccion||'ubicación 📍')}</option>`).join('');
+}
+
+async function agregar(){
+  const body = {
+    cliente_nombre: document.getElementById('pCliente').value.trim(),
+    observer_id: window._oid || null,
+    domicilio_id: document.getElementById('pDom').value || null,
+    direccion: document.getElementById('pDir').value.trim(),
+    nota: document.getElementById('pNota').value.trim(),
+  };
+  if(!body.cliente_nombre && !body.direccion && !body.domicilio_id){ alert('Poné cliente o dirección.'); return; }
+  const d = await jpost('/reparto/pedido', body);
+  if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
+  if(!d.asignado){ document.getElementById('avisoCfg').textContent = '⚠️ El último pedido quedó "sin asignar" (no se pudo ubicar / falta config de la farmacia en Envíos).'; }
+  else { document.getElementById('avisoCfg').textContent=''; }
+  ['pCliente','pDir','pNota'].forEach(i=>document.getElementById(i).value=''); document.getElementById('pDom').innerHTML='<option value="">— escribir dirección —</option>'; window._oid=null;
+  cargar();
+}
+async function reasignar(pid, ruta_id){ await jpost(`/reparto/pedido/${pid}/asignar`, {ruta_id: ruta_id||null}); cargar(); }
+async function estado(pid, e){ await jpost(`/reparto/pedido/${pid}/estado`, {estado:e}); cargar(); }
+async function delPed(pid){ if(confirm('¿Quitar pedido?')){ await jpost(`/reparto/pedido/${pid}/delete`); cargar(); } }
+async function exportar(rid){
+  const d = await (await fetch(`/reparto/ruta/${rid}/export?fecha=`+fechaVal())).json();
+  if(d.link){ window.open(d.link, '_blank'); }
+  else { alert('No hay paradas con ubicación para armar el recorrido.'); }
+}
+
+document.getElementById('fecha').value = hoyISO();
+cargar();
+</script>
+</body>
+</html>

@@ -433,6 +433,19 @@ def _dom_dict(d):
             'lat': d.lat, 'lng': d.lng, 'origen': d.origen}
 
 
+def listar_domicilios_de_cliente(observer_id=None, local_id=None):
+    """Domicilios de un cliente por su id (para el alta de pedidos de reparto)."""
+    D = database.DomicilioCliente
+    with database.get_db() as s:
+        if observer_id:
+            q = s.query(D).filter(D.cliente_observer_id == observer_id)
+        elif local_id:
+            q = s.query(D).filter(D.cliente_local_id == local_id)
+        else:
+            return []
+        return [_dom_dict(d) for d in q.order_by(D.id.desc()).all()]
+
+
 def listar_domicilios(conv_id):
     """Domicilios del cliente vinculado Y los de la conversación (para no perder
     los que se guardaron antes de vincular el cliente)."""
