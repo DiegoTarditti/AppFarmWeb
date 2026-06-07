@@ -5,7 +5,7 @@ el historial, multi-línea y que sobreviva reinicios.
 """
 from datetime import timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 import database
 
@@ -434,10 +434,17 @@ def _dom_dict(d):
 
 
 def listar_domicilios(conv_id):
+    """Domicilios del cliente vinculado Y los de la conversación (para no perder
+    los que se guardaron antes de vincular el cliente)."""
     D = database.DomicilioCliente
     with database.get_db() as s:
-        campo, valor = _identidad_domicilio(s, conv_id)
-        ds = (s.query(D).filter(getattr(D, campo) == valor)
+        c = s.get(database.BotConversacion, conv_id)
+        conds = [D.conversacion_id == conv_id]
+        if c and c.cliente_observer_id:
+            conds.append(D.cliente_observer_id == c.cliente_observer_id)
+        if c and c.cliente_local_id:
+            conds.append(D.cliente_local_id == c.cliente_local_id)
+        ds = (s.query(D).filter(or_(*conds))
               .order_by(func.coalesce(D.ultimo_uso_en, D.creado_en).desc(), D.id.desc())
               .all())
         return [_dom_dict(d) for d in ds]
