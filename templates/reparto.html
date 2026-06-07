@@ -81,7 +81,60 @@
           </select>
         </label>
         <label class="muted" style="font-size:11px;">Nota
-          <input id="pNota" class="input" placeholder="ítems / referencia" style="width:160px;" onkeydown="if(event.key==='Enter')agregar()">
+          <input id="pNota" class="input" placeholder="ítems / referencia" style="width:160px;">
+        </label>
+        <label class="muted" style="font-size:11px;">Canal
+          <select id="pCanal" class="input" style="width:130px;">
+            <option value="manual">Manual</option>
+            <option value="telefono">Teléfono</option>
+            <option value="chat">Chat</option>
+            <option value="whatsapp">WhatsApp</option>
+            <option value="mostrador">Mostrador</option>
+          </select>
+        </label>
+        <label class="muted" style="font-size:11px;">Turno
+          <select id="pTurno" class="input" style="width:110px;">
+            <option value="">—</option>
+            <option value="mañana">Mañana</option>
+            <option value="tarde">Tarde</option>
+          </select>
+        </label>
+        <label class="muted" style="font-size:11px;">TOMO
+          <input id="pTomo" class="input" placeholder="Anahi, Jaqui..." style="width:130px;">
+        </label>
+        <label class="muted" style="font-size:11px;">Importe $
+          <input id="pImporte" class="input" placeholder="0.00" style="width:90px;" type="number" step="0.01" min="0">
+        </label>
+        <label class="muted" style="font-size:11px;">Forma pago
+          <select id="pFormaPago" class="input" style="width:120px;">
+            <option value="">—</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="transfer">Transfer</option>
+            <option value="link">Link</option>
+            <option value="sc">SC</option>
+            <option value="debito">Débito</option>
+            <option value="credito">Crédito</option>
+          </select>
+        </label>
+        <label class="muted" style="font-size:11px;">Vuelto
+          <input id="pVuelto" class="input" placeholder="NO HAY PLATA / $" style="width:130px;">
+        </label>
+        <label class="muted" style="font-size:11px;">Producto
+          <input id="pProducto" class="input" placeholder="lo que lleva" style="width:140px;">
+        </label>
+        <label class="muted" style="font-size:11px;">Cadete
+          <select id="pCadete" class="input" style="width:140px;">
+            <option value="">(heredar de ruta)</option>
+          </select>
+        </label>
+        <label style="font-size:11px; display:flex; align-items:center; gap:4px;">
+          <input type="checkbox" id="pReceta"> Receta
+        </label>
+        <label style="font-size:11px; display:flex; align-items:center; gap:4px;">
+          <input type="checkbox" id="pPagado"> Pagado
+        </label>
+        <label class="muted" style="font-size:11px;">Observación
+          <input id="pObservacion" class="input" placeholder="recetas 3, TRAER PANTUS..." style="width:160px;" onkeydown="if(event.key==='Enter')agregar()">
         </label>
         <button onclick="agregar()" class="hbtn hbtn-ok" style="padding:9px 16px;">Agregar</button>
       </div>
@@ -116,6 +169,11 @@ async function cargar(){
   if(selC && !selC._filled){
     selC.innerHTML = (d.ciudades||['Rosario']).map(c=>`<option ${c==='Rosario'?'selected':''}>${esc(c)}</option>`).join('');
     selC._filled = true;
+  }
+  // poblar selector de cadetes
+  if(d.cadetes){
+    const selCad = document.getElementById('pCadete');
+    selCad.innerHTML = '<option value="">(heredar de ruta)</option>' + d.cadetes.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
   }
   // selector de reasignación
   const optRutas = '<option value="">(sin asignar)</option>' + window._rutas.map(r=>`<option value="${r.id}">${esc(r.nombre)}</option>`).join('');
@@ -191,13 +249,26 @@ function pedCard(p, optRutas){
   const bprio = urg ? '<span class="badge" style="background:#DC2626;color:#fff;">🔴 Urgente</span>'
               : (p.prioridad==='programado' ? '<span class="badge" style="background:#185FA5;color:#fff;">🕐 Prog.</span>' : '');
   const bcuad = p.cuadrante ? `<span class="badge">${esc(CUAD[p.cuadrante]||p.cuadrante)}</span>` : '<span class="badge" style="background:#5a2a2a;color:#F09595;">s/ubicar</span>';
+  const bcob = p.importe != null ? `$ ${Number(p.importe).toFixed(2)}` : '';
+  const bform = p.forma_pago ? esc(p.forma_pago) : '';
+  const bpag = p.pagado ? '<span class="badge" style="background:var(--accent);color:var(--accent-ink);">✓ Pagado</span>' : '';
+  const bvuelto = p.vuelto ? `<span class="muted2" style="font-size:10px;">↩ ${esc(p.vuelto)}</span>` : '';
+  const bturno = p.turno ? `<span class="badge">${esc(p.turno)}</span>` : '';
+  const btomo = p.tomo ? `<span class="muted2" style="font-size:10px;">👤 ${esc(p.tomo)}</span>` : '';
+  const bcanal = p.canal && p.canal!=='manual' ? `<span class="badge" style="background:#2a3a5a;">${esc(p.canal)}</span>` : '';
+  const bprod = p.producto ? `<span class="muted2" style="font-size:10px;">📦 ${esc(p.producto)}</span>` : '';
+  const breceta = p.requiere_receta ? '<span class="badge" style="background:#5a1a1a;color:#F09595;">📋 Receta</span>' : '';
+  const bobs = p.observacion ? `<span class="muted2" style="font-size:10px;">📝 ${esc(p.observacion)}</span>` : '';
+  const bnota = p.nota && p.nota!==p.observacion ? `<span class="muted2" style="font-size:10px;">📎 ${esc(p.nota)}</span>` : '';
+  const btotal = [bcob, bform, bpag, bvuelto].filter(Boolean).join(' · ');
   return `<div class="ped ${ent?'entregado':''} ${urg?'urg':''}">
     <div style="display:flex; justify-content:space-between; gap:6px;">
       <span>${p.orden?`<span class="badge" style="background:var(--accent);color:var(--accent-ink);">#${p.orden}</span> `:''}<b>${esc(p.cliente_nombre)}</b></span>
-      <span style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;">${bprio}${bcuad}</span>
+      <span style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;">${bprio}${bcuad}${bturno}${bcanal}</span>
     </div>
     <div class="muted" style="margin:2px 0;">${esc(p.direccion)}</div>
-    ${p.nota?`<div class="muted2" style="font-size:11px;">📝 ${esc(p.nota)}</div>`:''}
+    ${btotal ? `<div style="font-size:12px; font-weight:600; margin:2px 0;">${btotal}</div>` : ''}
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin:2px 0;">${btomo}${breceta}${bprod}${bobs}${bnota}</div>
     <div style="display:flex; gap:5px; margin-top:6px; align-items:center;">
       <select class="input" style="flex:1; padding:3px 6px; font-size:11px;" onchange="reasignar(${p.id}, this.value)">
         ${optRutas.replace('value="'+(p.ruta_id||'')+'"', 'value="'+(p.ruta_id||'')+'" selected')}
@@ -236,13 +307,37 @@ async function agregar(){
     localidad: document.getElementById('pCiudad').value,
     nota: document.getElementById('pNota').value.trim(),
     prioridad: document.getElementById('pPrio').value,
+    // Campos nuevos
+    tomo: document.getElementById('pTomo').value.trim(),
+    canal: document.getElementById('pCanal').value,
+    importe: document.getElementById('pImporte').value || null,
+    forma_pago: document.getElementById('pFormaPago').value,
+    vuelto: document.getElementById('pVuelto').value.trim(),
+    requiere_receta: document.getElementById('pReceta').checked,
+    pagado: document.getElementById('pPagado').checked,
+    turno: document.getElementById('pTurno').value,
+    cadete_id: document.getElementById('pCadete').value || null,
+    observacion: document.getElementById('pObservacion').value.trim(),
+    producto: document.getElementById('pProducto').value.trim(),
   };
   if(!body.cliente_nombre && !body.direccion && !body.domicilio_id){ alert('Poné cliente o dirección.'); return; }
   const d = await jpost('/reparto/pedido', body);
   if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
   if(!d.asignado){ document.getElementById('avisoCfg').textContent = '⚠️ El último pedido quedó "sin asignar" (no se pudo ubicar / falta config de la farmacia en Envíos).'; }
   else { document.getElementById('avisoCfg').textContent=''; }
-  ['pCliente','pDir','pNota'].forEach(i=>document.getElementById(i).value=''); document.getElementById('pPrio').value='normal'; document.getElementById('pDom').innerHTML='<option value="">— escribir dirección —</option>'; window._oid=null;
+  // limpiar campos
+  ['pCliente','pDir','pNota','pTomo','pImporte','pVuelto','pProducto','pObservacion'].forEach(i=>{
+    const el=document.getElementById(i); if(el) el.value='';
+  });
+  document.getElementById('pPrio').value='normal';
+  document.getElementById('pDom').innerHTML='<option value="">— escribir dirección —</option>';
+  document.getElementById('pCanal').value='manual';
+  document.getElementById('pFormaPago').value='';
+  document.getElementById('pTurno').value='';
+  document.getElementById('pCadete').value='';
+  document.getElementById('pReceta').checked=false;
+  document.getElementById('pPagado').checked=false;
+  window._oid=null;
   cargar();
 }
 async function reasignar(pid, ruta_id){ await jpost(`/reparto/pedido/${pid}/asignar`, {ruta_id: ruta_id||null}); cargar(); }
