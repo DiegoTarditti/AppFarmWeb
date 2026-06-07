@@ -202,3 +202,57 @@ def test_alta_guarda_prioridad(client):
                                          'domicilio_id': dom['id'], 'prioridad': 'urgente'})
     p = client.get('/reparto/api').get_json()['pedidos'][0]
     assert p['prioridad'] == 'urgente'
+
+
+# ── Cadetes ──────────────────────────────────────────────────────────────────
+
+def test_cadete_crud(client):
+    cid = client.post('/cadetes', json={'nombre': 'Pirulo', 'telefono': '341-555',
+                                        'tarifa_dia': 12000}).get_json()['id']
+    cs = client.get('/cadetes/api').get_json()['cadetes']
+    c = next(x for x in cs if x['id'] == cid)
+    assert c['nombre'] == 'Pirulo' and c['telefono'] == '341-555'
+    assert c['tarifa_dia'] == 12000.0 and c['activo'] and c['zonas'] == 0
+    # editar
+    client.post('/cadetes', json={'id': cid, 'nombre': 'Pirulo R.', 'activo': False})
+    c = next(x for x in client.get('/cadetes/api').get_json()['cadetes'] if x['id'] == cid)
+    assert c['nombre'] == 'Pirulo R.' and not c['activo']
+    # baja
+    assert client.post(f'/cadetes/{cid}/delete').get_json()['ok']
+    assert all(x['id'] != cid for x in client.get('/cadetes/api').get_json()['cadetes'])
+
+
+def test_cadete_sin_nombre_falla(client):
+    r = client.post('/cadetes', json={'telefono': 'x'})
+    assert r.status_code == 400 and not r.get_json()['ok']
+
+
+def test_asignar_cadete_a_ruta_y_cuenta_zonas(client):
+    reparto.seed_rutas_si_vacio()
+    cid = client.post('/cadetes', json={'nombre': 'Gabriel'}).get_json()['id']
+    rutas = client.get('/rutas/api').get_json()['rutas']
+    r1, r2 = rutas[0]['id'], rutas[1]['id']
+    # un cadete cubre VARIAS zonas
+    client.post('/rutas', json={'id': r1, 'cadete_id': cid})
+    client.post('/rutas', json={'id': r2, 'cadete_id': cid})
+    d = client.get('/rutas/api').get_json()
+    rd = {x['id']: x for x in d['rutas']}
+    assert rd[r1]['cadete_id'] == cid and rd[r1]['cadete'] == 'Gabriel'
+    assert rd[r2]['cadete_id'] == cid
+    # el /cadetes/api trae el conteo de zonas
+    cc = next(x for x in client.get('/cadetes/api').get_json()['cadetes'] if x['id'] == cid)
+    assert cc['zonas'] == 2
+
+
+def test_baja_cadete_desvincula_rutas(client):
+    reparto.seed_rutas_si_vacio()
+    cid = client.post('/cadetes', json={'nombre': 'Temporal'}).get_json()['id']
+    rid = client.get('/rutas/api').get_json()['rutas'][0]['id']
+    client.post('/rutas', json={'id': rid, 'cadete_id': cid})
+    client.post(f'/cadetes/{cid}/delete')
+    rd = next(x for x in client.get('/rutas/api').get_json()['rutas'] if x['id'] == rid)
+    assert rd['cadete_id'] is None   # la ruta queda, sin cadete
+
+
+def test_cadetes_panel_renderiza(client):
+    assert client.get('/cadetes').status_code == 200

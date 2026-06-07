@@ -257,6 +257,18 @@ ACCIONES_HOME = [
         'bg_default': '#E8F3ED',
         'fg_default': '#2E7D5B',
     },
+    {
+        'id': 'cadetes',
+        'titulo': 'Cadetes',
+        'desc': 'Repartidores: zonas asignadas y tarifa por jornada',
+        'endpoint': 'cadetes_panel',
+        'emoji': '🧑‍🦽',
+        'tone': 'mint',
+        'badge_key': None,
+        'icono_path': 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
+        'bg_default': '#E8F3ED',
+        'fg_default': '#2E7D5B',
+    },
 ]
 
 ACCIONES_HOME_BY_ID = {c['id']: c for c in ACCIONES_HOME}
@@ -282,6 +294,7 @@ CARD_CATEGORIA = {
     'consulta_stock':       'operativo',
     'envio':                'operativo',
     'reparto':              'operativo',
+    'cadetes':              'operativo',
     # Laboratorios
     'ofertas_import':       'laboratorios',
     'consulta_lab':         'laboratorios',
