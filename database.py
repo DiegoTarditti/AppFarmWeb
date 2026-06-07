@@ -479,6 +479,68 @@ class FormaPago(Base):
     orden = Column(Integer, nullable=False, default=0)
 
 
+class EnvioTramo(Base):
+    """Tarifa de envío por distancia (cuadras). `hasta_cuadras` es el límite
+    superior inclusive del tramo; el último ("50 o más") usa un número grande
+    como tope. Resolución: el primer tramo cuyo `hasta_cuadras` >= cuadras."""
+    __tablename__ = 'envio_tramos'
+    id = Column(Integer, primary_key=True)
+    hasta_cuadras = Column(Integer, nullable=False)
+    monto = Column(DECIMAL(12, 2), nullable=False, default=0)
+    orden = Column(Integer, nullable=False, default=0)
+
+
+class EnvioZona(Base):
+    """Tarifa fija por zona nombrada (refinería, centro, Roldán…). PISA a los
+    tramos. lat/lng/radio_km quedan NULL en Fase 1; en Fase 2 se completan para
+    resolver la zona desde un pin de ubicación (círculo geográfico)."""
+    __tablename__ = 'envio_zonas'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(80), nullable=False)
+    monto = Column(DECIMAL(12, 2), nullable=False, default=0)
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    radio_km = Column(Float, nullable=True)
+    activa = Column(Boolean, nullable=False, default=True)
+    orden = Column(Integer, nullable=False, default=0)
+
+
+class DomicilioCliente(Base):
+    """Libreta de direcciones del cliente (Casa/Trabajo/Otro). Link polimórfico:
+    se cuelga del cliente (observer_id o local_id) si la conversación está
+    vinculada, o de la conversación si no. lat/lng del pin o del geocode."""
+    __tablename__ = 'domicilios_cliente'
+    id = Column(Integer, primary_key=True)
+    cliente_observer_id = Column(Integer, index=True, nullable=True)   # sin FK (obs es espejo)
+    cliente_local_id = Column(Integer,
+                              ForeignKey('clientes_locales.id', ondelete='CASCADE'),
+                              index=True, nullable=True)
+    conversacion_id = Column(Integer,
+                             ForeignKey('bot_conversaciones.id', ondelete='CASCADE'),
+                             index=True, nullable=True)
+    etiqueta = Column(String(40))          # Casa | Trabajo | Otro (o libre)
+    direccion = Column(String(200))        # texto legible si lo escribió
+    localidad = Column(String(120))
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    origen = Column(String(12))            # pin | direccion
+    creado_en = Column(DateTime, default=now_ar)
+    ultimo_uso_en = Column(DateTime, nullable=True)
+
+
+class EnvioConfig(Base):
+    """Config de envío (fila única). Coordenadas de la farmacia (origen) +
+    parámetros para convertir distancia en línea recta a 'cuadras' del cadete:
+    cuadras ≈ (metros / metros_por_cuadra) × factor_cuadras (rodeo de la grilla)."""
+    __tablename__ = 'envio_config'
+    id = Column(Integer, primary_key=True)
+    farmacia_lat = Column(Float, nullable=True)
+    farmacia_lng = Column(Float, nullable=True)
+    factor_cuadras = Column(Float, nullable=False, default=1.3)
+    metros_por_cuadra = Column(Integer, nullable=False, default=100)
+    actualizado_en = Column(DateTime, default=now_ar)
+
+
 class ObsSyncLog(Base):
     """Log de cada corrida de sync por entidad (última ejecución + resultados)."""
     __tablename__ = 'obs_sync_log'
@@ -2428,7 +2490,9 @@ def init_db(database_url=None):
                         'parser_ofertas_lab', 'factura_faltante',
                         'analisis_ia_cache', 'panel_heartbeat',
                         'bot_conversaciones', 'bot_mensajes', 'clientes_locales',
-                        'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago')
+                        'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago',
+                        'envio_tramos', 'envio_zonas', 'envio_config',
+                        'domicilios_cliente')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.

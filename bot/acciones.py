@@ -43,7 +43,8 @@ def encargar(texto):
         'texto': ('📝 ¡Anotado! Tu encargo:\n'
                   f'"{texto}"\n\n'
                   'Lo paso al equipo para que te confirmen precio y disponibilidad. '
-                  'Te responden por acá en un rato 🙂' + extra),
+                  'Te responden por acá en un rato 🙂\n'
+                  '🛵 Si lo querés con envío a domicilio, avisales y lo coordinamos.' + extra),
         'esperando': None,   # corta el loop de captura
         'derivar': True,     # → cae en la bandeja del operador
     }

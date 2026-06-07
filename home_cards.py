@@ -233,6 +233,18 @@ ACCIONES_HOME = [
         'bg_default': '#FEF3C7',
         'fg_default': '#B45309',
     },
+    {
+        'id': 'envio',
+        'titulo': 'Envíos',
+        'desc': 'Tarifas y cotizador de envío a domicilio',
+        'endpoint': 'envio_panel',
+        'emoji': '🛵',
+        'tone': 'mint',
+        'badge_key': None,
+        'icono_path': 'M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z',
+        'bg_default': '#E8F3ED',
+        'fg_default': '#2E7D5B',
+    },
 ]
 
 ACCIONES_HOME_BY_ID = {c['id']: c for c in ACCIONES_HOME}
@@ -256,6 +268,7 @@ CARD_CATEGORIA = {
     'ingresos':             'operativo',
     'procesos':             'operativo',
     'consulta_stock':       'operativo',
+    'envio':                'operativo',
     # Laboratorios
     'ofertas_import':       'laboratorios',
     'consulta_lab':         'laboratorios',

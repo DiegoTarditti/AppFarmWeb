@@ -160,6 +160,30 @@ def init_app(app):
     def atencion_ciudades():
         return jsonify({'ciudades': store.listar_ciudades()})
 
+    # ── Libreta de domicilios del cliente ────────────────────────────────────
+
+    @app.route('/atencion/api/<int:conv_id>/domicilios')
+    @login_required
+    def atencion_domicilios(conv_id):
+        return jsonify({'domicilios': store.listar_domicilios(conv_id)})
+
+    @app.route('/atencion/<int:conv_id>/domicilio', methods=['POST'])
+    @login_required
+    def atencion_domicilio_crear(conv_id):
+        b = request.json or {}
+        if not (b.get('direccion') or '').strip():
+            return jsonify({'ok': False, 'error': 'falta dirección'}), 400
+        r = store.guardar_domicilio(conv_id, etiqueta=b.get('etiqueta'),
+                                    direccion=b.get('direccion'),
+                                    localidad=b.get('localidad'), origen='manual')
+        return jsonify({'ok': r.get('ok', False),
+                        'domicilios': store.listar_domicilios(conv_id)})
+
+    @app.route('/atencion/domicilio/<int:dom_id>/delete', methods=['POST'])
+    @login_required
+    def atencion_domicilio_eliminar(dom_id):
+        return jsonify(store.eliminar_domicilio(dom_id))
+
     @app.route('/atencion/ciudades', methods=['POST'])
     @login_required
     def atencion_ciudad_crear():

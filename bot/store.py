@@ -5,6 +5,8 @@ el historial, multi-línea y que sobreviva reinicios.
 """
 from datetime import timedelta
 
+from sqlalchemy import func, or_
+
 import database
 
 
@@ -410,6 +412,89 @@ def guardar_ficha_local(observer_id, notas=None, tags=None):
             cl.tags = tags
         s.commit()
         return {'ok': True}
+
+
+# ── Libreta de domicilios del cliente ────────────────────────────────────────
+
+def _identidad_domicilio(s, conv_id):
+    """(campo, valor) para colgar/leer domicilios: cliente vinculado si lo hay
+    (observer → local), si no la conversación."""
+    c = s.get(database.BotConversacion, conv_id)
+    if c and c.cliente_observer_id:
+        return ('cliente_observer_id', c.cliente_observer_id)
+    if c and c.cliente_local_id:
+        return ('cliente_local_id', c.cliente_local_id)
+    return ('conversacion_id', conv_id)
+
+
+def _dom_dict(d):
+    return {'id': d.id, 'etiqueta': d.etiqueta or 'Otro',
+            'direccion': d.direccion or '', 'localidad': d.localidad or '',
+            'lat': d.lat, 'lng': d.lng, 'origen': d.origen}
+
+
+def listar_domicilios(conv_id):
+    """Domicilios del cliente vinculado Y los de la conversación (para no perder
+    los que se guardaron antes de vincular el cliente)."""
+    D = database.DomicilioCliente
+    with database.get_db() as s:
+        c = s.get(database.BotConversacion, conv_id)
+        conds = [D.conversacion_id == conv_id]
+        if c and c.cliente_observer_id:
+            conds.append(D.cliente_observer_id == c.cliente_observer_id)
+        if c and c.cliente_local_id:
+            conds.append(D.cliente_local_id == c.cliente_local_id)
+        ds = (s.query(D).filter(or_(*conds))
+              .order_by(func.coalesce(D.ultimo_uso_en, D.creado_en).desc(), D.id.desc())
+              .all())
+        return [_dom_dict(d) for d in ds]
+
+
+def guardar_domicilio(conv_id, etiqueta=None, direccion=None, localidad=None,
+                      lat=None, lng=None, origen=None):
+    with database.get_db() as s:
+        campo, valor = _identidad_domicilio(s, conv_id)
+        d = database.DomicilioCliente(
+            etiqueta=((etiqueta or '').strip()[:40] or None),
+            direccion=((direccion or '').strip()[:200] or None),
+            localidad=((localidad or '').strip()[:120] or None),
+            lat=lat, lng=lng, origen=origen)
+        setattr(d, campo, valor)
+        s.add(d)
+        s.commit()
+        return {'ok': True, 'id': d.id}
+
+
+def set_etiqueta_domicilio(dom_id, etiqueta):
+    with database.get_db() as s:
+        d = s.get(database.DomicilioCliente, dom_id)
+        if d:
+            d.etiqueta = (etiqueta or '').strip()[:40] or 'Otro'
+            s.commit()
+        return {'ok': bool(d)}
+
+
+def marcar_uso_domicilio(dom_id):
+    with database.get_db() as s:
+        d = s.get(database.DomicilioCliente, dom_id)
+        if d:
+            d.ultimo_uso_en = database.now_ar()
+            s.commit()
+
+
+def eliminar_domicilio(dom_id):
+    with database.get_db() as s:
+        d = s.get(database.DomicilioCliente, dom_id)
+        if d:
+            s.delete(d)
+            s.commit()
+        return {'ok': True}
+
+
+def get_domicilio(dom_id):
+    with database.get_db() as s:
+        d = s.get(database.DomicilioCliente, dom_id)
+        return _dom_dict(d) if d else None
 
 
 # ── Buscador de productos (panel de atención) ────────────────────────────────

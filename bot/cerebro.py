@@ -9,7 +9,7 @@ handoff (panel de operadores): si la conversación la tomó un operador
 """
 import os
 
-from bot import store
+from bot import envio, store
 from bot.acciones import ACCIONES
 from bot.flujo import FLUJO, NODO_INICIO
 from bot.ia import leer_receta
@@ -141,8 +141,239 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
     return ({'texto': destino['mensaje'], 'opciones': opciones}, NODO_INICIO, None, derivar)
 
 
+def _fmt_monto(m):
+    return f'${m:,.0f}'.replace(',', '.')
+
+
+# ── Flujo de envío + libreta de domicilios ───────────────────────────────────
+_EMOJI_ET = {'casa': '🏠', 'trabajo': '🏢', 'otro': '🏡'}
+_ET_OPCIONES = ['🏠 Casa', '🏢 Trabajo', '🏡 Otro', 'No guardar']
+
+
+def _es_trigger_envio(texto):
+    t = (texto or '').strip().lower()
+    return 'costo de env' in t or t in ('envio', 'envío', 'envios', 'envíos')
+
+
+def _es_otra_direccion(texto):
+    t = (texto or '').strip().lower()
+    return 'otra direcc' in t or t == 'otra' or '➕' in (texto or '')
+
+
+def _es_opcion_menu(texto):
+    """True si el texto es exactamente una opción del menú principal (tocaron un
+    botón), para no tomarlo como dirección dentro del flujo de envío."""
+    t = (texto or '').strip().lower()
+    return any(t == o['label'].lower() for o in FLUJO[NODO_INICIO]['opciones'])
+
+
+def _label_domicilio(d):
+    et = d.get('etiqueta') or 'Otro'
+    emoji = _EMOJI_ET.get(et.lower(), '📍')
+    return f"{emoji} {et} — {d.get('direccion') or 'ubicación 📍'}"[:60]
+
+
+def _match_domicilio(doms, texto):
+    t = (texto or '').strip().lower()
+    if t.isdigit():
+        i = int(t) - 1
+        return doms[i] if 0 <= i < len(doms) else None
+    for d in doms:                                   # por dirección (más específico)
+        dir_ = (d.get('direccion') or '').lower()
+        if dir_ and dir_[:18] in t:
+            return d
+    for d in doms:                                   # por etiqueta
+        et = (d.get('etiqueta') or '').lower()
+        if et and et in t:
+            return d
+    return None
+
+
+def _cotizar_dom(d):
+    if d.get('lat') is not None and d.get('lng') is not None:
+        return envio.cotizar_por_coords(d['lat'], d['lng'])
+    if d.get('direccion'):
+        return envio.cotizar_por_direccion(d['direccion'], localidad=d.get('localidad'))
+    return {'monto': None, 'detalle': 'sin datos'}
+
+
+def _texto_cotizacion(r, destino=''):
+    a = f"a {destino} " if destino else ""
+    if r.get('monto') is not None:
+        det = f" ({r['detalle']})" if r.get('detalle') else ''
+        return f"🛵 El envío {a}sale {_fmt_monto(r['monto'])}{det}.\nPara coordinarlo escribí \"operador\" 🙂"
+    return (f"No pude calcular el envío {a}automáticamente 🙈\n"
+            "Escribí \"operador\" y el equipo te pasa el costo.")
+
+
+def _ubicacion_guardada_txt(d):
+    """Cómo mostrarle al cliente la ubicación guardada: la dirección si la
+    escribió, o un link a Google Maps si fue un pin."""
+    if d.get('direccion'):
+        return d['direccion']
+    if d.get('lat') is not None and d.get('lng') is not None:
+        return f"https://maps.google.com/?q={d['lat']},{d['lng']}"
+    return ''
+
+
+_CONF_OPCIONES = ['✅ Sí, es esa', '📍 No, es otra']
+
+
+def _resp_proponer_dom(d):
+    """Propone un domicilio guardado: muestra costo + ubicación y pide que el
+    cliente CONFIRME que el envío va ahí."""
+    r = _cotizar_dom(d)
+    if r.get('monto') is not None:
+        det = f" ({r['detalle']})" if r.get('detalle') else ''
+        txt = f"🛵 El envío a {d['etiqueta']} sale {_fmt_monto(r['monto'])}{det}."
+    else:
+        txt = f"📦 Envío a {d['etiqueta']}."
+    loc = _ubicacion_guardada_txt(d)
+    if loc:
+        txt += f"\n📍 Ubicación guardada: {loc}"
+    txt += "\n\n¿Confirmás que el envío es a esta ubicación?"
+    return {'texto': txt, 'opciones': _CONF_OPCIONES}
+
+
+def _es_confirmacion(texto):
+    t = (texto or '').strip().lower()
+    return ('✅' in (texto or '') or t.startswith('si') or t.startswith('sí')
+            or 'es esa' in t or 'confirm' in t)
+
+
+def _envio_confirmar(cid, esperando, texto):
+    """Paso final: el cliente acepta (o rechaza) la ubicación propuesta."""
+    if _es_confirmacion(texto):
+        dom_id = None
+        if esperando and esperando.startswith('dom:'):
+            try:
+                dom_id = int(esperando.split(':', 1)[1])
+            except ValueError:
+                dom_id = None
+        d = store.get_domicilio(dom_id) if dom_id else None
+        if dom_id:
+            store.marcar_uso_domicilio(dom_id)
+        et = d['etiqueta'] if d else 'tu domicilio'
+        store.set_estado_flujo(cid, NODO_INICIO, None)
+        return {'texto': (f'¡Perfecto! 🛵 Coordinamos el envío a {et}.\n'
+                          'Escribí "operador" y el equipo lo finaliza 🙂'),
+                'opciones': _menu_ops()}
+    return _envio_preguntar_destino(cid)        # "No, es otra" → volver a ofrecer
+
+
+def _menu_ops():
+    return _opciones_de(FLUJO[NODO_INICIO])
+
+
+def _envio_preguntar_destino(cid):
+    doms = store.listar_domicilios(cid)
+    if doms:
+        store.set_estado_flujo(cid, 'envio_elegir', None)
+        return {'texto': '🛵 ¿A dónde te lo llevamos?',
+                'opciones': [_label_domicilio(d) for d in doms] + ['➕ Otra dirección']}
+    store.set_estado_flujo(cid, 'envio_pedir', None)
+    return {'texto': ('🛵 Calculemos tu envío.\nCompartime tu ubicación 📍 '
+                      '(adjuntar → Ubicación) o escribí la dirección (calle y número).'),
+            'opciones': []}
+
+
+def _envio_capturar(cid, ubicacion=None, direccion=None):
+    """Cotiza lo que llegó (pin o dirección), guarda el domicilio (sin etiqueta
+    aún) y pide la etiqueta."""
+    if ubicacion:
+        r = envio.cotizar_por_coords(ubicacion.get('lat'), ubicacion.get('lng'))
+        dom = store.guardar_domicilio(cid, lat=ubicacion.get('lat'),
+                                      lng=ubicacion.get('lng'), origen='pin')
+    else:
+        coords = envio.geocodificar(direccion)
+        if not coords:                     # no geocodificó → no guardar basura, re-pedir
+            store.set_estado_flujo(cid, 'envio_pedir', None)
+            return {'texto': ('No pude ubicar esa dirección 🙈. Probá con calle y '
+                              'número, o compartime tu ubicación 📍.'), 'opciones': []}
+        r = envio.cotizar_por_coords(*coords)
+        dom = store.guardar_domicilio(cid, direccion=direccion, lat=coords[0],
+                                      lng=coords[1], origen='direccion')
+    store.set_estado_flujo(cid, 'envio_guardar', f"dom:{dom['id']}")
+    cab = (f"🛵 El envío sale {_fmt_monto(r['monto'])}"
+           f"{(' (' + r['detalle'] + ')') if r.get('detalle') else ''}.\n\n"
+           if r.get('monto') is not None else "Recibí tu ubicación 📍.\n\n")
+    return {'texto': cab + '¿Lo guardo para la próxima? Elegí:', 'opciones': _ET_OPCIONES}
+
+
+def _envio_guardar_etiqueta(cid, esperando, texto):
+    dom_id = None
+    if esperando and esperando.startswith('dom:'):
+        try:
+            dom_id = int(esperando.split(':', 1)[1])
+        except ValueError:
+            dom_id = None
+    t = (texto or '').strip().lower()
+    store.set_estado_flujo(cid, NODO_INICIO, None)
+    if dom_id and t.startswith('no'):
+        store.eliminar_domicilio(dom_id)
+        return {'texto': 'Listo, no lo guardé 👍', 'opciones': _menu_ops()}
+    etiqueta = 'Casa' if 'casa' in t else 'Trabajo' if 'trabajo' in t else 'Otro'
+    if dom_id:
+        store.set_etiqueta_domicilio(dom_id, etiqueta)
+    return {'texto': f'¡Guardado como {etiqueta}! 🎉 La próxima te lo ofrezco directo.',
+            'opciones': _menu_ops()}
+
+
+def _flujo_envio(cid, nodo, esperando, texto, ubicacion):
+    """Maneja todo el sub-flujo de envío. Devuelve la respuesta o None si el
+    mensaje no es parte del flujo (para que siga el flujo normal)."""
+    # Comandos para escapar siempre ganan (no quedar atrapado en el flujo).
+    if texto.lower() in _GLOBALES or _quiere_humano(texto):
+        return None
+
+    en_flujo = nodo.startswith('envio_')
+
+    # Tocar "Costo de envío" en cualquier momento (re)inicia el flujo.
+    if _es_trigger_envio(texto) and not ubicacion:
+        return _envio_preguntar_destino(cid)
+
+    # Tocar OTRA opción del menú estando en el flujo → salir (la maneja el flujo
+    # normal). Evita que un botón del menú se tome como "dirección".
+    if en_flujo and not ubicacion and _es_opcion_menu(texto):
+        store.set_estado_flujo(cid, NODO_INICIO, None)
+        return None
+
+    # Elegir entre domicilios guardados → proponer ubicación + pedir confirmación.
+    if nodo == 'envio_elegir' and not ubicacion:
+        doms = store.listar_domicilios(cid)
+        sel = _match_domicilio(doms, texto)
+        if sel:
+            store.set_estado_flujo(cid, 'envio_confirmar', f"dom:{sel['id']}")
+            return _resp_proponer_dom(sel)
+        if _es_otra_direccion(texto):
+            store.set_estado_flujo(cid, 'envio_pedir', None)
+            return {'texto': 'Dale 👇 Compartime tu ubicación 📍 o escribí la dirección.',
+                    'opciones': []}
+        return _envio_preguntar_destino(cid)        # no entendí → re-preguntar
+
+    # Confirmar la ubicación propuesta (Sí, es esa / No, es otra).
+    if nodo == 'envio_confirmar' and not ubicacion:
+        return _envio_confirmar(cid, esperando, texto)
+
+    # Capturar ubicación/dirección nueva.
+    if (nodo in ('envio_pedir', 'envio_elegir') and ubicacion) or \
+            (nodo == 'envio_pedir' and texto):
+        return _envio_capturar(cid, ubicacion=ubicacion,
+                               direccion=None if ubicacion else texto)
+
+    # Elegir etiqueta de lo recién capturado.
+    if nodo == 'envio_guardar' and not ubicacion:
+        return _envio_guardar_etiqueta(cid, esperando, texto)
+
+    # Pin fuera del flujo (Fase 2): cotiza y ofrece guardarlo.
+    if ubicacion and ubicacion.get('lat') is not None:
+        return _envio_capturar(cid, ubicacion=ubicacion)
+
+    return None
+
+
 def procesar(canal, canal_user_id, texto, imagen_b64=None,
-             media_type='image/jpeg', nombre=None, linea=None):
+             media_type='image/jpeg', nombre=None, linea=None, ubicacion=None):
     texto = (texto or '').strip()
     conv = store.get_conversacion(canal, canal_user_id, nombre, linea)
     cid = conv['id']
@@ -154,15 +385,24 @@ def procesar(canal, canal_user_id, texto, imagen_b64=None,
         conv['estado_atencion'] = 'bot'
 
     # Guardar el mensaje entrante.
-    store.guardar_mensaje(cid, 'cliente',
-                          texto or ('[imagen recibida]' if imagen_b64 else ''),
-                          tiene_imagen=bool(imagen_b64))
+    entrante = texto or ('[imagen recibida]' if imagen_b64
+                         else ('[ubicación recibida]' if ubicacion else ''))
+    store.guardar_mensaje(cid, 'cliente', entrante, tiene_imagen=bool(imagen_b64))
 
     # Si ya está derivada (en cola) o la tomó un operador (humano), el bot NO
     # responde: el cliente espera a la persona, no queremos meter el menú en el
     # medio. Los mensajes igual se guardan arriba para que el operador los vea.
     if conv['estado_atencion'] in ('cola', 'humano'):
         return None
+
+    # Flujo de envío (libreta de domicilios + cotización). Maneja el pin de
+    # ubicación, la opción "Costo de envío" y sus pasos. Si no aplica, sigue.
+    resp_envio = _flujo_envio(cid, conv['nodo'] or NODO_INICIO,
+                              conv['esperando'], texto, ubicacion)
+    if resp_envio is not None:
+        if resp_envio.get('texto'):
+            store.guardar_mensaje(cid, 'bot', resp_envio['texto'])
+        return resp_envio
 
     # Historial (incluye el mensaje recién guardado) para que el nodo de IA
     # recuerde el hilo de la conversación.

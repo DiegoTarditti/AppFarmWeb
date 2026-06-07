@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Envíos · Badia</title>
+<style>
+  :root {
+    --bg:#14141a; --surface:#1a1a22; --card:#16161d; --card-bd:#185FA5;
+    --txt:#e0e0e6; --title:#f0f0f3; --muted:#8a8a92; --muted2:#6a6a72;
+    --border:rgba(255,255,255,0.08); --accent:#1D9E75; --accent-ink:#06241a;
+    --row-bd:rgba(255,255,255,0.05); --hov:#23232d; --warn:#EF9F27; --danger:#DC2626;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--txt); font-family:var(--font); }
+  .topbar { height:54px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:14px; padding:0 18px; }
+  .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .logo .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border); background:var(--hov); color:var(--txt); cursor:pointer; }
+  .hbtn:hover { filter:brightness(1.12); }
+  .hbtn-ok { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700; }
+  .hbtn-danger { background:transparent; color:#F09595; border-color:#5a2a2a; font-size:10px; padding:3px 8px; }
+  .input { background:var(--hov); color:var(--txt); border:1px solid var(--border); border-radius:8px; padding:7px 9px; font-size:13px; }
+  .wrap { max-width:980px; margin:0 auto; padding:18px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px; }
+  .card h2 { margin:0 0 12px; font-size:14px; color:var(--title); font-weight:700; }
+  label.fl { font-size:11px; color:var(--muted); display:flex; flex-direction:column; gap:3px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media(max-width:780px){ .grid2 { grid-template-columns:1fr; } }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; color:var(--muted); font-weight:600; padding:6px 6px; border-bottom:1px solid var(--border); }
+  td { padding:5px 6px; border-bottom:1px solid var(--row-bd); }
+  td .input { padding:5px 7px; width:100%; }
+  .cot-monto { font-size:30px; font-weight:800; color:var(--title); }
+  .cot-det { font-size:12px; color:var(--muted); }
+  .muted { color:var(--muted); }
+  .pill { font-size:10px; padding:2px 8px; border-radius:999px; background:var(--hov); color:var(--muted); }
+  .pill.zona { background:var(--info,#185FA5); color:#fff; } .pill.tramo { background:var(--accent); color:var(--accent-ink); }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo"><span class="dot"></span>🛵 Envíos · Badia</div>
+    <div style="flex:1"></div>
+    <span class="muted" style="font-size:12px;">{{ current_user.nombre_completo or current_user.username }}</span>
+    <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
+  </div>
+
+  <div class="wrap">
+    <!-- Cotizador -->
+    <div class="card">
+      <h2>Cotizador de envío</h2>
+      <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+        <label class="fl" style="flex:1 1 260px;">Dirección (geolocaliza)
+          <input id="cDir" class="input" placeholder="ej: Córdoba 3400" style="width:100%;" onkeydown="if(event.key==='Enter')cotizar()">
+        </label>
+        <label class="fl">Ciudad
+          <select id="cCiudad" class="input" style="width:150px;"></select>
+        </label>
+        <label class="fl">o Cuadras
+          <input id="cCuadras" type="number" min="0" class="input" placeholder="ej: 22" style="width:90px;" onkeydown="if(event.key==='Enter')cotizar()">
+        </label>
+        <button onclick="cotizar()" class="hbtn hbtn-ok" style="padding:9px 16px;">Cotizar</button>
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:10px; justify-content:space-between; align-items:flex-end; margin-top:8px;">
+        <div class="muted" style="font-size:11px; flex:1 1 240px;">
+          La ciudad/zona nombrada (Roldán, Kentucky…) pisa al resto. Dirección → geocodifica y mide cuadras; o cargá las cuadras a mano. Los barrios (centro, refinería) se detectan por la dirección.
+        </div>
+        <div style="text-align:right;">
+          <span class="cot-monto" id="cMonto">—</span>
+          <div class="cot-det" id="cDet"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Config de la farmacia (origen) -->
+    <div class="card">
+      <h2>Ubicación de la farmacia (origen) y conversión</h2>
+      <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+        <label class="fl">Lat<input id="cfLat" class="input" style="width:130px;" placeholder="-32.95"></label>
+        <label class="fl">Lng<input id="cfLng" class="input" style="width:130px;" placeholder="-60.65"></label>
+        <label class="fl">Factor rodeo<input id="cfFactor" type="number" step="0.05" class="input" style="width:90px;"></label>
+        <label class="fl">Metros/cuadra<input id="cfMpc" type="number" class="input" style="width:100px;"></label>
+        <button onclick="guardarConfig()" class="hbtn hbtn-ok">Guardar</button>
+        <div style="flex:1"></div>
+        <label class="fl">Geolocalizar por dirección
+          <div style="display:flex; gap:6px;">
+            <input id="cfDir" class="input" style="width:170px;" placeholder="ej: Córdoba 1234, Rosario">
+            <button onclick="geoFarmacia()" class="hbtn">📍 Ubicar</button>
+          </div>
+        </label>
+      </div>
+      <div class="muted" id="cfAviso" style="font-size:11px; margin-top:8px;"></div>
+    </div>
+
+    <div class="grid2">
+      <!-- Tramos -->
+      <div class="card">
+        <h2>Tramos por cuadras</h2>
+        <table>
+          <thead><tr><th>Hasta (cuadras)</th><th>Monto</th><th></th></tr></thead>
+          <tbody id="tbTramos"></tbody>
+        </table>
+        <div style="display:flex; gap:6px; margin-top:10px;">
+          <input id="nTramoHasta" type="number" min="0" class="input" placeholder="hasta cuadras" style="flex:1;">
+          <input id="nTramoMonto" type="number" min="0" class="input" placeholder="monto" style="flex:1;">
+          <button onclick="addTramo()" class="hbtn hbtn-ok">+ Agregar</button>
+        </div>
+        <div class="muted" style="font-size:11px; margin-top:6px;">El "50 o más" se carga con un tope alto (ej: 9999).</div>
+      </div>
+
+      <!-- Zonas -->
+      <div class="card">
+        <h2>Zonas con tarifa fija</h2>
+        <table>
+          <thead><tr><th>Zona</th><th>Monto</th><th>Radio km</th><th>Pin</th><th></th></tr></thead>
+          <tbody id="tbZonas"></tbody>
+        </table>
+        <div class="muted" style="font-size:11px; margin-top:6px;">El "Pin" (📍) geolocaliza la zona para detectarla desde la ubicación del cliente (Fase 2).</div>
+        <div style="display:flex; gap:6px; margin-top:10px;">
+          <input id="nZonaNombre" class="input" placeholder="nombre (ej: Roldán)" style="flex:1;">
+          <input id="nZonaMonto" type="number" min="0" class="input" placeholder="monto" style="flex:1;">
+          <button onclick="addZona()" class="hbtn hbtn-ok">+ Agregar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmt(n){ return n==null ? '—' : '$' + Math.round(n).toLocaleString('es-AR'); }
+async function jpost(url, body){ return (await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})).json(); }
+
+async function cargar(){
+  const d = await (await fetch('/envio/api/tarifas')).json();
+  // Config
+  const c = d.config||{};
+  document.getElementById('cfLat').value = c.farmacia_lat ?? '';
+  document.getElementById('cfLng').value = c.farmacia_lng ?? '';
+  document.getElementById('cfFactor').value = c.factor_cuadras ?? '';
+  document.getElementById('cfMpc').value = c.metros_por_cuadra ?? '';
+  document.getElementById('cfAviso').textContent = (c.farmacia_lat==null)
+    ? '⚠️ Falta la ubicación de la farmacia: sin eso no se puede estimar cuadras desde el pin.'
+    : 'Origen configurado ✓';
+  // Dropdown de ciudades (conserva la selección actual)
+  const sel = document.getElementById('cCiudad'); const prev = sel.value;
+  sel.innerHTML = '<option value="">— ciudad —</option>' +
+    (d.ciudades||[]).map(c=>`<option ${c===prev?'selected':''}>${esc(c)}</option>`).join('');
+  // Tramos
+  document.getElementById('tbTramos').innerHTML = (d.tramos||[]).map(t=>`
+    <tr>
+      <td><input class="input" type="number" value="${t.hasta_cuadras}" onchange="saveTramo(${t.id}, this.value, null)"></td>
+      <td><input class="input" type="number" value="${t.monto}" onchange="saveTramo(${t.id}, null, this.value)"></td>
+      <td><button class="hbtn hbtn-danger" onclick="delTramo(${t.id})">Quitar</button></td>
+    </tr>`).join('') || '<tr><td colspan="3" class="muted">Sin tramos.</td></tr>';
+  window._tramos = {}; (d.tramos||[]).forEach(t=>window._tramos[t.id]=t);
+  // Zonas
+  document.getElementById('tbZonas').innerHTML = (d.zonas||[]).map(z=>`
+    <tr>
+      <td><input class="input" value="${esc(z.nombre)}" onchange="saveZona(${z.id}, this.value, null, null)"></td>
+      <td><input class="input" type="number" value="${z.monto}" onchange="saveZona(${z.id}, null, this.value, null)"></td>
+      <td><input class="input" type="number" step="0.5" value="${z.radio_km ?? ''}" placeholder="2" onchange="saveZona(${z.id}, null, null, this.value)" style="width:70px;"></td>
+      <td>${z.lat!=null ? '✓' : '<span class="muted">—</span>'} <button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="geoZona(${z.id})">📍</button></td>
+      <td><button class="hbtn hbtn-danger" onclick="delZona(${z.id})">Quitar</button></td>
+    </tr>`).join('') || '<tr><td colspan="5" class="muted">Sin zonas.</td></tr>';
+  window._zonas = {}; (d.zonas||[]).forEach(z=>window._zonas[z.id]=z);
+}
+
+async function cotizar(){
+  const dir = document.getElementById('cDir').value.trim();
+  const loc = document.getElementById('cCiudad').value.trim();
+  const cua = document.getElementById('cCuadras').value.trim();
+  const p = new URLSearchParams();
+  if(dir) p.set('direccion',dir);
+  if(loc) p.set('localidad',loc);
+  if(cua) p.set('cuadras',cua);
+  document.getElementById('cMonto').textContent = '…';
+  const d = await (await fetch('/envio/api/cotizar?'+p.toString())).json();
+  document.getElementById('cMonto').textContent = fmt(d.monto);
+  const pill = d.fuente ? `<span class="pill ${d.fuente}">${d.fuente}</span> ` : '';
+  const cu = d.cuadras!=null ? ` · ${d.cuadras} cuadras` : '';
+  document.getElementById('cDet').innerHTML = pill + esc(d.detalle||'') ;
+}
+
+async function guardarConfig(){
+  await jpost('/envio/config', {
+    farmacia_lat: document.getElementById('cfLat').value,
+    farmacia_lng: document.getElementById('cfLng').value,
+    factor_cuadras: document.getElementById('cfFactor').value,
+    metros_por_cuadra: document.getElementById('cfMpc').value });
+  cargar();
+}
+async function geoFarmacia(){
+  const dir = document.getElementById('cfDir').value.trim(); if(!dir) return;
+  const d = await jpost('/envio/config/geolocalizar', {direccion: dir});
+  if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
+  cargar();
+}
+async function geoZona(id){
+  const d = await jpost(`/envio/zona/${id}/geolocalizar`);
+  if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo geolocalizar')); return; }
+  cargar();
+}
+
+async function saveTramo(id, hasta, monto){
+  const t = window._tramos[id] || {};
+  await jpost('/envio/tramo', {id, hasta_cuadras: hasta!=null?hasta:t.hasta_cuadras, monto: monto!=null?monto:t.monto});
+  cargar();
+}
+async function addTramo(){
+  const hasta = document.getElementById('nTramoHasta').value, monto = document.getElementById('nTramoMonto').value;
+  if(!hasta) return;
+  await jpost('/envio/tramo', {hasta_cuadras: hasta, monto: monto||0});
+  document.getElementById('nTramoHasta').value=''; document.getElementById('nTramoMonto').value=''; cargar();
+}
+async function delTramo(id){ if(confirm('¿Quitar tramo?')){ await jpost(`/envio/tramo/${id}/delete`); cargar(); } }
+
+async function saveZona(id, nombre, monto, radio){
+  const z = window._zonas[id] || {};
+  const body = {id, nombre: nombre!=null?nombre:z.nombre, monto: monto!=null?monto:z.monto};
+  if(radio!=null && radio!=='') body.radio_km = radio;
+  await jpost('/envio/zona', body);
+  cargar();
+}
+async function addZona(){
+  const nombre = document.getElementById('nZonaNombre').value.trim(), monto = document.getElementById('nZonaMonto').value;
+  if(!nombre) return;
+  await jpost('/envio/zona', {nombre, monto: monto||0});
+  document.getElementById('nZonaNombre').value=''; document.getElementById('nZonaMonto').value=''; cargar();
+}
+async function delZona(id){ if(confirm('¿Quitar zona?')){ await jpost(`/envio/zona/${id}/delete`); cargar(); } }
+
+cargar();
+</script>
+</body>
+</html>

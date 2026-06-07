@@ -142,7 +142,7 @@
   </div>
 
   <!-- ── 3 columnas ─────────────────────────────────────────────────────── -->
-  <div style="display:grid; grid-template-columns:300px 1fr 330px; flex:1; min-height:0;">
+  <div id="grid3" style="display:grid; grid-template-columns:300px 1fr 330px; flex:1; min-height:0;">
 
     <!-- Lista de conversaciones -->
     <div class="col-side" style="border-right:0.5px solid; display:flex; flex-direction:column; min-height:0;">
@@ -162,6 +162,7 @@
       <div class="chat-head" style="padding:9px 16px; border-bottom:0.5px solid; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:50px;">
         <div id="chatHeadInner" class="muted" style="font-size:13px;">Elegí una conversación 👈</div>
         <div id="chatAcciones" style="display:none; align-items:center; gap:7px; flex-shrink:0;">
+          <button onclick="toggleFicha()" class="hbtn" style="font-size:12px; padding:5px 9px; border-radius:8px;" title="Datos del cliente">👤</button>
           <button id="btnTomar" onclick="tomar()" class="hbtn hbtn-ok" style="display:none; font-size:12px; padding:5px 11px; border-radius:8px;">Tomar</button>
           <button onclick="toggleTransfer()" class="hbtn hbtn-info" style="font-size:12px; padding:5px 11px; border-radius:8px;">Transferir</button>
           <button onclick="devolverCola()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">A la cola</button>
@@ -225,7 +226,11 @@
     </div>
 
     <!-- Ficha del cliente -->
-    <div class="col-side" style="border-left:0.5px solid; overflow-y:auto; min-height:0;">
+    <div class="col-side" id="fichaCol" style="border-left:0.5px solid; overflow-y:auto; min-height:0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:0.5px solid;">
+        <span class="muted" style="font-size:11px;">👤 Datos del cliente</span>
+        <button onclick="toggleFicha()" class="hbtn" style="font-size:13px; padding:2px 9px; border-radius:7px;" title="Cerrar">✕</button>
+      </div>
       <div id="ficha" style="padding:16px 14px; font-size:11px;">
         <div class="muted">Abrí una conversación para ver al cliente.</div>
       </div>
@@ -559,7 +564,9 @@ function renderFicha() {
           <button onclick="abrirModalCiudades()" class="hbtn" title="Gestionar ciudades" style="border-radius:8px; padding:6px 9px; font-size:11px; flex-shrink:0;">⚙</button>
         </div>
         <button onclick="crearCliente()" class="hbtn hbtn-ok" style="border-radius:8px; padding:6px 11px; font-size:12px;">＋ Crear ficha</button>
-      </div>`;
+      </div>
+      <div id="domicilios" style="margin-top:14px;"></div>`;
+    cargarDomicilios();
     return;
   }
   const ini = (f.nombre || '?').replace(/[^A-Za-zÀ-ÿ ]/g,'').split(/[ ,]+/).filter(Boolean).slice(0,2).map(s=>s[0]).join('').toUpperCase() || '?';
@@ -576,7 +583,7 @@ function renderFicha() {
       <div style="margin-top:4px;">${badge}</div>
     </div>
     <div style="display:flex; flex-direction:column; gap:10px; font-size:11px;">
-      ${fila('id', 'Documento', f.documento ? 'DNI ' + f.documento : '')}
+      ${fila('id', 'Documento', f.documento)}
       ${fila('phone', 'Teléfono', f.telefono)}
       ${fila('map-pin', 'Domicilio', f.domicilio)}
     </div>
@@ -587,7 +594,39 @@ function renderFicha() {
         <button id="btnGuardarFicha" onclick="guardarFicha()" class="hbtn hbtn-ok" style="border-radius:8px; padding:5px 11px; font-size:11px;">Guardar notas</button>
         <button onclick="desvincularCliente()" class="hbtn" style="border-radius:8px; padding:5px 11px; font-size:11px;">Desvincular</button>
       </div>
+    </div>
+    <div id="domicilios" style="margin-top:14px;"></div>`;
+  cargarDomicilios();
+}
+
+async function cargarDomicilios() {
+  const cont = document.getElementById('domicilios');
+  if (!cont || !convAbierta) return;
+  const d = await (await fetch(`/atencion/api/${convAbierta}/domicilios`)).json();
+  const ds = d.domicilios || [];
+  const filas = ds.map(x => `
+    <div class="row" style="display:flex; justify-content:space-between; gap:6px; padding:4px 0; font-size:11px;">
+      <span><b>${esc(x.etiqueta)}</b> ${esc(x.direccion || (x.lat!=null?'📍 ubicación':''))}</span>
+      <button onclick="delDomicilio(${x.id})" class="hbtn" style="font-size:10px; padding:2px 7px;">✕</button>
+    </div>`).join('') || '<div class="muted" style="font-size:10px;">Sin domicilios guardados.</div>';
+  cont.innerHTML = `
+    <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-map-pin" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Domicilios (envíos)</div>
+    ${filas}
+    <div style="display:flex; gap:5px; margin-top:7px;">
+      <input id="domEt" placeholder="Casa" class="${INP}" style="width:64px; border-radius:8px; padding:5px 7px; font-size:11px;">
+      <input id="domDir" placeholder="Dirección" class="${INP}" style="flex:1; border-radius:8px; padding:5px 7px; font-size:11px;" onkeydown="if(event.key==='Enter')addDomicilio()">
+      <button onclick="addDomicilio()" class="hbtn hbtn-ok" style="font-size:11px; padding:4px 9px;">＋</button>
     </div>`;
+}
+async function addDomicilio() {
+  const dir = _val('domDir'); if (!dir) return;
+  await fetch(`/atencion/${convAbierta}/domicilio`, {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({etiqueta:_val('domEt') || 'Otro', direccion:dir})});
+  cargarDomicilios();
+}
+async function delDomicilio(id) {
+  await fetch(`/atencion/domicilio/${id}/delete`, {method:'POST'});
+  cargarDomicilios();
 }
 function _val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
 async function crearCliente() {
@@ -701,6 +740,12 @@ async function vincularCliente(oid) {
 async function desvincularCliente() {
   await fetch(`/atencion/${convAbierta}/desvincular-cliente`, {method:'POST'});
   await cargarFicha();
+}
+function toggleFicha() {
+  const col = document.getElementById('fichaCol'), grid = document.getElementById('grid3');
+  const oculta = col.style.display === 'none';
+  col.style.display = oculta ? '' : 'none';
+  grid.style.gridTemplateColumns = oculta ? '300px 1fr 330px' : '300px 1fr 0';
 }
 async function guardarFicha() {
   if (!convAbierta) return;
