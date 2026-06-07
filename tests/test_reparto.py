@@ -143,6 +143,42 @@ def test_api_incluye_ciudades(client):
     assert 'ciudades' in client.get('/reparto/api').get_json()
 
 
+def test_parse_poligono_coords_y_geojson():
+    p = reparto.parse_poligono('-32.95, -60.65\n-32.96, -60.64\n-32.94, -60.63')
+    assert p and len(p) == 3 and p[0] == [-32.95, -60.65]
+    gj = ('{"type":"FeatureCollection","features":[{"type":"Feature","geometry":'
+          '{"type":"Polygon","coordinates":[[[-60.65,-32.95],[-60.64,-32.96],'
+          '[-60.63,-32.94],[-60.65,-32.95]]]}}]}')
+    p2 = reparto.parse_poligono(gj)
+    assert p2 and p2[0] == [-32.95, -60.65]   # GeoJSON [lng,lat] → [lat,lng]
+    assert reparto.parse_poligono('') is None
+    assert reparto.parse_poligono('una sola línea') is None
+
+
+def test_punto_en_poligono():
+    sq = [[-32.96, -60.66], [-32.96, -60.64], [-32.94, -60.64], [-32.94, -60.66]]
+    assert reparto._punto_en_poligono(-32.95, -60.65, sq) is True
+    assert reparto._punto_en_poligono(-32.90, -60.65, sq) is False
+
+
+def test_ruta_para_punto_zona_pisa_y_fuera_es_none():
+    import json as _j
+
+    import database
+    _set_farmacia()
+    reparto.seed_rutas_si_vacio()
+    sq = [[-32.96, -60.66], [-32.96, -60.64], [-32.94, -60.64], [-32.94, -60.66]]
+    with database.get_db() as s:
+        oeste = next(r for r in s.query(database.RutaReparto).all() if r.cuadrante == 'O')
+        oeste.poligono = _j.dumps(sq)
+        s.commit()
+        oid = oeste.id
+        dentro = reparto.ruta_para_punto(s, -32.95, -60.648)   # dentro del polígono
+        assert dentro and dentro.id == oid
+        # ya hay una zona definida → un punto fuera de toda zona = sin asignar
+        assert reparto.ruta_para_punto(s, -33.5, -60.65) is None
+
+
 def test_alta_guarda_prioridad(client):
     _set_farmacia()
     reparto.seed_rutas_si_vacio()
