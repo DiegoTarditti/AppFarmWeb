@@ -3,7 +3,7 @@
 Reemplaza el estado en memoria → habilita el handoff (panel de operadores),
 el historial, multi-línea y que sobreviva reinicios.
 """
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import func, or_
 
@@ -663,4 +663,108 @@ def lineas_distintas():
         rows = (s.query(database.BotConversacion.linea)
                 .filter(database.BotConversacion.linea.isnot(None))
                 .distinct().all())
+        return sorted({r[0] for r in rows if r[0]})
+
+
+# ── Analítica: memoria de no-resueltos + caminos ─────────────────────────────
+
+def registrar_interaccion(conv_id, canal=None, linea=None, texto=None,
+                          camino='otro', resuelto=True, motivo=None,
+                          tema=None, producto=None):
+    """Guarda una fila de analítica por interacción procesada por el bot.
+    Defensivo: si la analítica falla, NO rompe la respuesta al cliente."""
+    try:
+        with database.get_db() as s:
+            s.add(database.BotInteraccion(
+                conversacion_id=conv_id, canal=canal, linea=linea,
+                texto=(texto or '')[:2000], camino=(camino or 'otro')[:30],
+                resuelto=bool(resuelto), motivo=(motivo or None) and motivo[:30],
+                tema=(tema or None) and tema[:80],
+                producto=(producto or None) and producto[:160]))
+            s.commit()
+    except Exception as e:  # noqa: BLE001
+        print('registrar_interaccion error:', e)
+
+
+def _rango_dia(fecha):
+    """('YYYY-MM-DD' | date | datetime | None) → (inicio, fin) datetime del día.
+    None = hoy (hora AR)."""
+    if fecha is None:
+        d = database.now_ar().date()
+    elif isinstance(fecha, datetime):
+        d = fecha.date()
+    elif isinstance(fecha, date):
+        d = fecha
+    else:
+        d = datetime.strptime(str(fecha)[:10], '%Y-%m-%d').date()
+    ini = datetime(d.year, d.month, d.day)
+    return ini, ini + timedelta(days=1)
+
+
+def listar_interacciones(desde=None, hasta=None, linea=None, motivo=None,
+                         solo_no_resueltas=False, limite=500):
+    """Listado filtrable para el panel. `desde`/`hasta` por día (inclusive)."""
+    I = database.BotInteraccion
+    with database.get_db() as s:
+        q = s.query(I)
+        if desde:
+            q = q.filter(I.creado_en >= _rango_dia(desde)[0])
+        if hasta:
+            q = q.filter(I.creado_en < _rango_dia(hasta)[1])
+        if linea:
+            q = q.filter(I.linea == linea)
+        if motivo:
+            q = q.filter(I.motivo == motivo)
+        if solo_no_resueltas:
+            q = q.filter(I.resuelto.is_(False))
+        rows = q.order_by(I.creado_en.desc()).limit(limite).all()
+        return [{'id': r.id, 'conversacion_id': r.conversacion_id,
+                 'canal': r.canal, 'linea': r.linea, 'texto': r.texto or '',
+                 'camino': r.camino, 'resuelto': r.resuelto, 'motivo': r.motivo,
+                 'tema': r.tema, 'producto': r.producto,
+                 'fecha': r.creado_en.strftime('%d/%m %H:%M') if r.creado_en else ''}
+                for r in rows]
+
+
+def resumen_del_dia(fecha=None, linea=None):
+    """Agregados de un día: totales, por camino, por motivo, top productos sin
+    stock (demanda perdida) y top temas (tanda 2). Todo por SQL, sin IA."""
+    I = database.BotInteraccion
+    ini, fin = _rango_dia(fecha)
+    conds = [I.creado_en >= ini, I.creado_en < fin]
+    if linea:
+        conds.append(I.linea == linea)
+    with database.get_db() as s:
+        total = s.query(func.count(I.id)).filter(*conds).scalar() or 0
+        por_camino = dict(s.query(I.camino, func.count(I.id)).filter(*conds)
+                          .group_by(I.camino).all())
+        por_motivo = dict(s.query(I.motivo, func.count(I.id))
+                          .filter(*conds, I.resuelto.is_(False))
+                          .group_by(I.motivo).all())
+        prod_rows = (s.query(func.lower(func.trim(I.producto)), func.count(I.id))
+                     .filter(*conds, I.motivo == 'sin_stock', I.producto.isnot(None))
+                     .group_by(func.lower(func.trim(I.producto)))
+                     .order_by(func.count(I.id).desc()).limit(15).all())
+        tema_rows = (s.query(I.tema, func.count(I.id))
+                     .filter(*conds, I.tema.isnot(None))
+                     .group_by(I.tema).order_by(func.count(I.id).desc()).limit(15).all())
+    no_resueltas = sum(por_motivo.values())
+    return {
+        'fecha': ini.strftime('%Y-%m-%d'),
+        'total': total,
+        'resueltas': total - no_resueltas,
+        'no_resueltas': no_resueltas,
+        'por_camino': {k: v for k, v in por_camino.items()},
+        'por_motivo': {k: v for k, v in por_motivo.items() if k},
+        'productos_sin_stock': [{'producto': p, 'veces': n} for p, n in prod_rows],
+        'temas': [{'tema': t, 'veces': n} for t, n in tema_rows],
+    }
+
+
+def lineas_interacciones():
+    """Líneas distintas vistas en la analítica (para el filtro del panel). Propia
+    de bot_interacciones: no depende de que la conversación siga viva."""
+    I = database.BotInteraccion
+    with database.get_db() as s:
+        rows = s.query(I.linea).filter(I.linea.isnot(None)).distinct().all()
         return sorted({r[0] for r in rows if r[0]})

@@ -2440,6 +2440,31 @@ class BotMensaje(Base):
     creado_en = Column(DateTime, default=now_ar, index=True)
 
 
+class BotInteraccion(Base):
+    """Analítica: una fila por mensaje del cliente que procesa el bot, clasificada
+    por camino/intent y con el motivo si NO se pudo resolver. Alimenta el panel de
+    'memoria de no-resueltos' (demanda perdida, agujeros del flujo).
+
+    `texto`/`canal`/`linea` se copian (no solo FK) para que la métrica sobreviva a
+    una purga del chat y se filtre/agregue sin JOIN."""
+    __tablename__ = 'bot_interacciones'
+    id = Column(Integer, primary_key=True)
+    conversacion_id = Column(Integer,
+                             ForeignKey('bot_conversaciones.id', ondelete='CASCADE'),
+                             nullable=False, index=True)
+    canal = Column(String(20))
+    linea = Column(String(40), index=True)
+    texto = Column(Text)
+    # precio | encargo | consulta_ia | receta | horarios | derivar | menu | otro
+    camino = Column(String(30), index=True)
+    resuelto = Column(Boolean, nullable=False, default=True, index=True)
+    # sin_stock | no_entendido | derivado | receta_ilegible | falta_info | rechazado_malicioso
+    motivo = Column(String(30), index=True)
+    tema = Column(String(80), index=True)            # reservado para tanda 2 (IA)
+    producto = Column(String(160))                   # texto buscado cuando sin_stock
+    creado_en = Column(DateTime, default=now_ar, index=True)
+
+
 def init_db(database_url=None):
     database_url = init_engine(database_url)
     if not database_url.startswith('sqlite'):
@@ -2489,7 +2514,8 @@ def init_db(database_url=None):
                         'compartido_importado', 'obs_operadores',
                         'parser_ofertas_lab', 'factura_faltante',
                         'analisis_ia_cache', 'panel_heartbeat',
-                        'bot_conversaciones', 'bot_mensajes', 'clientes_locales',
+                        'bot_conversaciones', 'bot_mensajes', 'bot_interacciones',
+                        'clientes_locales',
                         'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago',
                         'envio_tramos', 'envio_zonas', 'envio_config',
                         'domicilios_cliente')
