@@ -541,6 +541,40 @@ class EnvioConfig(Base):
     actualizado_en = Column(DateTime, default=now_ar)
 
 
+class RutaReparto(Base):
+    """Ruta de reparto. v1: una por cuadrante (Norte/Sur/Este/Oeste) según el
+    ángulo desde la farmacia. `cuadrante` es el criterio de auto-asignación."""
+    __tablename__ = 'rutas_reparto'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(60), nullable=False)
+    cuadrante = Column(String(1), index=True)      # N | S | E | O (None = custom)
+    color = Column(String(9), default='#1D9E75')
+    cadete = Column(String(80), nullable=True)
+    activa = Column(Boolean, nullable=False, default=True)
+    orden = Column(Integer, nullable=False, default=0)
+
+
+class PedidoReparto(Base):
+    """Pedido a repartir (lo carga el operador). Se auto-asigna a la ruta del
+    cuadrante de su domicilio; el operador puede reasignar a mano."""
+    __tablename__ = 'pedidos_reparto'
+    id = Column(Integer, primary_key=True)
+    fecha = Column(Date, default=lambda: now_ar().date(), index=True)
+    cliente_observer_id = Column(Integer, nullable=True)
+    cliente_local_id = Column(Integer, nullable=True)
+    cliente_nombre = Column(String(160))
+    direccion = Column(String(200))
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    nota = Column(Text, nullable=True)
+    cuadrante = Column(String(1))                  # calculado
+    ruta_id = Column(Integer, ForeignKey('rutas_reparto.id', ondelete='SET NULL'),
+                     nullable=True, index=True)
+    orden_en_ruta = Column(Integer, default=0)     # secuencia (fase 2)
+    estado = Column(String(15), nullable=False, default='pendiente', index=True)
+    creado_en = Column(DateTime, default=now_ar)
+
+
 class ObsSyncLog(Base):
     """Log de cada corrida de sync por entidad (última ejecución + resultados)."""
     __tablename__ = 'obs_sync_log'
@@ -2518,7 +2552,7 @@ def init_db(database_url=None):
                         'clientes_locales',
                         'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago',
                         'envio_tramos', 'envio_zonas', 'envio_config',
-                        'domicilios_cliente')
+                        'domicilios_cliente', 'rutas_reparto', 'pedidos_reparto')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
