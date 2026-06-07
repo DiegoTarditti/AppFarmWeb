@@ -35,6 +35,7 @@
   <div class="topbar">
     <div class="logo"><span class="dot"></span>🚚 Rutas de reparto · Badia</div>
     <div style="flex:1"></div>
+    <button onclick="cargarDistritos()" class="hbtn">📥 Cargar distritos oficiales (Rosario)</button>
     <a href="/reparto" class="hbtn hbtn-ok">Armar reparto →</a>
     <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
   </div>
@@ -119,6 +120,12 @@ async function addRuta(){
   document.getElementById('nNombre').value=''; document.getElementById('nCadete').value=''; cargar();
 }
 async function delRuta(id){ if(confirm('¿Quitar ruta?')){ await jpost(`/rutas/${id}/delete`); cargar(); } }
+async function cargarDistritos(){
+  if(!confirm('Carga las 6 rutas de los distritos oficiales de Rosario con su zona real. ¿Seguimos?')) return;
+  const d = await jpost('/rutas/cargar-distritos');
+  if(d.ok){ alert(`✅ ${d.cargados} distritos cargados.`); cargar(); }
+  else alert('⚠️ '+(d.error||'no se pudo'));
+}
 cargar();
 </script>
 </body>

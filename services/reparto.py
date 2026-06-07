@@ -5,10 +5,13 @@ Reusa el origen (coords de la farmacia) y el geocoder de bot.envio.
 """
 import json
 import math
+import os
 import urllib.parse
 
 import database
 from bot import envio
+
+_DISTRITOS_FILE = os.path.join(os.path.dirname(__file__), 'distritos_rosario.json')
 
 # Rutas por defecto (se siembran la 1ª vez): nombre, cuadrante, color.
 DEFAULT_RUTAS = [('Norte', 'N', '#2E7D5B'), ('Sur', 'S', '#B45309'),
@@ -102,6 +105,32 @@ def secuenciar(items, origen=None):
     otras = [it for it in con if (it.get('prioridad') or 'normal') not in _PRIORIDADES]
     out += _nn(otras, o)
     return out + sin
+
+
+def seed_distritos_oficiales():
+    """Carga/actualiza las 6 rutas de los distritos oficiales de Rosario, con su
+    polígono real (datos abiertos de la Municipalidad). Idempotente por nombre."""
+    try:
+        with open(_DISTRITOS_FILE, encoding='utf-8') as f:
+            distritos = json.load(f)
+    except (OSError, ValueError):
+        return {'ok': False, 'error': 'no se pudo leer el seed de distritos'}
+    n = 0
+    with database.get_db() as s:
+        for i, d in enumerate(distritos):
+            r = (s.query(database.RutaReparto)
+                 .filter(database.RutaReparto.nombre == d['nombre']).first())
+            if not r:
+                r = database.RutaReparto(nombre=d['nombre'])
+                s.add(r)
+            r.poligono = json.dumps(d['poligono'])
+            r.color = d.get('color') or '#1D9E75'
+            r.cuadrante = d.get('cuadrante')
+            r.activa = True
+            r.orden = 10 + i
+            n += 1
+        s.commit()
+    return {'ok': True, 'cargados': n}
 
 
 def ruta_para_cuadrante(s, cuadrante):

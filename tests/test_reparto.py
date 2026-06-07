@@ -179,6 +179,20 @@ def test_ruta_para_punto_zona_pisa_y_fuera_es_none():
         assert reparto.ruta_para_punto(s, -33.5, -60.65) is None
 
 
+def test_seed_distritos_oficiales():
+    import database
+    r = reparto.seed_distritos_oficiales()
+    assert r['ok'] and r['cargados'] == 6
+    with database.get_db() as s:
+        ds = (s.query(database.RutaReparto)
+              .filter(database.RutaReparto.nombre.like('Distrito %')).all())
+        assert len(ds) == 6 and all(x.poligono for x in ds)
+    reparto.seed_distritos_oficiales()   # idempotente: no duplica
+    with database.get_db() as s:
+        assert (s.query(database.RutaReparto)
+                .filter(database.RutaReparto.nombre.like('Distrito %')).count()) == 6
+
+
 def test_alta_guarda_prioridad(client):
     _set_farmacia()
     reparto.seed_rutas_si_vacio()
