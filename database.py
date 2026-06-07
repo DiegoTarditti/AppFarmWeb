@@ -541,6 +541,18 @@ class EnvioConfig(Base):
     actualizado_en = Column(DateTime, default=now_ar)
 
 
+class Cadete(Base):
+    """Repartidor. La misma ficha sirve para asignar zonas (un cadete puede
+    cubrir varias rutas) y para los pagos (tarifa por jornada)."""
+    __tablename__ = 'cadetes'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(80), nullable=False)
+    telefono = Column(String(35), nullable=True)
+    tarifa_dia = Column(DECIMAL(12, 2), nullable=True)   # jornada (para pagos)
+    activo = Column(Boolean, nullable=False, default=True)
+    creado_en = Column(DateTime, default=now_ar)
+
+
 class RutaReparto(Base):
     """Ruta de reparto. v1: una por cuadrante (Norte/Sur/Este/Oeste) según el
     ángulo desde la farmacia. `cuadrante` es el criterio de auto-asignación."""
@@ -552,7 +564,9 @@ class RutaReparto(Base):
     # asignación es point-in-polygon (pisa al cuadrante).
     poligono = Column(Text, nullable=True)
     color = Column(String(9), default='#1D9E75')
-    cadete = Column(String(80), nullable=True)
+    cadete = Column(String(80), nullable=True)     # (deprecado: ahora cadete_id)
+    cadete_id = Column(Integer, ForeignKey('cadetes.id', ondelete='SET NULL'),
+                       nullable=True, index=True)
     activa = Column(Boolean, nullable=False, default=True)
     orden = Column(Integer, nullable=False, default=0)
 
@@ -2556,7 +2570,8 @@ def init_db(database_url=None):
                         'clientes_locales',
                         'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago',
                         'envio_tramos', 'envio_zonas', 'envio_config',
-                        'domicilios_cliente', 'rutas_reparto', 'pedidos_reparto')
+                        'domicilios_cliente', 'rutas_reparto', 'pedidos_reparto',
+                        'cadetes')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -2808,6 +2823,12 @@ def init_db(database_url=None):
                 try:
                     conn.execute(text(
                         "ALTER TABLE rutas_reparto ADD COLUMN IF NOT EXISTS poligono TEXT"))
+                except Exception:  # noqa: BLE001
+                    pass
+                # Cadete (FK) por ruta — tabla de cadetes.
+                try:
+                    conn.execute(text(
+                        "ALTER TABLE rutas_reparto ADD COLUMN IF NOT EXISTS cadete_id INTEGER"))
                 except Exception:  # noqa: BLE001
                     pass
                 conn.execute(text("""

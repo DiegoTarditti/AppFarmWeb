@@ -36,6 +36,7 @@
     <div class="logo"><span class="dot"></span>🚚 Rutas de reparto · Badia</div>
     <div style="flex:1"></div>
     <button onclick="cargarDistritos()" class="hbtn">📥 Cargar distritos oficiales (Rosario)</button>
+    <a href="/cadetes" class="hbtn">🧑‍🦽 Cadetes</a>
     <a href="/reparto" class="hbtn hbtn-ok">Armar reparto →</a>
     <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
   </div>
@@ -53,7 +54,7 @@
       <div style="display:flex; gap:6px; margin-top:12px; flex-wrap:wrap;">
         <input id="nNombre" class="input" placeholder="Nombre de ruta" style="flex:1; min-width:120px;">
         <select id="nCuad" class="input"><option value="">— cuadrante —</option><option>N</option><option>S</option><option>E</option><option>O</option></select>
-        <input id="nCadete" class="input" placeholder="Cadete" style="width:120px;">
+        <select id="nCadete" class="input" style="width:140px;"></select>
         <button onclick="addRuta()" class="hbtn hbtn-ok">+ Agregar</button>
       </div>
     </div>
@@ -89,35 +90,42 @@ function cerrarZona(){ document.getElementById('modalZona').style.display='none'
 async function guardarZona(){
   const r = window._rutas[_zonaId] || {};
   await jpost('/rutas', {id:_zonaId, nombre:r.nombre, cuadrante:r.cuadrante, color:r.color,
-                         cadete:r.cadete, activa:r.activa,
+                         cadete_id:r.cadete_id, activa:r.activa,
                          poligono_texto: document.getElementById('zonaTexto').value});
   cerrarZona(); cargar();
 }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 async function jpost(u,b){ return (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json(); }
+function cadeteOpts(sel){
+  return '<option value="">— sin cadete —</option>' + (window._cadetes||[]).map(c=>
+    `<option value="${c.id}" ${c.id==sel?'selected':''}>${esc(c.nombre)}${c.activo?'':' (inactivo)'}</option>`).join('');
+}
 async function cargar(){
   const d = await (await fetch('/rutas/api')).json();
   window._rutas = {}; (d.rutas||[]).forEach(r=>window._rutas[r.id]=r);
+  window._cadetes = d.cadetes||[];
   document.getElementById('tb').innerHTML = (d.rutas||[]).map(r=>`
     <tr>
       <td><input class="input" value="${esc(r.nombre)}" onchange="save(${r.id},'nombre',this.value)"></td>
       <td><span class="badge">${r.cuadrante?esc(CUAD[r.cuadrante]||r.cuadrante):'—'}</span></td>
       <td>${r.n_puntos?`<span class="badge" style="background:var(--accent);color:var(--accent-ink);">✓ ${r.n_puntos} pts</span>`:'<span class="muted">—</span>'} <button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="editarZona(${r.id})">Zona</button></td>
       <td><input type="color" value="${esc(r.color)}" onchange="save(${r.id},'color',this.value)" style="width:42px;height:28px;background:none;border:none;cursor:pointer;"></td>
-      <td><input class="input" value="${esc(r.cadete)}" placeholder="—" onchange="save(${r.id},'cadete',this.value)" style="width:120px;"></td>
+      <td><select class="input" onchange="save(${r.id},'cadete_id',this.value?+this.value:null)" style="width:140px;">${cadeteOpts(r.cadete_id)}</select></td>
       <td><input type="checkbox" ${r.activa?'checked':''} onchange="save(${r.id},'activa',this.checked)"></td>
       <td><button class="hbtn hbtn-danger" onclick="delRuta(${r.id})">Quitar</button></td>
     </tr>`).join('') || '<tr><td colspan="7" class="muted">Sin rutas.</td></tr>';
+  document.getElementById('nCadete').innerHTML = cadeteOpts('');
 }
 async function save(id, campo, val){
   const r = window._rutas[id] || {};
-  await jpost('/rutas', {id, nombre:r.nombre, cuadrante:r.cuadrante, color:r.color, cadete:r.cadete, activa:r.activa, [campo]:val});
+  await jpost('/rutas', {id, nombre:r.nombre, cuadrante:r.cuadrante, color:r.color, cadete_id:r.cadete_id, activa:r.activa, [campo]:val});
   cargar();
 }
 async function addRuta(){
   const nombre = document.getElementById('nNombre').value.trim(); if(!nombre) return;
-  await jpost('/rutas', {nombre, cuadrante:document.getElementById('nCuad').value||null, cadete:document.getElementById('nCadete').value.trim()});
-  document.getElementById('nNombre').value=''; document.getElementById('nCadete').value=''; cargar();
+  const cad = document.getElementById('nCadete').value;
+  await jpost('/rutas', {nombre, cuadrante:document.getElementById('nCuad').value||null, cadete_id:cad?+cad:null});
+  document.getElementById('nNombre').value=''; cargar();
 }
 async function delRuta(id){ if(confirm('¿Quitar ruta?')){ await jpost(`/rutas/${id}/delete`); cargar(); } }
 async function cargarDistritos(){
