@@ -26,6 +26,7 @@ FLUJO = {
             {'label': '🛒 Encargar un producto', 'va_a': 'encargar'},
             {'label': '💬 Hacé tu consulta (IA)', 'va_a': 'consulta_ia'},
             {'label': '📸 Enviar una receta', 'va_a': 'receta'},
+            {'label': '🛵 Costo de envío', 'va_a': 'envio'},
             {'label': '🕐 Horarios y dirección', 'va_a': 'horarios'},
             {'label': '🙋 Hablar con una persona', 'va_a': 'derivar'},
         ],

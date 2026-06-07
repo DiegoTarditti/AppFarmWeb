@@ -1,6 +1,6 @@
 """Tests de cotización de envío: zonas pisan, tramos por cuadras, seed, CRUD,
 endpoints (Fase 1) + coords/geocoder/config/pin (Fase 2)."""
-from bot import envio
+from bot import envio, store
 from bot.cerebro import procesar
 
 
@@ -125,4 +125,60 @@ def test_procesar_pin_cotiza_envio():
     envio.guardar_config(farmacia_lat=-32.95, farmacia_lng=-60.65)
     resp = procesar('telegram', 'PIN1', '', nombre='C', linea='Telegram',
                     ubicacion={'lat': -32.952, 'lng': -60.652})
-    assert resp and 'envío' in resp['texto'].lower()
+    # El pin cotiza y ofrece guardar el domicilio.
+    assert resp and any('Casa' in o for o in resp['opciones'])
+
+
+# ── Libreta de domicilios (store) ────────────────────────────────────────────
+
+def test_domicilios_crud_por_conversacion():
+    conv = store.get_conversacion('telegram', 'D1', nombre='C', linea='Telegram')
+    cid = conv['id']
+    r = store.guardar_domicilio(cid, etiqueta='Casa', direccion='Córdoba 100',
+                                lat=-32.95, lng=-60.65, origen='pin')
+    assert r['ok']
+    ds = store.listar_domicilios(cid)
+    assert len(ds) == 1 and ds[0]['etiqueta'] == 'Casa' and ds[0]['lat'] == -32.95
+    store.set_etiqueta_domicilio(ds[0]['id'], 'Trabajo')
+    assert store.listar_domicilios(cid)[0]['etiqueta'] == 'Trabajo'
+    store.eliminar_domicilio(ds[0]['id'])
+    assert store.listar_domicilios(cid) == []
+
+
+def test_domicilios_se_cuelgan_del_cliente_local():
+    conv = store.get_conversacion('telegram', 'D2', nombre='C')
+    cid = conv['id']
+    store.crear_cliente_local(cid, {'nombre': 'Ana', 'apellido': 'Gomez'})
+    store.guardar_domicilio(cid, etiqueta='Casa', direccion='San Martín 50')
+    ds = store.listar_domicilios(cid)
+    assert len(ds) == 1 and ds[0]['direccion'] == 'San Martín 50'
+
+
+# ── Flujo de envío end-to-end (pide → guarda → reusa) ────────────────────────
+
+def test_flujo_envio_pide_guarda_y_reusa():
+    envio.seed_si_vacio()
+    envio.guardar_config(farmacia_lat=-32.95, farmacia_lng=-60.65)
+    # 1ª vez: sin domicilios → pide ubicación/dirección
+    r1 = procesar('telegram', 'F1', 'Costo de envío', nombre='C', linea='Telegram')
+    assert 'ubicación' in r1['texto'].lower() or 'dirección' in r1['texto'].lower()
+    # manda pin → cotiza + ofrece guardar
+    r2 = procesar('telegram', 'F1', '', ubicacion={'lat': -32.952, 'lng': -60.652})
+    assert any('Casa' in o for o in r2['opciones'])
+    # guarda como Casa
+    r3 = procesar('telegram', 'F1', '🏠 Casa')
+    assert 'guard' in r3['texto'].lower()
+    assert len(store.listar_domicilios(store.get_conversacion('telegram', 'F1')['id'])) == 1
+    # 2ª vez: ofrece el domicilio guardado
+    r4 = procesar('telegram', 'F1', 'Costo de envío')
+    assert any('Casa' in o for o in r4['opciones'])
+    # lo elige → cotiza (sin re-pedir)
+    r5 = procesar('telegram', 'F1', '🏠 Casa — ubicación 📍')
+    assert 'envío' in r5['texto'].lower()
+
+
+def test_flujo_envio_escapa_con_menu():
+    # Estando en el flujo, "menú" sale (no queda atrapado).
+    procesar('telegram', 'F2', 'Costo de envío', nombre='C', linea='Telegram')
+    r = procesar('telegram', 'F2', 'menú')
+    assert r and r['opciones']   # volvió al menú principal

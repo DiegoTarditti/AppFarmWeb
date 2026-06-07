@@ -559,7 +559,9 @@ function renderFicha() {
           <button onclick="abrirModalCiudades()" class="hbtn" title="Gestionar ciudades" style="border-radius:8px; padding:6px 9px; font-size:11px; flex-shrink:0;">⚙</button>
         </div>
         <button onclick="crearCliente()" class="hbtn hbtn-ok" style="border-radius:8px; padding:6px 11px; font-size:12px;">＋ Crear ficha</button>
-      </div>`;
+      </div>
+      <div id="domicilios" style="margin-top:14px;"></div>`;
+    cargarDomicilios();
     return;
   }
   const ini = (f.nombre || '?').replace(/[^A-Za-zÀ-ÿ ]/g,'').split(/[ ,]+/).filter(Boolean).slice(0,2).map(s=>s[0]).join('').toUpperCase() || '?';
@@ -587,7 +589,39 @@ function renderFicha() {
         <button id="btnGuardarFicha" onclick="guardarFicha()" class="hbtn hbtn-ok" style="border-radius:8px; padding:5px 11px; font-size:11px;">Guardar notas</button>
         <button onclick="desvincularCliente()" class="hbtn" style="border-radius:8px; padding:5px 11px; font-size:11px;">Desvincular</button>
       </div>
+    </div>
+    <div id="domicilios" style="margin-top:14px;"></div>`;
+  cargarDomicilios();
+}
+
+async function cargarDomicilios() {
+  const cont = document.getElementById('domicilios');
+  if (!cont || !convAbierta) return;
+  const d = await (await fetch(`/atencion/api/${convAbierta}/domicilios`)).json();
+  const ds = d.domicilios || [];
+  const filas = ds.map(x => `
+    <div class="row" style="display:flex; justify-content:space-between; gap:6px; padding:4px 0; font-size:11px;">
+      <span><b>${esc(x.etiqueta)}</b> ${esc(x.direccion || (x.lat!=null?'📍 ubicación':''))}</span>
+      <button onclick="delDomicilio(${x.id})" class="hbtn" style="font-size:10px; padding:2px 7px;">✕</button>
+    </div>`).join('') || '<div class="muted" style="font-size:10px;">Sin domicilios guardados.</div>';
+  cont.innerHTML = `
+    <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-map-pin" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Domicilios (envíos)</div>
+    ${filas}
+    <div style="display:flex; gap:5px; margin-top:7px;">
+      <input id="domEt" placeholder="Casa" class="${INP}" style="width:64px; border-radius:8px; padding:5px 7px; font-size:11px;">
+      <input id="domDir" placeholder="Dirección" class="${INP}" style="flex:1; border-radius:8px; padding:5px 7px; font-size:11px;" onkeydown="if(event.key==='Enter')addDomicilio()">
+      <button onclick="addDomicilio()" class="hbtn hbtn-ok" style="font-size:11px; padding:4px 9px;">＋</button>
     </div>`;
+}
+async function addDomicilio() {
+  const dir = _val('domDir'); if (!dir) return;
+  await fetch(`/atencion/${convAbierta}/domicilio`, {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({etiqueta:_val('domEt') || 'Otro', direccion:dir})});
+  cargarDomicilios();
+}
+async function delDomicilio(id) {
+  await fetch(`/atencion/domicilio/${id}/delete`, {method:'POST'});
+  cargarDomicilios();
 }
 function _val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
 async function crearCliente() {

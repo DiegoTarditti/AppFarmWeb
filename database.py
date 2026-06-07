@@ -505,6 +505,29 @@ class EnvioZona(Base):
     orden = Column(Integer, nullable=False, default=0)
 
 
+class DomicilioCliente(Base):
+    """Libreta de direcciones del cliente (Casa/Trabajo/Otro). Link polimórfico:
+    se cuelga del cliente (observer_id o local_id) si la conversación está
+    vinculada, o de la conversación si no. lat/lng del pin o del geocode."""
+    __tablename__ = 'domicilios_cliente'
+    id = Column(Integer, primary_key=True)
+    cliente_observer_id = Column(Integer, index=True, nullable=True)   # sin FK (obs es espejo)
+    cliente_local_id = Column(Integer,
+                              ForeignKey('clientes_locales.id', ondelete='CASCADE'),
+                              index=True, nullable=True)
+    conversacion_id = Column(Integer,
+                             ForeignKey('bot_conversaciones.id', ondelete='CASCADE'),
+                             index=True, nullable=True)
+    etiqueta = Column(String(40))          # Casa | Trabajo | Otro (o libre)
+    direccion = Column(String(200))        # texto legible si lo escribió
+    localidad = Column(String(120))
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    origen = Column(String(12))            # pin | direccion
+    creado_en = Column(DateTime, default=now_ar)
+    ultimo_uso_en = Column(DateTime, nullable=True)
+
+
 class EnvioConfig(Base):
     """Config de envío (fila única). Coordenadas de la farmacia (origen) +
     parámetros para convertir distancia en línea recta a 'cuadras' del cadete:
@@ -2468,7 +2491,8 @@ def init_db(database_url=None):
                         'analisis_ia_cache', 'panel_heartbeat',
                         'bot_conversaciones', 'bot_mensajes', 'clientes_locales',
                         'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago',
-                        'envio_tramos', 'envio_zonas', 'envio_config')
+                        'envio_tramos', 'envio_zonas', 'envio_config',
+                        'domicilios_cliente')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
