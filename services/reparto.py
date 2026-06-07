@@ -3,6 +3,7 @@
 El cuadrante sale del ángulo (bearing) desde la farmacia hasta el domicilio.
 Reusa el origen (coords de la farmacia) y el geocoder de bot.envio.
 """
+import json
 import math
 import urllib.parse
 
@@ -111,6 +112,95 @@ def ruta_para_cuadrante(s, cuadrante):
             .filter(database.RutaReparto.cuadrante == cuadrante,
                     database.RutaReparto.activa.is_(True))
             .order_by(database.RutaReparto.orden).first())
+
+
+def _coords_de_geojson(data):
+    """Primer anillo de polígono de un GeoJSON (Feature/FeatureCollection/Polygon).
+    GeoJSON viene en [lng, lat] → devolvemos [lat, lng]."""
+    geom = data
+    if data.get('type') == 'FeatureCollection':
+        geom = None
+        for f in (data.get('features') or []):
+            g = (f or {}).get('geometry') or {}
+            if g.get('type') in ('Polygon', 'MultiPolygon'):
+                geom = g
+                break
+        if geom is None:
+            return None
+    elif data.get('type') == 'Feature':
+        geom = data.get('geometry') or {}
+    if geom.get('type') == 'Polygon':
+        ring = (geom.get('coordinates') or [[]])[0]
+    elif geom.get('type') == 'MultiPolygon':
+        ring = (geom.get('coordinates') or [[[]]])[0][0]
+    else:
+        return None
+    out = [[c[1], c[0]] for c in ring if isinstance(c, (list, tuple)) and len(c) >= 2]
+    return out or None
+
+
+def parse_poligono(texto):
+    """Zona pegada: acepta GeoJSON (de geojson.io) o líneas 'lat, lng' (Google
+    Maps). Devuelve [[lat,lng], ...] o None si hay menos de 3 puntos."""
+    texto = (texto or '').strip()
+    if not texto:
+        return None
+    if texto.startswith('{') or texto.startswith('['):   # GeoJSON
+        try:
+            coords = _coords_de_geojson(json.loads(texto))
+            if coords and len(coords) >= 3:
+                return coords
+        except (ValueError, TypeError):
+            pass
+    pts = []
+    for linea in texto.replace(';', '\n').split('\n'):
+        linea = linea.strip().strip('()')
+        if not linea:
+            continue
+        partes = linea.split(',')
+        if len(partes) >= 2:
+            try:
+                pts.append([float(partes[0]), float(partes[1])])
+            except ValueError:
+                continue
+    return pts if len(pts) >= 3 else None
+
+
+def _punto_en_poligono(lat, lng, poly):
+    """Ray casting: ¿(lat,lng) cae dentro del polígono `poly` ([[lat,lng],...])?"""
+    if not poly or len(poly) < 3 or lat is None or lng is None:
+        return False
+    x, y = lng, lat
+    inside, n, j = False, len(poly), len(poly) - 1
+    for i in range(n):
+        yi, xi = poly[i][0], poly[i][1]
+        yj, xj = poly[j][0], poly[j][1]
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def ruta_para_punto(s, lat, lng):
+    """Asigna por ZONA (polígono) si hay rutas con zona definida: la 1ª cuyo
+    polígono contiene el punto, o None (sin asignar) si cae fuera de todas.
+    Si NINGUNA ruta tiene zona definida, cae al fallback por cuadrante."""
+    rutas = (s.query(database.RutaReparto)
+             .filter(database.RutaReparto.activa.is_(True))
+             .order_by(database.RutaReparto.orden).all())
+    con_zona = [r for r in rutas if r.poligono]
+    if con_zona:
+        if lat is None or lng is None:
+            return None
+        for r in con_zona:
+            try:
+                poly = json.loads(r.poligono)
+            except (ValueError, TypeError):
+                continue
+            if _punto_en_poligono(lat, lng, poly):
+                return r
+        return None   # fuera de todas las zonas dibujadas → sin asignar
+    return ruta_para_cuadrante(s, cuadrante_de(lat, lng))
 
 
 def link_google_maps(paradas, origen=None):

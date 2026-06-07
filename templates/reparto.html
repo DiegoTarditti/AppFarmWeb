@@ -160,6 +160,14 @@ function renderMapa(){
   _layer.clearLayers();
   const d=window._data, f=d.farmacia||{}, pts=[];
   const rById={}; (d.rutas||[]).forEach(r=>rById[r.id]=r);
+  // zonas (polígonos) por ruta
+  (d.rutas||[]).forEach(r=>{
+    if(r.poligono && r.poligono.length>=3){
+      L.polygon(r.poligono, {color:r.color||'#6a6a72', weight:2, fillOpacity:.08})
+        .addTo(_layer).bindPopup('Zona: '+esc(r.nombre));
+      r.poligono.forEach(c=>pts.push(c));
+    }
+  });
   if(f.lat!=null){ L.marker([f.lat,f.lng]).addTo(_layer).bindPopup('🏥 Farmacia'); pts.push([f.lat,f.lng]); }
   (d.pedidos||[]).forEach(p=>{
     if(p.lat==null||p.lng==null) return;

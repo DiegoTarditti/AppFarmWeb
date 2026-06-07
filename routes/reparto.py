@@ -4,6 +4,7 @@ del día (cargar pedidos, auto-asignar por cuadrante, reasignar a mano, exportar
 Carga manual: el operador agrega cada pedido (cliente + domicilio/dirección + nota).
 El motor de asignación vive en services/reparto.py.
 """
+import json
 from datetime import datetime
 
 from flask import jsonify, render_template, request
@@ -28,8 +29,15 @@ def _fecha(arg):
 
 
 def _ruta_dict(r):
+    poly = []
+    if r.poligono:
+        try:
+            poly = json.loads(r.poligono)
+        except (ValueError, TypeError):
+            poly = []
     return {'id': r.id, 'nombre': r.nombre, 'cuadrante': r.cuadrante,
-            'color': r.color or '#1D9E75', 'cadete': r.cadete or '', 'activa': r.activa}
+            'color': r.color or '#1D9E75', 'cadete': r.cadete or '', 'activa': r.activa,
+            'poligono': poly, 'n_puntos': len(poly)}
 
 
 def _pedido_dict(p):
@@ -83,6 +91,9 @@ def init_app(app):
             r.cadete = (b.get('cadete') or '').strip() or None
             if 'activa' in b:
                 r.activa = bool(b['activa'])
+            if 'poligono_texto' in b:   # zona pegada de Google Maps (esquinas)
+                parsed = reparto.parse_poligono(b.get('poligono_texto'))
+                r.poligono = json.dumps(parsed) if parsed else None
             s.commit()
             return jsonify({'ok': True, 'id': r.id})
 
@@ -158,7 +169,7 @@ def init_app(app):
         lat, lng = coords if coords else (None, None)
         cuad = reparto.cuadrante_de(lat, lng)
         with database.get_db() as s:
-            ruta = reparto.ruta_para_cuadrante(s, cuad)
+            ruta = reparto.ruta_para_punto(s, lat, lng)   # zona (polígono) → sino cuadrante
             p = database.PedidoReparto(
                 fecha=database.now_ar().date(),
                 cliente_observer_id=b.get('observer_id'),

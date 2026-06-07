@@ -547,7 +547,10 @@ class RutaReparto(Base):
     __tablename__ = 'rutas_reparto'
     id = Column(Integer, primary_key=True)
     nombre = Column(String(60), nullable=False)
-    cuadrante = Column(String(1), index=True)      # N | S | E | O (None = custom)
+    cuadrante = Column(String(1), index=True)      # N | S | E | O (fallback si no hay polígono)
+    # Zona real (opcional): JSON con las esquinas [[lat,lng], ...]. Si está, la
+    # asignación es point-in-polygon (pisa al cuadrante).
+    poligono = Column(Text, nullable=True)
     color = Column(String(9), default='#1D9E75')
     cadete = Column(String(80), nullable=True)
     activa = Column(Boolean, nullable=False, default=True)
@@ -2800,6 +2803,12 @@ def init_db(database_url=None):
                         "ADD COLUMN IF NOT EXISTS prioridad VARCHAR(12) DEFAULT 'normal'"
                     ))
                 except Exception:  # noqa: BLE001 (tabla aún no existe en DB nueva)
+                    pass
+                # Zona (polígono) por ruta de reparto.
+                try:
+                    conn.execute(text(
+                        "ALTER TABLE rutas_reparto ADD COLUMN IF NOT EXISTS poligono TEXT"))
+                except Exception:  # noqa: BLE001
                     pass
                 conn.execute(text("""
                     CREATE TABLE IF NOT EXISTS obs_operadores (
