@@ -172,9 +172,13 @@ def test_flujo_envio_pide_guarda_y_reusa():
     # 2ª vez: ofrece el domicilio guardado
     r4 = procesar('telegram', 'F1', 'Costo de envío')
     assert any('Casa' in o for o in r4['opciones'])
-    # lo elige → cotiza (sin re-pedir)
+    # lo elige → propone ubicación + costo y pide confirmar (sin re-pedir)
     r5 = procesar('telegram', 'F1', '🏠 Casa — ubicación 📍')
-    assert 'envío' in r5['texto'].lower()
+    assert 'envío' in r5['texto'].lower() and 'confirm' in r5['texto'].lower()
+    assert any('Sí' in o for o in r5['opciones'])
+    # confirma → cierra
+    r6 = procesar('telegram', 'F1', '✅ Sí, es esa')
+    assert 'coordinamos' in r6['texto'].lower() or 'perfecto' in r6['texto'].lower()
 
 
 def test_flujo_envio_escapa_con_menu():
