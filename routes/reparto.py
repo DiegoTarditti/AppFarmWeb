@@ -97,6 +97,13 @@ def init_app(app):
             s.commit()
             return jsonify({'ok': True, 'id': r.id})
 
+    @app.route('/rutas/cargar-distritos', methods=['POST'])
+    @login_required
+    def rutas_cargar_distritos():
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        return jsonify(reparto.seed_distritos_oficiales())
+
     @app.route('/rutas/<int:rid>/delete', methods=['POST'])
     @login_required
     def rutas_eliminar(rid):
