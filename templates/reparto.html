@@ -36,13 +36,18 @@
   .res .it { padding:6px 9px; cursor:pointer; font-size:12px; border-bottom:1px solid var(--row-bd); }
   .res .it:hover { background:var(--hov); }
   a.link { color:#7fb0e0; }
+  #map { height:62vh; border-radius:14px; border:1px solid var(--border); }
+  .leaflet-popup-content { color:#1a1a1a; }
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
   <div class="topbar">
     <div class="logo"><span class="dot"></span>🚚 Armar reparto · Badia</div>
     <div style="flex:1"></div>
     <label class="muted" style="font-size:12px;">Día <input type="date" id="fecha" class="input" onchange="cargar()"></label>
+    <button onclick="toggleMapa()" class="hbtn" id="btnMapa">🗺️ Mapa</button>
     <a href="/rutas" class="hbtn">Definir rutas</a>
     <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
   </div>
@@ -73,6 +78,7 @@
       <div class="muted" id="avisoCfg" style="font-size:11px; margin-top:8px;"></div>
     </div>
 
+    <div id="mapwrap" style="display:none;"><div id="map"></div></div>
     <div class="cols" id="cols"><div class="muted">Cargando…</div></div>
   </div>
 
@@ -86,6 +92,7 @@ function fechaVal(){ return document.getElementById('fecha').value || hoyISO(); 
 
 async function cargar(){
   const d = await (await fetch('/reparto/api?fecha='+fechaVal())).json();
+  window._data = d;
   window._rutas = d.rutas||[];
   const peds = d.pedidos||[];
   // selector de reasignación
@@ -93,9 +100,9 @@ async function cargar(){
   // columnas: sin asignar + una por ruta
   const grupos = [{id:null, nombre:'Sin asignar', color:'#6a6a72'}].concat(window._rutas);
   document.getElementById('cols').innerHTML = grupos.map(g=>{
-    const items = peds.filter(p=> (p.ruta_id||null) === (g.id||null));
+    const items = peds.filter(p=> (p.ruta_id||null) === (g.id||null)).sort((a,b)=>(a.orden||999)-(b.orden||999));
     const filas = items.map(p=>pedCard(p, optRutas)).join('') || '<div class="muted2" style="font-size:11px; padding:6px;">—</div>';
-    const exp = g.id ? `<button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="exportar(${g.id})">Exportar</button>` : '';
+    const exp = g.id ? `<button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="optimizar(${g.id})" title="Ordenar paradas por cercanía">Optimizar</button> <button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="exportar(${g.id})">Exportar</button>` : '';
     const cad = g.cadete ? `<span class="muted2" style="font-size:10px;">· ${esc(g.cadete)}</span>` : '';
     return `<div class="col">
       <div class="col-head">
@@ -106,14 +113,53 @@ async function cargar(){
       <div class="col-body">${filas}</div>
     </div>`;
   }).join('');
+  if(document.getElementById('mapwrap').style.display!=='none') renderMapa();
 }
+
+/* ── Mapa (Leaflet) ── */
+let _map=null, _layer=null;
+function toggleMapa(){
+  const w=document.getElementById('mapwrap'), cols=document.getElementById('cols');
+  const show = w.style.display==='none';
+  w.style.display = show?'block':'none';
+  cols.style.display = show?'none':'flex';
+  document.getElementById('btnMapa').textContent = show?'📋 Listas':'🗺️ Mapa';
+  if(show){ if(!_map) initMapa(); setTimeout(()=>{ _map.invalidateSize(); renderMapa(); },60); }
+}
+function initMapa(){
+  _map = L.map('map');
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}).addTo(_map);
+  _layer = L.layerGroup().addTo(_map);
+  _map.setView([-32.95,-60.66], 12);
+}
+function renderMapa(){
+  if(!_map || !window._data) return;
+  _layer.clearLayers();
+  const d=window._data, f=d.farmacia||{}, pts=[];
+  const rById={}; (d.rutas||[]).forEach(r=>rById[r.id]=r);
+  if(f.lat!=null){ L.marker([f.lat,f.lng]).addTo(_layer).bindPopup('🏥 Farmacia'); pts.push([f.lat,f.lng]); }
+  (d.pedidos||[]).forEach(p=>{
+    if(p.lat==null||p.lng==null) return;
+    const color=(rById[p.ruta_id]||{}).color||'#6a6a72';
+    L.circleMarker([p.lat,p.lng],{radius:7,color:'#fff',weight:1,fillColor:color,fillOpacity:.9})
+      .addTo(_layer).bindPopup(`<b>${esc(p.cliente_nombre)}</b><br>${esc(p.direccion)}${p.orden?'<br>parada #'+p.orden:''}`);
+    pts.push([p.lat,p.lng]);
+  });
+  (d.rutas||[]).forEach(r=>{
+    const ps=(d.pedidos||[]).filter(p=>p.ruta_id===r.id && p.lat!=null && p.orden).sort((a,b)=>a.orden-b.orden);
+    if(ps.length){ const line=f.lat!=null?[[f.lat,f.lng]]:[]; ps.forEach(p=>line.push([p.lat,p.lng]));
+      L.polyline(line,{color:r.color||'#6a6a72',weight:2.5,opacity:.6}).addTo(_layer); }
+  });
+  if(pts.length) _map.fitBounds(pts, {padding:[30,30]});
+}
+async function optimizar(rid){ await jpost(`/reparto/ruta/${rid}/optimizar`, {fecha:fechaVal()}); cargar(); }
 
 function pedCard(p, optRutas){
   const ent = p.estado==='entregado';
   const bcuad = p.cuadrante ? `<span class="badge">${esc(CUAD[p.cuadrante]||p.cuadrante)}</span>` : '<span class="badge" style="background:#5a2a2a;color:#F09595;">s/ubicar</span>';
   return `<div class="ped ${ent?'entregado':''}">
     <div style="display:flex; justify-content:space-between; gap:6px;">
-      <b>${esc(p.cliente_nombre)}</b> ${bcuad}
+      <span>${p.orden?`<span class="badge" style="background:var(--accent);color:var(--accent-ink);">#${p.orden}</span> `:''}<b>${esc(p.cliente_nombre)}</b></span> ${bcuad}
     </div>
     <div class="muted" style="margin:2px 0;">${esc(p.direccion)}</div>
     ${p.nota?`<div class="muted2" style="font-size:11px;">📝 ${esc(p.nota)}</div>`:''}

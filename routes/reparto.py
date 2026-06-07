@@ -36,7 +36,7 @@ def _pedido_dict(p):
     return {'id': p.id, 'cliente_nombre': p.cliente_nombre or 's/cliente',
             'direccion': p.direccion or '', 'nota': p.nota or '',
             'cuadrante': p.cuadrante, 'ruta_id': p.ruta_id, 'estado': p.estado,
-            'lat': p.lat, 'lng': p.lng}
+            'orden': p.orden_en_ruta or 0, 'lat': p.lat, 'lng': p.lng}
 
 
 def init_app(app):
@@ -119,7 +119,9 @@ def init_app(app):
                   .order_by(database.RutaReparto.orden, database.RutaReparto.id).all())
             ps = (s.query(P).filter(P.fecha == fecha, P.estado != 'anulado')
                   .order_by(P.orden_en_ruta, P.id).all())
+            cfg = reparto.envio.get_config()
             return jsonify({'fecha': fecha.strftime('%Y-%m-%d'),
+                            'farmacia': {'lat': cfg['farmacia_lat'], 'lng': cfg['farmacia_lng']},
                             'rutas': [_ruta_dict(r) for r in rs],
                             'pedidos': [_pedido_dict(p) for p in ps]})
 
@@ -205,6 +207,24 @@ def init_app(app):
             if p:
                 s.delete(p)
                 s.commit()
+        return jsonify({'ok': True})
+
+    @app.route('/reparto/ruta/<int:rid>/optimizar', methods=['POST'])
+    @login_required
+    def reparto_optimizar(rid):
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        fecha = _fecha((request.json or {}).get('fecha'))
+        P = database.PedidoReparto
+        with database.get_db() as s:
+            ps = (s.query(P).filter(P.ruta_id == rid, P.fecha == fecha,
+                                    P.estado.in_(['pendiente', 'en_ruta'])).all())
+            items = [{'id': p.id, 'lat': p.lat, 'lng': p.lng} for p in ps]
+            orden = reparto.secuenciar(items)
+            pos = {it['id']: i for i, it in enumerate(orden, start=1)}
+            for p in ps:
+                p.orden_en_ruta = pos.get(p.id, 0)
+            s.commit()
         return jsonify({'ok': True})
 
     @app.route('/reparto/ruta/<int:rid>/export')
