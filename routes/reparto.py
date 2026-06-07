@@ -55,12 +55,36 @@ def _mapa_cadetes(s):
     return {c.id: c.nombre for c in s.query(database.Cadete).all()}
 
 
-def _pedido_dict(p):
-    return {'id': p.id, 'cliente_nombre': p.cliente_nombre or 's/cliente',
-            'direccion': p.direccion or '', 'nota': p.nota or '',
-            'cuadrante': p.cuadrante, 'ruta_id': p.ruta_id, 'estado': p.estado,
-            'prioridad': p.prioridad or 'normal',
-            'orden': p.orden_en_ruta or 0, 'lat': p.lat, 'lng': p.lng}
+def _pedido_dict(p, cadetes=None):
+    """Serializa un PedidoReparto + resuelve nombre del cadete."""
+    nombre_cad = ''
+    if p.cadete_id and cadetes is not None:
+        nombre_cad = cadetes.get(p.cadete_id, '')
+    elif not p.cadete_id and p.ruta_id and cadetes is not None:
+        # heredar de la ruta si el pedido no tiene override
+        pass  # la ruta se resuelve en el frontend con window._rutas
+    return {
+        'id': p.id, 'cliente_nombre': p.cliente_nombre or 's/cliente',
+        'direccion': p.direccion or '', 'nota': p.nota or '',
+        'cuadrante': p.cuadrante, 'ruta_id': p.ruta_id, 'estado': p.estado,
+        'prioridad': p.prioridad or 'normal',
+        'orden': p.orden_en_ruta or 0, 'lat': p.lat, 'lng': p.lng,
+        # Campos nuevos
+        'tomo': p.tomo or '',
+        'canal': p.canal or 'manual',
+        'importe': float(p.importe) if p.importe is not None else None,
+        'forma_pago': p.forma_pago or '',
+        'vuelto': p.vuelto or '',
+        'requiere_receta': bool(p.requiere_receta),
+        'pagado': bool(p.pagado),
+        'turno': p.turno or '',
+        'cadete_id': p.cadete_id,
+        'cadete_nombre': nombre_cad,
+        'entregado_por': p.entregado_por or '',
+        'recibio': p.recibio or '',
+        'observacion': p.observacion or '',
+        'producto': p.producto or '',
+    }
 
 
 def init_app(app):
@@ -238,11 +262,15 @@ def init_app(app):
             ps = (s.query(P).filter(P.fecha == fecha, P.estado != 'anulado')
                   .order_by(P.orden_en_ruta, P.id).all())
             cfg = reparto.envio.get_config()
+            cs = (s.query(database.Cadete)
+                  .filter(database.Cadete.activo.is_(True))
+                  .order_by(database.Cadete.nombre).all())
             return jsonify({'fecha': fecha.strftime('%Y-%m-%d'),
                             'farmacia': {'lat': cfg['farmacia_lat'], 'lng': cfg['farmacia_lng']},
                             'ciudades': reparto.envio.listar_ciudades(),
                             'rutas': [_ruta_dict(r, cad) for r in rs],
-                            'pedidos': [_pedido_dict(p) for p in ps]})
+                            'pedidos': [_pedido_dict(p, cad) for p in ps],
+                            'cadetes': [_cadete_dict(c) for c in cs]})
 
     @app.route('/reparto/api/buscar-cliente')
     @login_required
@@ -274,6 +302,14 @@ def init_app(app):
         coords = reparto.coords_de_pedido(domicilio_id, direccion, b.get('localidad'))
         lat, lng = coords if coords else (None, None)
         cuad = reparto.cuadrante_de(lat, lng)
+        # Parsear importe string → float
+        importe = None
+        raw_importe = b.get('importe')
+        if raw_importe is not None and raw_importe != '':
+            try:
+                importe = float(str(raw_importe).replace(',', '.'))
+            except (TypeError, ValueError):
+                pass
         with database.get_db() as s:
             ruta = reparto.ruta_para_punto(s, lat, lng)   # zona (polígono) → sino cuadrante
             p = database.PedidoReparto(
@@ -285,7 +321,22 @@ def init_app(app):
                 cuadrante=cuad, ruta_id=(ruta.id if ruta else None),
                 prioridad=(b.get('prioridad') if b.get('prioridad') in
                            ('urgente', 'normal', 'programado') else 'normal'),
-                estado='pendiente')
+                estado='pendiente',
+                # Campos nuevos
+                tomo=(b.get('tomo') or '').strip() or None,
+                canal=(b.get('canal') or 'manual').strip(),
+                importe=importe,
+                forma_pago=(b.get('forma_pago') or '').strip() or None,
+                vuelto=(b.get('vuelto') or '').strip() or None,
+                requiere_receta=bool(b.get('requiere_receta')),
+                pagado=bool(b.get('pagado')),
+                turno=(b.get('turno') or '').strip() or None,
+                cadete_id=b.get('cadete_id') or None,
+                entregado_por=(b.get('entregado_por') or '').strip() or None,
+                recibio=(b.get('recibio') or '').strip() or None,
+                observacion=(b.get('observacion') or '').strip() or None,
+                producto=(b.get('producto') or '').strip() or None,
+            )
             s.add(p)
             s.commit()
             return jsonify({'ok': True, 'id': p.id, 'cuadrante': cuad,

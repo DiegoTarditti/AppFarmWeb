@@ -591,6 +591,21 @@ class PedidoReparto(Base):
     orden_en_ruta = Column(Integer, default=0)     # secuencia (fase 2)
     estado = Column(String(15), nullable=False, default='pendiente', index=True)
     creado_en = Column(DateTime, default=now_ar)
+    # Campos nuevos de la planilla real (2026-06-07)
+    tomo = Column(String(35), nullable=True)
+    canal = Column(String(15), nullable=False, default='manual')
+    importe = Column(DECIMAL(12, 2), nullable=True)
+    forma_pago = Column(String(20), nullable=True)
+    vuelto = Column(String(80), nullable=True)
+    requiere_receta = Column(Boolean, nullable=False, default=False)
+    pagado = Column(Boolean, nullable=False, default=False)
+    turno = Column(String(6), nullable=True)
+    cadete_id = Column(Integer, ForeignKey('cadetes.id', ondelete='SET NULL'),
+                       nullable=True, index=True)
+    entregado_por = Column(String(35), nullable=True)
+    recibio = Column(String(35), nullable=True)
+    observacion = Column(Text, nullable=True)
+    producto = Column(String(200), nullable=True)
 
 
 class ObsSyncLog(Base):
@@ -4330,6 +4345,24 @@ def _pg_add_columns(conn):
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",
         # Ciudad en el lead local (alta de clientes del bot).
         "ALTER TABLE clientes_locales ADD COLUMN IF NOT EXISTS ciudad VARCHAR(120)",
+    ]:
+        conn.execute(text(stmt))
+    # Migración PedidoReparto — campos de la planilla real (2026-06-07)
+    for stmt in [
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomo VARCHAR(35)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS canal VARCHAR(15) NOT NULL DEFAULT 'manual'",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS importe DECIMAL(12,2)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS forma_pago VARCHAR(20)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS vuelto VARCHAR(80)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS requiere_receta BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS pagado BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS turno VARCHAR(6)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS cadete_id INTEGER REFERENCES cadetes(id) ON DELETE SET NULL",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS entregado_por VARCHAR(35)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS recibio VARCHAR(35)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS observacion TEXT",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS producto VARCHAR(200)",
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_cadete ON pedidos_reparto(cadete_id)",
     ]:
         conn.execute(text(stmt))
     # Índices para queries frecuentes
