@@ -256,3 +256,72 @@ def test_baja_cadete_desvincula_rutas(client):
 
 def test_cadetes_panel_renderiza(client):
     assert client.get('/cadetes').status_code == 200
+
+
+# ── Herencia cadete ruta → pedido ──────────────────────────────────────────
+
+def _make_pedido_mock(ruta_id, cadete_id=None):
+    """Crea un objeto mock de PedidoReparto con los atributos que usa
+    cadete_efectivo_id."""
+    class Mock:
+        pass
+    m = Mock()
+    m.ruta_id = ruta_id
+    m.cadete_id = cadete_id
+    return m
+
+
+def test_cadete_efectivo_hereda_de_ruta():
+    """Pedido sin cadete propio hereda el de su ruta."""
+    from services.reparto import cadete_efectivo_id
+    rutas_cad = {1: 10, 2: 20}  # ruta_id → cadete_id
+    p = _make_pedido_mock(ruta_id=1, cadete_id=None)
+    assert cadete_efectivo_id(p, rutas_cad) == 10
+
+    p2 = _make_pedido_mock(ruta_id=2, cadete_id=None)
+    assert cadete_efectivo_id(p2, rutas_cad) == 20
+
+    # ruta sin cadete en el mapa → None
+    p3 = _make_pedido_mock(ruta_id=99, cadete_id=None)
+    assert cadete_efectivo_id(p3, rutas_cad) is None
+
+
+def test_cadete_efectivo_override_gana():
+    """Si el pedido tiene cadete_id propio, ese gana sobre el de la ruta."""
+    from services.reparto import cadete_efectivo_id
+    rutas_cad = {1: 10}  # la ruta 1 tiene cadete 10
+    p = _make_pedido_mock(ruta_id=1, cadete_id=99)  # pero el pedido fuerza el 99
+    assert cadete_efectivo_id(p, rutas_cad) == 99
+
+
+def test_cadete_efectivo_sin_ruta_es_none():
+    """Pedido sin ruta → cadete_efectivo_id = None."""
+    from services.reparto import cadete_efectivo_id
+    p = _make_pedido_mock(ruta_id=None)
+    assert cadete_efectivo_id(p, {1: 10}) is None
+
+
+def test_cadete_efectivo_con_ruta_sin_mapa_es_none():
+    """Si no se pasa rutas_cadete, el resultado debe ser None."""
+    from services.reparto import cadete_efectivo_id
+    p = _make_pedido_mock(ruta_id=1)
+    assert cadete_efectivo_id(p, None) is None
+
+
+def test_api_incluye_cadete_efectivo_en_pedido(client):
+    """El endpoint /reparto/api debe incluir cadete_efectivo_id con herencia."""
+    _set_farmacia()
+    reparto.seed_rutas_si_vacio()
+    cid = client.post('/cadetes', json={'nombre': 'Juan'}).get_json()['id']
+    rutas = client.get('/rutas/api').get_json()['rutas']
+    rid = rutas[0]['id']
+    # asignar cadete a la ruta
+    client.post('/rutas', json={'id': rid, 'cadete_id': cid})
+    # crear pedido que caiga en esa ruta
+    conv = store.get_conversacion('telegram', 'REP_EFF', nombre='C')
+    dom = store.guardar_domicilio(conv['id'], etiqueta='Casa', lat=-32.90, lng=-60.65, origen='pin')
+    client.post('/reparto/pedido', json={'cliente_nombre': 'Ana', 'domicilio_id': dom['id']})
+    data = client.get('/reparto/api').get_json()
+    p = data['pedidos'][0]
+    assert 'cadete_efectivo_id' in p
+    assert p['cadete_efectivo_id'] == cid, f'esperado {cid} got {p["cadete_efectivo_id"]}'

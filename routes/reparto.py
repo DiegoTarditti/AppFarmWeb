@@ -55,14 +55,15 @@ def _mapa_cadetes(s):
     return {c.id: c.nombre for c in s.query(database.Cadete).all()}
 
 
-def _pedido_dict(p, cadetes=None):
-    """Serializa un PedidoReparto + resuelve nombre del cadete."""
+def _pedido_dict(p, cadetes=None, rutas_cadete=None):
+    """Serializa un PedidoReparto. Resuelve el nombre del cadete (override) y el
+    cadete EFECTIVO (override por `cadete_id` o, si no tiene, el de su ruta).
+    `cadetes`: {id: nombre}. `rutas_cadete`: {ruta_id: cadete_id}."""
     nombre_cad = ''
     if p.cadete_id and cadetes is not None:
         nombre_cad = cadetes.get(p.cadete_id, '')
-    elif not p.cadete_id and p.ruta_id and cadetes is not None:
-        # heredar de la ruta si el pedido no tiene override
-        pass  # la ruta se resuelve en el frontend con window._rutas
+    efectivo_id = reparto.cadete_efectivo_id(p, rutas_cadete or {})
+    efectivo_nombre = cadetes.get(efectivo_id, '') if (efectivo_id and cadetes) else ''
     return {
         'id': p.id, 'cliente_nombre': p.cliente_nombre or 's/cliente',
         'direccion': p.direccion or '', 'nota': p.nota or '',
@@ -80,6 +81,8 @@ def _pedido_dict(p, cadetes=None):
         'turno': p.turno or '',
         'cadete_id': p.cadete_id,
         'cadete_nombre': nombre_cad,
+        'cadete_efectivo_id': efectivo_id,
+        'cadete_efectivo_nombre': efectivo_nombre,
         'entregado_por': p.entregado_por or '',
         'recibio': p.recibio or '',
         'observacion': p.observacion or '',
@@ -259,6 +262,7 @@ def init_app(app):
             cad = _mapa_cadetes(s)
             rs = (s.query(database.RutaReparto)
                   .order_by(database.RutaReparto.orden, database.RutaReparto.id).all())
+            rutas_cad = {r.id: r.cadete_id for r in rs if r.cadete_id}
             ps = (s.query(P).filter(P.fecha == fecha, P.estado != 'anulado')
                   .order_by(P.orden_en_ruta, P.id).all())
             cfg = reparto.envio.get_config()
@@ -269,7 +273,7 @@ def init_app(app):
                             'farmacia': {'lat': cfg['farmacia_lat'], 'lng': cfg['farmacia_lng']},
                             'ciudades': reparto.envio.listar_ciudades(),
                             'rutas': [_ruta_dict(r, cad) for r in rs],
-                            'pedidos': [_pedido_dict(p, cad) for p in ps],
+                            'pedidos': [_pedido_dict(p, cad, rutas_cad) for p in ps],
                             'cadetes': [_cadete_dict(c) for c in cs]})
 
     @app.route('/reparto/api/buscar-cliente')
@@ -410,10 +414,11 @@ def init_app(app):
         with database.get_db() as s:
             cad = _mapa_cadetes(s)
             r = s.get(database.RutaReparto, rid)
+            rutas_cad = {r.id: r.cadete_id} if (r and r.cadete_id) else {}
             ps = (s.query(P).filter(P.ruta_id == rid, P.fecha == fecha,
                                     P.estado.in_(['pendiente', 'en_ruta']))
                   .order_by(P.orden_en_ruta, P.id).all())
             paradas = [(p.lat, p.lng) for p in ps]
             return jsonify({'ruta': _ruta_dict(r, cad) if r else None,
-                            'pedidos': [_pedido_dict(p) for p in ps],
+                            'pedidos': [_pedido_dict(p, cad, rutas_cad) for p in ps],
                             'link': reparto.link_google_maps(paradas)})
