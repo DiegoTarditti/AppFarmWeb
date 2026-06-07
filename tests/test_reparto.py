@@ -139,6 +139,10 @@ def test_secuenciar_prioriza_urgentes():
     assert [it['id'] for it in reparto.secuenciar(items)] == [2, 1]
 
 
+def test_api_incluye_ciudades(client):
+    assert 'ciudades' in client.get('/reparto/api').get_json()
+
+
 def test_alta_guarda_prioridad(client):
     _set_farmacia()
     reparto.seed_rutas_si_vacio()

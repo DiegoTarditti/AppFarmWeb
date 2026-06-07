@@ -67,8 +67,11 @@
         <label class="muted" style="font-size:11px;">Domicilio guardado
           <select id="pDom" class="input" style="width:200px;"><option value="">— escribir dirección —</option></select>
         </label>
+        <label class="muted" style="font-size:11px;">Ciudad
+          <select id="pCiudad" class="input" style="width:130px;"></select>
+        </label>
         <label class="muted" style="font-size:11px;">Dirección
-          <input id="pDir" class="input" placeholder="ej: Córdoba 3400" style="width:200px;">
+          <input id="pDir" class="input" placeholder="ej: Córdoba 3400" style="width:190px;">
         </label>
         <label class="muted" style="font-size:11px;">Prioridad
           <select id="pPrio" class="input" style="width:140px;">
@@ -109,6 +112,11 @@ async function cargar(){
   const banner = document.getElementById('bannerUrg');
   banner.style.display = urgSin?'block':'none';
   banner.textContent = urgSin?`⚠️ ${urgSin} pedido(s) URGENTE(s) sin asignar a una ruta.`:'';
+  const selC = document.getElementById('pCiudad');
+  if(selC && !selC._filled){
+    selC.innerHTML = (d.ciudades||['Rosario']).map(c=>`<option ${c==='Rosario'?'selected':''}>${esc(c)}</option>`).join('');
+    selC._filled = true;
+  }
   // selector de reasignación
   const optRutas = '<option value="">(sin asignar)</option>' + window._rutas.map(r=>`<option value="${r.id}">${esc(r.nombre)}</option>`).join('');
   // columnas: sin asignar + una por ruta
@@ -217,6 +225,7 @@ async function agregar(){
     observer_id: window._oid || null,
     domicilio_id: document.getElementById('pDom').value || null,
     direccion: document.getElementById('pDir').value.trim(),
+    localidad: document.getElementById('pCiudad').value,
     nota: document.getElementById('pNota').value.trim(),
     prioridad: document.getElementById('pPrio').value,
   };
