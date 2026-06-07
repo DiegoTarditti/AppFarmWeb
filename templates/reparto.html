@@ -31,6 +31,7 @@
   .col-body { padding:8px; overflow-y:auto; display:flex; flex-direction:column; gap:7px; }
   .ped { border:1px solid var(--row-bd); border-radius:10px; padding:8px 9px; font-size:12px; }
   .ped.entregado { opacity:.5; }
+  .ped.urg { border-left:3px solid #DC2626; }
   .badge { font-size:9px; padding:1px 7px; border-radius:999px; font-weight:700; background:var(--hov); color:var(--muted); }
   .res { background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:4px; max-height:160px; overflow:auto; }
   .res .it { padding:6px 9px; cursor:pointer; font-size:12px; border-bottom:1px solid var(--row-bd); }
@@ -69,14 +70,22 @@
         <label class="muted" style="font-size:11px;">Dirección
           <input id="pDir" class="input" placeholder="ej: Córdoba 3400" style="width:200px;">
         </label>
+        <label class="muted" style="font-size:11px;">Prioridad
+          <select id="pPrio" class="input" style="width:140px;">
+            <option value="normal">🟢 Normal</option>
+            <option value="urgente">🔴 Urgente</option>
+            <option value="programado">🕐 Programado</option>
+          </select>
+        </label>
         <label class="muted" style="font-size:11px;">Nota
-          <input id="pNota" class="input" placeholder="ítems / referencia" style="width:170px;" onkeydown="if(event.key==='Enter')agregar()">
+          <input id="pNota" class="input" placeholder="ítems / referencia" style="width:160px;" onkeydown="if(event.key==='Enter')agregar()">
         </label>
         <button onclick="agregar()" class="hbtn hbtn-ok" style="padding:9px 16px;">Agregar</button>
       </div>
       <div id="resCli" class="res" style="display:none;"></div>
       <div class="muted" id="avisoCfg" style="font-size:11px; margin-top:8px;"></div>
     </div>
+    <div id="bannerUrg" style="display:none; background:#3a1414; border:1px solid #5a2a2a; color:#F09595; border-radius:10px; padding:8px 12px; margin-bottom:14px; font-size:13px;"></div>
 
     <div id="mapwrap" style="display:none;"><div id="map"></div></div>
     <div class="cols" id="cols"><div class="muted">Cargando…</div></div>
@@ -95,12 +104,18 @@ async function cargar(){
   window._data = d;
   window._rutas = d.rutas||[];
   const peds = d.pedidos||[];
+  const PR = {urgente:0, normal:1, programado:2};
+  const urgSin = peds.filter(p=>p.prioridad==='urgente' && !p.ruta_id && p.estado!=='entregado').length;
+  const banner = document.getElementById('bannerUrg');
+  banner.style.display = urgSin?'block':'none';
+  banner.textContent = urgSin?`⚠️ ${urgSin} pedido(s) URGENTE(s) sin asignar a una ruta.`:'';
   // selector de reasignación
   const optRutas = '<option value="">(sin asignar)</option>' + window._rutas.map(r=>`<option value="${r.id}">${esc(r.nombre)}</option>`).join('');
   // columnas: sin asignar + una por ruta
   const grupos = [{id:null, nombre:'Sin asignar', color:'#6a6a72'}].concat(window._rutas);
   document.getElementById('cols').innerHTML = grupos.map(g=>{
-    const items = peds.filter(p=> (p.ruta_id||null) === (g.id||null)).sort((a,b)=>(a.orden||999)-(b.orden||999));
+    const items = peds.filter(p=> (p.ruta_id||null) === (g.id||null))
+      .sort((a,b)=> (PR[a.prioridad]??1)-(PR[b.prioridad]??1) || (a.orden||999)-(b.orden||999));
     const filas = items.map(p=>pedCard(p, optRutas)).join('') || '<div class="muted2" style="font-size:11px; padding:6px;">—</div>';
     const exp = g.id ? `<button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="optimizar(${g.id})" title="Ordenar paradas por cercanía">Optimizar</button> <button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="exportar(${g.id})">Exportar</button>` : '';
     const cad = g.cadete ? `<span class="muted2" style="font-size:10px;">· ${esc(g.cadete)}</span>` : '';
@@ -156,10 +171,14 @@ async function optimizar(rid){ await jpost(`/reparto/ruta/${rid}/optimizar`, {fe
 
 function pedCard(p, optRutas){
   const ent = p.estado==='entregado';
+  const urg = p.prioridad==='urgente';
+  const bprio = urg ? '<span class="badge" style="background:#DC2626;color:#fff;">🔴 Urgente</span>'
+              : (p.prioridad==='programado' ? '<span class="badge" style="background:#185FA5;color:#fff;">🕐 Prog.</span>' : '');
   const bcuad = p.cuadrante ? `<span class="badge">${esc(CUAD[p.cuadrante]||p.cuadrante)}</span>` : '<span class="badge" style="background:#5a2a2a;color:#F09595;">s/ubicar</span>';
-  return `<div class="ped ${ent?'entregado':''}">
+  return `<div class="ped ${ent?'entregado':''} ${urg?'urg':''}">
     <div style="display:flex; justify-content:space-between; gap:6px;">
-      <span>${p.orden?`<span class="badge" style="background:var(--accent);color:var(--accent-ink);">#${p.orden}</span> `:''}<b>${esc(p.cliente_nombre)}</b></span> ${bcuad}
+      <span>${p.orden?`<span class="badge" style="background:var(--accent);color:var(--accent-ink);">#${p.orden}</span> `:''}<b>${esc(p.cliente_nombre)}</b></span>
+      <span style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;">${bprio}${bcuad}</span>
     </div>
     <div class="muted" style="margin:2px 0;">${esc(p.direccion)}</div>
     ${p.nota?`<div class="muted2" style="font-size:11px;">📝 ${esc(p.nota)}</div>`:''}
@@ -199,13 +218,14 @@ async function agregar(){
     domicilio_id: document.getElementById('pDom').value || null,
     direccion: document.getElementById('pDir').value.trim(),
     nota: document.getElementById('pNota').value.trim(),
+    prioridad: document.getElementById('pPrio').value,
   };
   if(!body.cliente_nombre && !body.direccion && !body.domicilio_id){ alert('Poné cliente o dirección.'); return; }
   const d = await jpost('/reparto/pedido', body);
   if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
   if(!d.asignado){ document.getElementById('avisoCfg').textContent = '⚠️ El último pedido quedó "sin asignar" (no se pudo ubicar / falta config de la farmacia en Envíos).'; }
   else { document.getElementById('avisoCfg').textContent=''; }
-  ['pCliente','pDir','pNota'].forEach(i=>document.getElementById(i).value=''); document.getElementById('pDom').innerHTML='<option value="">— escribir dirección —</option>'; window._oid=null;
+  ['pCliente','pDir','pNota'].forEach(i=>document.getElementById(i).value=''); document.getElementById('pPrio').value='normal'; document.getElementById('pDom').innerHTML='<option value="">— escribir dirección —</option>'; window._oid=null;
   cargar();
 }
 async function reasignar(pid, ruta_id){ await jpost(`/reparto/pedido/${pid}/asignar`, {ruta_id: ruta_id||null}); cargar(); }

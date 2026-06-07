@@ -65,10 +65,26 @@ def seed_rutas_si_vacio():
             s.commit()
 
 
+_PRIORIDADES = ('urgente', 'normal', 'programado')
+
+
+def _nn(items, origen):
+    """Vecino más cercano desde `origen` sobre items con lat/lng."""
+    orden, actual, rest = [], origen, list(items)
+    while rest:
+        nxt = min(rest, key=lambda it: envio._haversine_m(
+            actual[0], actual[1], it['lat'], it['lng']))
+        orden.append(nxt)
+        rest.remove(nxt)
+        actual = (nxt['lat'], nxt['lng'])
+    return orden
+
+
 def secuenciar(items, origen=None):
-    """Ordena las paradas por 'vecino más cercano' arrancando desde la farmacia
-    (heurística simple para acortar el recorrido). `items`: lista de dicts con
-    'id','lat','lng'. Devuelve la lista reordenada (las sin coords van al final)."""
+    """Ordena las paradas para el recorrido: primero por PRIORIDAD
+    (urgente → normal → programado) y, dentro de cada grupo, por vecino más
+    cercano desde la farmacia. Las sin coordenadas van al final.
+    `items`: dicts con 'id','lat','lng' y opcional 'prioridad'."""
     cfg = envio.get_config()
     o = origen or ((cfg['farmacia_lat'], cfg['farmacia_lng'])
                    if cfg['farmacia_lat'] is not None else None)
@@ -76,15 +92,12 @@ def secuenciar(items, origen=None):
     sin = [it for it in items if it.get('lat') is None or it.get('lng') is None]
     if not o or not con:
         return con + sin
-    orden, actual = [], o
-    restantes = list(con)
-    while restantes:
-        nxt = min(restantes, key=lambda it: envio._haversine_m(
-            actual[0], actual[1], it['lat'], it['lng']))
-        orden.append(nxt)
-        restantes.remove(nxt)
-        actual = (nxt['lat'], nxt['lng'])
-    return orden + sin
+    out = []
+    for prio in _PRIORIDADES:
+        out += _nn([it for it in con if (it.get('prioridad') or 'normal') == prio], o)
+    otras = [it for it in con if (it.get('prioridad') or 'normal') not in _PRIORIDADES]
+    out += _nn(otras, o)
+    return out + sin
 
 
 def ruta_para_cuadrante(s, cuadrante):

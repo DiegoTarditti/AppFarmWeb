@@ -127,3 +127,24 @@ def test_optimizar_setea_orden(client):
 def test_api_incluye_farmacia(client):
     _set_farmacia()
     assert client.get('/reparto/api').get_json()['farmacia']['lat'] == -32.95
+
+
+# ── Fase 3: prioridad ────────────────────────────────────────────────────────
+
+def test_secuenciar_prioriza_urgentes():
+    _set_farmacia()
+    # normal MUY cerca, urgente lejos → el urgente igual va PRIMERO
+    items = [{'id': 1, 'lat': -32.95, 'lng': -60.64, 'prioridad': 'normal'},
+             {'id': 2, 'lat': -32.95, 'lng': -60.55, 'prioridad': 'urgente'}]
+    assert [it['id'] for it in reparto.secuenciar(items)] == [2, 1]
+
+
+def test_alta_guarda_prioridad(client):
+    _set_farmacia()
+    reparto.seed_rutas_si_vacio()
+    conv = store.get_conversacion('telegram', 'REPP', nombre='C')
+    dom = store.guardar_domicilio(conv['id'], etiqueta='Casa', lat=-32.90, lng=-60.65, origen='pin')
+    client.post('/reparto/pedido', json={'cliente_nombre': 'Ana',
+                                         'domicilio_id': dom['id'], 'prioridad': 'urgente'})
+    p = client.get('/reparto/api').get_json()['pedidos'][0]
+    assert p['prioridad'] == 'urgente'

@@ -568,6 +568,7 @@ class PedidoReparto(Base):
     lng = Column(Float, nullable=True)
     nota = Column(Text, nullable=True)
     cuadrante = Column(String(1))                  # calculado
+    prioridad = Column(String(12), nullable=False, default='normal')  # urgente|normal|programado
     ruta_id = Column(Integer, ForeignKey('rutas_reparto.id', ondelete='SET NULL'),
                      nullable=True, index=True)
     orden_en_ruta = Column(Integer, default=0)     # secuencia (fase 2)
@@ -2792,6 +2793,14 @@ def init_db(database_url=None):
                     "CREATE INDEX IF NOT EXISTS idx_obs_vd_operador "
                     "ON obs_ventas_detalle(operador_observer)"
                 ))
+                # Prioridad de reparto (DBs existentes; fresh la crea create_all).
+                try:
+                    conn.execute(text(
+                        "ALTER TABLE pedidos_reparto "
+                        "ADD COLUMN IF NOT EXISTS prioridad VARCHAR(12) DEFAULT 'normal'"
+                    ))
+                except Exception:  # noqa: BLE001 (tabla aún no existe en DB nueva)
+                    pass
                 conn.execute(text("""
                     CREATE TABLE IF NOT EXISTS obs_operadores (
                         observer_id VARCHAR(40) PRIMARY KEY,
