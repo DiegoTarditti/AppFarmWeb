@@ -123,6 +123,7 @@ def init_app(app):
             cfg = reparto.envio.get_config()
             return jsonify({'fecha': fecha.strftime('%Y-%m-%d'),
                             'farmacia': {'lat': cfg['farmacia_lat'], 'lng': cfg['farmacia_lng']},
+                            'ciudades': reparto.envio.listar_ciudades(),
                             'rutas': [_ruta_dict(r) for r in rs],
                             'pedidos': [_pedido_dict(p) for p in ps]})
 
@@ -153,7 +154,7 @@ def init_app(app):
             direccion = (d or {}).get('direccion') or 'ubicación 📍'
         if not (b.get('cliente_nombre') or direccion):
             return jsonify({'ok': False, 'error': 'falta cliente o dirección'}), 400
-        coords = reparto.coords_de_pedido(domicilio_id, direccion)
+        coords = reparto.coords_de_pedido(domicilio_id, direccion, b.get('localidad'))
         lat, lng = coords if coords else (None, None)
         cuad = reparto.cuadrante_de(lat, lng)
         with database.get_db() as s:

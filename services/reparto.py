@@ -41,8 +41,10 @@ def cuadrante_de(lat, lng):
     return 'O'
 
 
-def coords_de_pedido(domicilio_id=None, direccion=None):
-    """(lat, lng) de un domicilio guardado, o geocodificando la dirección. None si no se pudo."""
+def coords_de_pedido(domicilio_id=None, direccion=None, localidad=None):
+    """(lat, lng) de un domicilio guardado, o geocodificando la dirección dentro de
+    `localidad` (clave para no confundir 'Santa Fe' calle con la provincia/ciudad).
+    None si no se pudo."""
     if domicilio_id:
         with database.get_db() as s:
             d = s.get(database.DomicilioCliente, domicilio_id)
@@ -51,8 +53,9 @@ def coords_de_pedido(domicilio_id=None, direccion=None):
                     return (d.lat, d.lng)
                 if d.direccion and not direccion:
                     direccion = d.direccion
+                    localidad = localidad or d.localidad
     if direccion:
-        return envio.geocodificar(direccion)
+        return envio.geocodificar(direccion, localidad=localidad)
     return None
 
 
