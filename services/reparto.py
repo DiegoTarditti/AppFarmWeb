@@ -18,6 +18,16 @@ DEFAULT_RUTAS = [('Norte', 'N', '#2E7D5B'), ('Sur', 'S', '#B45309'),
                  ('Este', 'E', '#185FA5'), ('Oeste', 'O', '#9333EA')]
 
 
+def cadete_efectivo_id(pedido, rutas_cadete):
+    """Cadete del pedido (override por `cadete_id`) o, si no tiene, el de su ruta.
+    `rutas_cadete`: dict {ruta_id: cadete_id}. El override explícito siempre gana."""
+    if pedido.cadete_id:
+        return pedido.cadete_id
+    if pedido.ruta_id and rutas_cadete:
+        return rutas_cadete.get(pedido.ruta_id)
+    return None
+
+
 def _bearing(lat1, lng1, lat2, lng2):
     """Rumbo en grados (0=N, 90=E, 180=S, 270=O) de (1)→(2)."""
     p1, p2 = math.radians(lat1), math.radians(lat2)
