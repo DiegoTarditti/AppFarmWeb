@@ -3,6 +3,7 @@
 from routes import (
     admin,
     atencion,
+    panel,
     auth_routes,
     batch,
     bi,
@@ -71,6 +72,7 @@ from routes import help as help_module
 _modules = [
     auth_routes,
     atencion,
+    panel,
     caja,
     envio,
     reparto,

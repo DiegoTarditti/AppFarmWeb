@@ -151,9 +151,10 @@ def listar_conversaciones(linea=None):
         if convs:
             from sqlalchemy import text as _text
             ids = [c.id for c in convs]
+            placeholders = ','.join(str(i) for i in ids)
             rows = s.execute(_text(
-                'SELECT DISTINCT conversacion_id FROM informe_enviado WHERE conversacion_id = ANY(:ids)'
-            ), {'ids': ids}).fetchall()
+                f'SELECT DISTINCT conversacion_id FROM informe_enviado WHERE conversacion_id IN ({placeholders})'
+            )).fetchall()
             supervisadas = {r[0] for r in rows}
         return [_conv_dict(c, nombres, supervisado=c.id in supervisadas) for c in convs]
 
