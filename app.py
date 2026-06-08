@@ -64,6 +64,8 @@ def exigir_login():
                       # WhatsApp Cloud API webhook (llamado por Meta, sin sesión)
                       'whatsapp_webhook_get', 'whatsapp_webhook_post',
                       'whatsapp_reenganche',
+                      # WAHA webhook del grupo de reparto (red docker interna)
+                      'reparto_whatsapp_grupo_webhook',
                       # Crons externos: auth propia via X-Cron-Secret header.
                       'api_cron_recalcular_os_clientes',
                       'api_cron_notificar_alarmas',

@@ -6,9 +6,9 @@
 <title>Planilla de reparto · {{ fecha.strftime('%d/%m/%Y') }}</title>
 <style>
   :root {
-    --bg:#14141a; --surface:#1a1a22; --card:#16161d; --txt:#e0e0e6; --title:#f0f0f3;
-    --muted:#8a8a92; --muted2:#6a6a72; --border:rgba(255,255,255,0.08); --accent:#1D9E75;
-    --accent-ink:#06241a; --row-bd:rgba(255,255,255,0.06); --hov:#23232d; --warn:#EF9F27;
+    --bg:#22222d; --surface:#2c2c39; --card:#272732; --txt:#ececf0; --title:#fafafc;
+    --muted:#9c9ca4; --muted2:#7a7a82; --border:rgba(255,255,255,0.14); --accent:#1D9E75;
+    --accent-ink:#06241a; --row-bd:rgba(255,255,255,0.10); --hov:#3a3a47; --warn:#EF9F27;
     --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   }
   * { box-sizing:border-box; }
@@ -32,6 +32,8 @@
                        text-align:left; border-bottom:1px solid var(--border); white-space:nowrap;
                        position:sticky; top:0; z-index:1; }
   .planilla-table td { padding:5px 6px; border-bottom:1px solid var(--row-bd); vertical-align:middle; }
+  /* Zebra: filas pares un poco más claras para mejorar legibilidad sobre el dark theme. */
+  .planilla-table tbody tr:nth-child(even) td { background:rgba(255,255,255,0.06); }
   .planilla-table tr:hover td { background:var(--hov); }
   .planilla-table tr.fila-entregado { opacity:.5; }
   .planilla-table tr.fila-receta td:first-child { border-left:2px solid #DC2626; }
@@ -98,6 +100,7 @@
       <th style="width:85px;">Cadete</th>
       <th style="width:75px;">Recibió</th>
       <th style="width:50px;">Pagado</th>
+      <th style="width:90px;">WhatsApp</th>
     </tr>
   </thead>
   <tbody>
@@ -111,7 +114,9 @@
       <td style="font-weight:700; color:var(--muted2);">{{ inicio_num + loop.index0 + 1 }}</td>
       <td><b style="color:var(--title);">{{ p.cliente_nombre or 's/cliente' }}</b></td>
       <td style="font-size:11px; color:var(--muted);">{{ p.direccion or '' }}</td>
-      <td style="color:var(--muted2);">—</td>
+      <td class="celda-editable" data-campo="envio_costo" data-tipo="text">
+        <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
+      </td>
       <td class="celda-editable" data-campo="tomo" data-tipo="select-usuarios">
         <span class="celda-valor">{{ p.tomo or '—' }}</span>
       </td>
@@ -155,10 +160,22 @@
           {% if p.pagado %}💲{% else %}<span style="color:var(--muted2);">—</span>{% endif %}
         </span>
       </td>
+      <td style="text-align:center;">
+        {% if p.tomado_por_wsap %}
+          <span title="Tomado por {{ p.tomado_por_wsap }}{% if p.tomado_en %} a las {{ p.tomado_en.strftime('%H:%M') }}{% endif %}" style="font-size:10px; color:var(--accent);">
+            ✓ {{ p.tomado_por_wsap }}{% if p.tomado_en %} · {{ p.tomado_en.strftime('%H:%M') }}{% endif %}
+          </span>
+        {% elif p.publicado_en %}
+          <span title="Publicado {{ p.publicado_en.strftime('%H:%M') }}" style="font-size:10px; color:#7fb0e0;">📤 {{ p.publicado_en.strftime('%H:%M') }}</span>
+          <button onclick="publicarPedido({{ p.id }}, this)" class="hbtn" style="font-size:9px; padding:1px 4px; margin-left:3px;" title="Republicar">↻</button>
+        {% else %}
+          <button onclick="publicarPedido({{ p.id }}, this)" class="hbtn" style="font-size:10px; padding:2px 6px;" title="Publicar en grupo de WhatsApp">📤 Publicar</button>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
     {% if not pedidos %}
-    <tr><td colspan="16" class="sin-pedidos">Sin pedidos</td></tr>
+    <tr><td colspan="17" class="sin-pedidos">Sin pedidos</td></tr>
     {% endif %}
   </tbody>
 </table>
@@ -276,6 +293,19 @@ async function avanzarEstado(pid, actual) {
   const siguiente = idx >= 0 && idx < orden.length - 1 ? orden[idx + 1] : 'pendiente';
   const res = await actualizarCampo(pid, 'estado', siguiente);
   if (res.ok) location.reload();
+}
+
+async function publicarPedido(pid, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try {
+    const r = await fetch(`/reparto/pedido/${pid}/publicar`, {method:'POST'});
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo publicar')); if (btn) { btn.disabled = false; btn.textContent = '📤 Publicar'; } return; }
+    location.reload();
+  } catch (e) {
+    alert('Error: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '📤 Publicar'; }
+  }
 }
 </script>
 </body>

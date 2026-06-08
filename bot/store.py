@@ -303,6 +303,7 @@ def buscar_clientes_unificado(query, limite=12):
                 'documento': r.documento_numero or '',
                 'telefono': r.telefono or '',
                 'ciudad': r.localidad or '',
+                'direccion': r.domicilio_direccion or '',
             })
 
         # ── Buscar en clientes locales ──
@@ -339,6 +340,7 @@ def buscar_clientes_unificado(query, limite=12):
                 'documento': r.dni or '',
                 'telefono': r.telefono or '',
                 'ciudad': r.ciudad or '',
+                'direccion': r.domicilio or '',
             })
 
         # ── Dedup: si un local tiene observer_id, quitar la fila obs equivalente ──
@@ -363,18 +365,23 @@ def _ficha_de_cliente(s, cliente_id):
         nombre = oc.apellido_nombre
         documento = f'{oc.documento_tipo or ""} {oc.documento_numero or ""}'.strip()
         telefono = oc.telefono or c.telefono or ''
-        domicilio = ', '.join(x for x in [oc.domicilio_direccion, oc.localidad] if x)
+        direccion = oc.domicilio_direccion or ''
+        localidad = oc.localidad or ''
+        domicilio = ', '.join(x for x in [direccion, localidad] if x)
         fuente = 'observer'
     else:
         nombre = ', '.join(x for x in [c.apellido, c.nombre] if x) or '(sin nombre)'
         documento = c.dni or ''
         telefono = c.telefono or ''
-        domicilio = ', '.join(x for x in [c.domicilio, c.ciudad] if x)
+        direccion = c.domicilio or ''
+        localidad = c.ciudad or ''
+        domicilio = ', '.join(x for x in [direccion, localidad] if x)
         fuente = 'local'
     return {
         'cliente_id': c.id, 'observer_id': c.observer_id, 'fuente': fuente,
         'nombre': nombre, 'documento': documento, 'telefono': telefono,
         'domicilio': domicilio,
+        'direccion': direccion, 'localidad': localidad,
         'notas': c.notas or '', 'tags': c.tags or '',
         'whatsapp': c.whatsapp or '', 'email': c.email or '',
     }
@@ -562,7 +569,8 @@ def _identidad_domicilio(s, conv_id):
 def _dom_dict(d):
     return {'id': d.id, 'etiqueta': d.etiqueta or 'Otro',
             'direccion': d.direccion or '', 'localidad': d.localidad or '',
-            'lat': d.lat, 'lng': d.lng, 'origen': d.origen}
+            'lat': d.lat, 'lng': d.lng, 'origen': d.origen,
+            'geo_actualizado_en': d.geo_actualizado_en.isoformat() if d.geo_actualizado_en else None}
 
 
 def listar_domicilios_de_cliente(cliente_id=None, observer_id=None):

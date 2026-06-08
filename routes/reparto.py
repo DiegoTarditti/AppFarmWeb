@@ -254,6 +254,13 @@ def init_app(app):
             return 'Sin permiso', 403
         return render_template('reparto.html')
 
+    @app.route('/pedido/nuevo')
+    @login_required
+    def pedido_nuevo():
+        if not _ok():
+            return 'Sin permiso', 403
+        return render_template('pedido_nuevo.html')
+
     @app.route('/reparto/api')
     @login_required
     def reparto_api():
@@ -370,6 +377,39 @@ def init_app(app):
             return jsonify({'error': 'sin permiso'}), 403
         return jsonify({'domicilios': store.listar_domicilios_de_cliente(observer_id=oid)})
 
+    @app.route('/reparto/api/geocodificar')
+    @login_required
+    def reparto_geocodificar():
+        if not _ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        q = (request.args.get('q') or '').strip()
+        loc = (request.args.get('loc') or '').strip() or None
+        if len(q) < 3:
+            return jsonify({'sugerencias': []})
+        from bot import envio as _envio
+        return jsonify({'sugerencias': _envio.geocodificar_sugerencias(q, localidad=loc)})
+
+    @app.route('/reparto/api/domicilio/<int:dom_id>/geo', methods=['POST'])
+    @login_required
+    def reparto_domicilio_set_geo(dom_id):
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        try:
+            lat = float(b['lat'])
+            lng = float(b['lng'])
+        except (KeyError, TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'lat/lng inválidos'}), 400
+        with database.get_db() as s:
+            d = s.get(database.DomicilioCliente, dom_id)
+            if not d:
+                return jsonify({'ok': False, 'error': 'domicilio no existe'}), 404
+            d.lat, d.lng = lat, lng
+            d.geo_actualizado_en = database.now_ar()
+            s.commit()
+            return jsonify({'ok': True, 'lat': lat, 'lng': lng,
+                            'geo_actualizado_en': d.geo_actualizado_en.isoformat()})
+
     @app.route('/reparto/pedido', methods=['POST'])
     @login_required
     def reparto_crear_pedido():
@@ -394,6 +434,13 @@ def init_app(app):
                 importe = float(str(raw_importe).replace(',', '.'))
             except (TypeError, ValueError):
                 pass
+        envio_costo = None
+        raw_envio = b.get('envio')
+        if raw_envio is not None and raw_envio != '':
+            try:
+                envio_costo = float(str(raw_envio).replace(',', '.'))
+            except (TypeError, ValueError):
+                pass
         with database.get_db() as s:
             ruta = reparto.ruta_para_punto(s, lat, lng)   # zona (polígono) → sino cuadrante
             _cid = b.get('cliente_id')
@@ -412,7 +459,10 @@ def init_app(app):
                            ('urgente', 'normal', 'programado') else 'normal'),
                 estado='pendiente',
                 # Campos nuevos
-                tomo=(b.get('tomo') or '').strip() or None,
+                tomo=((b.get('tomo') or '').strip()
+                      or (current_user.nombre_completo if hasattr(current_user, 'nombre_completo') and current_user.nombre_completo
+                          else getattr(current_user, 'username', None))
+                      or None),
                 canal=(b.get('canal') or 'manual').strip(),
                 importe=importe,
                 forma_pago=(b.get('forma_pago') or '').strip() or None,
@@ -425,11 +475,176 @@ def init_app(app):
                 recibio=(b.get('recibio') or '').strip() or None,
                 observacion=(b.get('observacion') or '').strip() or None,
                 producto=(b.get('producto') or '').strip() or None,
+                producto_observer_id=b.get('producto_observer_id') or None,
+                envio_costo=envio_costo,
             )
             s.add(p)
+            s.flush()
+            # Auto-persistir el domicilio: si hay cliente_id + direccion + lat/lng
+            # y NO se eligió un domicilio_id existente, crearlo para que aparezca
+            # en el dropdown la próxima vez. Evita duplicados por dir+loc.
+            if _cid and direccion and (lat is not None and lng is not None) and not domicilio_id:
+                D = database.DomicilioCliente
+                ya = (s.query(D)
+                      .filter(D.cliente_id == _cid,
+                              D.direccion == direccion,
+                              D.localidad == (b.get('localidad') or None))
+                      .first())
+                if not ya:
+                    s.add(D(cliente_id=_cid, etiqueta='Casa',
+                            direccion=direccion,
+                            localidad=(b.get('localidad') or None),
+                            lat=lat, lng=lng, origen='direccion',
+                            geo_actualizado_en=database.now_ar()))
             s.commit()
             return jsonify({'ok': True, 'id': p.id, 'cuadrante': cuad,
                             'asignado': bool(ruta)})
+
+    @app.route('/whatsapp/grupo/webhook', methods=['POST'])
+    def reparto_whatsapp_grupo_webhook():
+        """Recibe eventos de WAHA. Si llega un reply al mensaje de un pedido
+        publicado y matchea una frase de toma, asigna el pedido y responde
+        en el grupo. Sin login: WAHA hace POST desde la red docker."""
+        from bot import whatsapp_grupo
+        payload = request.json or {}
+        # Log temporal para diagnóstico
+        import json as _json
+        print('[WHATSAPP-WEBHOOK]', _json.dumps(payload, ensure_ascii=False)[:1500], flush=True)
+        # WAHA puede mandar {event, session, payload:{...}} o el payload directo
+        msg = payload.get('payload') if 'payload' in payload else payload
+        if not isinstance(msg, dict):
+            return jsonify({'ok': True, 'ignored': 'no msg'})
+        # TEMP TEST: aceptar mensajes propios mientras pruebas vos solo en el grupo.
+        # En prod cambiar a: if msg.get('fromMe'): return jsonify({'ok': True, 'ignored': 'self'})
+        # if msg.get('fromMe'):
+        #     return jsonify({'ok': True, 'ignored': 'self'})
+        # Texto
+        body = (msg.get('body') or '').strip()
+        if not body:
+            return jsonify({'ok': True, 'ignored': 'empty'})
+        # Frase de toma?
+        if not whatsapp_grupo.es_frase_de_toma(body):
+            return jsonify({'ok': True, 'ignored': 'not_take_phrase'})
+        # Reply citando? WAHA expone el ID del msg original en payload.replyTo.id
+        # (formato corto, sin el wrap "true_chat_<id>_<participant>"). Hacemos
+        # matching parcial: el waha_msg_id que guardamos es el _serialized largo
+        # y este ID corto está incluido adentro.
+        reply_to = msg.get('replyTo') or {}
+        quoted_id = reply_to.get('id') if isinstance(reply_to, dict) else None
+        # Fallback a paths viejos (WAHA versiones anteriores)
+        if not quoted_id:
+            q = (msg.get('_data') or {}).get('quotedMsg')
+            if isinstance(q, dict):
+                _id = q.get('id')
+                quoted_id = _id.get('_serialized') if isinstance(_id, dict) else _id
+        if not quoted_id:
+            return jsonify({'ok': True, 'ignored': 'no_quoted_msg'})
+        # Buscar pedido por waha_msg_id (matching parcial — WAHA puede devolver
+        # el id sin el prefijo 'true_' o el _serialized completo).
+        with database.get_db() as s:
+            P = database.PedidoReparto
+            p = (s.query(P)
+                 .filter(P.waha_msg_id.like(f'%{quoted_id}%'))
+                 .first())
+            if not p:
+                # Fallback: probar al revés (quoted_id contiene waha_msg_id)
+                cand = s.query(P).filter(P.waha_msg_id.isnot(None)).order_by(P.id.desc()).limit(50).all()
+                p = next((x for x in cand if x.waha_msg_id and (x.waha_msg_id in quoted_id or quoted_id in x.waha_msg_id)), None)
+            if not p:
+                return jsonify({'ok': True, 'ignored': 'pedido_not_found', 'quoted_id': quoted_id})
+            # Anti-doble-toma: si ya está tomado, avisar
+            push_name = (msg.get('notifyName') or msg.get('pushName')
+                         or (msg.get('_data') or {}).get('notifyName')
+                         or msg.get('from') or 'alguien')
+            if p.tomado_por_wsap:
+                whatsapp_grupo.publicar_en_grupo(
+                    f'⚠️ Pedido #{p.id} ya lo había tomado *{p.tomado_por_wsap}*.')
+                return jsonify({'ok': True, 'ignored': 'ya_tomado', 'pedido_id': p.id})
+            p.tomado_por_wsap = push_name[:80]
+            p.tomado_en = database.now_ar()
+            # Match con tabla cadetes por nombre (case+espacios insensible).
+            # Si encuentra → asigna cadete_id (queda visible en columna Cadete).
+            from sqlalchemy import func as _func
+            nombre_norm = ' '.join(push_name.lower().split())
+            cad = (s.query(database.Cadete)
+                   .filter(_func.lower(database.Cadete.nombre).like(f'%{nombre_norm}%'))
+                   .first())
+            if cad:
+                p.cadete_id = cad.id
+                p.estado = 'en_ruta'   # opcional: al tomar lo pasa a en_ruta
+            s.commit()
+            extra = f' (cadete del sistema: {cad.nombre})' if cad else ' (sin match en cadetes)'
+            whatsapp_grupo.publicar_en_grupo(
+                f'✅ Pedido #{p.id} tomado por *{push_name}*.{extra}')
+            return jsonify({'ok': True, 'pedido_id': p.id, 'tomado_por': push_name,
+                            'cadete_id': cad.id if cad else None})
+
+    @app.route('/whatsapp/grupo/setup-webhook', methods=['POST'])
+    @login_required
+    def reparto_whatsapp_setup_webhook():
+        """Endpoint admin: configura el webhook de WAHA para que apunte a
+        nuestro receptor (web:5000/whatsapp/grupo/webhook, network docker)."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        from bot import whatsapp_grupo
+        url_interno = 'http://web:5000/whatsapp/grupo/webhook'
+        r = whatsapp_grupo.configurar_webhook(url_interno)
+        return jsonify(r)
+
+    @app.route('/reparto/pedido/<int:pid>/publicar', methods=['POST'])
+    @login_required
+    def reparto_pedido_publicar(pid):
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        from bot import whatsapp_grupo
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pid)
+            if not p:
+                return jsonify({'ok': False, 'error': 'no existe'}), 404
+            # Armar texto del mensaje
+            partes = [f'🚚 *Pedido #{p.id}*']
+            if p.cliente_nombre:
+                partes.append(f'👤 {p.cliente_nombre}')
+            if p.direccion:
+                partes.append(f'📍 {p.direccion}')
+            if p.lat is not None and p.lng is not None:
+                partes.append(f'🗺️ https://www.google.com/maps?q={p.lat},{p.lng}')
+            partes.append('')  # blank
+            if p.producto:
+                partes.append(f'💊 {p.producto}')
+            if p.observacion:
+                partes.append(f'📝 {p.observacion}')
+            linea_pago = []
+            if p.importe is not None:
+                linea_pago.append(f'$ {float(p.importe):,.0f}'.replace(',', '.'))
+            if p.forma_pago:
+                linea_pago.append(p.forma_pago)
+            if p.vuelto:
+                linea_pago.append(f'({p.vuelto})')
+            if linea_pago:
+                partes.append(f'💰 ' + ' '.join(linea_pago))
+            if p.envio_costo is not None:
+                partes.append(f'🛵 Envío: $ {float(p.envio_costo):,.0f}'.replace(',', '.'))
+            meta = []
+            if p.turno:
+                meta.append(p.turno)
+            if p.prioridad and p.prioridad != 'normal':
+                meta.append({'urgente': '🔴 URGENTE', 'programado': '🕐 prog.'}.get(p.prioridad, p.prioridad))
+            if p.requiere_receta:
+                meta.append('📋 con receta')
+            if meta:
+                partes.append(' · '.join(meta))
+            partes.append('')
+            partes.append('Responder *tomo* o *yo* para tomarlo.')
+            texto = '\n'.join(partes)
+            r = whatsapp_grupo.publicar_en_grupo(texto)
+            if not r.get('ok'):
+                return jsonify({'ok': False, 'error': r.get('error') or 'sin respuesta WAHA'}), 502
+            p.waha_msg_id = r.get('waha_msg_id')
+            p.publicado_en = database.now_ar()
+            s.commit()
+            return jsonify({'ok': True, 'waha_msg_id': p.waha_msg_id,
+                            'publicado_en': p.publicado_en.isoformat()})
 
     @app.route('/reparto/pedido/<int:pid>/asignar', methods=['POST'])
     @login_required
