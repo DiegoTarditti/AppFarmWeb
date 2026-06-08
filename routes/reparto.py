@@ -5,6 +5,7 @@ Carga manual: el operador agrega cada pedido (cliente + domicilio/dirección + n
 El motor de asignación vive en services/reparto.py.
 """
 import json
+import uuid
 from datetime import datetime
 
 from flask import jsonify, render_template, request
@@ -47,7 +48,7 @@ def _ruta_dict(r, cadetes=None):
 def _cadete_dict(c):
     return {'id': c.id, 'nombre': c.nombre, 'telefono': c.telefono or '',
             'tarifa_dia': float(c.tarifa_dia) if c.tarifa_dia is not None else None,
-            'activo': c.activo}
+            'activo': c.activo, 'token': c.token or ''}
 
 
 def _mapa_cadetes(s):
@@ -209,7 +210,7 @@ def init_app(app):
             else:
                 if not nombre:
                     return jsonify({'ok': False, 'error': 'falta nombre'}), 400
-                c = database.Cadete(nombre=nombre)
+                c = database.Cadete(nombre=nombre, token=uuid.uuid4().hex[:12])
                 s.add(c)
             if nombre:
                 c.nombre = nombre
@@ -222,8 +223,11 @@ def init_app(app):
                     pass
             if 'activo' in b:
                 c.activo = bool(b['activo'])
+            # Asignar token a cadetes existentes que no tengan (on-demand)
+            if not c.token:
+                c.token = uuid.uuid4().hex[:12]
             s.commit()
-            return jsonify({'ok': True, 'id': c.id})
+            return jsonify({'ok': True, 'id': c.id, 'token': c.token})
 
     @app.route('/cadetes/<int:cid>/delete', methods=['POST'])
     @login_required
@@ -269,12 +273,18 @@ def init_app(app):
             cs = (s.query(database.Cadete)
                   .filter(database.Cadete.activo.is_(True))
                   .order_by(database.Cadete.nombre).all())
+            usuarios = (s.query(database.Usuario)
+                        .filter(database.Usuario.activo.is_(True))
+                        .order_by(database.Usuario.nombre_completo).all())
+            usuarios_list = [{'id': u.id, 'nombre': u.nombre_completo or u.username}
+                             for u in usuarios]
             return jsonify({'fecha': fecha.strftime('%Y-%m-%d'),
                             'farmacia': {'lat': cfg['farmacia_lat'], 'lng': cfg['farmacia_lng']},
                             'ciudades': reparto.envio.listar_ciudades(),
                             'rutas': [_ruta_dict(r, cad) for r in rs],
                             'pedidos': [_pedido_dict(p, cad, rutas_cad) for p in ps],
-                            'cadetes': [_cadete_dict(c) for c in cs]})
+                            'cadetes': [_cadete_dict(c) for c in cs],
+                            'usuarios': usuarios_list})
 
     @app.route('/reparto/api/buscar-cliente')
     @login_required
@@ -316,9 +326,11 @@ def init_app(app):
                 pass
         with database.get_db() as s:
             ruta = reparto.ruta_para_punto(s, lat, lng)   # zona (polígono) → sino cuadrante
+            _oid = b.get('observer_id')
             p = database.PedidoReparto(
                 fecha=database.now_ar().date(),
-                cliente_observer_id=b.get('observer_id'),
+                cliente_id=(database.get_or_create_cliente(s, observer_id=_oid)
+                            if _oid else None),
                 cliente_nombre=(b.get('cliente_nombre') or '').strip() or None,
                 direccion=direccion or None, lat=lat, lng=lng,
                 nota=(b.get('nota') or '').strip() or None,
@@ -422,3 +434,141 @@ def init_app(app):
             return jsonify({'ruta': _ruta_dict(r, cad) if r else None,
                             'pedidos': [_pedido_dict(p, cad, rutas_cad) for p in ps],
                             'link': reparto.link_google_maps(paradas)})
+
+    # ── Vista móvil del cadete (sin login, autorización por token) ───────────
+
+    @app.route('/reparto/cadete/<token>')
+    def cadete_vista(token):
+        """Template mobile para el repartidor."""
+        with database.get_db() as s:
+            c = s.query(database.Cadete).filter(
+                database.Cadete.token == token).first()
+            if not c:
+                return 'Cadete no encontrado', 404
+            return render_template('vista_cadete.html',
+                                   cadete={'id': c.id, 'nombre': c.nombre},
+                                   token=token)
+
+    @app.route('/reparto/cadete/<token>/api')
+    def cadete_api(token):
+        """JSON con pedidos del día para este cadete."""
+        with database.get_db() as s:
+            c = s.query(database.Cadete).filter(
+                database.Cadete.token == token).first()
+            if not c:
+                return jsonify({'error': 'cadete no encontrado'}), 404
+            # Generar token on-demand para cadetes viejos
+            if not c.token:
+                c.token = uuid.uuid4().hex[:12]
+                s.commit()
+            fecha = database.now_ar().date()
+            P = database.PedidoReparto
+            ps = (s.query(P).filter(
+                P.cadete_id == c.id, P.fecha == fecha,
+                P.estado.in_(['pendiente', 'en_ruta', 'entregado'])
+            ).order_by(P.orden_en_ruta, P.id).all())
+            paradas = [(p.lat, p.lng) for p in ps if p.lat and p.lng]
+            return jsonify({
+                'cadete': {'id': c.id, 'nombre': c.nombre},
+                'fecha': fecha.strftime('%Y-%m-%d'),
+                'pedidos': [_pedido_dict(p) for p in ps],
+                'link_maps': reparto.link_google_maps(paradas),
+            })
+
+    @app.route('/reparto/cadete/<token>/pedido/<int:pid>/entregar',
+               methods=['POST'])
+    def cadete_entregar(token, pid):
+        """Marcar pedido como entregado."""
+        with database.get_db() as s:
+            c = s.query(database.Cadete).filter(
+                database.Cadete.token == token).first()
+            if not c:
+                return jsonify({'ok': False, 'error': 'cadete no encontrado'}), 404
+            p = s.get(database.PedidoReparto, pid)
+            if not p or p.cadete_id != c.id:
+                return jsonify({'ok': False, 'error': 'no autorizado'}), 403
+            p.estado = 'entregado'
+            s.commit()
+            return jsonify({'ok': True})
+
+    @app.route('/reparto/cadete/<token>/pedido/<int:pid>/cobrar',
+               methods=['POST'])
+    def cadete_cobrar(token, pid):
+        """Marcar pedido como cobrado."""
+        with database.get_db() as s:
+            c = s.query(database.Cadete).filter(
+                database.Cadete.token == token).first()
+            if not c:
+                return jsonify({'ok': False, 'error': 'cadete no encontrado'}), 404
+            p = s.get(database.PedidoReparto, pid)
+            if not p or p.cadete_id != c.id:
+                return jsonify({'ok': False, 'error': 'no autorizado'}), 403
+            p.pagado = True
+            s.commit()
+            return jsonify({'ok': True})
+
+    # ── Planilla de monitoreo ─────────────────────────────────────────────
+
+    @app.route('/reparto/planilla')
+    @login_required
+    def reparto_planilla():
+        if not _ok():
+            return 'Sin permiso', 403
+        fecha = _fecha(request.args.get('fecha'))
+        with database.get_db() as s:
+            ps = (s.query(database.PedidoReparto)
+                  .filter(database.PedidoReparto.fecha == fecha)
+                  .order_by(database.PedidoReparto.turno,
+                            database.PedidoReparto.id).all())
+            cadetes = {c.id: c.nombre for c in
+                       s.query(database.Cadete).all()}
+            usuarios = s.query(database.Usuario).filter(
+                database.Usuario.activo.is_(True)).order_by(
+                database.Usuario.nombre_completo).all()
+            usuarios_list = [{'id': u.id,
+                              'nombre': u.nombre_completo or u.username}
+                             for u in usuarios]
+        manana = [p for p in ps if (p.turno or 'mañana') == 'mañana']
+        tarde = [p for p in ps if p.turno == 'tarde']
+        return render_template('reparto_planilla.html',
+                               fecha=fecha, hoy=database.now_ar().date(),
+                               pedidos_manana=manana,
+                               pedidos_tarde=tarde,
+                               cadetes=cadetes,
+                               usuarios=usuarios_list)
+
+    @app.route('/api/reparto/pedido/<int:pid>/actualizar', methods=['POST'])
+    @login_required
+    def reparto_actualizar_pedido(pid):
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        campo = (b.get('campo') or '').strip()
+        valor = b.get('valor')
+        EDITABLES = {'tomo', 'importe', 'forma_pago', 'vuelto', 'producto',
+                     'observacion', 'pagado', 'requiere_receta',
+                     'entregado_por', 'cadete_id', 'recibio', 'estado'}
+        if campo not in EDITABLES:
+            return jsonify({'ok': False, 'error': f'campo no editable: {campo}'}), 400
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pid)
+            if not p:
+                return jsonify({'ok': False, 'error': 'no existe'}), 404
+            # Tipos especiales
+            if campo in ('pagado', 'requiere_receta'):
+                valor = bool(valor)
+            elif campo == 'importe' and valor is not None and valor != '':
+                try:
+                    valor = float(str(valor).replace(',', '.'))
+                except (TypeError, ValueError):
+                    return jsonify({'ok': False, 'error': 'importe inválido'}), 400
+            elif campo == 'cadete_id':
+                try:
+                    valor = int(valor) if valor not in (None, '') else None
+                except (TypeError, ValueError):
+                    return jsonify({'ok': False, 'error': 'cadete_id inválido'}), 400
+            else:
+                valor = (str(valor).strip() if valor else None)
+            setattr(p, campo, valor)
+            s.commit()
+            return jsonify({'ok': True})

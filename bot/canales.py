@@ -13,8 +13,15 @@ def enviar(canal, canal_user_id, texto):
     Devuelve True/False según pudo enviarlo."""
     if canal == 'telegram':
         return _enviar_telegram(canal_user_id, texto)
-    # TODO: WhatsApp Cloud API
+    if canal == 'whatsapp':
+        return _enviar_whatsapp(canal_user_id, texto)
     return False
+
+
+def _enviar_whatsapp(to, texto):
+    """Envío a WhatsApp Cloud API."""
+    from bot import whatsapp_bot
+    return whatsapp_bot.enviar_texto(to, texto)
 
 
 def _enviar_telegram(chat_id, texto):

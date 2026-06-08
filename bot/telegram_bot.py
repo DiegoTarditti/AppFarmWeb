@@ -106,6 +106,8 @@ def main():
     print('Bot conectado:', me.get('result', {}).get('username', '?'), '— escuchando…')
 
     offset = None
+    _ultimo_informe = 0.0   # timestamp del último disparo de informes
+    _INFORME_CADA   = 600   # cada 10 minutos
     while True:
         params = {'timeout': 30}
         if offset:
@@ -116,7 +118,7 @@ def main():
         except Exception as e:  # noqa: BLE001
             print('getUpdates error:', e)
             time.sleep(3)
-            continue
+            updates = []  # sigue al bloque de reenganche e informes
         for u in updates:
             offset = u['update_id'] + 1
             imagen_b64, media_type, ubicacion = None, 'image/jpeg', None
@@ -197,6 +199,17 @@ def main():
                         _enviar(base, conv['canal_user_id'], cerebro.preparar_reenganche(conv['id']))
             except Exception as e:  # noqa: BLE001
                 print('reenganche error:', e)
+
+        # Informes proactivos al dueño (cada 10 min).
+        now = time.time()
+        if now - _ultimo_informe >= _INFORME_CADA:
+            _ultimo_informe = now
+            try:
+                from services.informes_bot import disparar_sin_atender
+                with database.get_db() as _s:
+                    disparar_sin_atender(_s)
+            except Exception as e:  # noqa: BLE001
+                print('informes error:', e)
 
 
 if __name__ == '__main__':

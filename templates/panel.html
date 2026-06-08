@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel · Badia</title>
+<style>
+  :root {
+    --bg:#14141a; --surface:#1a1a22; --card:#1e1e28; --txt:#e0e0e6;
+    --title:#f0f0f3; --muted:#8a8a92; --border:rgba(255,255,255,0.08);
+    --accent:#1D9E75; --warn:#EF9F27; --danger:#DC2626; --info:#185FA5;
+    --hov:#23232d;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--txt); font-family:var(--font); min-height:100vh; }
+  .topbar { height:52px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:14px; padding:0 20px; }
+  .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .dot  { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .spacer { flex:1; }
+  .ts { font-size:11px; color:var(--muted); }
+  .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border);
+          background:var(--hov); color:var(--txt); cursor:pointer; text-decoration:none; }
+  .hbtn:hover { filter:brightness(1.15); }
+
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+          gap:16px; padding:20px; max-width:1300px; margin:0 auto; }
+
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px;
+          padding:18px 20px; display:flex; flex-direction:column; gap:12px;
+          transition:border-color .3s; }
+  .card-title { font-size:11px; font-weight:700; text-transform:uppercase;
+                letter-spacing:.08em; color:var(--muted); display:flex; align-items:center; gap:7px; }
+  .card-icon { font-size:16px; }
+  .kpi-row { display:flex; gap:12px; flex-wrap:wrap; }
+  .kpi { flex:1; min-width:100px; background:rgba(255,255,255,.04); border-radius:10px;
+         padding:10px 13px; }
+  .kpi-label { font-size:10px; color:var(--muted); margin-bottom:4px; }
+  .kpi-val { font-size:22px; font-weight:800; color:var(--title); line-height:1; }
+  .kpi-sub  { font-size:11px; color:var(--muted); margin-top:3px; }
+
+  /* accent border per card */
+  .card-ventas  { border-color:var(--accent); }
+  .card-caja    { border-color:var(--warn); }
+  .card-atencion { border-color:var(--info); }
+  .card-repartos { border-color:#7c3aed; }
+  .card-alertas  { border-color:var(--danger); }
+  .card-alertas.ok { border-color:var(--border); }
+
+  /* colores de KPI */
+  .c-green { color:var(--accent); }
+  .c-warn  { color:var(--warn); }
+  .c-danger{ color:#F09595; }
+  .c-info  { color:#5dade2; }
+  .c-muted { color:var(--muted); }
+  .c-purple{ color:#a78bfa; }
+
+  .refresh-bar { height:3px; background:var(--border); border-radius:2px; overflow:hidden; }
+  .refresh-fill { height:100%; background:var(--accent); width:100%;
+                  transform-origin:left; animation:shrink 60s linear forwards; }
+  @keyframes shrink { from { transform:scaleX(1); } to { transform:scaleX(0); } }
+
+  .divider { border:none; border-top:1px solid var(--border); margin:0; }
+
+  .links { display:flex; gap:8px; flex-wrap:wrap; }
+  .link-btn { font-size:11px; padding:4px 10px; border-radius:7px; border:1px solid var(--border);
+              background:var(--hov); color:var(--txt); text-decoration:none; cursor:pointer; }
+  .link-btn:hover { filter:brightness(1.15); }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="logo"><span class="dot"></span>📊 Panel · Badia</div>
+  <div class="spacer"></div>
+  <span class="ts" id="tsLabel">—</span>
+  <a href="{{ url_for('index') }}" class="hbtn">← Inicio</a>
+  <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
+</div>
+
+<div class="grid" id="grid">
+  <!-- Cards renderizadas por JS -->
+</div>
+
+<script>
+let fillAnim = null;
+
+function fmt(n) {
+  if (n == null) return '—';
+  return '$ ' + Math.round(n).toLocaleString('es-AR');
+}
+
+function renderGrid(d) {
+  const a = d.atencion, c = d.caja, v = d.ventas, r = d.repartos;
+  const alerta_ok = a.supervisados === 0;
+
+  const html = `
+  <!-- Ventas del día -->
+  <div class="card card-ventas">
+    <div class="card-title"><span class="card-icon">💰</span> Ventas del día</div>
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-label">Tickets</div>
+        <div class="kpi-val c-green">${v.count}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Total</div>
+        <div class="kpi-val c-green">${fmt(v.total)}</div>
+      </div>
+    </div>
+    <div class="links">
+      <a href="/caja" class="link-btn">→ Caja</a>
+    </div>
+  </div>
+
+  <!-- Caja -->
+  <div class="card card-caja">
+    <div class="card-title"><span class="card-icon">🧾</span> Caja</div>
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-label">A cobrar</div>
+        <div class="kpi-val ${c.confirmados > 0 ? 'c-warn' : 'c-muted'}">${c.confirmados}</div>
+        <div class="kpi-sub">${fmt(c.confirmados_total)}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Cobrados, sin entregar</div>
+        <div class="kpi-val ${c.cobrados > 0 ? 'c-info' : 'c-muted'}">${c.cobrados}</div>
+        <div class="kpi-sub">${fmt(c.cobrados_total)}</div>
+      </div>
+    </div>
+    <div class="links">
+      <a href="/caja" class="link-btn">→ Caja</a>
+    </div>
+  </div>
+
+  <!-- Atención -->
+  <div class="card card-atencion">
+    <div class="card-title"><span class="card-icon">💬</span> Atención bot</div>
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-label">En cola</div>
+        <div class="kpi-val ${a.cola > 0 ? 'c-warn' : 'c-muted'}">${a.cola}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Con operador</div>
+        <div class="kpi-val ${a.humano > 0 ? 'c-info' : 'c-muted'}">${a.humano}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Bot activo (1h)</div>
+        <div class="kpi-val c-green">${a.bot_activo}</div>
+      </div>
+    </div>
+    <div class="links">
+      <a href="/atencion" class="link-btn">→ Operadores</a>
+    </div>
+  </div>
+
+  <!-- Repartos -->
+  <div class="card card-repartos">
+    <div class="card-title"><span class="card-icon">🛵</span> Repartos hoy</div>
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-label">Pendientes</div>
+        <div class="kpi-val ${r.pendiente > 0 ? 'c-warn' : 'c-muted'}">${r.pendiente}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">En camino</div>
+        <div class="kpi-val ${r.en_camino > 0 ? 'c-purple' : 'c-muted'}">${r.en_camino}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Entregados</div>
+        <div class="kpi-val c-green">${r.entregado}</div>
+      </div>
+    </div>
+    <div class="kpi-sub c-muted" style="font-size:11px">Total hoy: ${r.total}</div>
+    <div class="links">
+      <a href="/reparto" class="link-btn">→ Reparto</a>
+    </div>
+  </div>
+
+  <!-- Alertas supervisor -->
+  <div class="card card-alertas ${alerta_ok ? 'ok' : ''}">
+    <div class="card-title"><span class="card-icon">${alerta_ok ? '✅' : '🚨'}</span> Supervisión bot</div>
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-label">Sin atender (alertados)</div>
+        <div class="kpi-val ${a.supervisados > 0 ? 'c-danger' : 'c-green'}">${a.supervisados}</div>
+        <div class="kpi-sub">${alerta_ok ? 'Todo atendido' : 'Chats sin respuesta prolongada'}</div>
+      </div>
+    </div>
+    <div class="links">
+      <a href="/atencion" class="link-btn">→ Atención</a>
+    </div>
+  </div>
+  `;
+
+  document.getElementById('grid').innerHTML = html;
+}
+
+function startFill() {
+  const old = document.getElementById('refill');
+  if (old) old.remove();
+  const bar = document.createElement('div');
+  bar.id = 'refill';
+  bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:3px;background:rgba(255,255,255,.07);z-index:99';
+  const fill = document.createElement('div');
+  fill.style.cssText = 'height:100%;background:var(--accent);width:100%;transform-origin:left;animation:shrink 60s linear forwards';
+  bar.appendChild(fill);
+  document.body.appendChild(bar);
+}
+
+async function cargar() {
+  try {
+    const r = await fetch('/panel/api/resumen');
+    const d = await r.json();
+    if (!d.ok) return;
+    document.getElementById('tsLabel').textContent = 'Actualizado ' + d.ts;
+    renderGrid(d);
+    startFill();
+  } catch(e) {
+    document.getElementById('tsLabel').textContent = 'Error al cargar';
+  }
+}
+
+cargar();
+setInterval(cargar, 60000);
+</script>
+</body>
+</html>

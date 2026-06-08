@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Reparto · {{ cadete.nombre }}</title>
+<style>
+  :root {
+    --bg: #14141a; --surface: #1a1a22; --card: #16161d; --txt: #e0e0e6;
+    --title: #f0f0f3; --muted: #8a8a92; --border: rgba(255,255,255,0.08);
+    --accent: #1D9E75; --accent-ink: #06241a; --accent2: #EAB308; --accent2-ink: #1a0e00;
+    --danger: #EF4444; --row-bd: rgba(255,255,255,0.05); --hov: #23232d;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 0; min-height: 100vh; background: var(--bg); color: var(--txt);
+         font-family: var(--font); font-size: 14px; -webkit-tap-highlight-color: transparent; }
+  .topbar { position: sticky; top: 0; z-index: 10; background: var(--surface);
+            border-bottom: 1px solid var(--border); padding: 10px 14px;
+            display: flex; align-items: center; gap: 10px; }
+  .topbar h1 { margin: 0; font-size: 15px; color: var(--title); flex: 1; }
+  .topbar .fecha { font-size: 11px; color: var(--muted); }
+  .counter { font-size: 11px; color: var(--accent); font-weight: 700;
+             background: var(--accent-ink); padding: 2px 8px; border-radius: 999px; }
+  .maps-btn { display: block; margin: 12px; padding: 12px; background: var(--accent);
+              color: var(--accent-ink); border-radius: 12px; text-align: center;
+              font-weight: 700; font-size: 15px; text-decoration: none; border: none;
+              cursor: pointer; }
+  .maps-btn:disabled { background: var(--hov); color: var(--muted); cursor: not-allowed; }
+  .pedidos { max-width: 520px; margin: 0 auto; padding: 0 10px 30px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+          padding: 12px; margin-bottom: 10px; transition: opacity 0.2s; }
+  .card.entregado { opacity: 0.5; border-left: 3px solid var(--accent); }
+  .card.entregado .card-row { text-decoration: line-through; text-decoration-color: var(--muted); }
+  .card-header { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+  .card-num { font-size: 20px; font-weight: 800; color: var(--accent); min-width: 28px;
+              text-align: center; }
+  .card-info { flex: 1; min-width: 0; }
+  .card-nombre { font-weight: 700; font-size: 15px; color: var(--title); }
+  .card-dir { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .card-dir a { color: #7fb0e0; text-decoration: none; }
+  .card-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+              margin-top: 6px; font-size: 13px; }
+  .importe { font-weight: 800; font-size: 16px; color: var(--accent2); }
+  .pago { font-size: 11px; color: var(--muted); background: var(--hov);
+          padding: 1px 7px; border-radius: 6px; }
+  .vuelto { font-size: 11px; color: #F87171; }
+  .badge { font-size: 10px; padding: 2px 7px; border-radius: 999px; font-weight: 700; }
+  .badge-receta { background: #5a2a2a; color: #F09595; }
+  .badge-prod { background: var(--hov); color: var(--muted); }
+  .badge-obs { background: #2a2a4a; color: #a0a0e0; max-width: 200px; overflow: hidden;
+               text-overflow: ellipsis; white-space: nowrap; }
+  .card-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .btn { flex: 1; padding: 10px 6px; border-radius: 10px; font-size: 13px; font-weight: 700;
+         border: none; cursor: pointer; text-align: center; }
+  .btn-entregar { background: var(--accent); color: var(--accent-ink); }
+  .btn-cobrar { background: var(--accent2); color: var(--accent2-ink); }
+  .btn-entregar.done { background: var(--hov); color: var(--muted); cursor: default; }
+  .btn-cobrar.done { background: var(--hov); color: var(--muted); cursor: default; }
+  .empty { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 14px; }
+  .loading { text-align: center; padding: 20px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>🧑‍🦽 {{ cadete.nombre }}</h1>
+    <span class="fecha" id="fecha"></span>
+    <span class="counter" id="counter">—</span>
+  </div>
+  <button id="mapsBtn" class="maps-btn" disabled>🗺️ Abrir ruta en Maps</button>
+  <div class="pedidos" id="pedidos"><div class="loading">Cargando pedidos...</div></div>
+
+<script>
+const TOKEN = '{{ token }}';
+const API = `/reparto/cadete/${TOKEN}/api`;
+
+function esc(s) { return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmoney(v) { if (v==null) return ''; return '$ ' + Number(v).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+async function cargar() {
+  try {
+    const r = await (await fetch(API)).json();
+    if (r.error) { document.getElementById('pedidos').innerHTML = `<div class="empty">${esc(r.error)}</div>`; return; }
+    document.getElementById('fecha').textContent = (new Date(r.fecha + 'T00:00:00')).toLocaleDateString('es-AR', {weekday:'short', day:'numeric', month:'short'});
+    const ps = r.pedidos || [];
+    const entregados = ps.filter(p => p.estado === 'entregado').length;
+    document.getElementById('counter').textContent = `${entregados}/${ps.length} entreg.`;
+    const mapsBtn = document.getElementById('mapsBtn');
+    if (r.link_maps) {
+      mapsBtn.href = r.link_maps; mapsBtn.disabled = false; mapsBtn.textContent = '🗺️ Abrir ruta en Maps';
+      mapsBtn.onclick = function() { window.open(r.link_maps, '_blank'); return false; };
+    } else {
+      mapsBtn.disabled = true; mapsBtn.textContent = '🗺️ Sin ubicaciones';
+    }
+    document.getElementById('pedidos').innerHTML = ps.length ? ps.map(p => {
+      const ent = p.estado === 'entregado';
+      return `<div class="card${ent?' entregado':''}" id="ped-${p.id}">
+        <div class="card-header">
+          <div class="card-num">#${p.orden || '·'}</div>
+          <div class="card-info">
+            <div class="card-nombre">${esc(p.cliente_nombre)}</div>
+            <div class="card-dir">
+              ${p.lat && p.lng
+                ? `<a href="https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}" target="_blank">📍 ${esc(p.direccion)}</a>`
+                : esc(p.direccion)}
+            </div>
+          </div>
+        </div>
+        <div class="card-row">
+          ${p.importe != null ? `<span class="importe">${fmoney(p.importe)}</span>` : ''}
+          ${p.forma_pago ? `<span class="pago">${esc(p.forma_pago)}</span>` : ''}
+          ${p.vuelto ? `<span class="vuelto">Vuelto: ${esc(p.vuelto)}</span>` : ''}
+          ${p.pagado ? `<span class="badge" style="background:var(--accent);color:var(--accent-ink);">💲 Cobrado</span>` : ''}
+        </div>
+        <div class="card-row" style="gap:4px;">
+          ${p.requiere_receta ? '<span class="badge badge-receta">📋 Receta</span>' : ''}
+          ${p.producto ? `<span class="badge badge-prod">💊 ${esc(p.producto)}</span>` : ''}
+          ${p.observacion ? `<span class="badge badge-obs">💬 ${esc(p.observacion)}</span>` : ''}
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-entregar${ent?' done':''}" ${ent?'disabled':''} onclick="entregar(${p.id}, this)">✓ ${ent?'Entregado':'Entregar'}</button>
+          <button class="btn btn-cobrar${p.pagado?' done':''}" ${p.pagado?'disabled':''} onclick="cobrar(${p.id}, this)">💲 ${p.pagado?'Cobrado':'Cobrar'}</button>
+        </div>
+      </div>`;
+    }).join('') : '<div class="empty">Sin pedidos para hoy 🎉</div>';
+  } catch(e) { document.getElementById('pedidos').innerHTML = '<div class="empty">Error al cargar</div>'; }
+}
+
+async function entregar(pid, btn) {
+  btn.disabled = true; btn.textContent = '...';
+  const r = await (await fetch(`/reparto/cadete/${TOKEN}/pedido/${pid}/entregar`, {method:'POST'})).json();
+  if (r.ok) cargar();
+}
+
+async function cobrar(pid, btn) {
+  btn.disabled = true; btn.textContent = '...';
+  const r = await (await fetch(`/reparto/cadete/${TOKEN}/pedido/${pid}/cobrar`, {method:'POST'})).json();
+  if (r.ok) cargar();
+}
+
+cargar();
+</script>
+</body>
+</html>

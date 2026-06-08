@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ofertas Bot · Badia</title>
+<style>
+  :root {
+    --bg:#14141a; --surface:#1a1a22; --card:#16161d; --txt:#e0e0e6; --title:#f0f0f3;
+    --muted:#8a8a92; --border:rgba(255,255,255,0.08); --accent:#1D9E75; --accent-ink:#06241a;
+    --row-bd:rgba(255,255,255,0.05); --hov:#23232d;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--txt); font-family:var(--font); }
+  .topbar { height:54px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:14px; padding:0 18px; }
+  .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .logo .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border);
+          background:var(--hov); color:var(--txt); cursor:pointer; }
+  .hbtn:hover { filter:brightness(1.12); }
+  .hbtn-ok { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700; }
+  .hbtn-danger { background:transparent; color:#F09595; border-color:#5a2a2a; font-size:10px; padding:3px 8px; }
+  .input, select { background:var(--hov); color:var(--txt); border:1px solid var(--border); border-radius:8px; padding:6px 9px; font-size:13px; }
+  .wrap { max-width:900px; margin:0 auto; padding:18px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; color:var(--muted); font-weight:600; padding:7px 6px; border-bottom:1px solid var(--border); }
+  td { padding:6px; border-bottom:1px solid var(--row-bd); }
+  .muted { color:var(--muted); }
+  .badge { font-size:10px; padding:2px 8px; border-radius:999px; font-weight:700; }
+  .b-dcto { background:#0c2236; color:#85B7EB; }
+  .b-2x1 { background:#3a1f1f; color:#F09595; }
+  .prod-row { display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid var(--row-bd); font-size:12px; }
+  .prod-row:hover { background:var(--hov); }
+  .chk { margin-right:6px; cursor:pointer; }
+  .tag { font-size:9px; padding:1px 7px; border-radius:999px; background:#1f1d2e; color:#AFA9EC; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo"><span class="dot"></span>🎯 Ofertas Bot · Badia</div>
+    <div style="flex:1"></div>
+    <span class="muted" style="font-size:12px;">{{ current_user.nombre_completo or current_user.username }}</span>
+    <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
+  </div>
+  <div class="wrap">
+    <div class="card">
+      <h2 style="margin:0 0 12px; font-size:15px; color:var(--title);">Cargar oferta</h2>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <select id="selLab" onchange="cargarDrogas()" class="input" style="min-width:220px;">
+          <option value="">— Laboratorio —</option>
+        </select>
+        <select id="selDroga" onchange="cargarProductos()" class="input" style="min-width:220px;">
+          <option value="">— Droga —</option>
+        </select>
+      </div>
+      <div id="listaProds" style="max-height:340px; overflow-y:auto; margin-bottom:12px;"></div>
+      <div id="panelOferta" style="display:none; border-top:1px solid var(--border); padding-top:12px;">
+        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+          <label class="muted" style="font-size:12px; display:flex; align-items:center; gap:6px;">
+            <input type="radio" name="tipo" value="descuento_pct" checked onchange="toggleTipo()">
+            Descuento %
+          </label>
+          <input id="inpValor" type="number" step="0.01" min="0" max="100" class="input" placeholder="Ej: 20" style="width:80px;">
+          <label class="muted" style="font-size:12px; display:flex; align-items:center; gap:6px;">
+            <input type="radio" name="tipo" value="2x1" onchange="toggleTipo()">
+            2 x 1
+          </label>
+          <button onclick="guardarOferta()" class="hbtn hbtn-ok">Guardar selección</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin:0 0 12px; font-size:15px; color:var(--title);">Ofertas cargadas</h2>
+      <table>
+        <thead><tr><th>Descripción</th><th>Tipo</th><th>Valor</th><th>Activa</th><th></th></tr></thead>
+        <tbody id="tbCargadas"><tr><td class="muted" colspan="5">Cargando…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&','<':'<','>':'>','"':'"'}[c])); }
+async function jpost(u,b){ return (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json(); }
+
+// Cargar laboratorios
+(async function(){
+  const d = await (await fetch('/ofertas-bot/api/laboratorios')).json();
+  document.getElementById('selLab').innerHTML = '<option value="">— Laboratorio —</option>' +
+    (d.laboratorios||[]).map(l => `<option value="${l.observer_id}">${esc(l.descripcion)}</option>`).join('');
+  cargarCargadas();
+})();
+
+async function cargarDrogas(){
+  document.getElementById('selDroga').innerHTML = '<option value="">— Droga —</option>';
+  document.getElementById('listaProds').innerHTML = '';
+  document.getElementById('panelOferta').style.display = 'none';
+  const lab = document.getElementById('selLab').value;
+  if(!lab) return;
+  const d = await (await fetch('/ofertas-bot/api/drogas?lab_id='+lab)).json();
+  document.getElementById('selDroga').innerHTML = '<option value="">— Droga —</option>' +
+    (d.drogas||[]).map(dr => `<option value="${dr.observer_id}">${esc(dr.descripcion)}</option>`).join('');
+}
+
+async function cargarProductos(){
+  document.getElementById('listaProds').innerHTML = '';
+  document.getElementById('panelOferta').style.display = 'none';
+  const droga = document.getElementById('selDroga').value;
+  if(!droga) return;
+  const d = await (await fetch('/ofertas-bot/api/productos?droga_id='+droga)).json();
+  const ps = d.productos || [];
+  document.getElementById('listaProds').innerHTML = ps.map(p => `
+    <div class="prod-row">
+      <input type="checkbox" class="chk" data-oid="${p.observer_id}" ${p.tiene_oferta?'disabled':''} onchange="checkCambio()">
+      <span style="flex:1;">${esc(p.descripcion)}</span>
+      <span class="muted" style="font-size:10px;">Stock: ${p.stock}</span>
+      ${p.tiene_oferta ? '<span class="tag">Ya cargado</span>' : ''}
+    </div>`).join('') || '<div class="muted" style="padding:12px;">Sin productos para esta droga.</div>';
+  checkCambio();
+}
+
+function checkCambio(){
+  const any = document.querySelectorAll('.prod-row input.chk:checked').length > 0;
+  document.getElementById('panelOferta').style.display = any ? 'block' : 'none';
+}
+
+function toggleTipo(){
+  const inp = document.getElementById('inpValor');
+  const es2x1 = document.querySelector('input[name="tipo"]:checked').value === '2x1';
+  inp.style.opacity = es2x1 ? '0.3' : '1';
+  inp.disabled = es2x1;
+  if(es2x1) inp.value = '';
+}
+
+async function guardarOferta(){
+  const ids = [...document.querySelectorAll('.prod-row input.chk:checked')].map(cb => parseInt(cb.dataset.oid));
+  if(!ids.length){ alert('Seleccioná al menos un producto.'); return; }
+  const tipo = document.querySelector('input[name="tipo"]:checked').value;
+  const valor = tipo === 'descuento_pct' ? parseFloat(document.getElementById('inpValor').value) : null;
+  if(tipo === 'descuento_pct' && (!valor || valor <= 0 || valor > 100)){
+    alert('Ingresá un % válido (1-100).'); return;
+  }
+  const r = await jpost('/ofertas-bot/api/guardar', {observer_ids: ids, tipo: tipo, valor: valor});
+  if(r.ok){
+    document.getElementById('selDroga').value = '';
+    document.getElementById('listaProds').innerHTML = '';
+    document.getElementById('panelOferta').style.display = 'none';
+    cargarCargadas();
+  }
+}
+
+async function cargarCargadas(){
+  const d = await (await fetch('/ofertas-bot/api/cargadas')).json();
+  const os = d.ofertas || [];
+  document.getElementById('tbCargadas').innerHTML = os.length
+    ? os.map(o => `
+      <tr>
+        <td>${esc(o.descripcion)}</td>
+        <td><span class="badge ${o.tipo==='descuento_pct'?'b-dcto':'b-2x1'}">${o.tipo==='descuento_pct'?'Descuento':'2x1'}</span></td>
+        <td>${o.valor != null ? o.valor+'%' : '—'}</td>
+        <td><input type="checkbox" ${o.activo?'checked':''} onchange="toggleOferta(${o.id})"></td>
+        <td><button class="hbtn hbtn-danger" onclick="eliminarOferta(${o.id})">Quitar</button></td>
+      </tr>`).join('')
+    : '<tr><td class="muted" colspan="5">Sin ofertas cargadas.</td></tr>';
+}
+
+async function toggleOferta(id){
+  await jpost(`/ofertas-bot/api/${id}/toggle`);
+  cargarCargadas();
+}
+
+async function eliminarOferta(id){
+  if(!confirm('¿Eliminar esta oferta?')) return;
+  await fetch(`/ofertas-bot/api/${id}`, {method:'DELETE'});
+  cargarCargadas();
+}
+</script>
+</body>
+</html>

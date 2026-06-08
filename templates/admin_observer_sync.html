@@ -17,13 +17,10 @@
        title="Matriz de tablas: conteos local vs Render + última sync">🔍 Auditoría de sync</a>
     {% if disponible %}
     <div class="ml-auto">
-        <form method="post" action="{{ url_for('observer_sync_run', entidad='todo') }}"
-              onsubmit="return confirm('Vamos a actualizar toda la información desde ObServer: laboratorios, rubros, drogas, productos, stock y ventas.\n\nLa primera vez puede tardar varios minutos.\n\n¿Continuar?');">
-            <button type="submit"
-                    class="bg-[#2E7D5B] hover:bg-[#1F5D40] text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-                Sync todo
-            </button>
-        </form>
+        <button id="sync-todo-btn" onclick="iniciarSyncTodo()"
+                class="bg-[#2E7D5B] hover:bg-[#1F5D40] text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+            Sync todo
+        </button>
     </div>
     {% endif %}
 </div>
@@ -40,6 +37,23 @@
         </div>
         {% endfor %}
     {% endwith %}
+
+    <!-- Barra de progreso del sync (oculta por default) -->
+    <div id="sync-progress" class="hidden bg-white border border-surface-border rounded-xl p-4 space-y-3">
+        <div class="flex items-center gap-3">
+            <svg id="sync-spinner" class="w-5 h-5 animate-spin text-[#2E7D5B]" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+            </svg>
+            <span id="sync-status-text" class="text-sm font-semibold text-[#1e1e1e]">Iniciando sync...</span>
+            <span id="sync-step-counter" class="text-xs text-[#666]"></span>
+        </div>
+        <!-- Barra de progreso -->
+        <div class="w-full bg-gray-200 rounded-full h-2.5">
+            <div id="sync-bar" class="bg-[#2E7D5B] h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+        </div>
+        <div id="sync-result" class="text-sm"></div>
+    </div>
 
     <!-- Config: meses de ventas a traer (persiste en configuracion) -->
     <div class="bg-white border border-surface-border rounded-xl p-4 flex items-center gap-4 flex-wrap">
@@ -65,7 +79,7 @@
     {% if disponible %}
     <div class="bg-white border border-surface-border rounded-xl p-4 text-sm text-[#555]">
         <p><strong>Orden recomendado:</strong> laboratorios → rubros → subrubros → nombres_drogas → productos → stock → ventas_mensuales.</p>
-        <p class="mt-1 text-xs text-[#888]">Cada entidad tiene su propio botón si querés refrescar solo una. "Sync todo" las corre en el orden correcto (respeta FKs).</p>
+        <p class="mt-1 text-xs text-[#888]">Cada entidad tiene su propio botón si querés refrescar solo una. "Sync todo" las corre en el orden correcto (respeta FKs) y ahora muestra progreso en vivo.</p>
     </div>
 
     <!-- Push a Render (solo desde la LAN de la farmacia) -->
@@ -198,7 +212,7 @@
 
 </div>
 
-<!-- Overlay de "procesando" cuando cualquier form del panel se envía -->
+<!-- Overlay de "procesando" para syncs individuales (se mantiene el comportamiento viejo) -->
 <div id="proc-overlay" class="hidden fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
     <div class="bg-white rounded-xl shadow-2xl px-6 py-5 flex items-center gap-4 max-w-sm">
         <svg class="w-7 h-7 animate-spin text-[#2E7D5B]" fill="none" viewBox="0 0 24 24">
@@ -213,23 +227,143 @@
 </div>
 
 <script>
-// Muestra overlay + deshabilita botón al submitear cualquier form POST del panel
+// ── Sync todo con progreso en vivo ─────────────────────────────────────
+const TOTAL_STEPS = 20; // 18 entidades + fraccionado_master + match_productos + refresh_analytics
+
+async function iniciarSyncTodo() {
+    const btn = document.getElementById('sync-todo-btn');
+    const progress = document.getElementById('sync-progress');
+    const statusText = document.getElementById('sync-status-text');
+    const stepCounter = document.getElementById('sync-step-counter');
+    const bar = document.getElementById('sync-bar');
+    const result = document.getElementById('sync-result');
+    const spinner = document.getElementById('sync-spinner');
+
+    btn.disabled = true;
+    btn.textContent = 'Iniciando...';
+    btn.style.opacity = '0.5';
+    progress.classList.remove('hidden');
+    statusText.textContent = 'Iniciando sync...';
+    stepCounter.textContent = '';
+    bar.style.width = '0%';
+    result.innerHTML = '';
+    spinner.classList.remove('hidden');
+
+    const pasosVistos = new Set();
+    let stepN = 0;
+    let errorDetectado = false;
+
+    try {
+        const r = await fetch('/admin/observer-sync/todo', { method: 'POST' });
+        if (r.status === 409) {
+            const data = await r.json().catch(() => ({}));
+            statusText.textContent = '⚠ Sync ya en curso';
+            stepCounter.textContent = data.paso_actual ? `Paso actual: ${data.paso_actual}` : '';
+            bar.style.width = '50%';
+            bar.classList.add('bg-amber-500');
+            spinner.classList.add('hidden');
+            btn.disabled = false; btn.textContent = 'Sync todo'; btn.style.opacity = '1';
+            return;
+        }
+        if (!r.ok) {
+            statusText.textContent = `Error al iniciar (HTTP ${r.status})`;
+            spinner.classList.add('hidden');
+            btn.disabled = false; btn.textContent = 'Sync todo'; btn.style.opacity = '1';
+            return;
+        }
+        const data = await r.json();
+        if (!data.ok) {
+            statusText.textContent = '❌ ' + (data.error || 'Error desconocido');
+            spinner.classList.add('hidden');
+            btn.disabled = false; btn.textContent = 'Sync todo'; btn.style.opacity = '1';
+            return;
+        }
+        // Sync iniciado — polling cada 2s
+        statusText.textContent = 'Sincronizando...';
+        await pollStatus();
+    } catch(e) {
+        statusText.textContent = '❌ Error de red: ' + e.message;
+        spinner.classList.add('hidden');
+        btn.disabled = false; btn.textContent = 'Sync todo'; btn.style.opacity = '1';
+        return;
+    }
+
+    async function pollStatus() {
+        try {
+            const sr = await fetch('/api/auto-sync/status');
+            const estado = await sr.json();
+
+            if (estado.paso_actual && !pasosVistos.has(estado.paso_actual)) {
+                pasosVistos.add(estado.paso_actual);
+                stepN = pasosVistos.size;
+                statusText.textContent = `Sincronizando: ${estado.paso_actual}`;
+                stepCounter.textContent = `${stepN} de ${TOTAL_STEPS}`;
+                const pct = Math.min(Math.round((stepN / TOTAL_STEPS) * 100), 95);
+                bar.style.width = pct + '%';
+            }
+
+            if (estado.en_curso) {
+                setTimeout(pollStatus, 2000);
+                return;
+            }
+
+            // Terminó
+            spinner.classList.add('hidden');
+            bar.style.width = '100%';
+
+            const res = estado.ultimo_resultado;
+            if (res && res.ok) {
+                statusText.textContent = '✅ Sync completado';
+                stepCounter.textContent = `${res.pasos ? res.pasos.length : '—'} pasos`;
+                bar.classList.add('bg-emerald-500');
+                if (res.inicio && res.fin) {
+                    const ini = new Date(res.inicio);
+                    const fin = new Date(res.fin);
+                    const seg = Math.round((fin - ini) / 1000);
+                    result.innerHTML = `<p class="text-xs text-[#666] mt-1">Duración: ${seg}s · ${res.pasos ? res.pasos.filter(p=>p.ok).length : 0}/${res.pasos ? res.pasos.length : 0} pasos OK</p>`;
+                }
+            } else if (res) {
+                statusText.textContent = '❌ Sync con errores';
+                bar.classList.add('bg-red-500');
+                const errores = (res.pasos || []).filter(p => !p.ok);
+                if (errores.length) {
+                    result.innerHTML = errores.map(e => `<p class="text-xs text-red-600 mt-1">${e.paso}: ${e.error}</p>`).join('');
+                }
+            } else {
+                statusText.textContent = '⚠ Sync finalizado (sin resultado)';
+                bar.classList.add('bg-amber-500');
+            }
+
+            btn.disabled = false; btn.textContent = 'Sync todo'; btn.style.opacity = '1';
+            // Recargar la página tras 3s para mostrar conteos actualizados
+            setTimeout(() => location.reload(), 3000);
+        } catch(e) {
+            // Error de red en polling — reintentar
+            setTimeout(pollStatus, 2000);
+        }
+    }
+}
+
+// Muestra overlay + deshabilita botón al submitear forms POST individuales (NO el sync todo)
 document.querySelectorAll('form[method=post]').forEach(f => {
+    // Saltar el form del sync todo (ya tiene su propio UI)
+    const action = (f.getAttribute('action') || '');
+    if (action.includes('/observer-sync/todo')) return;
+
     f.addEventListener('submit', function() {
         const btn = f.querySelector('button[type=submit]');
-        const action = (f.getAttribute('action') || '').split('/').slice(-2).join('/');
+        const actionShort = action.split('/').slice(-2).join('/');
         const labels = {
-            'todo':               ['Sincronizando TODO desde ObServer', 'Labs → rubros → subrubros → drogas → productos → stock. Puede tardar varios minutos.'],
             'push-render':        ['Replicando a Render', 'TRUNCATE + COPY de las 6 tablas. 1–2 minutos típico.'],
             'match-productos':    ['Vinculando productos', 'Calculando matches por nombre dentro de cada laboratorio.'],
         };
         let title = 'Procesando…';
         let sub = 'No cierres esta ventana.';
         for (const key in labels) {
-            if (action.indexOf(key) !== -1) { title = labels[key][0]; sub = labels[key][1]; break; }
+            if (actionShort.indexOf(key) !== -1) { title = labels[key][0]; sub = labels[key][1]; break; }
         }
-        if (action.indexOf('observer-sync/') !== -1 && action.indexOf('todo') === -1) {
-            const ent = action.split('/').pop();
+        if (actionShort.indexOf('observer-sync/') !== -1 && actionShort.indexOf('todo') === -1) {
+            const ent = actionShort.split('/').pop();
             title = 'Sincronizando ' + ent;
             sub = 'Leyendo de DW.* y upserteando en la tabla local.';
             if (ent === 'ventas_mensuales') {

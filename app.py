@@ -61,6 +61,9 @@ def exigir_login():
     # Rutas públicas (no requieren login)
     rutas_publicas = {'auth_login', 'static', 'health', 'docs_pendientes_upload_api',
                       'api_auto_sync', 'api_auto_sync_status',
+                      # WhatsApp Cloud API webhook (llamado por Meta, sin sesión)
+                      'whatsapp_webhook_get', 'whatsapp_webhook_post',
+                      'whatsapp_reenganche',
                       # Crons externos: auth propia via X-Cron-Secret header.
                       'api_cron_recalcular_os_clientes',
                       'api_cron_notificar_alarmas',

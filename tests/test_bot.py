@@ -166,6 +166,45 @@ def test_alta_cliente_local():
     assert store.get_ficha_de_conversacion(conv['id']) is None
 
 
+def test_cliente_unificado_id_y_ticket_hereda():
+    """Tabla única: vincular dos veces al mismo observer NO duplica la fila
+    clientes (get-or-create), y el ticket de caja hereda el cliente_id del chat."""
+    import database
+    with database.get_db() as s:
+        s.add(database.ObsCliente(observer_id=5002, apellido_nombre='Pinto, Eva',
+                                  id_farmacia=1))
+        s.commit()
+    conv = store.get_conversacion('telegram', 'unif1', nombre='Eva')
+    assert store.vincular_cliente(conv['id'], 5002)['ok']
+    assert store.vincular_cliente(conv['id'], 5002)['ok']   # idempotente
+    with database.get_db() as s:
+        assert s.query(database.Cliente).filter_by(observer_id=5002).count() == 1
+        cid = s.get(database.BotConversacion, conv['id']).cliente_id
+        assert cid is not None
+    r = caja.crear_ticket(conv['id'], [{'nombre': 'X', 'precio': 10, 'cantidad': 1}],
+                          operador_id=None, cliente_nombre='Eva')
+    assert r['ok']
+    with database.get_db() as s:
+        assert s.get(database.TicketCaja, r['id']).cliente_id == cid
+
+
+def test_domicilio_por_cliente_unificado():
+    """El domicilio (pin) guardado para un cliente vinculado se lee por su
+    cliente_id, venga la consulta por observer_id o por cliente_id."""
+    import database
+    with database.get_db() as s:
+        s.add(database.ObsCliente(observer_id=5003, apellido_nombre='Ruiz, Leo',
+                                  id_farmacia=1))
+        s.commit()
+    conv = store.get_conversacion('telegram', 'dom1', nombre='Leo')
+    store.vincular_cliente(conv['id'], 5003)
+    assert store.guardar_domicilio(conv['id'], etiqueta='Casa',
+                                   direccion='Mitre 100', lat=-32.9, lng=-60.6)['ok']
+    doms = store.listar_domicilios_de_cliente(observer_id=5003)
+    assert len(doms) == 1 and doms[0]['direccion'] == 'Mitre 100'
+    assert doms[0]['lat'] == -32.9
+
+
 def test_reenganche_a_mitad_de_flujo():
     import datetime as _dt
 

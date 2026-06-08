@@ -76,6 +76,9 @@
   .btn-prod { background:var(--prod-bg); border-color:var(--prod-bd); color:var(--prod-tx); }
   .btn-clip { background:var(--clip-bg); color:var(--clip-tx); }
   .btn-send { background:var(--send-bg); color:var(--send-tx); }
+  #respuestasRapidas { display:none; }
+  .rr-chip { font-size:11px; padding:3px 9px; border-radius:999px; border:0.5px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.05); color:var(--muted); cursor:pointer; white-space:nowrap; transition:background .15s; }
+  .rr-chip:hover { background:rgba(255,255,255,0.12); color:var(--txt); }
   .search-pop { background:var(--pop); border-color:var(--pop-bd); }
   .sp-head { border-color:var(--cardhead-bd); }
   .sp-row { border-color:var(--row-bd); }
@@ -118,6 +121,7 @@
       <button onclick="abrirModalClientes()" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Clientes</button>
       {% if current_user.rol in ('admin', 'dev') %}
       <button onclick="abrirModalOperadores()" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Operadores</button>
+      <a href="/atencion/respuestas-rapidas" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">⚡ RR</a>
       <a href="{{ url_for('caja_panel') }}" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Caja</a>
       {% endif %}
 
@@ -167,6 +171,7 @@
           <button onclick="toggleTransfer()" class="hbtn hbtn-info" style="font-size:12px; padding:5px 11px; border-radius:8px;">Transferir</button>
           <button onclick="devolverCola()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">A la cola</button>
           <button onclick="cerrarConv()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">Al bot</button>
+          <button onclick="resetTesting()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px; color:#ef4444; border-color:#ef4444;" title="Borrar mensajes, domicilios y vínculo de cliente (solo para testing)">🔄 Reset</button>
         </div>
       </div>
 
@@ -217,9 +222,12 @@
           <div id="prodResultados" style="max-height:280px; overflow-y:auto;"></div>
         </div>
 
+        <!-- Respuestas rápidas (carga dinámica desde DB) -->
+        <div id="respuestasRapidas" style="display:none; padding:6px 12px 4px; gap:5px; flex-wrap:wrap; border-top:0.5px solid rgba(255,255,255,0.06);"></div>
+
         <div style="padding:10px 14px; display:flex; align-items:center; gap:8px;">
           <div class="btn-prod" title="Buscar producto" onclick="toggleBuscador()" style="width:34px; height:34px; border-radius:50%; border:0.5px solid; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;"><i class="ti ti-pill" style="font-size:16px"></i></div>
-          <input id="inputMsg" type="text" placeholder="Escribí un mensaje…" autocomplete="off" onkeydown="if(event.key==='Enter')enviar()" class="input" style="flex:1; border-radius:18px; padding:9px 14px; font-size:13px;">
+          <input id="inputMsg" type="text" placeholder="Escribí un mensaje…" autocomplete="off" onkeydown="if(event.key==='Enter')enviar()" class="input" style="flex:1; border-radius:18px; padding:9px 14px; font-size:13px;" onfocus="mostrarRR(true)" onblur="setTimeout(()=>mostrarRR(false),150)">
           <div class="btn-send" onclick="enviar()" title="Enviar" style="padding:9px 18px; border-radius:18px; display:flex; align-items:center; cursor:pointer; flex-shrink:0; font-size:13px; font-weight:600;">Enviar</div>
         </div>
       </div>
@@ -299,6 +307,8 @@
 <script>
 const YO = {{ current_user.id }};
 let convAbierta = null, convData = null, ultimoMsgId = 0, vista = 'sin_asignar', todasConvs = [];
+let osInferida = null;
+const osPrecioCache = {};
 
 /* ── Tema (claro/oscuro) ── */
 (function(){
@@ -405,6 +415,7 @@ function renderBandeja() {
         <span class="muted" style="font-size:11px;">${esc(c.linea)} ${asign}</span>
         ${badge}
       </div>
+      ${c.supervisado ? '<div style="font-size:9px; color:#f59e0b; margin-top:3px;">📢 supervisor avisado</div>' : ''}
     </div>`;
   }).join('');
 }
@@ -453,6 +464,27 @@ function pintarHeader() {
 function burbuja(m) {
   const div = document.createElement('div');
   if (m.origen === 'sistema') {
+    // OFERTA| → card verde con botón Ofrecer
+    if (m.texto && m.texto.startsWith('OFERTA|')) {
+      try {
+        const o = JSON.parse(m.texto.slice(7));
+        const tipoTxt = o.tipo === 'descuento_pct' ? o.valor + '% descuento' : '2×1';
+        div.style.alignSelf = 'center';
+        div.style.maxWidth = '85%';
+        div.style.margin = '4px 0';
+        div.innerHTML = `<div style="background:var(--tagg-bg); border:1px solid var(--accent); border-radius:10px; padding:10px 14px; font-size:12px; color:var(--tagg-tx);">
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+            <span style="font-size:16px;">🎯</span>
+            <span class="title" style="font-size:12px;">Oferta activa</span>
+          </div>
+          <div style="margin-bottom:6px;">${esc(o.descripcion)} — <b>${esc(tipoTxt)}</b></div>
+          <button onclick="event.stopPropagation(); ofrecerOferta(this)"
+                  data-oid="${o.id}" data-desc="${esc(o.descripcion)}" data-tipo="${esc(o.tipo)}" data-valor="${o.valor||0}"
+                  class="hbtn hbtn-ok" style="font-size:11px; padding:4px 11px;">📩 Ofrecer</button>
+        </div>`;
+        return div;
+      } catch(e) {}
+    }
     div.style.alignSelf = 'center';
     div.innerHTML = `<div class="daypill" style="font-size:10px; padding:3px 12px; border-radius:10px;">${esc(m.texto)}</div>`;
     return div;
@@ -506,17 +538,56 @@ async function confirmarTransfer() {
   document.getElementById('notaTransfer').value = '';
   toggleTransfer(); await refrescarChat(true); cargarBandeja();
 }
+function mostrarRR(show) {
+  if (!convAbierta) return;
+  document.getElementById('respuestasRapidas').style.display = show ? 'flex' : 'none';
+}
+
+/* ── Respuestas rápidas (carga dinámica desde DB) ── */
+let rr = [];
+async function cargarRR() {
+  try {
+    const d = await (await fetch('/atencion/api/respuestas-rapidas')).json();
+    rr = d.respuestas || [];
+    renderRR();
+  } catch(e) { console.error('cargarRR', e); }
+}
+function renderRR() {
+  document.getElementById('respuestasRapidas').innerHTML =
+    rr.map(r => `<button class="rr-chip" onclick="enviarRapido('${r.texto.replace(/'/g, "\\'")}')">${r.emoji || ''} ${r.etiqueta}</button>`).join('');
+  document.getElementById('respuestasRapidas').style.display = 'none';
+}
+function enviarRapido(texto) {
+  const inp = document.getElementById('inputMsg');
+  inp.value = texto;
+  inp.focus();
+  inp.setSelectionRange(texto.length, texto.length);
+  mostrarRR(true);
+}
 async function enviar() {
   const inp = document.getElementById('inputMsg');
   const texto = inp.value.trim();
   if (!texto || !convAbierta) return;
   inp.value = '';
+  mostrarRR(false);
   const d = await (await fetch(`/atencion/${convAbierta}/responder`, {
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto})
   })).json();
   if (!d.enviado) alert('⚠️ El mensaje se guardó pero no se pudo enviar al canal (revisá el token del bot).');
   await refrescarChat(false); cargarBandeja();
 }
+async function resetTesting() {
+  if (!convAbierta) return;
+  if (!confirm('⚠️ Borrar TODOS los mensajes, domicilios y vínculo de cliente de esta conversación?\nUsá solo para testing.')) return;
+  const r = await fetch(`/atencion/${convAbierta}/reset-testing`, {method: 'POST'});
+  const d = await r.json();
+  if (!d.ok) { alert('Error: ' + (d.error || '?')); return; }
+  fichaData = null;
+  document.getElementById('chat').innerHTML = '<div class="muted" style="text-align:center; margin-top:40px; font-size:13px;">🔄 Conversación reseteada para testing</div>';
+  renderFicha();
+  cargarBandeja();
+}
+
 async function cerrarConv() {
   if (!convAbierta) return;
   await fetch(`/atencion/${convAbierta}/cerrar`, {method: 'POST'});
@@ -534,9 +605,15 @@ async function cerrarConv() {
 /* ── Ficha del cliente ── */
 let fichaData = null;
 async function cargarFicha() {
-  if (!convAbierta) { fichaData = null; return; }
+  if (!convAbierta) { fichaData = null; osInferida = null; return; }
   const r = await fetch(`/atencion/api/${convAbierta}/cliente`);
   fichaData = r.ok ? await r.json() : null;
+  osInferida = null;
+  const f = fichaData && fichaData.ficha;
+  if (f && f.observer_id) {
+    const osr = await (await fetch(`/atencion/api/clientes/${f.observer_id}/obra-social`)).json();
+    if (osr && osr.tiene_os) osInferida = osr;
+  }
   renderFicha();
 }
 const INP = 'input';
@@ -576,6 +653,27 @@ function renderFicha() {
     : '<span class="tag-green" style="font-size:9px; padding:2px 7px; border-radius:8px;">ObServer</span>';
   const fila = (ic, lab, val) => val ? `
     <div><div class="muted" style="margin-bottom:2px;"><i class="ti ti-${ic}" style="font-size:12px; vertical-align:-1px; margin-right:5px"></i>${lab}</div><div class="txt">${esc(val)}</div></div>` : '';
+  const osLabel = osInferida && osInferida.confirmada ? 'Obra social ✓' : 'Obra social inferida';
+  const osConf  = osInferida && osInferida.confirmada
+    ? `<span style="color:#4ade80; font-size:9px;">Confirmada por ${esc(osInferida.confirmado_por||'operador')}</span>`
+    : (osInferida && osInferida.confianza_pct != null
+        ? `<span class="muted2" style="font-size:9px;">Confianza: ${osInferida.confianza_pct}%${osInferida.confianza_pct < 50 ? ' ⚠️' : ''}</span>`
+        : '');
+
+  const osHtml = osInferida && osInferida.tiene_os
+    ? `<div class="bt" style="margin-top:10px; padding-top:10px; border-top:0.5px solid;">
+         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
+           <div class="muted" style="font-size:10px;">${osLabel}</div>
+           <button onclick="abrirEditarOS()" class="hbtn" style="font-size:10px; padding:2px 7px;">✏️</button>
+         </div>
+         <div class="title" style="font-size:12px;" id="os-nombre-display">${esc(osInferida.obra_social_nombre)}</div>
+         <div style="margin-top:2px;">${osConf}</div>
+         <div class="muted" style="font-size:9px; margin-top:4px;">Al buscar productos se mostrará el precio estimado con esta OS</div>
+       </div>`
+    : `<div class="bt" style="margin-top:10px; padding-top:10px; border-top:0.5px solid;">
+         <div class="muted" style="font-size:10px; margin-bottom:4px;">Obra social</div>
+         <button onclick="abrirEditarOS()" class="hbtn" style="font-size:10px; padding:3px 10px;">+ Asignar OS</button>
+       </div>`;
   p.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:14px;">
       <div style="width:48px; height:48px; border-radius:50%; background:#185FA5; color:#E6F1FB; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:600; margin-bottom:8px;">${esc(ini)}</div>
@@ -595,7 +693,8 @@ function renderFicha() {
         <button onclick="desvincularCliente()" class="hbtn" style="border-radius:8px; padding:5px 11px; font-size:11px;">Desvincular</button>
       </div>
     </div>
-    <div id="domicilios" style="margin-top:14px;"></div>`;
+    <div id="domicilios" style="margin-top:14px;"></div>
+    ${osHtml}`;
   cargarDomicilios();
 }
 
@@ -776,6 +875,17 @@ async function buscarProductos() {
   const d = await (await fetch('/atencion/api/productos/buscar?q=' + encodeURIComponent(q))).json();
   const ps = d.productos || [];
   cnt.textContent = ps.length ? ps.length + ' resultado' + (ps.length > 1 ? 's' : '') : 'sin resultados';
+  // Cargar precios OS en background si hay OS inferida
+  if (osInferida && osInferida.obra_social_id) {
+    const oid = osInferida.obra_social_id;
+    for (const p of ps) {
+      if (!p.observer_id || osPrecioCache[p.observer_id + '_' + oid] !== undefined) continue;
+      osPrecioCache[p.observer_id + '_' + oid] = null; // placeholder
+      const pr = await fetch(`/atencion/api/precio-os?producto_observer=${p.observer_id}&obra_social=${oid}`).then(r => r.json()).catch(() => null);
+      if (pr && pr.datos) osPrecioCache[p.observer_id + '_' + oid] = pr;
+      else if (!pr) delete osPrecioCache[p.observer_id + '_' + oid]; // permite retry en el próximo search
+    }
+  }
   box.innerHTML = ps.map(rowProducto).join('') ||
     '<div class="muted" style="padding:10px 12px; font-size:11px;">Sin resultados.</div>';
 }
@@ -874,6 +984,14 @@ async function enviarPedido() {
 
 async function confirmarPedidoCaja() {
   if (!pedido.length || !convAbierta) return;
+  // Validar domicilio antes de mandar a caja
+  try {
+    const doms = (await (await fetch(`/atencion/api/${convAbierta}/domicilios`)).json()).domicilios || [];
+    if (!doms.length) {
+      const ok = confirm('⚠️ Este cliente no tiene domicilio cargado.\n¿Querés confirmar el pedido igual?\n(Podés completar el domicilio después desde la planilla de reparto.)');
+      if (!ok) return;
+    }
+  } catch(e) { /* si falla la consulta, no bloqueamos */ }
   const items = pedido.map(it => ({nombre: it.nombre, detalle: it.sub, precio: it.precio, cantidad: it.cant}));
   const d = await (await fetch(`/atencion/${convAbierta}/ticket`, {
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({items})
@@ -884,6 +1002,18 @@ async function confirmarPedidoCaja() {
 }
 
 function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ── Ofrecer oferta al cliente ── */
+async function ofrecerOferta(btn) {
+  if (!convAbierta) return;
+  const d = btn.dataset;
+  const r = await (await fetch('/atencion/' + convAbierta + '/ofrecer', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({oferta_bot_id: +d.oid, descripcion: d.desc, tipo: d.tipo, valor: +d.valor})
+  })).json();
+  if (r.ok) { await refrescarChat(false); cargarBandeja(); }
+  else { alert('No se pudo enviar la oferta.'); }
+}
 
 setVista('sin_asignar');
 cargarBandeja();

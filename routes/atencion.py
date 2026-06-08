@@ -100,6 +100,13 @@ def init_app(app):
         r = store.tomar(conv_id, current_user.id, _nombre_actual())
         if not r['ok'] and r.get('conflicto'):
             return jsonify({'ok': False, 'conflicto': r['conflicto']}), 409
+        # Operador tomó la conv → limpiar alerta "sin tomar"
+        try:
+            from services.informes_bot import resetear_conv
+            with database.get_db() as _s:
+                resetear_conv(_s, conv_id)
+        except Exception:
+            pass
         r['conversacion'] = store.get_conversacion_full(conv_id)
         return jsonify(r)
 
@@ -230,6 +237,14 @@ def init_app(app):
             store.tomar(conv_id, current_user.id, _nombre_actual())
         enviado = canales.enviar(conv['canal'], conv['canal_user_id'], texto)
         store.guardar_mensaje(conv_id, 'operador', texto)
+        # El operador respondió → limpiar informe para que si el cliente vuelve
+        # a quedar sin atención más tarde, se re-notifique al dueño.
+        try:
+            from services.informes_bot import resetear_conv
+            with database.get_db() as _s:
+                resetear_conv(_s, conv_id)
+        except Exception:
+            pass
         return jsonify({'ok': True, 'enviado': enviado})
 
     @app.route('/atencion/<int:conv_id>/cerrar', methods=['POST'])
@@ -237,4 +252,207 @@ def init_app(app):
     def atencion_cerrar(conv_id):
         # Vuelve al bot: la próxima vez que el cliente escriba, lo atiende el bot.
         store.set_atencion(conv_id, 'bot', operador_user_id=None)
+        try:
+            from services.informes_bot import resetear_conv
+            with database.get_db() as _s:
+                resetear_conv(_s, conv_id)
+        except Exception:
+            pass
         return jsonify({'ok': True})
+
+    @app.route('/atencion/<int:conv_id>/reset-testing', methods=['POST'])
+    @login_required
+    def atencion_reset_testing(conv_id):
+        return jsonify(store.reset_conversacion_testing(conv_id))
+
+    # ── Respuestas rápidas ───────────────────────────────────────────────
+
+    @app.route('/atencion/api/respuestas-rapidas')
+    @login_required
+    def atencion_respuestas_rapidas():
+        with database.get_db() as s:
+            rrs = (s.query(database.RespuestaRapida)
+                   .filter(database.RespuestaRapida.activa.is_(True))
+                   .order_by(database.RespuestaRapida.orden).all())
+            return jsonify({'respuestas': [
+                {'id': r.id, 'emoji': r.emoji or '', 'etiqueta': r.etiqueta,
+                 'texto': r.texto, 'orden': r.orden or 0} for r in rrs]})
+
+    @app.route('/atencion/respuestas-rapidas')
+    @login_required
+    def atencion_rr_config():
+        if current_user.rol not in ('admin', 'dev'):
+            return 'Sin permiso', 403
+        with database.get_db() as s:
+            rrs = s.query(database.RespuestaRapida).order_by(
+                database.RespuestaRapida.orden).all()
+            rrs_data = [{'id': r.id, 'emoji': r.emoji or '', 'etiqueta': r.etiqueta,
+                         'texto': r.texto, 'orden': r.orden or 0, 'activa': r.activa}
+                        for r in rrs]
+        return render_template('respuestas_rapidas.html',
+                               respuestas=rrs_data)
+
+    @app.route('/atencion/respuestas-rapidas', methods=['POST'])
+    @login_required
+    def atencion_rr_crear():
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        etiqueta = (b.get('etiqueta') or '').strip()
+        texto = (b.get('texto') or '').strip()
+        if not etiqueta or not texto:
+            return jsonify({'ok': False, 'error': 'falta etiqueta o texto'}), 400
+        with database.get_db() as s:
+            max_ord = s.query(database.RespuestaRapida.orden).order_by(
+                database.RespuestaRapida.orden.desc()).first()
+            orden = (max_ord[0] or 0) + 1
+            rr = database.RespuestaRapida(
+                emoji=(b.get('emoji') or '').strip()[:8] or None,
+                etiqueta=etiqueta[:40], texto=texto, orden=orden, activa=True)
+            s.add(rr)
+            s.commit()
+            return jsonify({'ok': True, 'id': rr.id})
+
+    @app.route('/atencion/respuestas-rapidas/<int:rid>/edit', methods=['POST'])
+    @login_required
+    def atencion_rr_edit(rid):
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        with database.get_db() as s:
+            rr = s.get(database.RespuestaRapida, rid)
+            if not rr:
+                return jsonify({'ok': False, 'error': 'no existe'}), 404
+            if 'emoji' in b: rr.emoji = (b['emoji'] or '').strip()[:8] or None
+            if 'etiqueta' in b: rr.etiqueta = (b['etiqueta'] or '').strip()[:40]
+            if 'texto' in b: rr.texto = (b['texto'] or '').strip()
+            s.commit()
+            return jsonify({'ok': True})
+
+    @app.route('/atencion/respuestas-rapidas/<int:rid>/delete', methods=['POST'])
+    @login_required
+    def atencion_rr_delete(rid):
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        with database.get_db() as s:
+            rr = s.get(database.RespuestaRapida, rid)
+            if rr:
+                s.delete(rr)
+                s.commit()
+            return jsonify({'ok': True})
+
+    @app.route('/atencion/respuestas-rapidas/<int:rid>/toggle', methods=['POST'])
+    @login_required
+    def atencion_rr_toggle(rid):
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        with database.get_db() as s:
+            rr = s.get(database.RespuestaRapida, rid)
+            if rr:
+                rr.activa = not rr.activa
+                s.commit()
+            return jsonify({'ok': True, 'activa': rr.activa})
+
+    @app.route('/atencion/respuestas-rapidas/reorder', methods=['POST'])
+    @login_required
+    def atencion_rr_reorder():
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        items = (request.json or {}).get('items') or []
+        with database.get_db() as s:
+            for it in items:
+                rr = s.get(database.RespuestaRapida, it.get('id'))
+                if rr:
+                    rr.orden = it.get('orden', 0)
+            s.commit()
+            return jsonify({'ok': True})
+
+    # ── Ofrecer oferta al cliente ───────────────────────────────────────
+
+    @app.route('/atencion/<int:conv_id>/ofrecer', methods=['POST'])
+    @login_required
+    def atencion_ofrecer(conv_id):
+        b = request.json or {}
+        oferta_bot_id = b.get('oferta_bot_id')
+        if not oferta_bot_id:
+            return jsonify({'ok': False, 'error': 'falta oferta_bot_id'}), 400
+        desc = b.get('descripcion', '') or 'este producto'
+        tipo = b.get('tipo', 'descuento_pct') or 'descuento_pct'
+        valor = b.get('valor') or 0
+        tipo_txt = f'{valor}% de descuento' if tipo == 'descuento_pct' else '2x1'
+        texto = f'¡Buenas noticias! 🎉 Tenemos {tipo_txt} en {desc}.\n¿Te interesa aprovecharlo? 🙂'
+        conv = store.get_conversacion_full(conv_id)
+        if not conv:
+            return jsonify({'ok': False, 'error': 'no existe'}), 404
+        enviado = canales.enviar(conv['canal'], conv['canal_user_id'], texto)
+        store.guardar_mensaje(conv_id, 'operador', texto)
+        store.registrar_oferta(conv_id, oferta_bot_id, current_user.id)
+        return jsonify({'ok': True, 'enviado': enviado})
+
+    # ── Obra social (inferida + confirmada) ─────────────────────────────
+
+    @app.route('/atencion/api/obras-sociales')
+    @login_required
+    def atencion_obras_sociales_lista():
+        """Lista global de OS con ventas en el último año."""
+        q = """
+            SELECT DISTINCT oos.observer_id, oos.descripcion
+            FROM obs_obras_sociales oos
+            JOIN obs_ventas_detalle ovd ON ovd.obra_social_observer = oos.observer_id
+            WHERE ovd.fecha_estadistica >= NOW() - INTERVAL '12 months'
+            ORDER BY oos.descripcion LIMIT 200
+        """
+        with database.get_db() as s:
+            rows = s.execute(database.text(q)).fetchall()
+        return jsonify([{'observer_id': r[0], 'descripcion': r[1]} for r in rows])
+
+    @app.route('/atencion/api/clientes/<int:observer_id>/obra-social', methods=['GET', 'POST'])
+    @login_required
+    def atencion_os_cliente(observer_id):
+        """GET: devuelve la OS (confirmada o inferida) para un cliente.
+        POST: confirma/limpia OS. Body: {obra_social_observer_id: 123|null}"""
+        from services.os_inferida import clear_os_confirmada, get_os_inferida, set_os_confirmada
+
+        if request.method == 'GET':
+            with database.get_db() as s:
+                os_info = get_os_inferida(s, observer_id)
+            if not os_info:
+                return jsonify({'ok': True, 'tiene_os': False})
+            return jsonify({'ok': True, 'tiene_os': True, **os_info})
+
+        # POST
+        body = request.json or {}
+        os_id = body.get('obra_social_observer_id')
+        with database.get_db() as s:
+            if os_id is None:
+                clear_os_confirmada(s, observer_id)
+                s.commit()
+                os_info = get_os_inferida(s, observer_id)
+                return jsonify({'ok': True, 'os': os_info or {'tiene_os': False}})
+            # Buscar la descripción en obs_obras_sociales
+            row = s.query(database.ObsObraSocial).filter_by(
+                observer_id=os_id).first()
+            nombre = row.descripcion if row else f'OS #{os_id}'
+            usuario = getattr(current_user, 'nombre_completo', None) or current_user.username
+            set_os_confirmada(s, observer_id, os_id, nombre, usuario)
+            s.commit()
+            os_info = get_os_inferida(s, observer_id)
+        return jsonify({'ok': True, 'os': os_info})
+    @app.route('/atencion/api/precio-os')
+    @login_required
+    def atencion_precio_os():
+        """Precio estimado con cobertura de OS para un producto.
+        Query: ?producto_observer=X&obra_social=Y"""
+        try:
+            producto_observer = int(request.args.get('producto_observer', '0'))
+            obra_social = int(request.args.get('obra_social', '0'))
+        except ValueError:
+            return jsonify({'ok': False, 'error': 'parámetros inválidos'}), 400
+        if not producto_observer or not obra_social:
+            return jsonify({'ok': False, 'error': 'faltan parámetros'}), 400
+        from services.os_inferida import get_precio_os
+        with database.get_db() as s:
+            info = get_precio_os(s, producto_observer, obra_social)
+        if not info:
+            return jsonify({'ok': True, 'datos': False})
+        return jsonify({'ok': True, 'datos': True, **info})

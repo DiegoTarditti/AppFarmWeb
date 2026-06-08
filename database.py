@@ -352,6 +352,16 @@ class ObsPlan(Base):
     sync_en           = Column(DateTime, default=now_ar)
 
 
+class ClienteOsConfirmada(Base):
+    """OS confirmada manualmente por un operador. Toma precedencia sobre la inferida."""
+    __tablename__ = 'cliente_os_confirmada'
+    cliente_observer_id = Column(Integer, primary_key=True, autoincrement=False)
+    obra_social_observer_id = Column(Integer, nullable=False)
+    obra_social_nombre = Column(String(150), nullable=False, default='')
+    confirmado_por = Column(String(80), nullable=True)
+    confirmado_en = Column(DateTime, default=now_ar)
+
+
 class ClienteOsInferida(Base):
     """OS principal inferida por cliente — derivada del histórico de ventas.
     DW.Clientes NO expone IdObraSocialPrincipal directamente, así que
@@ -391,17 +401,36 @@ class ObsCliente(Base):
 
 
 class Cliente(Base):
-    """Extensión local editable de ObsCliente (notas, contacto, tags).
-    Se vincula 1:1 por observer_id al cliente de ObServer."""
+    """Tabla ÚNICA de clientes propios (unificación 2026-06-07, Opción A).
+
+    Absorbe la vieja extensión editable de ObServer Y los leads locales:
+    - `observer_id` NOT NULL → cliente vinculado a ObServer (datos maestros en
+      `obs_clientes`, esta fila guarda la capa editable: notas/tags/whatsapp/...).
+    - `observer_id` NULL → lead capturado por el bot/panel que aún no está en
+      ObServer (la identidad vive acá: nombre/apellido/dni/domicilio/telefono).
+    `unique` sobre observer_id permite N filas con NULL (varios leads) y una sola
+    por observer_id. El resto del sistema referencia esta fila por `clientes.id`
+    (un único `cliente_id`), no por el doble id viejo. Ver docs/plan_clientes_unica.md."""
     __tablename__ = 'clientes'
     id = Column(Integer, primary_key=True)
     observer_id = Column(Integer, ForeignKey('obs_clientes.observer_id'),
-                         nullable=False, unique=True, index=True)
+                         nullable=True, unique=True, index=True)  # NULL = lead puro
+    # --- identidad (para leads / override editable; en clientes ObServer puede
+    #     quedar vacío y se lee de obs_clientes) ---
+    nombre = Column(String(80), nullable=True)
+    apellido = Column(String(80), nullable=True)
+    dni = Column(String(20), nullable=True, index=True)
+    domicilio = Column(String(200), nullable=True)
+    telefono = Column(String(35), nullable=True)
+    ciudad = Column(String(120), nullable=True)
+    # --- capa editable ---
     notas = Column(Text, nullable=True)
     tags = Column(String(200), nullable=True)  # comma-separated
     whatsapp = Column(String(30), nullable=True)
     email = Column(String(120), nullable=True)
     fecha_nacimiento = Column(Date, nullable=True)
+    # --- meta ---
+    creado_por = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
     creado_en = Column(DateTime, default=now_ar)
     actualizado_en = Column(DateTime, default=now_ar, onupdate=now_ar)
     obs_cliente = relationship('ObsCliente')
@@ -426,6 +455,45 @@ class ClienteLocal(Base):
     creado_en = Column(DateTime, default=now_ar)
 
 
+def get_or_create_cliente(s, observer_id=None, lead=None, creado_por=None):
+    """Resuelve la fila ÚNICA de `clientes` y devuelve su id (o None).
+
+    - `observer_id`: get-or-create por observer_id (cliente de ObServer).
+    - `lead`: dict de alta {nombre,apellido,dni,domicilio,ciudad,telefono} → crea
+      fila con observer_id NULL (lead). Si además viene observer_id, completa los
+      campos vacíos de la fila con los del lead (no pisa lo ya cargado).
+    Opera DENTRO de la sesión `s`: hace flush, NO commit (commitea el caller).
+    Es el único punto de entrada para vincular algo a un cliente por `cliente_id`."""
+    lead = lead or {}
+    _campos = ('nombre', 'apellido', 'dni', 'domicilio', 'ciudad', 'telefono')
+
+    def _norm(v):
+        return v.strip() if isinstance(v, str) else v
+
+    def _aplicar_lead(c):
+        for k in _campos:
+            v = _norm(lead.get(k))
+            if v and not getattr(c, k, None):
+                setattr(c, k, v)
+
+    if observer_id:
+        c = s.query(Cliente).filter_by(observer_id=observer_id).first()
+        if not c:
+            c = Cliente(observer_id=observer_id, creado_por=creado_por)
+            s.add(c)
+        if lead:
+            _aplicar_lead(c)
+        s.flush()
+        return c.id
+    if any(_norm(lead.get(k)) for k in _campos):   # lead puro (sin observer_id)
+        c = Cliente(observer_id=None, creado_por=creado_por)
+        _aplicar_lead(c)
+        s.add(c)
+        s.flush()
+        return c.id
+    return None
+
+
 class Ciudad(Base):
     """Catálogo de ciudades/localidades para el alta de clientes (dropdown)."""
     __tablename__ = 'ciudades'
@@ -445,8 +513,10 @@ class TicketCaja(Base):
     conversacion_id = Column(Integer, ForeignKey('bot_conversaciones.id', ondelete='SET NULL'),
                              nullable=True, index=True)
     cliente_nombre = Column(String(160), nullable=True)
-    cliente_observer_id = Column(Integer, nullable=True)
-    cliente_local_id = Column(Integer, nullable=True)
+    cliente_id = Column(Integer, ForeignKey('clientes.id', ondelete='SET NULL'),
+                        nullable=True, index=True)   # tabla única de clientes
+    cliente_observer_id = Column(Integer, nullable=True)   # legacy (2a) — se dropea en 2b
+    cliente_local_id = Column(Integer, nullable=True)      # legacy (2a) — se dropea en 2b
     total = Column(DECIMAL(14, 2), nullable=False, default=0)
     # confirmado → cobrado → entregado · anulado
     estado = Column(String(15), nullable=False, default='confirmado', index=True)
@@ -511,10 +581,12 @@ class DomicilioCliente(Base):
     vinculada, o de la conversación si no. lat/lng del pin o del geocode."""
     __tablename__ = 'domicilios_cliente'
     id = Column(Integer, primary_key=True)
-    cliente_observer_id = Column(Integer, index=True, nullable=True)   # sin FK (obs es espejo)
+    cliente_id = Column(Integer, ForeignKey('clientes.id', ondelete='CASCADE'),
+                        index=True, nullable=True)   # tabla única de clientes
+    cliente_observer_id = Column(Integer, index=True, nullable=True)   # legacy (2a)
     cliente_local_id = Column(Integer,
                               ForeignKey('clientes_locales.id', ondelete='CASCADE'),
-                              index=True, nullable=True)
+                              index=True, nullable=True)   # legacy (2a)
     conversacion_id = Column(Integer,
                              ForeignKey('bot_conversaciones.id', ondelete='CASCADE'),
                              index=True, nullable=True)
@@ -550,6 +622,7 @@ class Cadete(Base):
     telefono = Column(String(35), nullable=True)
     tarifa_dia = Column(DECIMAL(12, 2), nullable=True)   # jornada (para pagos)
     activo = Column(Boolean, nullable=False, default=True)
+    token = Column(String(12), nullable=True, unique=True, index=True)  # link móvil
     creado_en = Column(DateTime, default=now_ar)
 
 
@@ -577,8 +650,10 @@ class PedidoReparto(Base):
     __tablename__ = 'pedidos_reparto'
     id = Column(Integer, primary_key=True)
     fecha = Column(Date, default=lambda: now_ar().date(), index=True)
-    cliente_observer_id = Column(Integer, nullable=True)
-    cliente_local_id = Column(Integer, nullable=True)
+    cliente_id = Column(Integer, ForeignKey('clientes.id', ondelete='SET NULL'),
+                        nullable=True, index=True)   # tabla única de clientes
+    cliente_observer_id = Column(Integer, nullable=True)   # legacy (2a) — se dropea en 2b
+    cliente_local_id = Column(Integer, nullable=True)      # legacy (2a) — se dropea en 2b
     cliente_nombre = Column(String(160))
     direccion = Column(String(200))
     lat = Column(Float, nullable=True)
@@ -2483,13 +2558,18 @@ class BotConversacion(Base):
     operador_user_id = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
     # Vinculación con la ficha del cliente (ObServer). Se autocompleta por teléfono
     # en WhatsApp; en Telegram queda NULL hasta que el operador la vincule a mano.
+    cliente_id = Column(Integer, ForeignKey('clientes.id', ondelete='SET NULL'),
+                        nullable=True, index=True)   # tabla única de clientes
     cliente_observer_id = Column(Integer, ForeignKey('obs_clientes.observer_id'),
-                                 nullable=True, index=True)
+                                 nullable=True, index=True)   # legacy (2a)
     # Alternativa: cliente capturado localmente (lead) que aún no está en ObServer.
     cliente_local_id = Column(Integer, ForeignKey('clientes_locales.id'),
-                              nullable=True, index=True)
+                              nullable=True, index=True)   # legacy (2a)
+    cliente = relationship('Cliente', foreign_keys=[cliente_id])
     nodo = Column(String(50), default='inicio')      # estado del flujo conversacional
     esperando = Column(String(50))                   # acción esperando input del usuario
+    tiene_encargo = Column(Boolean, default=False, nullable=False,
+                           server_default='false')   # hay un pedido concreto esperando
     creado_en = Column(DateTime, default=now_ar)
     ultimo_en = Column(DateTime, default=now_ar, index=True)
 
@@ -2505,6 +2585,56 @@ class BotMensaje(Base):
     texto = Column(Text)
     tiene_imagen = Column(Boolean, nullable=False, default=False)
     creado_en = Column(DateTime, default=now_ar, index=True)
+
+
+class OfertaBot(Base):
+    """Ofertas cargadas manualmente para el bot (descuento % o 2x1)."""
+    __tablename__ = 'ofertas_bot'
+    id = Column(Integer, primary_key=True)
+    observer_id = Column(Integer, nullable=False, index=True)
+    descripcion = Column(String(200), nullable=False)
+    tipo = Column(String(20), nullable=False)   # 'descuento_pct' | '2x1'
+    valor = Column(DECIMAL(6, 2), nullable=True)  # % si descuento, null si 2x1
+    activo = Column(Boolean, default=True, nullable=False)
+    creado_en = Column(DateTime, default=now_ar)
+
+
+class OfertaRegistro(Base):
+    """Registro de cuándo un operador ofreció una oferta al cliente."""
+    __tablename__ = 'ofertas_registro'
+    id = Column(Integer, primary_key=True)
+    conversacion_id = Column(Integer, ForeignKey('bot_conversaciones.id', ondelete='CASCADE'),
+                             nullable=False, index=True)
+    oferta_bot_id = Column(Integer, ForeignKey('ofertas_bot.id', ondelete='CASCADE'),
+                           nullable=False, index=True)
+    mensaje_enviado = Column(Boolean, default=True, nullable=False)
+    enviado_por = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
+    enviado_en = Column(DateTime, default=now_ar)
+
+
+class RespuestaRapida(Base):
+    """Botones de respuesta rápida configurables para el panel de atención."""
+    __tablename__ = 'respuestas_rapidas'
+    id = Column(Integer, primary_key=True)
+    emoji = Column(String(8), nullable=True)
+    etiqueta = Column(String(40), nullable=False)
+    texto = Column(Text, nullable=False)
+    orden = Column(Integer, default=0)
+    activa = Column(Boolean, default=True, nullable=False)
+
+
+class InformeEnviado(Base):
+    """Registro anti-spam de informes proactivos enviados por Telegram.
+    Evita renotificar la misma conversación hasta que avance (operador responde
+    o conv se cierra)."""
+    __tablename__ = 'informe_enviado'
+    id               = Column(Integer, primary_key=True)
+    tipo             = Column(String(40), nullable=False)
+    conversacion_id  = Column(Integer, nullable=False, index=True)
+    enviado_en       = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        UniqueConstraint('tipo', 'conversacion_id', name='uq_informe_conv'),
+    )
 
 
 class BotInteraccion(Base):
@@ -2559,7 +2689,7 @@ def init_db(database_url=None):
                         'laboratorio_drogueria',
                         'pedido_emitido', 'pedido_emitido_item',
                         'equivalencias_proveedor',
-                        'pack_equivalencias', 'cliente_os_inferida',
+                        'pack_equivalencias', 'cliente_os_inferida', 'cliente_os_confirmada',
                         'panel_comandos', 'farmacias', 'usuario_farmacias',
                         'alarmas_notificadas', 'sync_lock',
                         'productos_pendientes_revision',
@@ -2586,7 +2716,8 @@ def init_db(database_url=None):
                         'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago',
                         'envio_tramos', 'envio_zonas', 'envio_config',
                         'domicilios_cliente', 'rutas_reparto', 'pedidos_reparto',
-                        'cadetes')
+                        'cadetes', 'ofertas_bot', 'ofertas_registro',
+                        'respuestas_rapidas', 'informe_enviado')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -4340,6 +4471,8 @@ def _pg_add_columns(conn):
         # Bot: vinculación de la conversación con la ficha del cliente (ObsCliente).
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS cliente_observer_id INTEGER",
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS cliente_local_id INTEGER",
+        # Flag de encargo pendiente (producto encargado por el bot, visible en bandeja).
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS tiene_encargo BOOLEAN NOT NULL DEFAULT FALSE",
         # Presencia de agentes en el panel de atención.
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_presencia VARCHAR(12) NOT NULL DEFAULT 'online'",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",
@@ -4365,6 +4498,180 @@ def _pg_add_columns(conn):
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_cadete ON pedidos_reparto(cadete_id)",
     ]:
         conn.execute(text(stmt))
+    # Token para link móvil del cadete (vista de reparto sin login)
+    conn.execute(text(
+        "ALTER TABLE cadetes ADD COLUMN IF NOT EXISTS token VARCHAR(12)"
+    ))
+    conn.execute(text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_cadetes_token ON cadetes(token)"
+    ))
+
+    # ── Unificación de clientes en tabla única — Fase 2a ADITIVA (2026-06-07) ──
+    # Ver docs/plan_clientes_unica.md. SOLO agrega columnas + backfill idempotente;
+    # NO dropea nada (los DROP de columnas viejas + clientes_locales van en 2b, commit
+    # aparte). Seguro de correr en cada boot (Badia, sin Alembic, se migra acá).
+    for stmt in [
+        "ALTER TABLE clientes ALTER COLUMN observer_id DROP NOT NULL",
+        "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS nombre VARCHAR(80)",
+        "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS apellido VARCHAR(80)",
+        "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS dni VARCHAR(20)",
+        "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS domicilio VARCHAR(200)",
+        "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS telefono VARCHAR(35)",
+        "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS ciudad VARCHAR(120)",
+        "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS creado_por INTEGER",
+        # mapa lead→cliente para backfill idempotente (se dropea en 2b)
+        "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS legacy_local_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_clientes_dni ON clientes(dni)",
+    ]:
+        conn.execute(text(stmt))
+    # cliente_id (FK clientes.id) en las 4 tablas referenciantes.
+    for _t, _od in [('bot_conversaciones', 'SET NULL'), ('tickets_caja', 'SET NULL'),
+                    ('pedidos_reparto', 'SET NULL'), ('domicilios_cliente', 'CASCADE')]:
+        conn.execute(text(
+            f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS cliente_id INTEGER "
+            f"REFERENCES clientes(id) ON DELETE {_od}"))
+        conn.execute(text(
+            f"CREATE INDEX IF NOT EXISTS idx_{_t}_cliente ON {_t}(cliente_id)"))
+    # Backfill idempotente (clientes_locales todavía existe en 2a).
+    # 1. Marcar el lead que corresponde a una fila clientes ya existente (por observer_id).
+    conn.execute(text("""
+        UPDATE clientes c SET legacy_local_id = cl.id
+          FROM clientes_locales cl
+         WHERE cl.observer_id IS NOT NULL AND c.observer_id = cl.observer_id
+           AND c.legacy_local_id IS NULL
+    """))
+    # 2. Completar campos vacíos de esa fila con los del lead (no pisa lo cargado).
+    conn.execute(text("""
+        UPDATE clientes c SET
+            nombre = COALESCE(c.nombre, cl.nombre),
+            apellido = COALESCE(c.apellido, cl.apellido),
+            dni = COALESCE(c.dni, cl.dni),
+            domicilio = COALESCE(c.domicilio, cl.domicilio),
+            telefono = COALESCE(c.telefono, cl.telefono),
+            ciudad = COALESCE(c.ciudad, cl.ciudad),
+            notas = COALESCE(c.notas, cl.notas),
+            creado_por = COALESCE(c.creado_por, cl.creado_por)
+          FROM clientes_locales cl
+         WHERE c.legacy_local_id = cl.id
+    """))
+    # 3. Insertar leads que todavía no tienen fila clientes (idempotente por legacy_local_id;
+    #    evita colisión de UNIQUE(observer_id) si el observer ya tiene fila).
+    conn.execute(text("""
+        INSERT INTO clientes (observer_id, nombre, apellido, dni, domicilio, telefono,
+                              ciudad, notas, creado_por, creado_en, legacy_local_id)
+        SELECT cl.observer_id, cl.nombre, cl.apellido, cl.dni, cl.domicilio, cl.telefono,
+               cl.ciudad, cl.notas, cl.creado_por, cl.creado_en, cl.id
+          FROM clientes_locales cl
+         WHERE NOT EXISTS (SELECT 1 FROM clientes c WHERE c.legacy_local_id = cl.id)
+           AND (cl.observer_id IS NULL
+                OR NOT EXISTS (SELECT 1 FROM clientes c2 WHERE c2.observer_id = cl.observer_id))
+    """))
+    # 4. Crear fila clientes faltante por cada observer_id referenciado en las 4 tablas.
+    for _t in ('bot_conversaciones', 'tickets_caja', 'pedidos_reparto', 'domicilios_cliente'):
+        conn.execute(text(f"""
+            INSERT INTO clientes (observer_id)
+            SELECT DISTINCT t.cliente_observer_id FROM {_t} t
+             WHERE t.cliente_observer_id IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM clientes c WHERE c.observer_id = t.cliente_observer_id)
+        """))
+    # 5. Backfill cliente_id (por observer_id y por local_id vía legacy_local_id).
+    for _t in ('bot_conversaciones', 'tickets_caja', 'pedidos_reparto', 'domicilios_cliente'):
+        conn.execute(text(f"""
+            UPDATE {_t} t SET cliente_id = c.id FROM clientes c
+             WHERE t.cliente_id IS NULL AND t.cliente_observer_id IS NOT NULL
+               AND c.observer_id = t.cliente_observer_id
+        """))
+        conn.execute(text(f"""
+            UPDATE {_t} t SET cliente_id = c.id FROM clientes c
+             WHERE t.cliente_id IS NULL AND t.cliente_local_id IS NOT NULL
+               AND c.legacy_local_id = t.cliente_local_id
+        """))
+
+    # OS confirmada manualmente por el operador (toma precedencia sobre la inferida)
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS cliente_os_confirmada (
+            cliente_observer_id     INTEGER PRIMARY KEY,
+            obra_social_observer_id INTEGER NOT NULL,
+            obra_social_nombre      VARCHAR(150) NOT NULL DEFAULT '',
+            confirmado_por          VARCHAR(80),
+            confirmado_en           TIMESTAMP DEFAULT NOW()
+        )
+    """))
+
+    # Ofertas para el bot (descuento % o 2x1) — debe crearse ANTES de ofertas_registro (FK)
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ofertas_bot (
+            id          SERIAL PRIMARY KEY,
+            observer_id INTEGER      NOT NULL,
+            descripcion VARCHAR(200) NOT NULL,
+            tipo        VARCHAR(20)  NOT NULL,
+            valor       DECIMAL(6,2),
+            activo      BOOLEAN      NOT NULL DEFAULT TRUE,
+            creado_en   TIMESTAMP    DEFAULT NOW()
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_ofertas_bot_observer ON ofertas_bot(observer_id)"))
+
+    # Registro de ofertas ofrecidas (Fase 2: integración bot) — REFERENCES ofertas_bot, va después
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ofertas_registro (
+            id               SERIAL PRIMARY KEY,
+            conversacion_id  INTEGER NOT NULL REFERENCES bot_conversaciones(id) ON DELETE CASCADE,
+            oferta_bot_id    INTEGER NOT NULL REFERENCES ofertas_bot(id) ON DELETE CASCADE,
+            mensaje_enviado  BOOLEAN NOT NULL DEFAULT TRUE,
+            enviado_por      INTEGER REFERENCES usuarios(id),
+            enviado_en       TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_ofertas_registro_conv ON ofertas_registro(conversacion_id)"))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_ofertas_registro_oferta ON ofertas_registro(oferta_bot_id)"))
+
+    # Respuestas rápidas configurables (panel de atención)
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS respuestas_rapidas (
+            id          SERIAL PRIMARY KEY,
+            emoji       VARCHAR(8),
+            etiqueta    VARCHAR(40)  NOT NULL,
+            texto       TEXT         NOT NULL,
+            orden       INTEGER      DEFAULT 0,
+            activa      BOOLEAN      NOT NULL DEFAULT TRUE
+        )
+    """))
+    # Seed idempotente con los 8 chips que ya existían hardcodeados
+    _seed_rr = [
+        ('📍', 'Domicilio', '¿Me confirmás la dirección para el envío? 📍'),
+        ('💊', 'Producto', '¿Me confirmás qué producto necesitás y la cantidad?'),
+        ('🏥', 'Obra social', '¿Tenés obra social? ¿Cuál?'),
+        ('✅', 'Confirmado', '¡Perfecto! En unos minutos te confirmamos precio y disponibilidad 🙂'),
+        ('🛵', '¿Envío o retiro?', '¿Querés que te lo enviemos a domicilio o pasás a buscarlo?'),
+        ('📋', 'Receta', '¿Tenés receta médica? 📋'),
+        ('⏳', 'Demora', 'Disculpá la demora, te atendemos en un momento 🙏'),
+        ('👤', 'Nombre', '¿Cuál es tu nombre completo?'),
+    ]
+    count_rr = conn.execute(text("SELECT COUNT(*) FROM respuestas_rapidas")).scalar() or 0
+    if count_rr == 0:
+        for _i, (_emoji, _etq, _txt) in enumerate(_seed_rr):
+            conn.execute(text(
+                "INSERT INTO respuestas_rapidas (emoji, etiqueta, texto, orden, activa) "
+                "VALUES (:e, :et, :tx, :o, true)"
+            ), {'e': _emoji, 'et': _etq, 'tx': _txt, 'o': _i + 1})
+
+    # Registro anti-spam de informes proactivos (Telegram → dueño)
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS informe_enviado (
+            id              SERIAL PRIMARY KEY,
+            tipo            VARCHAR(40) NOT NULL,
+            conversacion_id INTEGER NOT NULL,
+            enviado_en      TIMESTAMP,
+            CONSTRAINT uq_informe_conv UNIQUE (tipo, conversacion_id)
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_informe_conv ON informe_enviado(conversacion_id)"))
+
     # Índices para queries frecuentes
     for stmt in [
         "CREATE INDEX IF NOT EXISTS idx_factura_items_factura ON factura_items(factura_id)",
