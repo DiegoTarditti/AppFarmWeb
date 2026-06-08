@@ -89,11 +89,31 @@ def _enviar(base, chat_id, resp):
         print('sendMessage error:', e)
 
 
+def _esperar_db_lista(intentos=40, espera=2):
+    """Espera a que `web` termine init_db (migraciones) antes de pollear. Evita el
+    race de arranque (bot levanta junto a web) que escupía 'columna no existe' en
+    los logs. Chequea el modelo completo: si falta alguna columna, reintenta."""
+    for i in range(intentos):
+        try:
+            with database.get_db() as s:
+                s.query(database.BotConversacion).first()
+            if i:
+                print('DB lista.')
+            return True
+        except Exception:  # noqa: BLE001
+            if i == 0:
+                print('Esperando a que la DB esté lista (migraciones de web)…')
+            time.sleep(espera)
+    print('Timeout esperando la DB; arranco igual (puede haber errores iniciales).')
+    return False
+
+
 def main():
     token = (os.environ.get('TELEGRAM_BOT_TOKEN') or '').strip()
     if not token:
         raise SystemExit('Falta TELEGRAM_BOT_TOKEN. Pedíselo a @BotFather y pasalo por env.')
     database.init_engine(os.environ.get('DATABASE_URL', 'sqlite:///farmacia.db'))
+    _esperar_db_lista()
     base = f'https://api.telegram.org/bot{token}'
 
     # Limpia el webhook por si quedó seteado (no se puede polling con webhook activo).
