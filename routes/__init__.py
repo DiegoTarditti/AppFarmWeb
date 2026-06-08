@@ -3,7 +3,6 @@
 from routes import (
     admin,
     atencion,
-    panel,
     auth_routes,
     batch,
     bi,
@@ -49,6 +48,7 @@ from routes import (
     observer_sync,
     ofertas_bot,
     ofertas_import,
+    panel,
     partners,
     pedido_prueba,
     pedidos_log,
