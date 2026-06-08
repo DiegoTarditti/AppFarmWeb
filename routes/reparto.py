@@ -291,7 +291,77 @@ def init_app(app):
     def reparto_buscar_cliente():
         if not _ok():
             return jsonify({'error': 'sin permiso'}), 403
-        return jsonify({'clientes': store.buscar_clientes(request.args.get('q', ''))})
+        return jsonify({'clientes': store.buscar_clientes_unificado(
+            request.args.get('q', ''), limite=12)})
+
+    @app.route('/reparto/api/cliente')
+    @login_required
+    def reparto_ficha_cliente():
+        """Devuelve la ficha de un cliente para precarga del form.
+        Acepta ?cliente_id= o ?observer_id= (resuelve con get_or_create)."""
+        if not _ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        cliente_id = request.args.get('cliente_id', type=int)
+        observer_id = request.args.get('observer_id', type=int)
+        if not cliente_id and not observer_id:
+            return jsonify({'error': 'falta cliente_id o observer_id'}), 400
+        with database.get_db() as s:
+            if not cliente_id and observer_id:
+                cliente_id = database.get_or_create_cliente(
+                    s, observer_id=observer_id, creado_por=current_user.id)
+                s.commit()
+            ficha = store._ficha_de_cliente(s, cliente_id)
+            if ficha:
+                ficha['domicilios'] = store.listar_domicilios_de_cliente(
+                    cliente_id=cliente_id)
+                # ── raw fields for editing (avoids merged-dict corruption) ──
+                c = s.get(database.Cliente, cliente_id)
+                if c:
+                    ficha['raw'] = {
+                        'nombre': c.nombre or '', 'apellido': c.apellido or '',
+                        'dni': c.dni or '', 'telefono': c.telefono or '',
+                        'domicilio': c.domicilio or '', 'ciudad': c.ciudad or '',
+                    }
+            return jsonify(ficha or {'error': 'no encontrado'}), 200 if ficha else 404
+
+    @app.route('/reparto/cliente', methods=['POST'])
+    @login_required
+    def reparto_crear_cliente():
+        """Alta de un cliente nuevo (lead puro, sin ObServer)."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        lead = {}
+        for k in ('nombre', 'apellido', 'dni', 'telefono', 'domicilio', 'ciudad'):
+            v = (b.get(k) or '').strip()
+            if v:
+                lead[k] = v
+        if not lead:
+            return jsonify({'ok': False, 'error': 'sin datos'}), 400
+        with database.get_db() as s:
+            cid = database.get_or_create_cliente(
+                s, lead=lead, creado_por=current_user.id)
+            s.commit()
+        return jsonify({'ok': True, 'cliente_id': cid})
+
+    @app.route('/reparto/cliente/<int:cid>', methods=['POST'])
+    @login_required
+    def reparto_editar_cliente(cid):
+        """Edita campos de la fila Clientes (NUNCA obs_clientes)."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        with database.get_db() as s:
+            c = s.get(database.Cliente, cid)
+            if not c:
+                return jsonify({'ok': False, 'error': 'no existe'}), 404
+            for k in ('nombre', 'apellido', 'dni', 'telefono', 'domicilio',
+                       'ciudad', 'notas'):
+                if k in b:
+                    setattr(c, k, (b[k] or '').strip() or None)
+            c.actualizado_en = database.now_ar()
+            s.commit()
+        return jsonify({'ok': True})
 
     @app.route('/reparto/api/<int:oid>/domicilios')
     @login_required
@@ -326,11 +396,14 @@ def init_app(app):
                 pass
         with database.get_db() as s:
             ruta = reparto.ruta_para_punto(s, lat, lng)   # zona (polígono) → sino cuadrante
+            _cid = b.get('cliente_id')
             _oid = b.get('observer_id')
+            # Si viene cliente_id directo, usarlo; si solo observer_id, resolver
+            if not _cid and _oid:
+                _cid = database.get_or_create_cliente(s, observer_id=_oid)
             p = database.PedidoReparto(
                 fecha=database.now_ar().date(),
-                cliente_id=(database.get_or_create_cliente(s, observer_id=_oid)
-                            if _oid else None),
+                cliente_id=_cid,
                 cliente_nombre=(b.get('cliente_nombre') or '').strip() or None,
                 direccion=direccion or None, lat=lat, lng=lng,
                 nota=(b.get('nota') or '').strip() or None,

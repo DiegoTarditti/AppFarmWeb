@@ -325,3 +325,103 @@ def test_api_incluye_cadete_efectivo_en_pedido(client):
     p = data['pedidos'][0]
     assert 'cadete_efectivo_id' in p
     assert p['cadete_efectivo_id'] == cid, f'esperado {cid} got {p["cadete_efectivo_id"]}'
+
+
+# ── Clientes en /reparto (2026-06-08) ────────────────────────────────────────
+
+def test_buscar_clientes_unificado_obs_only():
+    """Solo resultados de ObServer cuando no hay clientes locales."""
+    import database
+    with database.get_db() as s:
+        oc = database.ObsCliente(observer_id=90001, apellido_nombre='Pérez Juan',
+                                  documento_numero='30123456', telefono='341-555',
+                                  id_farmacia=10525)
+        s.add(oc)
+        s.commit()
+    resultados = store.buscar_clientes_unificado('pérez juan')
+    assert len(resultados) == 1
+    assert resultados[0]['observer_id'] == 90001
+    assert 'Pérez' in resultados[0]['nombre']
+
+
+def test_buscar_clientes_unificado_local_only():
+    """Solo clientes locales cuando no hay ObsCliente."""
+    import database
+    with database.get_db() as s:
+        cid = database.get_or_create_cliente(
+            s, lead={'nombre': 'María', 'apellido': 'López', 'telefono': '341-777'})
+        s.commit()
+    resultados = store.buscar_clientes_unificado('maría lópez')
+    assert len(resultados) >= 1
+    match = next((r for r in resultados if r.get('cliente_id') == cid), None)
+    assert match is not None
+    assert 'López' in match['nombre']
+
+
+def test_buscar_clientes_unificado_mixed_dedup():
+    """Cliente local con observer_id → un solo resultado (no duplica con obs)."""
+    import database
+    with database.get_db() as s:
+        oc = database.ObsCliente(observer_id=90002, apellido_nombre='García Carlos',
+                                  id_farmacia=10525)
+        s.add(oc)
+        cid = database.get_or_create_cliente(
+            s, observer_id=90002,
+            lead={'nombre': 'Carlos', 'apellido': 'García'})
+        s.commit()
+    resultados = store.buscar_clientes_unificado('garcía')
+    obs_matches = [r for r in resultados if r.get('observer_id') == 90002]
+    assert len(obs_matches) == 1, f'esperado 1, got {len(obs_matches)}'
+    assert obs_matches[0]['cliente_id'] == cid  # preferido el local
+
+
+def test_buscar_clientes_unificado_doc_exacto():
+    """Búsqueda por DNI numérico exacto."""
+    import database
+    with database.get_db() as s:
+        cid = database.get_or_create_cliente(
+            s, lead={'nombre': 'Test', 'apellido': 'DNI', 'dni': '40999888'})
+        s.commit()
+    resultados = store.buscar_clientes_unificado('40999888')
+    assert len(resultados) >= 1
+    assert any(r.get('cliente_id') == cid for r in resultados)
+
+
+def test_reparto_crear_pedido_con_cliente(client):
+    """POST /reparto/pedido con cliente_id guarda el vínculo."""
+    import database
+    with database.get_db() as s:
+        cid = database.get_or_create_cliente(
+            s, lead={'nombre': 'Pedro', 'apellido': 'Gómez', 'telefono': '341-123'})
+        s.commit()
+    _set_farmacia()
+    reparto.seed_rutas_si_vacio()
+    r = client.post('/reparto/pedido', json={
+        'cliente_nombre': 'Gómez, Pedro',
+        'cliente_id': cid,
+        'direccion': 'Av. Corrientes 1234',
+    })
+    assert r.status_code == 200 and r.get_json()['ok']
+    pid = r.get_json()['id']
+    with database.get_db() as s:
+        p = s.get(database.PedidoReparto, pid)
+        assert p.cliente_id == cid
+
+
+def test_reparto_editar_cliente(client):
+    """POST /reparto/cliente/<id> actualiza la fila clientes y NO toca obs_clientes."""
+    import database
+    with database.get_db() as s:
+        cid = database.get_or_create_cliente(
+            s, lead={'nombre': 'Ana', 'apellido': 'Martínez', 'telefono': '341-000'})
+        s.commit()
+    r = client.post(f'/reparto/cliente/{cid}', json={
+        'telefono': '341-999',
+        'ciudad': 'Rosario',
+    })
+    assert r.status_code == 200 and r.get_json()['ok']
+    with database.get_db() as s:
+        c = s.get(database.Cliente, cid)
+        assert c.telefono == '341-999'
+        assert c.ciudad == 'Rosario'
+        assert c.nombre == 'Ana'  # no se pisó
