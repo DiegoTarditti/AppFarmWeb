@@ -622,7 +622,7 @@ def init_app(app):
             if p.vuelto:
                 linea_pago.append(f'({p.vuelto})')
             if linea_pago:
-                partes.append(f'💰 ' + ' '.join(linea_pago))
+                partes.append('💰 ' + ' '.join(linea_pago))
             if p.envio_costo is not None:
                 partes.append(f'🛵 Envío: $ {float(p.envio_costo):,.0f}'.replace(',', '.'))
             meta = []
