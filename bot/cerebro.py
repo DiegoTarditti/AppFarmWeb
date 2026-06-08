@@ -11,7 +11,7 @@ import os
 
 from bot import envio, store
 from bot.acciones import ACCIONES, PREFIJO_ELEGIR, seleccionar_producto
-from bot.flujo import get_flujo, NODO_INICIO
+from bot.flujo import NODO_INICIO, get_flujo
 from bot.ia import leer_receta
 
 # Palabras que siempre vuelven al menú principal.

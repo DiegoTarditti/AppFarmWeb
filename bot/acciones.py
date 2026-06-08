@@ -3,9 +3,9 @@
 Cada acción recibe el texto del usuario y devuelve un string (la respuesta).
 La búsqueda vive en `bot.data` (compartida con la IA).
 """
+from bot import store
 from bot.data import buscar_productos
 from bot.ia import consulta_ia
-from bot import store
 
 
 def _fmt_precio(p):

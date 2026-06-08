@@ -103,7 +103,8 @@ SECCIONES = {
 
 def get_flujo():
     """Devuelve el flujo actual, aplicando overrides de flujo_data.json si existe."""
-    import json as _json, os as _os
+    import json as _json
+    import os as _os
     base = dict(_BASE_FLUJO)
     path = _os.path.join(_os.path.dirname(__file__), 'flujo_data.json')
     try:

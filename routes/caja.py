@@ -8,11 +8,11 @@ import csv
 import io
 from datetime import date, datetime, timedelta
 
-from flask import jsonify, render_template, request, Response
+from flask import Response, jsonify, render_template, request
 from flask_login import current_user, login_required
 
-from bot import caja
 import database
+from bot import caja
 
 
 def init_app(app):

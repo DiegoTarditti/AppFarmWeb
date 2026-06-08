@@ -5,6 +5,7 @@ import logging
 import os
 
 import requests
+
 from bot import cerebro, store
 
 log = logging.getLogger(__name__)
@@ -89,8 +90,8 @@ def _enviar(to, resp):
         return
 
     # Decidir formato: reply buttons (≤3 ops, cada una ≤20 chars) o list message
-    _cab = lambda s: s[:20] if len(s) > 20 else s
-    _rows = lambda s: s[:24] if len(s) > 24 else s
+    def _cab(s): return s[:20] if len(s) > 20 else s
+    def _rows(s): return s[:24] if len(s) > 24 else s
 
     if len(opciones) <= 3 and all(len(o) <= 20 for o in opciones):
         buttons = [{'type': 'reply', 'reply': {'id': str(i + 1), 'title': _cab(o)}}

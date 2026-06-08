@@ -411,7 +411,7 @@ def init_app(app):
     def atencion_os_cliente(observer_id):
         """GET: devuelve la OS (confirmada o inferida) para un cliente.
         POST: confirma/limpia OS. Body: {obra_social_observer_id: 123|null}"""
-        from services.os_inferida import get_os_inferida, set_os_confirmada, clear_os_confirmada
+        from services.os_inferida import clear_os_confirmada, get_os_inferida, set_os_confirmada
 
         if request.method == 'GET':
             with database.get_db() as s:
