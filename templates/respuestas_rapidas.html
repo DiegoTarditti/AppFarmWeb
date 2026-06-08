@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Respuestas rápidas · Badia</title>
+<style>
+  :root {
+    --bg:#14141a; --surface:#1a1a22; --card:#16161d; --txt:#e0e0e6; --title:#f0f0f3;
+    --muted:#8a8a92; --border:rgba(255,255,255,0.08); --accent:#1D9E75; --accent-ink:#06241a;
+    --row-bd:rgba(255,255,255,0.05); --hov:#23232d;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--txt); font-family:var(--font); }
+  .topbar { height:54px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:14px; padding:0 18px; }
+  .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .logo .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border); background:var(--hov); color:var(--txt); cursor:pointer; text-decoration:none; }
+  .hbtn-ok { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700; }
+  .hbtn-danger { background:transparent; color:#F09595; border-color:#5a2a2a; font-size:10px; padding:3px 8px; }
+  .input { background:var(--hov); color:var(--txt); border:1px solid var(--border); border-radius:8px; padding:6px 9px; font-size:13px; }
+  .wrap { max-width:820px; margin:0 auto; padding:18px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; color:var(--muted); font-weight:600; padding:7px 6px; border-bottom:1px solid var(--border); }
+  td { padding:6px; border-bottom:1px solid var(--row-bd); }
+  .badge { font-size:10px; padding:2px 8px; border-radius:999px; font-weight:700; background:var(--hov); color:var(--muted); }
+  .muted { color:var(--muted); }
+  a.link { color:#7fb0e0; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo"><span class="dot"></span>⚡ Respuestas rápidas · Badia</div>
+    <div style="flex:1"></div>
+    <a href="/atencion" class="hbtn">← Volver a atención</a>
+  </div>
+  <div class="wrap">
+    <div class="card">
+      <h2 style="margin:0 0 4px; font-size:15px; color:var(--title);">Respuestas rápidas</h2>
+      <div class="muted" style="font-size:11px; margin-bottom:12px;">
+        Estas frases aparecen como chips en el panel de atención. Solo las activas se muestran.
+      </div>
+      <table>
+        <thead><tr><th>Emoji</th><th>Etiqueta</th><th>Texto</th><th>Orden</th><th>Activa</th><th>Acciones</th></tr></thead>
+        <tbody id="tb"></tbody>
+      </table>
+      <div id="formAdd" style="display:none; margin-top:14px; display:flex; gap:6px; flex-wrap:wrap;">
+        <input id="nEmoji" class="input" placeholder="😊" style="width:50px;" maxlength="8">
+        <input id="nEtiqueta" class="input" placeholder="Etiqueta" style="width:140px;" maxlength="40">
+        <input id="nTexto" class="input" placeholder="Texto del mensaje" style="flex:1; min-width:200px;">
+        <button onclick="crearRR()" class="hbtn hbtn-ok">+ Agregar</button>
+        <button onclick="toggleForm()" class="hbtn">Cancelar</button>
+      </div>
+      <button id="btnAdd" onclick="toggleForm()" class="hbtn hbtn-ok" style="margin-top:12px;">+ Nueva respuesta</button>
+    </div>
+  </div>
+
+<script>
+let respuestas = {{ respuestas | tojson }};
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&','<':'<','>':'>','"':'"'}[c])); }
+async function jpost(u,b){ return (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json(); }
+
+async function cargar(){
+  const d = await (await fetch('/atencion/api/respuestas-rapidas')).json();
+  respuestas = d.respuestas || [];
+  renderTabla();
+}
+function renderTabla(){
+  document.getElementById('tb').innerHTML = respuestas.map((r,i) => `
+    <tr>
+      <td>${esc(r.emoji||'')}</td>
+      <td><input class="input" value="${esc(r.etiqueta)}" onchange="editar(${r.id},'etiqueta',this.value)" style="width:130px;"></td>
+      <td><input class="input" value="${esc(r.texto)}" onchange="editar(${r.id},'texto',this.value)" style="width:280px;"></td>
+      <td style="display:flex; gap:3px; align-items:center;">
+        ${i > 0 ? `<button class="hbtn" onclick="mover(${r.id},-1)">↑</button>` : ''}
+        ${i < respuestas.length-1 ? `<button class="hbtn" onclick="mover(${r.id},1)">↓</button>` : ''}
+        <span style="font-size:10px; color:var(--muted);">${i+1}</span>
+      </td>
+      <td><input type="checkbox" ${r.activa!==false?'checked':''} onchange="toggle(${r.id})"></td>
+      <td><button class="hbtn hbtn-danger" onclick="eliminar(${r.id})">Quitar</button></td>
+    </tr>`).join('') || '<tr><td colspan="6" class="muted">Sin respuestas.</td></tr>';
+}
+
+function toggleForm(){ document.getElementById('formAdd').style.display = document.getElementById('formAdd').style.display==='none'?'flex':'none'; }
+async function crearRR(){
+  const et = document.getElementById('nEtiqueta').value.trim();
+  const tx = document.getElementById('nTexto').value.trim();
+  if(!et||!tx){ alert('Etiqueta y texto requeridos'); return; }
+  await jpost('/atencion/respuestas-rapidas', {emoji:document.getElementById('nEmoji').value.trim(), etiqueta:et, texto:tx});
+  document.getElementById('nEmoji').value=''; document.getElementById('nEtiqueta').value=''; document.getElementById('nTexto').value='';
+  cargar();
+}
+async function editar(id, campo, val){
+  await jpost(`/atencion/respuestas-rapidas/${id}/edit`, {[campo]:val});
+}
+async function toggle(id){
+  await jpost(`/atencion/respuestas-rapidas/${id}/toggle`);
+  cargar();
+}
+async function eliminar(id){
+  if(!confirm('¿Eliminar esta respuesta?')) return;
+  await jpost(`/atencion/respuestas-rapidas/${id}/delete`);
+  cargar();
+}
+async function mover(id, delta){
+  const idx = respuestas.findIndex(r=>r.id===id);
+  if(idx<0) return;
+  const items = respuestas.map((r,i) => ({id:r.id, orden: i===idx ? r.orden+delta : (i===idx+delta ? r.orden-delta : r.orden)}));
+  await jpost('/atencion/respuestas-rapidas/reorder', {items});
+  cargar();
+}
+
+renderTabla();
+</script>
+</body>
+</html>

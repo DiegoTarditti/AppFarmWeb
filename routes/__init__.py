@@ -6,6 +6,7 @@ from routes import (
     auth_routes,
     batch,
     bi,
+    bot_config,
     caja,
     claims,
     clientes,
@@ -45,6 +46,7 @@ from routes import (
     obras_sociales_catalogo,
     observer,
     observer_sync,
+    ofertas_bot,
     ofertas_import,
     partners,
     pedido_prueba,
@@ -62,6 +64,7 @@ from routes import (
     tipos_pedido,
     transferencias,
     vademecum,
+    whatsapp,
 )
 from routes import help as help_module
 
@@ -95,6 +98,7 @@ _modules = [
     obras_sociales,
     obras_sociales_catalogo,
     clientes,
+    bot_config,
     compartido,
     compras_dia,
     compras_rapido,
@@ -113,6 +117,7 @@ _modules = [
     productos_pendientes,
     partners,
     plantillas,
+    ofertas_bot,
     ofertas_import,
     help_module,
     inferencia,
@@ -128,6 +133,7 @@ _modules = [
     transferencias,
     sucursales,
     comparativa_ventas,
+    whatsapp,
 ]
 
 

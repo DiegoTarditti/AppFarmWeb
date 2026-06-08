@@ -1,6 +1,7 @@
 """Rutas admin para sincronizar el espejo local con ObServer."""
 import json
 import os
+import threading
 from datetime import datetime, timedelta
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
@@ -447,7 +448,18 @@ def init_app(app):
                  'operadores', 'ventas_detalle']
 
         if entidad == 'todo':
-            ents = orden
+            # Usar _ejecutar_sync en thread background (idéntico al flow del
+            # DockerPanel) para no bloquear el request. El frontend hace polling
+            # a /api/auto-sync/status para mostrar progreso en vivo.
+            if not _sync_lock_acquire():
+                estado = _sync_lock_estado()
+                return jsonify({'ok': False, 'error': 'sync en curso',
+                                 'paso_actual': estado.get('paso_actual')}), 409
+            threading.Thread(
+                target=_ejecutar_sync,
+                args=(app, '', True, False),  # skip_push=True (solo sync local)
+                daemon=True, name='observer-sync-todo').start()
+            return jsonify({'ok': True, 'iniciado': True}), 202
         elif entidad in funcs_por_nombre:
             ents = [entidad]
         else:

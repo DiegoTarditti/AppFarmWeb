@@ -76,17 +76,20 @@ def _ticket_dict(s, t, con_items=True):
     return d
 
 
-def crear_ticket(conv_id, items, operador_id, cliente_nombre=None,
-                 cliente_observer_id=None, cliente_local_id=None):
-    """items: [{nombre, detalle, precio, cantidad}]. Devuelve {ok, id, total}."""
+def crear_ticket(conv_id, items, operador_id, cliente_nombre=None, cliente_id=None):
+    """items: [{nombre, detalle, precio, cantidad}]. Devuelve {ok, id, total}.
+    Si no se pasa cliente_id, se hereda del cliente vinculado a la conversación."""
     items = [it for it in (items or []) if (it.get('nombre') or '').strip()]
     if not items:
         return {'ok': False, 'error': 'pedido vacío'}
     total = 0
     with database.get_db() as s:
+        if cliente_id is None and conv_id:
+            conv = s.get(database.BotConversacion, conv_id)
+            cliente_id = conv.cliente_id if conv else None
         t = database.TicketCaja(
             conversacion_id=conv_id, cliente_nombre=cliente_nombre,
-            cliente_observer_id=cliente_observer_id, cliente_local_id=cliente_local_id,
+            cliente_id=cliente_id,
             estado='confirmado', operador_id=operador_id)
         s.add(t)
         s.flush()
@@ -144,3 +147,53 @@ def anular_ticket(ticket_id):
             t.estado = 'anulado'
             s.commit()
         return {'ok': True}
+
+
+def enviar_a_reparto(ticket_id):
+    """Crea un PedidoReparto a partir de un TicketCaja.
+    Toma cliente, ítems y total del ticket; domicilio de la conversación si existe."""
+    from services import reparto as svc
+    with database.get_db() as s:
+        t = s.get(database.TicketCaja, ticket_id)
+        if not t:
+            return {'ok': False, 'error': 'ticket no existe'}
+        if t.estado == 'anulado':
+            return {'ok': False, 'error': 'ticket anulado'}
+
+        its = (s.query(database.TicketItem).filter_by(ticket_id=ticket_id)
+               .order_by(database.TicketItem.id).all())
+        producto_str = ', '.join(f'{i.cantidad}x {i.nombre}' for i in its)[:200] or None
+
+        # Domicilio: último domicilio guardado en la conversación
+        direccion = localidad = None
+        if t.conversacion_id:
+            dom = (s.query(database.DomicilioCliente)
+                   .filter_by(conversacion_id=t.conversacion_id)
+                   .order_by(database.DomicilioCliente.id.desc())
+                   .first())
+            if dom:
+                direccion = dom.direccion
+                localidad = dom.localidad
+
+        coords = svc.coords_de_pedido(None, direccion, localidad)
+        lat, lng = coords if coords else (None, None)
+        ruta = svc.ruta_para_punto(s, lat, lng)
+
+        p = database.PedidoReparto(
+            fecha=database.now_ar().date(),
+            cliente_id=t.cliente_id,
+            cliente_nombre=t.cliente_nombre,
+            direccion=direccion,
+            lat=lat, lng=lng,
+            cuadrante=svc.cuadrante_de(lat, lng),
+            ruta_id=(ruta.id if ruta else None),
+            prioridad='normal',
+            estado='pendiente',
+            canal='bot',
+            importe=float(t.total) if t.total else None,
+            forma_pago=t.forma_pago,
+            producto=producto_str,
+        )
+        s.add(p)
+        s.commit()
+        return {'ok': True, 'pedido_id': p.id, 'asignado': bool(ruta)}

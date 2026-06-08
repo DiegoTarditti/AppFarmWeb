@@ -14,7 +14,7 @@ Replica el menú de Central Oeste, acotado para el MVP.
 
 NODO_INICIO = 'inicio'
 
-FLUJO = {
+_BASE_FLUJO = {
     'inicio': {
         'tipo': 'menu',
         'mensaje': (
@@ -85,3 +85,34 @@ FLUJO = {
         'mensaje': '¡Dale! Cuando quieras seguir, escribime y te ayudo 🙂',
     },
 }
+
+FLUJO = _BASE_FLUJO
+
+SECCIONES = {
+    'BIENVENIDA': 'inicio',
+    'ENCARGAR': 'encargar',
+    'CONSULTAR_PRODUCTO': 'consultar_producto',
+    'CONSULTA_IA': 'consulta_ia',
+    'RECETA': 'receta',
+    'HORARIOS': 'horarios',
+    'DERIVAR': 'derivar',
+    'REENGANCHE': 'reenganche',
+    'DESPEDIDA': 'despedida',
+}
+
+
+def get_flujo():
+    """Devuelve el flujo actual, aplicando overrides de flujo_data.json si existe."""
+    import json as _json, os as _os
+    base = dict(_BASE_FLUJO)
+    path = _os.path.join(_os.path.dirname(__file__), 'flujo_data.json')
+    try:
+        if _os.path.exists(path):
+            overrides = _json.loads(open(path, encoding='utf-8').read())
+            for nodo_id, mensaje in overrides.items():
+                if nodo_id in base:
+                    base[nodo_id] = dict(base[nodo_id])
+                    base[nodo_id]['mensaje'] = mensaje
+    except Exception:
+        pass
+    return base

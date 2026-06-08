@@ -10,8 +10,8 @@ handoff (panel de operadores): si la conversación la tomó un operador
 import os
 
 from bot import envio, store
-from bot.acciones import ACCIONES
-from bot.flujo import FLUJO, NODO_INICIO
+from bot.acciones import ACCIONES, PREFIJO_ELEGIR, seleccionar_producto
+from bot.flujo import get_flujo, NODO_INICIO
 from bot.ia import leer_receta
 
 # Palabras que siempre vuelven al menú principal.
@@ -48,7 +48,8 @@ def preparar_reenganche(conv_id):
     """Arma el mensaje de re-enganche (¿Seguís ahí? Sí/No), deja la conversación
     en el nodo 'reenganche' (esperando=None → no vuelve a dispararse) y lo guarda.
     Devuelve {texto, opciones} para que el adaptador lo envíe."""
-    nodo = FLUJO['reenganche']
+    flujo = get_flujo()
+    nodo = flujo['reenganche']
     resp = {'texto': nodo['mensaje'], 'opciones': _opciones_de(nodo)}
     store.set_estado_flujo(conv_id, 'reenganche', None)
     store.guardar_mensaje(conv_id, 'bot', resp['texto'])
@@ -85,26 +86,37 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
 
     `historial` (turnos previos en formato Anthropic) se le pasa al nodo de IA
     para que recuerde el hilo; el resto de las acciones lo ignora."""
+    flujo = get_flujo()
     # 0) Foto (receta): la procesa la IA visión, sin importar el nodo.
     if imagen_b64:
         return ({'texto': leer_receta(imagen_b64, media_type),
-                 'opciones': _opciones_de(FLUJO[NODO_INICIO]),
+                 'opciones': _opciones_de(flujo[NODO_INICIO]),
                  'meta': {'camino': 'receta', 'resuelto': True}}, NODO_INICIO, None, False)
 
     # 1) Comandos globales → menú principal.
     if texto.lower() in _GLOBALES:
-        resp = _render(FLUJO[NODO_INICIO])
+        resp = _render(flujo[NODO_INICIO])
         resp['meta'] = {'camino': 'menu', 'resuelto': True}
         return (resp, NODO_INICIO, None, False)
 
     # 1.5) Pedido explícito de un humano, en cualquier estado → handoff REAL.
     # (Antes esto iba a la IA, que "decía" que derivaba sin hacerlo.)
     if _quiere_humano(texto):
-        return ({'texto': FLUJO['derivar']['mensaje'], 'opciones': [],
+        return ({'texto': flujo['derivar']['mensaje'], 'opciones': [],
                  'meta': {'camino': 'derivar', 'resuelto': False, 'motivo': 'derivado'}},
                 NODO_INICIO, None, True)
 
     # 2) Esperando input para una acción (ej. nombre de producto).
+    # 2a) Estado especial: el cliente está eligiendo de una lista numerada.
+    if esperando and esperando.startswith(PREFIJO_ELEGIR):
+        query = esperando[len(PREFIJO_ELEGIR):]
+        out = seleccionar_producto(texto, query)
+        if isinstance(out, dict):
+            nueva_esp = out.get('esperando', esperando)
+            resp = {'texto': out['texto'], 'opciones': out.get('opciones', []),
+                    'meta': {'camino': 'precio', 'resuelto': True, **(out.get('meta') or {})}}
+            return (resp, nodo_actual, nueva_esp, out.get('derivar', False))
+
     if esperando:
         accion = ACCIONES.get(esperando)
         if accion:
@@ -119,32 +131,41 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
                 # esperando: solo se cambia si la acción lo dice (sin la key → loop sigue).
                 nueva_esp = out['esperando'] if 'esperando' in out else esperando
                 resp = {'texto': out['texto'], 'opciones': out.get('opciones', []),
-                        'meta': {'camino': camino_def, 'resuelto': True, **(out.get('meta') or {})}}
+                        'meta': {'camino': camino_def, 'resuelto': True, **(out.get('meta') or {})},
+                        'ofertas_meta': out.get('ofertas_meta', [])}
                 return (resp, nodo_actual, nueva_esp, out.get('derivar', False))
             return ({'texto': out, 'opciones': [],
                      'meta': {'camino': camino_def, 'resuelto': True}},
                     nodo_actual, esperando, False)
 
     # 3) Selección dentro del menú actual.
-    nodo = FLUJO.get(nodo_actual, FLUJO[NODO_INICIO])
+    nodo = flujo.get(nodo_actual, flujo[NODO_INICIO])
     op = _match_opcion(nodo, texto)
     if not op:
-        # Híbrido: texto libre → IA (en vez de "no te entendí"). NO re-pegamos el
-        # menú: es una charla, los botones del saludo siguen visibles más arriba.
-        ia = ACCIONES.get('consulta_ia')
-        if ia and len(texto) >= 3:
-            return ({'texto': ia(texto, historial), 'opciones': [],
-                     'meta': {'camino': 'consulta_ia', 'resuelto': True}},
-                    nodo_actual, None, False)
+        if len(texto) >= 3:
+            # Híbrido: primero búsqueda estructurada (con botones). Si encuentra
+            # productos, devuelve la lista numerada. Si no, cae a la IA (preguntas
+            # conceptuales: "algo para la tos", síntomas, consultas generales).
+            busqueda = ACCIONES['consultar_producto'](texto)
+            if busqueda.get('opciones'):
+                return ({'texto': busqueda['texto'], 'opciones': busqueda['opciones'],
+                         'meta': busqueda.get('meta', {'camino': 'precio', 'resuelto': True}),
+                         'ofertas_meta': busqueda.get('ofertas_meta', [])},
+                        nodo_actual, busqueda.get('esperando'), False)
+            ia = ACCIONES.get('consulta_ia')
+            if ia:
+                return ({'texto': ia(texto, historial), 'opciones': [],
+                         'meta': {'camino': 'consulta_ia', 'resuelto': True}},
+                        nodo_actual, None, False)
         return ({'texto': 'No te entendí 🤔 Escribí "menú" para ver las opciones.',
                  'opciones': [], 'meta': {'camino': 'otro', 'resuelto': False,
                                           'motivo': 'no_entendido'}},
                 nodo_actual, None, False)
 
     destino_key = op['va_a']
-    destino = FLUJO.get(destino_key)
+    destino = flujo.get(destino_key)
     if not destino:
-        resp = _render(FLUJO[NODO_INICIO])
+        resp = _render(flujo[NODO_INICIO])
         resp['meta'] = {'camino': 'menu', 'resuelto': True}
         return (resp, NODO_INICIO, None, False)
 
@@ -161,7 +182,7 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
     # 'texto' (hoja) → mostrar y volver al menú. Si es "derivar", marca handoff.
     # Al derivar NO mostramos el menú: el cliente queda esperando al operador.
     derivar = (destino_key == 'derivar')
-    opciones = [] if derivar else _opciones_de(FLUJO[NODO_INICIO])
+    opciones = [] if derivar else _opciones_de(flujo[NODO_INICIO])
     meta = ({'camino': 'derivar', 'resuelto': False, 'motivo': 'derivado'} if derivar
             else {'camino': destino_key if destino_key in ('horarios', 'receta') else 'menu',
                   'resuelto': True})
@@ -191,8 +212,9 @@ def _es_otra_direccion(texto):
 def _es_opcion_menu(texto):
     """True si el texto es exactamente una opción del menú principal (tocaron un
     botón), para no tomarlo como dirección dentro del flujo de envío."""
+    flujo = get_flujo()
     t = (texto or '').strip().lower()
-    return any(t == o['label'].lower() for o in FLUJO[NODO_INICIO]['opciones'])
+    return any(t == o['label'].lower() for o in flujo[NODO_INICIO]['opciones'])
 
 
 def _label_domicilio(d):
@@ -290,7 +312,8 @@ def _envio_confirmar(cid, esperando, texto):
 
 
 def _menu_ops():
-    return _opciones_de(FLUJO[NODO_INICIO])
+    flujo = get_flujo()
+    return _opciones_de(flujo[NODO_INICIO])
 
 
 def _envio_preguntar_destino(cid):
@@ -300,8 +323,9 @@ def _envio_preguntar_destino(cid):
         return {'texto': '🛵 ¿A dónde te lo llevamos?',
                 'opciones': [_label_domicilio(d) for d in doms] + ['➕ Otra dirección']}
     store.set_estado_flujo(cid, 'envio_pedir', None)
-    return {'texto': ('🛵 Calculemos tu envío.\nCompartime tu ubicación 📍 '
-                      '(adjuntar → Ubicación) o escribí la dirección (calle y número).'),
+    return {'texto': ('🛵 Calculemos tu envío.\n'
+                      'Podés escribirme el domicilio (calle y número) '
+                      'o mandarme tu ubicación 📍 desde el clip de adjuntos.'),
             'opciones': []}
 
 
@@ -316,8 +340,9 @@ def _envio_capturar(cid, ubicacion=None, direccion=None):
         coords = envio.geocodificar(direccion)
         if not coords:                     # no geocodificó → no guardar basura, re-pedir
             store.set_estado_flujo(cid, 'envio_pedir', None)
-            return {'texto': ('No pude ubicar esa dirección 🙈. Probá con calle y '
-                              'número, o compartime tu ubicación 📍.'), 'opciones': []}
+            return {'texto': ('No pude ubicar esa dirección 🙈\n'
+                              'Probá escribiéndola como "Pellegrini 1234" o mandame tu ubicación 📍.'),
+                    'opciones': []}
         r = envio.cotizar_por_coords(*coords)
         dom = store.guardar_domicilio(cid, direccion=direccion, lat=coords[0],
                                       lng=coords[1], origen='direccion')
@@ -375,7 +400,7 @@ def _flujo_envio(cid, nodo, esperando, texto, ubicacion):
             return _resp_proponer_dom(sel)
         if _es_otra_direccion(texto):
             store.set_estado_flujo(cid, 'envio_pedir', None)
-            return {'texto': 'Dale 👇 Compartime tu ubicación 📍 o escribí la dirección.',
+            return {'texto': 'Dale 👇 Escribime el domicilio (calle y número) o mandame tu ubicación 📍.',
                     'opciones': []}
         return _envio_preguntar_destino(cid)        # no entendí → re-preguntar
 
@@ -441,6 +466,13 @@ def procesar(canal, canal_user_id, texto, imagen_b64=None,
     store.set_estado_flujo(cid, nuevo_nodo, nueva_esperando)
     if derivar:
         store.set_atencion(cid, 'cola')
+    # Guardar mensajes del sistema con ofertas detectadas por el bot
+    ofertas = (resp or {}).get('ofertas_meta') or []
+    for o in ofertas:
+        import json
+        store.nota_sistema(cid, 'OFERTA|' + json.dumps({'id': o['id'], 'observer_id': o['observer_id'],
+                                'descripcion': o['descripcion'], 'tipo': o['tipo'],
+                                'valor': o['valor']}))
     if resp and resp.get('texto'):
         store.guardar_mensaje(cid, 'bot', resp['texto'])
 

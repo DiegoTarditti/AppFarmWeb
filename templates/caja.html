@@ -37,6 +37,8 @@
   .muted { color:var(--muted); } .muted2 { color:var(--muted2); }
   .total { font-size:17px; font-weight:700; color:var(--total); }
   .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:50; align-items:center; justify-content:center; }
+  .op-pill { font-size:11px; padding:4px 11px; border-radius:999px; border:1px solid var(--border); background:var(--hov); color:var(--muted); cursor:pointer; }
+  .op-pill.active { background:var(--info); color:#fff; border-color:var(--info); font-weight:700; }
 </style>
 </head>
 <body>
@@ -49,11 +51,13 @@
     <label class="muted" style="font-size:12px; display:flex; align-items:center; gap:6px;">
       <input type="checkbox" id="verCerrados" onchange="cargar()"> ver cerrados
     </label>
+    <button onclick="exportarCsv()" class="hbtn">⤓ CSV conciliación</button>
     <span class="muted" style="font-size:12px;">{{ current_user.nombre_completo or current_user.username }}</span>
     <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
   </div>
 
   <div class="wrap">
+    <div id="filtroOps" style="display:none; gap:6px; flex-wrap:wrap; margin-bottom:12px;"></div>
     <div id="tickets" class="grid">
       <div class="muted">Cargando…</div>
     </div>
@@ -76,6 +80,8 @@
 
 <script>
 let formas = [];
+let todosTickets = [];
+let filtroActivo = null;
 
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmt(n){ return '$' + Math.round(n||0).toLocaleString('es-AR'); }
@@ -86,12 +92,36 @@ async function cargarFormas(){
 }
 function optsFormas(){ return formas.map(f=>`<option value="${esc(f.nombre)}">${esc(f.nombre)}</option>`).join(''); }
 
+function renderFiltros(ts){
+  const ops = [...new Set(ts.map(t=>t.operador).filter(Boolean))].sort();
+  const bar = document.getElementById('filtroOps');
+  if(ops.length < 2){ bar.style.display='none'; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = [null, ...ops].map(op => {
+    const label = op || 'Todos';
+    const active = filtroActivo === op ? 'active' : '';
+    return `<button class="op-pill ${active}" onclick="setFiltro(${op ? `'${esc(op)}'` : 'null'})">${esc(label)}</button>`;
+  }).join('');
+}
+
+function setFiltro(op){
+  filtroActivo = op;
+  renderTickets();
+}
+
+function renderTickets(){
+  const ts = filtroActivo ? todosTickets.filter(t=>t.operador===filtroActivo) : todosTickets;
+  const box = document.getElementById('tickets');
+  if(!ts.length){ box.innerHTML = '<div class="muted">No hay tickets' + (filtroActivo ? ' para este operador' : ' en caja ✨') + '</div>'; return; }
+  box.innerHTML = ts.map(ticketCard).join('');
+  renderFiltros(todosTickets);
+}
+
 async function cargar(){
   const cerr = document.getElementById('verCerrados').checked ? '?cerrados=1' : '';
-  const ts = (await (await fetch('/caja/api/tickets'+cerr)).json()).tickets || [];
-  const box = document.getElementById('tickets');
-  if(!ts.length){ box.innerHTML = '<div class="muted">No hay tickets en caja ✨</div>'; return; }
-  box.innerHTML = ts.map(ticketCard).join('');
+  todosTickets = (await (await fetch('/caja/api/tickets'+cerr)).json()).tickets || [];
+  renderFiltros(todosTickets);
+  renderTickets();
 }
 
 function ticketCard(t){
@@ -106,11 +136,17 @@ function ticketCard(t){
         <select id="fp-${t.id}" class="input" style="flex:1;">${optsFormas()}</select>
         <button onclick="cobrar(${t.id})" class="hbtn hbtn-ok">Cobrar</button>
       </div>
-      <button onclick="anular(${t.id})" class="hbtn hbtn-danger" style="margin-top:6px; width:100%;">Anular</button>`;
+      <div style="display:flex; gap:6px; margin-top:6px;">
+        <button onclick="enviarReparto(${t.id})" class="hbtn" style="flex:1; border-color:#185FA5; color:#7fb0e0;">🛵 Enviar a reparto</button>
+        <button onclick="anular(${t.id})" class="hbtn hbtn-danger">Anular</button>
+      </div>`;
   } else if(t.estado==='cobrado'){
     badge='<span class="badge b-cob">cobrado</span>';
     acciones=`<div class="muted2" style="font-size:11px; margin-top:6px;">Pagó con <b>${esc(t.forma_pago||'—')}</b> · cobró ${esc(t.cajero||'?')}</div>
-      <button onclick="entregar(${t.id})" class="hbtn hbtn-warn" style="margin-top:6px; width:100%;">Marcar entregado</button>`;
+      <div style="display:flex; gap:6px; margin-top:6px;">
+        <button onclick="entregar(${t.id})" class="hbtn hbtn-warn" style="flex:1;">Marcar entregado</button>
+        <button onclick="enviarReparto(${t.id})" class="hbtn" style="border-color:#185FA5; color:#7fb0e0;">🛵 Reparto</button>
+      </div>`;
   } else {
     badge=`<span class="badge" style="background:var(--hov); color:var(--muted);">${esc(t.estado)}</span>`;
   }
@@ -134,6 +170,14 @@ async function cobrar(id){
 }
 async function entregar(id){ await fetch(`/caja/${id}/entregar`, {method:'POST'}); cargar(); }
 async function anular(id){ if(confirm('¿Anular este ticket?')){ await fetch(`/caja/${id}/anular`, {method:'POST'}); cargar(); } }
+async function enviarReparto(id){
+  const r = await (await fetch(`/caja/${id}/enviar-reparto`, {method:'POST'})).json();
+  if(r.ok){
+    alert('🛵 Pedido de reparto creado' + (r.asignado ? ' y asignado a ruta.' : '.\n(Sin ruta asignada — completar en planilla.)'));
+  } else {
+    alert('⚠️ ' + (r.error||'error al crear el pedido'));
+  }
+}
 
 /* Formas de pago (admin) */
 function abrirFormas(){ document.getElementById('modalFormas').style.display='flex'; renderFormas(); }
@@ -154,6 +198,12 @@ async function crearForma(){
   await cargarFormas();
 }
 async function eliminarForma(id){ await fetch(`/caja/formas-pago/${id}/delete`, {method:'POST'}); await cargarFormas(); }
+
+function exportarCsv(){
+  const hoy = new Date().toISOString().slice(0,10);
+  const fecha = prompt('Fecha a exportar (YYYY-MM-DD):', hoy);
+  if(fecha) window.location = `/caja/export?fecha=${fecha}`;
+}
 
 cargarFormas();
 cargar();

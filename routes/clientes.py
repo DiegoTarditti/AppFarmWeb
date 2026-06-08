@@ -219,12 +219,16 @@ def init_app(app):
             categoria = (session.get(database.ObsCategoriaCliente, obs.categoria_observer)
                          if obs.categoria_observer else None)
             ext = session.query(database.Cliente).filter_by(observer_id=observer_id).first()
+            # Ubicaciones que el cliente compartió (pin del bot) — antes solo las veía
+            # el bot; ahora viven colgadas de cliente_id y se muestran acá.
+            from bot import store as _store
+            domicilios = _store.listar_domicilios_de_cliente(observer_id=observer_id)
 
             return render_template('cliente_detail.html',
                                    obs=obs,
                                    grupo=grupo.descripcion if grupo else None,
                                    categoria=categoria.descripcion if categoria else None,
-                                   ext=ext)
+                                   ext=ext, domicilios=domicilios)
 
     @app.route('/intelligence/recurrentes')
     @login_required

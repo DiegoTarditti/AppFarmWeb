@@ -60,6 +60,21 @@ services:
       # Token del bot (Telegram hoy). Lo usa el bot para escuchar y el panel de
       # atención (/atencion) para enviar las respuestas del operador al cliente.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # WhatsApp Cloud API. Dejar en blanco hasta tener las keys de Meta.
+      # WABA_TOKEN: System User Token (para enviar mensajes)
+      # WABA_PHONE_ID: ID del número de WhatsApp en el portal de Meta
+      # WABA_APP_SECRET: App Secret (para verificar firma del webhook entrante)
+      # WABA_VERIFY_TOKEN: string arbitrario que Meta usará para verificar el webhook
+      WABA_TOKEN: ${WABA_TOKEN:-}
+      WABA_PHONE_ID: ${WABA_PHONE_ID:-}
+      WABA_APP_SECRET: ${WABA_APP_SECRET:-}
+      WABA_VERIFY_TOKEN: ${WABA_VERIFY_TOKEN:-farmweb_wh_secret}
+      # Informes proactivos al dueño vía Telegram. Obtener el chat_id del dueño
+      # iniciando una conversación con @userinfobot. Umbral: minutos sin atender
+      # antes de notificar (default 15).
+      TELEGRAM_OWNER_CHAT_ID: ${TELEGRAM_OWNER_CHAT_ID:-}
+      TELEGRAM_DIEGO_CHAT_ID: ${TELEGRAM_DIEGO_CHAT_ID:-}
+      INFORMES_UMBRAL_MINUTOS: ${INFORMES_UMBRAL_MINUTOS:-15}
       # Transcripción de notas de voz. Por defecto usa Whisper LOCAL (sin key,
       # privado). WHISPER_MODEL: base (default) | small | medium (más exacto, más
       # lento). OPENAI_API_KEY solo se usa como fallback si el modelo local no carga.
@@ -122,6 +137,10 @@ services:
       # Re-enganche proactivo: minutos de silencio a mitad de un flujo antes del
       # "¿Seguís ahí?". 0 = desactivado.
       ATENCION_REENGANCHE_MINUTOS: ${ATENCION_REENGANCHE_MINUTOS:-5}
+      # Informes proactivos al dueño vía Telegram.
+      TELEGRAM_OWNER_CHAT_ID: ${TELEGRAM_OWNER_CHAT_ID:-}
+      TELEGRAM_DIEGO_CHAT_ID: ${TELEGRAM_DIEGO_CHAT_ID:-}
+      INFORMES_UMBRAL_MINUTOS: ${INFORMES_UMBRAL_MINUTOS:-15}
     depends_on:
       db:
         condition: service_healthy

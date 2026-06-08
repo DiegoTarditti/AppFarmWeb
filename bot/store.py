@@ -5,7 +5,7 @@ el historial, multi-línea y que sobreviva reinicios.
 """
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 
 import database
 
@@ -23,7 +23,9 @@ def get_conversacion(canal, canal_user_id, nombre=None, linea=None):
                 linea=linea, estado_atencion='bot', nodo='inicio')
             # En WhatsApp el canal_user_id ES el teléfono → autovinculamos la ficha.
             if canal == 'whatsapp':
-                conv.cliente_observer_id = match_cliente_por_telefono(cid)
+                oid = match_cliente_por_telefono(cid)
+                if oid:
+                    conv.cliente_id = database.get_or_create_cliente(s, observer_id=oid)
             s.add(conv)
             s.commit()
         elif nombre and not conv.nombre_cliente:
@@ -61,16 +63,21 @@ def estado_atencion_de(canal, canal_user_id):
         return conv.estado_atencion if conv else 'bot'
 
 
-def conversaciones_para_reenganche(minutos):
+def conversaciones_para_reenganche(minutos, max_minutos=120):
     """Conversaciones que el bot atiende, que quedaron a mitad de un flujo
-    (esperando input del cliente) y sin actividad por más de `minutos`.
+    (esperando input del cliente) y sin actividad entre `minutos` y `max_minutos`.
+    El techo de 120 min (2hs) garantiza que el mensaje llega dentro de la ventana
+    libre de WhatsApp (24hs), evitando la necesidad de templates aprobados.
     `esperando IS NOT NULL` se limpia al re-enganchar → no vuelve a disparar."""
-    limite = database.now_ar() - timedelta(minutes=minutos)
+    ahora = database.now_ar()
+    desde = ahora - timedelta(minutes=max_minutos)
+    hasta = ahora - timedelta(minutes=minutos)
     with database.get_db() as s:
         convs = (s.query(database.BotConversacion)
                  .filter(database.BotConversacion.estado_atencion == 'bot',
                          database.BotConversacion.esperando.isnot(None),
-                         database.BotConversacion.ultimo_en < limite)
+                         database.BotConversacion.ultimo_en >= desde,
+                         database.BotConversacion.ultimo_en < hasta)
                  .limit(50).all())
         return [{'id': c.id, 'canal': c.canal, 'canal_user_id': c.canal_user_id}
                 for c in convs]
@@ -105,15 +112,17 @@ def guardar_mensaje(conv_id, origen, texto, tiene_imagen=False):
 
 # ── Lecturas para el panel de operadores ─────────────────────────────────────
 
-def _conv_dict(c, nombres=None):
+def _conv_dict(c, nombres=None, supervisado=False):
     nombres = nombres or {}
     return {'id': c.id, 'canal': c.canal, 'linea': c.linea or c.canal,
             'canal_user_id': c.canal_user_id,
             'nombre': c.nombre_cliente or c.canal_user_id,
             'estado': c.estado_atencion, 'operador_id': c.operador_user_id,
             'operador_nombre': nombres.get(c.operador_user_id),
-            'cliente_observer_id': c.cliente_observer_id,
-            'cliente_local_id': c.cliente_local_id,
+            'cliente_id': c.cliente_id,
+            'cliente_observer_id': c.cliente.observer_id if c.cliente else None,
+            'tiene_encargo': bool(c.tiene_encargo),
+            'supervisado': supervisado,
             'ultimo_en': c.ultimo_en.strftime('%d/%m %H:%M') if c.ultimo_en else ''}
 
 
@@ -137,7 +146,16 @@ def listar_conversaciones(linea=None):
             q = q.filter(database.BotConversacion.linea == linea)
         convs = q.order_by(database.BotConversacion.ultimo_en.desc()).limit(100).all()
         nombres = _mapa_nombres(s, [c.operador_user_id for c in convs])
-        return [_conv_dict(c, nombres) for c in convs]
+        # IDs de convs notificadas al supervisor
+        supervisadas = set()
+        if convs:
+            from sqlalchemy import text as _text
+            ids = [c.id for c in convs]
+            rows = s.execute(_text(
+                'SELECT DISTINCT conversacion_id FROM informe_enviado WHERE conversacion_id = ANY(:ids)'
+            ), {'ids': ids}).fetchall()
+            supervisadas = {r[0] for r in rows}
+        return [_conv_dict(c, nombres, supervisado=c.id in supervisadas) for c in convs]
 
 
 def get_conversacion_full(conv_id):
@@ -235,7 +253,7 @@ def match_cliente_por_telefono(telefono):
 
 
 def buscar_clientes(query, limite=10):
-    """Búsqueda manual de clientes por nombre o documento (para vincular a mano)."""
+    """Búsqueda de clientes por nombre (multi-token AND) o documento exacto."""
     q = (query or '').strip()
     if len(q) < 2:
         return []
@@ -244,14 +262,48 @@ def buscar_clientes(query, limite=10):
         if q.isdigit():
             base = base.filter(database.ObsCliente.documento_numero == int(q))
         else:
-            base = base.filter(database.ObsCliente.apellido_nombre.ilike(f'%{q}%'))
+            tokens = [t for t in q.split() if len(t) >= 2]
+            filtros = [database.ObsCliente.apellido_nombre.ilike(f'%{t}%') for t in tokens]
+            base = base.filter(and_(*filtros))
         rows = base.order_by(database.ObsCliente.apellido_nombre).limit(limite).all()
         return [{'observer_id': r.observer_id, 'nombre': r.apellido_nombre,
                  'documento': r.documento_numero, 'telefono': r.telefono} for r in rows]
 
 
+def _ficha_de_cliente(s, cliente_id):
+    """Ficha uniforme desde la tabla única `clientes`. Si la fila tiene
+    observer_id, completa los datos maestros desde `obs_clientes`. Devuelve dict
+    con `fuente` ('observer' | 'local') o None."""
+    if not cliente_id:
+        return None
+    c = s.get(database.Cliente, cliente_id)
+    if not c:
+        return None
+    oc = s.get(database.ObsCliente, c.observer_id) if c.observer_id else None
+    if oc:
+        nombre = oc.apellido_nombre
+        documento = f'{oc.documento_tipo or ""} {oc.documento_numero or ""}'.strip()
+        telefono = oc.telefono or c.telefono or ''
+        domicilio = ', '.join(x for x in [oc.domicilio_direccion, oc.localidad] if x)
+        fuente = 'observer'
+    else:
+        nombre = ', '.join(x for x in [c.apellido, c.nombre] if x) or '(sin nombre)'
+        documento = c.dni or ''
+        telefono = c.telefono or ''
+        domicilio = ', '.join(x for x in [c.domicilio, c.ciudad] if x)
+        fuente = 'local'
+    return {
+        'cliente_id': c.id, 'observer_id': c.observer_id, 'fuente': fuente,
+        'nombre': nombre, 'documento': documento, 'telefono': telefono,
+        'domicilio': domicilio,
+        'notas': c.notas or '', 'tags': c.tags or '',
+        'whatsapp': c.whatsapp or '', 'email': c.email or '',
+    }
+
+
 def get_ficha_cliente(observer_id):
-    """Ficha completa del cliente: datos de ObServer + capa local editable."""
+    """Ficha de un cliente de ObServer (datos maestros + capa editable si existe).
+    Read-only: NO crea fila en `clientes`."""
     if not observer_id:
         return None
     with database.get_db() as s:
@@ -260,7 +312,7 @@ def get_ficha_cliente(observer_id):
             return None
         cl = s.query(database.Cliente).filter_by(observer_id=observer_id).first()
         return {
-            'observer_id': oc.observer_id,
+            'observer_id': oc.observer_id, 'cliente_id': cl.id if cl else None,
             'nombre': oc.apellido_nombre,
             'documento': f'{oc.documento_tipo or ""} {oc.documento_numero or ""}'.strip(),
             'telefono': oc.telefono,
@@ -273,24 +325,50 @@ def get_ficha_cliente(observer_id):
 
 
 def vincular_cliente(conv_id, observer_id):
-    """Vincula a un cliente de ObServer (limpia el lead local si había)."""
+    """Vincula la conversación a un cliente de ObServer (get-or-create en la tabla
+    única de clientes)."""
     with database.get_db() as s:
         c = s.get(database.BotConversacion, conv_id)
         if not c:
             return {'ok': False, 'error': 'no existe'}
-        c.cliente_observer_id = observer_id
-        if observer_id:
-            c.cliente_local_id = None
+        c.cliente_id = (database.get_or_create_cliente(s, observer_id=observer_id)
+                        if observer_id else None)
         s.commit()
         return {'ok': True}
 
 
 def desvincular_cliente(conv_id):
-    """Desvincula cualquier ficha (ObServer o local)."""
+    """Desvincula la ficha de la conversación."""
     with database.get_db() as s:
         c = s.get(database.BotConversacion, conv_id)
         if not c:
             return {'ok': False}
+        c.cliente_id = None
+        s.commit()
+        return {'ok': True}
+
+
+def reset_conversacion_testing(conv_id):
+    """Para testing: borra mensajes, domicilios y vinculación de cliente.
+    Deja la conversación como si el usuario escribiera por primera vez."""
+    with database.get_db() as s:
+        c = s.get(database.BotConversacion, conv_id)
+        if not c:
+            return {'ok': False, 'error': 'no existe'}
+        # 1. Borrar mensajes del historial
+        s.query(database.BotMensaje).filter(
+            database.BotMensaje.conversacion_id == conv_id
+        ).delete(synchronize_session=False)
+        # 2. Borrar domicilios ligados a esta conversación
+        s.query(database.DomicilioCliente).filter(
+            database.DomicilioCliente.conversacion_id == conv_id
+        ).delete(synchronize_session=False)
+        # 3. Resetear estado del flujo y desvincular cliente
+        c.nodo = 'inicio'
+        c.esperando = None
+        c.estado_atencion = 'bot'
+        c.operador_user_id = None
+        c.cliente_id = None
         c.cliente_observer_id = None
         c.cliente_local_id = None
         s.commit()
@@ -298,24 +376,19 @@ def desvincular_cliente(conv_id):
 
 
 def crear_cliente_local(conv_id, datos, creado_por=None):
-    """Alta de un cliente nuevo (lead local) desde el panel + lo vincula al chat.
+    """Alta de un cliente nuevo (lead) desde el panel + lo vincula al chat.
     En WhatsApp guarda el teléfono del chat automáticamente."""
     with database.get_db() as s:
         c = s.get(database.BotConversacion, conv_id)
         if not c:
             return {'ok': False, 'error': 'no existe'}
-        cl = database.ClienteLocal(
-            nombre=(datos.get('nombre') or '').strip() or None,
-            apellido=(datos.get('apellido') or '').strip() or None,
-            dni=(datos.get('dni') or '').strip() or None,
-            domicilio=(datos.get('domicilio') or '').strip() or None,
-            ciudad=(datos.get('ciudad') or '').strip() or None,
-            telefono=c.canal_user_id if c.canal == 'whatsapp' else None,
-            creado_por=creado_por)
-        s.add(cl)
-        s.flush()
-        c.cliente_local_id = cl.id
-        c.cliente_observer_id = None
+        lead = dict(datos or {})
+        if c.canal == 'whatsapp' and not lead.get('telefono'):
+            lead['telefono'] = c.canal_user_id
+        cid = database.get_or_create_cliente(s, lead=lead, creado_por=creado_por)
+        if not cid:
+            return {'ok': False, 'error': 'datos vacíos'}
+        c.cliente_id = cid
         s.commit()
         return {'ok': True}
 
@@ -357,55 +430,37 @@ def eliminar_ciudad(ciudad_id):
 
 
 def get_ficha_de_conversacion(conv_id):
-    """Ficha del cliente vinculado a la conversación, sea de ObServer o local.
+    """Ficha del cliente vinculado a la conversación (tabla única).
     Devuelve un dict uniforme con `fuente` ('observer' | 'local') o None."""
     with database.get_db() as s:
         c = s.get(database.BotConversacion, conv_id)
         if not c:
             return None
-        if c.cliente_observer_id:
-            f = get_ficha_cliente(c.cliente_observer_id)
-            if f:
-                f['fuente'] = 'observer'
-            return f
-        if c.cliente_local_id:
-            cl = s.get(database.ClienteLocal, c.cliente_local_id)
-            if cl:
-                nombre = ', '.join(x for x in [cl.apellido, cl.nombre] if x) or '(sin nombre)'
-                domic = ', '.join(x for x in [cl.domicilio, cl.ciudad] if x)
-                return {'fuente': 'local', 'observer_id': None,
-                        'nombre': nombre, 'documento': cl.dni or '',
-                        'telefono': cl.telefono or '', 'domicilio': domic,
-                        'notas': cl.notas or '', 'tags': ''}
-        return None
+        return _ficha_de_cliente(s, c.cliente_id)
 
 
 def guardar_notas_conversacion(conv_id, notas):
-    """Guarda las notas en la ficha vinculada (ObServer → Cliente; local → ClienteLocal)."""
+    """Guarda las notas en la ficha (tabla única) del cliente vinculado al chat."""
     with database.get_db() as s:
         c = s.get(database.BotConversacion, conv_id)
-        if not c:
+        if not c or not c.cliente_id:
             return {'ok': False}
-        if c.cliente_observer_id:
-            return guardar_ficha_local(c.cliente_observer_id, notas=notas)
-        if c.cliente_local_id:
-            cl = s.get(database.ClienteLocal, c.cliente_local_id)
-            if cl:
-                cl.notas = notas
-                s.commit()
-                return {'ok': True}
-        return {'ok': False}
+        cli = s.get(database.Cliente, c.cliente_id)
+        if not cli:
+            return {'ok': False}
+        cli.notas = notas
+        s.commit()
+        return {'ok': True}
 
 
 def guardar_ficha_local(observer_id, notas=None, tags=None):
-    """Edita la capa local (Cliente) del cliente: notas/tags. La crea si no existe."""
+    """Edita la capa editable (notas/tags) de un cliente de ObServer en la tabla
+    única. La fila se crea si no existe (get-or-create por observer_id)."""
     if not observer_id:
         return {'ok': False}
     with database.get_db() as s:
-        cl = s.query(database.Cliente).filter_by(observer_id=observer_id).first()
-        if not cl:
-            cl = database.Cliente(observer_id=observer_id)
-            s.add(cl)
+        cid = database.get_or_create_cliente(s, observer_id=observer_id)
+        cl = s.get(database.Cliente, cid)
         if notas is not None:
             cl.notas = notas
         if tags is not None:
@@ -417,13 +472,11 @@ def guardar_ficha_local(observer_id, notas=None, tags=None):
 # ── Libreta de domicilios del cliente ────────────────────────────────────────
 
 def _identidad_domicilio(s, conv_id):
-    """(campo, valor) para colgar/leer domicilios: cliente vinculado si lo hay
-    (observer → local), si no la conversación."""
+    """(campo, valor) para colgar/leer domicilios: cliente vinculado si lo hay,
+    si no la conversación."""
     c = s.get(database.BotConversacion, conv_id)
-    if c and c.cliente_observer_id:
-        return ('cliente_observer_id', c.cliente_observer_id)
-    if c and c.cliente_local_id:
-        return ('cliente_local_id', c.cliente_local_id)
+    if c and c.cliente_id:
+        return ('cliente_id', c.cliente_id)
     return ('conversacion_id', conv_id)
 
 
@@ -433,16 +486,17 @@ def _dom_dict(d):
             'lat': d.lat, 'lng': d.lng, 'origen': d.origen}
 
 
-def listar_domicilios_de_cliente(observer_id=None, local_id=None):
-    """Domicilios de un cliente por su id (para el alta de pedidos de reparto)."""
+def listar_domicilios_de_cliente(cliente_id=None, observer_id=None):
+    """Domicilios de un cliente (para el alta de pedidos de reparto). Se puede
+    pasar `cliente_id` directo o `observer_id` (se resuelve a la fila única)."""
     D = database.DomicilioCliente
     with database.get_db() as s:
-        if observer_id:
-            q = s.query(D).filter(D.cliente_observer_id == observer_id)
-        elif local_id:
-            q = s.query(D).filter(D.cliente_local_id == local_id)
-        else:
+        if not cliente_id and observer_id:
+            c = s.query(database.Cliente).filter_by(observer_id=observer_id).first()
+            cliente_id = c.id if c else None
+        if not cliente_id:
             return []
+        q = s.query(D).filter(D.cliente_id == cliente_id)
         return [_dom_dict(d) for d in q.order_by(D.id.desc()).all()]
 
 
@@ -453,10 +507,8 @@ def listar_domicilios(conv_id):
     with database.get_db() as s:
         c = s.get(database.BotConversacion, conv_id)
         conds = [D.conversacion_id == conv_id]
-        if c and c.cliente_observer_id:
-            conds.append(D.cliente_observer_id == c.cliente_observer_id)
-        if c and c.cliente_local_id:
-            conds.append(D.cliente_local_id == c.cliente_local_id)
+        if c and c.cliente_id:
+            conds.append(D.cliente_id == c.cliente_id)
         ds = (s.query(D).filter(or_(*conds))
               .order_by(func.coalesce(D.ultimo_uso_en, D.creado_en).desc(), D.id.desc())
               .all())
@@ -481,10 +533,20 @@ def guardar_domicilio(conv_id, etiqueta=None, direccion=None, localidad=None,
 def set_etiqueta_domicilio(dom_id, etiqueta):
     with database.get_db() as s:
         d = s.get(database.DomicilioCliente, dom_id)
-        if d:
-            d.etiqueta = (etiqueta or '').strip()[:40] or 'Otro'
-            s.commit()
-        return {'ok': bool(d)}
+        if not d:
+            return {'ok': False}
+        nueva_et = (etiqueta or '').strip()[:40] or 'Otro'
+        D = database.DomicilioCliente
+        # Eliminar duplicados previos con la misma etiqueta para este cliente/conv.
+        cond = (D.cliente_id == d.cliente_id) if d.cliente_id else (D.conversacion_id == d.conversacion_id)
+        dupes = (s.query(D)
+                 .filter(cond, D.etiqueta == nueva_et, D.id != dom_id)
+                 .all())
+        for dup in dupes:
+            s.delete(dup)
+        d.etiqueta = nueva_et
+        s.commit()
+        return {'ok': True}
 
 
 def marcar_uso_domicilio(dom_id):
@@ -531,25 +593,45 @@ def buscar_productos_detalle(query, limite=12):
     """Búsqueda rica para el popup del panel: nombre, droga, presentación,
     precio, stock (con nivel ok/low/none) y flag de receta.
 
-    Junta product_analytics (stock/precio) + productos (monodroga) +
-    producto_atributos (concentración/forma) + obs_productos (tipo venta → receta)."""
+    Fuente primaria: obs_productos + obs_stock (66k filas, igual que el bot).
+    Busca por descripción de marca Y por monodroga (obs_nombres_drogas).
+    precio_pvp viene de product_analytics cuando existe.
+    obs_productos (tipo venta → receta) + producto_atributos (concentración/forma)."""
+    import os
+    id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
     palabras = [p for p in (query or '').split() if p][:6]
     if not palabras:
         return []
-    conds = ' AND '.join(f"pa.descripcion ILIKE :p{i}" for i in range(len(palabras)))
+    cond_prod  = ' AND '.join(f"op.descripcion ILIKE :p{i}" for i in range(len(palabras)))
+    cond_droga = ' AND '.join(f"nd.descripcion ILIKE :p{i}" for i in range(len(palabras)))
     params = {f'p{i}': f'%{w}%' for i, w in enumerate(palabras)}
     params['lim'] = limite
+    params['fid'] = id_farmacia
     sql = database.text(f"""
-        SELECT pa.descripcion, pa.stock, pa.precio_pvp,
-               p.monodroga AS droga,
+        SELECT op.descripcion,
+               COALESCE(os.stock_actual, 0)             AS stock,
+               COALESCE(pa.precio_pvp, pr.precio_pvp)   AS precio_pvp,
+               nd.descripcion               AS droga,
                atr.concentracion_mg, atr.concentracion_unidad, atr.forma_farma, atr.cantidad_envase,
-               op.id_tipo_venta_control AS tvc
-          FROM product_analytics pa
-          LEFT JOIN productos p          ON p.codigo_barra = pa.codigo_barra
-          LEFT JOIN obs_productos op     ON op.observer_id = p.observer_id
-          LEFT JOIN producto_atributos atr ON atr.producto_id = p.id
-         WHERE {conds}
-         ORDER BY (pa.stock > 0) DESC, pa.stock DESC, pa.descripcion
+               op.id_tipo_venta_control     AS tvc,
+               op.observer_id
+          FROM obs_productos op
+          JOIN obs_stock os
+            ON os.producto_observer = op.observer_id
+           AND os.id_farmacia = :fid
+          LEFT JOIN obs_nombres_drogas nd
+            ON nd.observer_id = op.nombre_droga_observer
+          LEFT JOIN obs_codigos_barras cb
+            ON cb.producto_observer = op.observer_id AND cb.fecha_baja IS NULL
+          LEFT JOIN product_analytics pa
+            ON pa.codigo_barra = cb.codigo_barras
+          LEFT JOIN productos pr
+            ON pr.observer_id = op.observer_id
+          LEFT JOIN producto_atributos atr
+            ON atr.producto_id = pr.id
+         WHERE op.fecha_baja IS NULL
+           AND ({cond_prod} OR {cond_droga})
+         ORDER BY (os.stock_actual > 0) DESC, os.stock_actual DESC, op.descripcion
          LIMIT :lim
     """)
     try:
@@ -568,12 +650,42 @@ def buscar_productos_detalle(query, limite=12):
             'precio': float(r.precio_pvp) if r.precio_pvp is not None else None,
             'stock': stock, 'nivel': nivel,
             'receta': bool(tvc and tvc != 'L'),
+            'observer_id': r.observer_id,
         })
     return out
 
 
 def _nota_sistema(session, conv_id, texto):
     session.add(database.BotMensaje(conversacion_id=conv_id, origen='sistema', texto=texto))
+
+
+def nota_sistema(conv_id, texto):
+    """Wrapper público de _nota_sistema (abre su propia sesión)."""
+    with database.get_db() as s:
+        _nota_sistema(s, conv_id, texto)
+
+
+def get_ofertas_para_productos(observer_ids):
+    """Devuelve ofertas activas para una lista de observer_ids de productos."""
+    if not observer_ids:
+        return []
+    with database.get_db() as s:
+        ofertas = (s.query(database.OfertaBot)
+                   .filter(database.OfertaBot.observer_id.in_(observer_ids),
+                           database.OfertaBot.activo.is_(True))
+                   .all())
+        return [{'id': o.id, 'observer_id': o.observer_id, 'descripcion': o.descripcion,
+                 'tipo': o.tipo, 'valor': float(o.valor) if o.valor else None}
+                for o in ofertas]
+
+
+def registrar_oferta(conv_id, oferta_bot_id, usuario_id):
+    """Registra que un operador ofreció una oferta al cliente."""
+    with database.get_db() as s:
+        s.add(database.OfertaRegistro(
+            conversacion_id=conv_id, oferta_bot_id=oferta_bot_id,
+            enviado_por=usuario_id))
+        s.commit()
 
 
 def tomar(conv_id, operador_id, operador_nombre):

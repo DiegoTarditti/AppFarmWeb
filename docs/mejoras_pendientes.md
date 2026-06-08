@@ -43,6 +43,52 @@ texto libre. Lo que falta:
 
 ---
 
+## ⏳ Pendiente — Seguimiento del pedido para el cliente ("posición X de N en reparto") (2026-06-07)
+
+**Idea**: que el cliente que hizo el pedido pueda ver en qué estado está su reparto
+(en ruta, posición X de N, entregado) sin tener usuario en el sistema.
+
+**Lo que ya existe** (no hay que inventar el dato):
+- `PedidoReparto` (database.py:574) tiene `estado` (pendiente → en_ruta → entregado
+  → anulado), `orden_en_ruta` (posición en la ruta, la calcula `reparto_optimizar`
+  por vecino más cercano), `cliente_observer_id`, `ruta_id`, `cadete_id`, `canal`.
+- "Posición X de N" = rank de `orden_en_ruta` del pedido entre las paradas todavía
+  `pendiente`/`en_ruta` de su ruta. Calculable hoy.
+
+**Lo que falta**:
+1. **Acceso sin login** — hoy todo `/reparto/*` está cerrado a admin/dev/farmacia
+   (`_ROLES_OK` en routes/reparto.py:17). Dos caminos:
+   - **Link con token (recomendado)**: agregar columna `token` (uuid corto) a
+     `PedidoReparto` + ruta pública `GET /seguimiento/<token>` SIN `@login_required`
+     que devuelva estado + posición. Se manda por WhatsApp/Telegram al confirmar el
+     pedido. Funciona venga el pedido del canal que venga.
+   - **Por el bot**: el cliente pregunta "¿dónde está mi pedido?" y el bot responde.
+     ⚠ Solo sirve si la conversación está linkeada a `cliente_observer_id`. OJO: el
+     autovínculo por teléfono (bot/store.py:25-26) **solo aplica a WhatsApp** (ahí
+     `canal_user_id` ES el teléfono). En **Telegram** (bot actual) `canal_user_id` NO
+     es el teléfono → el link no es automático, hay que resolverlo aparte.
+2. **BLOCKER real — que el estado avance en vivo**: hoy el estado lo cambia el operador
+   a mano desde el panel (`reparto_estado`). El cadete en la calle no marca nada. Si
+   nadie va marcando `entregado` parada por parada, "posición 3 de 7" queda congelada
+   y miente. **Esto depende directo de la task pendiente "vista del cadete"** (el cadete
+   marca entregado/no vino desde el celu): esa vista es la fuente que hace el seguimiento
+   real-time. Sin ella, el seguimiento es estático.
+3. **Puente bot→reparto**: hoy los `PedidoReparto` se crean solo manualmente por el
+   operador; el bot no inserta en `PedidoReparto` (el campo `canal` lo soporta pero
+   nadie lo usa). Si se quiere que el pedido hecho por el bot se auto-siga, falta ese
+   puente también.
+
+**Esfuerzo / orden**:
+- Versión mínima (link público + estado + posición X de N): ~medio día. Útil, pero la
+  posición solo se mueve si el operador marca entregas.
+- Versión que vale la pena: **hacerla DESPUÉS de "vista del cadete"**, porque ahí el
+  estado avanza solo desde la calle y la posición es genuina.
+
+**Recomendación**: armar encima de "vista del cadete", no antes. Relacionado:
+memoria `reparto-planilla-real` y `bot-asistente-estado`.
+
+---
+
 ## ✅ HECHO — Adoptar Alembic para migraciones (2026-05-28 → completado 2026-06-02)
 
 > **HECHO** (PRs #145-147): baseline `alembic/versions/ae43763059ec_baseline_schema.py` con las 93 tablas (review 93/93 ✅ en `docs/alembic_baseline_review.md`), `init_db` adoptó Alembic vía `_alembic_sync()` (bootstrap stamp/upgrade), `stamp head` aplicado en Local + Render, drift reconciliado en ambas. Pendiente gradual (no urgente): migrar los `_pg_add_columns` inline a revisiones dedicadas y borrar el zombie handler cuando haya confianza.

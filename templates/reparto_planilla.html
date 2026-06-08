@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planilla de reparto · {{ fecha.strftime('%d/%m/%Y') }}</title>
+<style>
+  :root {
+    --bg:#14141a; --surface:#1a1a22; --card:#16161d; --txt:#e0e0e6; --title:#f0f0f3;
+    --muted:#8a8a92; --muted2:#6a6a72; --border:rgba(255,255,255,0.08); --accent:#1D9E75;
+    --accent-ink:#06241a; --row-bd:rgba(255,255,255,0.06); --hov:#23232d; --warn:#EF9F27;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--txt); font-family:var(--font); }
+  .topbar { height:50px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:12px; padding:0 18px; flex-wrap:wrap; }
+  .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .logo .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border);
+           background:var(--hov); color:var(--txt); cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:4px; }
+  .hbtn:hover { background:var(--surface); color:var(--title); }
+  .input { background:var(--hov); color:var(--txt); border:1px solid var(--border); border-radius:8px; padding:5px 9px; font-size:13px; }
+  .wrap { padding:16px; overflow-x:auto; }
+  .nav-fecha { display:flex; align-items:center; gap:8px; }
+  .nav-fecha button { padding:3px 10px; border-radius:6px; border:1px solid var(--border); background:var(--hov); color:var(--txt); cursor:pointer; font-size:13px; }
+  .nav-fecha button:hover { background:var(--surface); }
+
+  /* Tabla */
+  .planilla-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .planilla-table th { background:var(--surface); color:var(--title); font-weight:600; padding:8px 6px;
+                       text-align:left; border-bottom:1px solid var(--border); white-space:nowrap;
+                       position:sticky; top:0; z-index:1; }
+  .planilla-table td { padding:5px 6px; border-bottom:1px solid var(--row-bd); vertical-align:middle; }
+  .planilla-table tr:hover td { background:var(--hov); }
+  .planilla-table tr.fila-entregado { opacity:.5; }
+  .planilla-table tr.fila-receta td:first-child { border-left:2px solid #DC2626; }
+  .planilla-table tr.fila-anulado { opacity:.3; text-decoration:line-through; }
+
+  /* Celdas editables */
+  .celda-editable { cursor:pointer; min-width:50px; border-radius:3px; padding:2px 4px; }
+  .celda-editable:hover { background:var(--hov); }
+  .celda-editable input, .celda-editable select {
+    width:100%; padding:2px 4px; border:1px solid var(--accent); border-radius:4px;
+    font-size:12px; background:var(--card); color:var(--txt); }
+
+  /* Badges de estado */
+  .badge-estado { cursor:pointer; font-size:9px; padding:1px 7px; border-radius:999px; font-weight:700; border:none; }
+  .badge-pendiente { background:var(--hov); color:var(--muted); }
+  .badge-en_ruta   { background:#185FA5; color:#fff; }
+  .badge-entregado { background:var(--accent); color:var(--accent-ink); }
+  .badge-anulado   { background:#5a2a2a; color:#F09595; }
+
+  /* Encabezados de turno */
+  .turno-header { background:var(--card); color:var(--title); padding:8px 12px;
+                  border-radius:8px 8px 0 0; font-weight:700; font-size:13px;
+                  margin-top:16px; border:1px solid var(--border); border-bottom:none; }
+
+  .muted { color:var(--muted); }
+  .sin-pedidos { text-align:center; padding:40px; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><span class="dot"></span>📋 Planilla de reparto</div>
+  <span class="muted" style="font-size:12px;">{{ fecha.strftime('%d/%m/%Y') }}</span>
+  <div class="nav-fecha">
+    <button onclick="cambiarDia(-1)">◀</button>
+    <input type="date" id="fechaInput" class="input" value="{{ fecha.strftime('%Y-%m-%d') }}" onchange="cambiarDia(0, this.value)" style="padding:3px 8px;">
+    <button onclick="cambiarDia(1)">▶</button>
+    <button onclick="cambiarDia(0, '{{ hoy.strftime('%Y-%m-%d') }}')" style="font-weight:600;">Hoy</button>
+  </div>
+  <div style="flex:1"></div>
+  <a href="/reparto?fecha={{ fecha.strftime('%Y-%m-%d') }}" class="hbtn">🗺️ Ver en reparto</a>
+  <a href="/reparto" class="hbtn">← Volver</a>
+</div>
+
+<div class="wrap">
+
+{% macro render_tabla(pedidos, inicio_num) %}
+<table class="planilla-table">
+  <thead>
+    <tr>
+      <th style="width:30px;">#</th>
+      <th style="min-width:130px;">Cliente</th>
+      <th style="min-width:160px;">Dirección</th>
+      <th style="width:70px;">Envío $</th>
+      <th style="width:100px;">Tomó</th>
+      <th style="width:80px;">Importe</th>
+      <th style="width:90px;">Forma pago</th>
+      <th style="width:70px;">Vuelto</th>
+      <th style="width:110px;">Producto</th>
+      <th style="min-width:130px;">Observación</th>
+      <th style="width:50px;">Receta</th>
+      <th style="width:80px;">Estado</th>
+      <th style="width:75px;">Entregó</th>
+      <th style="width:85px;">Cadete</th>
+      <th style="width:75px;">Recibió</th>
+      <th style="width:50px;">Pagado</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in pedidos %}
+    {% set row_class = '' %}
+    {% if p.estado == 'anulado' %}{% set row_class = 'fila-anulado' %}
+    {% elif p.estado == 'entregado' %}{% set row_class = 'fila-entregado' %}
+    {% elif p.requiere_receta %}{% set row_class = 'fila-receta' %}
+    {% endif %}
+    <tr class="{{ row_class }}" data-pid="{{ p.id }}">
+      <td style="font-weight:700; color:var(--muted2);">{{ inicio_num + loop.index0 + 1 }}</td>
+      <td><b style="color:var(--title);">{{ p.cliente_nombre or 's/cliente' }}</b></td>
+      <td style="font-size:11px; color:var(--muted);">{{ p.direccion or '' }}</td>
+      <td style="color:var(--muted2);">—</td>
+      <td class="celda-editable" data-campo="tomo" data-tipo="select-usuarios">
+        <span class="celda-valor">{{ p.tomo or '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="importe" data-tipo="text">
+        <span class="celda-valor">{{ '$ {:,.0f}'.format(p.importe) if p.importe is not none else '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="forma_pago" data-tipo="select-forma_pago">
+        <span class="celda-valor">{{ p.forma_pago or '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="vuelto" data-tipo="text">
+        <span class="celda-valor">{{ p.vuelto or '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="producto" data-tipo="text" style="max-width:120px; overflow:hidden; text-overflow:ellipsis;">
+        <span class="celda-valor">{{ p.producto or '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="observacion" data-tipo="text" style="max-width:150px; overflow:hidden; text-overflow:ellipsis;">
+        <span class="celda-valor">{{ p.observacion or '—' }}</span>
+      </td>
+      <td style="text-align:center;">
+        <span style="cursor:pointer; font-size:14px;" onclick="toggleBooleano({{ p.id }}, 'requiere_receta', {{ 'true' if p.requiere_receta else 'false' }})">
+          {% if p.requiere_receta %}📋{% else %}<span style="color:var(--muted2);">—</span>{% endif %}
+        </span>
+      </td>
+      <td>
+        <button class="badge-estado badge-{{ p.estado }}"
+                onclick="avanzarEstado({{ p.id }}, '{{ p.estado }}')">
+          {{ p.estado.replace('_', ' ') }}
+        </button>
+      </td>
+      <td class="celda-editable" data-campo="entregado_por" data-tipo="text">
+        <span class="celda-valor">{{ p.entregado_por or '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="cadete_id" data-tipo="select-cadetes">
+        <span class="celda-valor">{{ cadetes.get(p.cadete_id) or '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="recibio" data-tipo="text">
+        <span class="celda-valor">{{ p.recibio or '—' }}</span>
+      </td>
+      <td style="text-align:center;">
+        <span style="cursor:pointer; font-size:14px;" onclick="toggleBooleano({{ p.id }}, 'pagado', {{ 'true' if p.pagado else 'false' }})">
+          {% if p.pagado %}💲{% else %}<span style="color:var(--muted2);">—</span>{% endif %}
+        </span>
+      </td>
+    </tr>
+    {% endfor %}
+    {% if not pedidos %}
+    <tr><td colspan="16" class="sin-pedidos">Sin pedidos</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+{% endmacro %}
+
+{% if pedidos_manana %}
+<div class="turno-header">🌅 Mañana ({{ pedidos_manana|length }} pedido{{ 's' if pedidos_manana|length != 1 }})</div>
+{{ render_tabla(pedidos_manana, 0) }}
+{% endif %}
+
+{% if pedidos_tarde %}
+<div class="turno-header">🌆 Tarde ({{ pedidos_tarde|length }} pedido{{ 's' if pedidos_tarde|length != 1 }})</div>
+{{ render_tabla(pedidos_tarde, pedidos_manana|length) }}
+{% endif %}
+
+{% if not pedidos_manana and not pedidos_tarde %}
+<div class="sin-pedidos">Sin pedidos para esta fecha.</div>
+{% endif %}
+
+</div><!-- wrap -->
+
+<script>
+function cambiarDia(delta, fechaStr) {
+  let d;
+  if (fechaStr) {
+    d = new Date(fechaStr + 'T00:00:00');
+  } else {
+    d = new Date(document.getElementById('fechaInput').value + 'T00:00:00');
+    d.setDate(d.getDate() + delta);
+  }
+  const iso = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  window.location = '/reparto/planilla?fecha=' + iso;
+}
+
+const CADETES = {{ cadetes | tojson }};
+const CADETE_OPTS = '<option value="">—</option>' + Object.entries(CADETES).map(([id,n])=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+const USUARIOS = {{ usuarios | tojson }};
+const USUARIO_OPTS = '<option value="">—</option>' + USUARIOS.map(u=>`<option value="${esc(u.nombre)}">${esc(u.nombre)}</option>`).join('');
+const FORMA_PAGO_OPTS = '<option value="">—</option>' + ['efectivo','transfer','link','sc','debito','credito'].map(v=>`<option value="${v}">${v}</option>`).join('');
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function actualizarCampo(pid, campo, valor) {
+  const r = await fetch('/api/reparto/pedido/' + pid + '/actualizar', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({campo, valor})
+  });
+  return r.json();
+}
+
+document.querySelectorAll('.celda-editable').forEach(td => {
+  td.addEventListener('click', function() {
+    if (td.querySelector('input') || td.querySelector('select')) return;
+    const span  = td.querySelector('.celda-valor');
+    const campo = td.dataset.campo;
+    const tipo  = td.dataset.tipo;
+    const pid   = td.closest('tr').dataset.pid;
+    const valorActual = span.textContent.trim();
+
+    let input;
+    if (tipo === 'select-usuarios') {
+      input = document.createElement('select');
+      input.innerHTML = USUARIO_OPTS;
+      input.value = valorActual === '—' ? '' : valorActual;
+    } else if (tipo === 'select-forma_pago') {
+      input = document.createElement('select');
+      input.innerHTML = FORMA_PAGO_OPTS;
+      input.value = valorActual === '—' ? '' : valorActual;
+    } else if (tipo === 'select-cadetes') {
+      input = document.createElement('select');
+      input.innerHTML = CADETE_OPTS;
+      const match = Object.entries(CADETES).find(([,n]) => n === valorActual);
+      input.value = match ? match[1] : '';
+    } else {
+      input = document.createElement('input');
+      input.type  = campo === 'importe' ? 'number' : 'text';
+      input.step  = '0.01';
+      input.value = valorActual === '—' ? '' : (campo === 'importe' ? valorActual.replace(/[^0-9,.]/g,'') : valorActual);
+    }
+
+    span.style.display = 'none';
+    td.appendChild(input);
+    input.focus();
+    if (input.select) input.select();
+
+    async function guardar() {
+      let val = input.tagName === 'SELECT' ? input.value : input.value.trim();
+      if (campo === 'importe' && val) {
+        span.textContent = '$ ' + Number(val.replace(',','.')).toLocaleString('es-AR', {maximumFractionDigits:0});
+      } else if (campo === 'cadete_id') {
+        span.textContent = val ? (CADETES[val] || val) : '—';
+      } else {
+        span.textContent = val || '—';
+      }
+      span.style.display = '';
+      input.remove();
+      const res = await actualizarCampo(pid, campo, val || null);
+      if (!res.ok) { span.textContent = '⚠️'; span.style.color = 'var(--warn)'; }
+    }
+
+    input.addEventListener('blur', guardar);
+    input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); guardar(); } });
+    if (input.tagName === 'SELECT') input.addEventListener('change', guardar);
+  });
+});
+
+async function toggleBooleano(pid, campo, actual) {
+  const res = await actualizarCampo(pid, campo, !actual);
+  if (res.ok) location.reload();
+}
+
+async function avanzarEstado(pid, actual) {
+  const orden = ['pendiente', 'en_ruta', 'entregado'];
+  const idx = orden.indexOf(actual);
+  const siguiente = idx >= 0 && idx < orden.length - 1 ? orden[idx + 1] : 'pendiente';
+  const res = await actualizarCampo(pid, 'estado', siguiente);
+  if (res.ok) location.reload();
+}
+</script>
+</body>
+</html>
