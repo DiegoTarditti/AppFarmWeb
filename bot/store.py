@@ -271,6 +271,84 @@ def buscar_clientes(query, limite=10):
                  'documento': r.documento_numero, 'telefono': r.telefono} for r in rows]
 
 
+def buscar_clientes_unificado(query, limite=12):
+    """Búsqueda multitoken unificada: obs_clientes + clientes locales.
+    Devuelve lista deduplicada. Un Cliente local con observer_id NO duplica
+    la fila de ObServer (se prefiere la local)."""
+    q = (query or '').strip()
+    if len(q) < 2:
+        return []
+    with database.get_db() as s:
+        # ── Buscar en obs_clientes (como buscar_clientes original) ──
+        tokens = [t for t in q.split() if len(t) >= 2]
+        obs_results = []
+        if q.isdigit():
+            rows = (s.query(database.ObsCliente)
+                    .filter(database.ObsCliente.documento_numero == int(q))
+                    .order_by(database.ObsCliente.apellido_nombre)
+                    .limit(limite).all())
+        elif tokens:
+            filtros = [database.ObsCliente.apellido_nombre.ilike(f'%{t}%')
+                       for t in tokens]
+            rows = (s.query(database.ObsCliente)
+                    .filter(and_(*filtros))
+                    .order_by(database.ObsCliente.apellido_nombre)
+                    .limit(limite).all())
+        else:
+            rows = []
+        for r in rows:
+            obs_results.append({
+                'observer_id': r.observer_id, 'cliente_id': None,
+                'nombre': r.apellido_nombre,
+                'documento': r.documento_numero or '',
+                'telefono': r.telefono or '',
+                'ciudad': r.localidad or '',
+            })
+
+        # ── Buscar en clientes locales ──
+        loc_results = []
+        if q.isdigit():
+            rows = (s.query(database.Cliente)
+                    .filter(database.Cliente.dni == q)
+                    .order_by(database.Cliente.apellido, database.Cliente.nombre)
+                    .limit(limite).all())
+        elif tokens:
+            # AND multitoken sobre nombre + apellido + dni + telefono
+            concat = func.lower(
+                func.coalesce(database.Cliente.nombre, '') + ' ' +
+                func.coalesce(database.Cliente.apellido, ''))
+            filtros_loc = []
+            for t in tokens:
+                tl = t.lower()
+                filtros_loc.append(or_(
+                    concat.ilike(f'%{tl}%'),
+                    database.Cliente.dni.ilike(f'%{tl}%'),
+                    database.Cliente.telefono.ilike(f'%{tl}%'),
+                ))
+            rows = (s.query(database.Cliente)
+                    .filter(and_(*filtros_loc))
+                    .order_by(database.Cliente.apellido, database.Cliente.nombre)
+                    .limit(limite).all())
+        else:
+            rows = []
+        for r in rows:
+            nombre = ', '.join(x for x in [r.apellido, r.nombre] if x) or '(sin nombre)'
+            loc_results.append({
+                'observer_id': r.observer_id, 'cliente_id': r.id,
+                'nombre': nombre,
+                'documento': r.dni or '',
+                'telefono': r.telefono or '',
+                'ciudad': r.ciudad or '',
+            })
+
+        # ── Dedup: si un local tiene observer_id, quitar la fila obs equivalente ──
+        local_oids = {r['observer_id'] for r in loc_results if r.get('observer_id')}
+        obs_results = [r for r in obs_results
+                       if r['observer_id'] not in local_oids]
+
+        return (obs_results + loc_results)[:limite]
+
+
 def _ficha_de_cliente(s, cliente_id):
     """Ficha uniforme desde la tabla única `clientes`. Si la fila tiene
     observer_id, completa los datos maestros desde `obs_clientes`. Devuelve dict
