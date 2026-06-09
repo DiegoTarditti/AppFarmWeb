@@ -548,7 +548,7 @@
         <label class="flex items-center gap-1" title="Mostrar solo productos con PVP mayor a este valor (precargado del Valor piso · productos caros)">
             PVP &gt; $
             <input type="number" id="filtro-pvp" min="0" step="500"
-                   value="{% if valor_piso %}{{ valor_piso | round | int }}{% endif %}"
+                   value=""
                    placeholder="0" style="width: 84px;">
         </label>
         <label class="flex items-center gap-1" title="Solo productos sin ventas en los últimos N meses (1-12)">
