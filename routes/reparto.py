@@ -88,6 +88,9 @@ def _pedido_dict(p, cadetes=None, rutas_cadete=None):
         'recibio': p.recibio or '',
         'observacion': p.observacion or '',
         'producto': p.producto or '',
+        'piso': p.piso or '',
+        'depto': p.depto or '',
+        'referencia': p.referencia or '',
     }
 
 
@@ -389,6 +392,22 @@ def init_app(app):
         from bot import envio as _envio
         return jsonify({'sugerencias': _envio.geocodificar_sugerencias(q, localidad=loc)})
 
+    @app.route('/reparto/api/separar-direccion', methods=['POST'])
+    @login_required
+    def reparto_separar_direccion():
+        """Endpoint server-side del parser: separa 'calle+número' de
+        'piso / depto / referencia' para no duplicar lógica en JS.
+
+        Body: {texto: "bolivia 1614 DTO 2"} → {direccion, piso, depto, referencia}
+        Si solo viene {direccion}, también lo parsea (por si el form mandó ya
+        el `direccion` separado y queremos defensivamente re-validar)."""
+        if not _ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        b = request.json or {}
+        texto = (b.get('texto') or b.get('direccion') or '').strip()
+        from bot.direcciones import separar_direccion
+        return jsonify(separar_direccion(texto))
+
     @app.route('/reparto/api/domicilio/<int:dom_id>/geo', methods=['POST'])
     @login_required
     def reparto_domicilio_set_geo(dom_id):
@@ -477,23 +496,32 @@ def init_app(app):
                 producto=(b.get('producto') or '').strip() or None,
                 producto_observer_id=b.get('producto_observer_id') or None,
                 envio_costo=envio_costo,
+                # Domicilio estructurado (piso/depto/referencia separados de direccion)
+                piso=(b.get('piso') or '').strip() or None,
+                depto=(b.get('depto') or '').strip() or None,
+                referencia=(b.get('referencia') or '').strip() or None,
             )
             s.add(p)
             s.flush()
             # Auto-persistir el domicilio: si hay cliente_id + direccion + lat/lng
             # y NO se eligió un domicilio_id existente, crearlo para que aparezca
-            # en el dropdown la próxima vez. Evita duplicados por dir+loc.
+            # en el dropdown la próxima vez. Evita duplicados por dir+loc+piso+depto.
             if _cid and direccion and (lat is not None and lng is not None) and not domicilio_id:
                 D = database.DomicilioCliente
+                _piso = (b.get('piso') or '').strip() or None
+                _depto = (b.get('depto') or '').strip() or None
+                _ref = (b.get('referencia') or '').strip() or None
                 ya = (s.query(D)
                       .filter(D.cliente_id == _cid,
                               D.direccion == direccion,
-                              D.localidad == (b.get('localidad') or None))
+                              D.localidad == (b.get('localidad') or None),
+                              D.piso == _piso, D.depto == _depto)
                       .first())
                 if not ya:
                     s.add(D(cliente_id=_cid, etiqueta='Casa',
                             direccion=direccion,
                             localidad=(b.get('localidad') or None),
+                            piso=_piso, depto=_depto, referencia=_ref,
                             lat=lat, lng=lng, origen='direccion',
                             geo_actualizado_en=database.now_ar()))
             s.commit()

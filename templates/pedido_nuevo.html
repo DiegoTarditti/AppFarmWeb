@@ -76,14 +76,26 @@
             </div>
           </div>
           <div class="field" style="position:relative;">
-            <label>Dirección</label>
+            <label>Dirección (calle y número)</label>
             <div style="display:flex; gap:5px;">
               <input id="pDir" class="input" placeholder="ej: Av. Córdoba 3400" style="flex:1;" autocomplete="off" oninput="onDirInput()" onkeydown="if(event.key==='Escape')document.getElementById('resGeo').style.display='none'">
               <button type="button" onclick="buscarGeoSugerencias()" class="hbtn" title="Buscar dirección en mapa">📍</button>
             </div>
             <div id="resGeo" class="res" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:5;"></div>
           </div>
-          <div class="field">
+          <div class="field" style="flex:0 0 70px;">
+            <label>Piso</label>
+            <input id="pPiso" class="input" placeholder="ej: 1 / PB" style="width:100%;">
+          </div>
+          <div class="field" style="flex:0 0 70px;">
+            <label>Depto</label>
+            <input id="pDepto" class="input" placeholder="ej: B" style="width:100%;">
+          </div>
+          <div class="field" style="flex:1 1 200px;">
+            <label>Referencia</label>
+            <input id="pRef" class="input" placeholder="monoblock 4, torre B, entre calles..." style="width:100%;">
+          </div>
+          <div class="field" style="flex:0 0 130px;">
             <label>Ciudad</label>
             <select id="pCiudad" class="input"></select>
           </div>
@@ -565,6 +577,21 @@ async function pickCli(ref, nombre, cid, oid){
         selC.appendChild(opt);
       }
     }
+    // Si la dirección viene concatenada (legacy 'calle 1234 dto 2'), parsear
+    // server-side para no perder piso/depto. Reaprovecha el parser
+    // de bot/direcciones.py vía /reparto/api/separar-direccion.
+    const _dirEl = document.getElementById('pDir');
+    if (_dirEl.value && (_dirEl.value.match(/(dto|dpto|depto|dep|departamento|uf|piso|pb|planta baja|monoblock|torre|entre|°|°)/i) || ficha.direccion != null)){
+      try {
+        const r = await jpost('/reparto/api/separar-direccion', {texto: _dirEl.value});
+        if (r && r.direccion){
+          _dirEl.value = r.direccion;
+          document.getElementById('pPiso').value = r.piso || '';
+          document.getElementById('pDepto').value = r.depto || '';
+          document.getElementById('pRef').value = r.referencia || '';
+        }
+      } catch(e) { /* ok, dejamos como está */ }
+    }
     const doms = ficha.domicilios||[];
     window._doms = doms;
     actualizarDomDropdown(doms);
@@ -581,7 +608,7 @@ async function pickCli(ref, nombre, cid, oid){
         const geoBadge = (x.lat!=null && x.lng!=null)
           ? ` 📍${x.geo_actualizado_en ? ' '+fmtFechaGeo(x.geo_actualizado_en) : ''}`
           : '';
-        return `<option value="${x.id}" data-lat="${x.lat||''}" data-lng="${x.lng||''}" data-loc="${esc(x.localidad||'')}" data-dir="${esc(x.direccion||'')}">${esc(x.etiqueta)} — ${esc(x.direccion||'(sin dirección)')}${loc}${geoBadge}</option>`;
+        return `<option value="${x.id}" data-lat="${x.lat||''}" data-lng="${x.lng||''}" data-loc="${esc(x.localidad||'')}" data-dir="${esc(x.direccion||'')}" data-piso="${esc(x.piso||'')}" data-depto="${esc(x.depto||'')}" data-ref="${esc(x.referencia||'')}">${esc(x.etiqueta)} — ${esc(x.direccion||'(sin dirección)')}${loc}${geoBadge}</option>`;
       }).join('');
     document.getElementById('btnEditarCli').style.display = cid ? 'inline-block' : 'none';
     // Auto-cotizar si el cliente vino con dirección ya cargada
@@ -707,6 +734,10 @@ async function agregar(){
     producto: document.getElementById('pProducto').value.trim(),
     producto_observer_id: window._prodOid || null,
     envio: document.getElementById('pEnvio').value || null,
+    // Domicilio estructurado (4 campos separados)
+    piso: document.getElementById('pPiso').value.trim(),
+    depto: document.getElementById('pDepto').value.trim(),
+    referencia: document.getElementById('pRef').value.trim(),
   };
   if(!body.cliente_nombre && !body.direccion && !body.domicilio_id){ alert('Poné cliente o dirección.'); return; }
   const d = await jpost('/reparto/pedido', body);
@@ -714,7 +745,7 @@ async function agregar(){
   if(!d.asignado){ document.getElementById('avisoCfg').textContent = '⚠️ El último pedido quedó "sin asignar".'; }
   else { document.getElementById('avisoCfg').textContent=''; }
   showToast(`✓ Pedido agregado <a href="/reparto/planilla">ver planilla →</a>`);
-  ['pCliente','pDir','pNota','pImporte','pVuelto','pProducto','pObservacion','pEnvio','pCuadras'].forEach(i=>{
+  ['pCliente','pDir','pPiso','pDepto','pRef','pNota','pImporte','pVuelto','pProducto','pObservacion','pEnvio','pCuadras'].forEach(i=>{
     const el=document.getElementById(i); if(el) el.value='';
   });
   document.getElementById('pPrio').value='normal';
