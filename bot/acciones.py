@@ -72,9 +72,15 @@ def seleccionar_producto(texto, query):
         idx = int(m.group(1) if m else t) - 1
         if 0 <= idx < len(rows):
             prod = rows[idx]
-            # Pasa a encargar con el producto pre-cargado (con o sin stock;
-            # el operador ve el stock real y decide).
-            return encargar(f'1 {prod["producto"]}')
+            # Antes pasaba directo a `encargar`. Ahora devuelve un MARCADOR para
+            # que cerebro decida: si la conv ya tiene cliente vinculado con DNI →
+            # `id_confirmar_dni`; si no → `id_pedir_dni`. El producto se guarda en
+            # `BotConversacion.producto_pendiente` durante los 1-3 turnos de id.
+            return {
+                'meta': {'camino': 'precio', 'resuelto': True,
+                         'proximo_paso': 'iniciar_id',
+                         'producto': f'1 {prod["producto"]}'},
+            }
         # número fuera de rango → re-mostrar la lista
     if len(t) >= 3 and not t.isdigit():
         # texto libre → nueva búsqueda
@@ -113,11 +119,68 @@ def encargar(texto):
     }
 
 
+# ── Flujo de identificación post-selección de producto ──────────────────────
+def identificar_por_dni(texto):
+    """Recibe lo que tipeó el cliente en `id_pedir_dni`. 3 caminos:
+
+    - skip ('no', 'pasa', 'cancelar', ...) → derivar al equipo con lo que haya.
+    - match único en obs_clientes/clientes → vincular + encargar con la ficha.
+    - match ambiguo o sin match → ofrecer dejar el nombre (paso opcional).
+    - input no es DNI válido → pedir de nuevo una vez (cerebro reintenta).
+
+    Devuelve dict de control: el cerebro hace el "encargar / vincular / saltar al
+    siguiente nodo" según meta.proximo_paso. Usa `producto_pendiente` (guardado
+    en BotConversacion al entrar a id_pedir_dni)."""
+    from bot import store
+    t = (texto or '').strip().lower()
+    if t in ('no', 'paso', 'pasame', 'pasame al equipo', 'no, paso al equipo',
+             'no paso al equipo', 'skip', 'cancelar'):
+        return {
+            'meta': {'camino': 'identificar', 'resuelto': True, 'proximo_paso': 'derivar_sin_id'},
+        }
+    digs = ''.join(ch for ch in (texto or '') if ch.isdigit())
+    if not (7 <= len(digs) <= 8):
+        return {
+            'texto': '⚠️ El DNI tiene que ser 7 u 8 dígitos. Probá de nuevo, o decime *no* y te paso al equipo.',
+            'esperando': 'identificar_por_dni',
+            'meta': {'camino': 'identificar', 'resuelto': True, 'proximo_paso': 'reintentar'},
+        }
+    oid, ambiguo = store.match_cliente_por_dni(digs)
+    if oid:
+        return {
+            'meta': {'camino': 'identificar', 'resuelto': True,
+                     'proximo_paso': 'vincular_y_encargar', 'observer_id': oid},
+        }
+    return {
+        'meta': {'camino': 'identificar', 'resuelto': True,
+                 'proximo_paso': 'ofrecer_nombre', 'dni_input': digs,
+                 'ambiguo': ambiguo},
+    }
+
+
+def guardar_nombre_y_encargar(texto):
+    """Guarda el nombre+apellido como lead local y deriva al operador.
+    El cerebro hace el create + encargar(producto_pendiente)."""
+    t = (texto or '').strip()
+    if len(t) < 2:
+        return {
+            'texto': '👤 Decime tu nombre y apellido para anotarlo.',
+            'esperando': 'guardar_nombre_y_encargar',
+            'meta': {'camino': 'identificar', 'resuelto': True, 'proximo_paso': 'reintentar'},
+        }
+    return {
+        'meta': {'camino': 'identificar', 'resuelto': True,
+                 'proximo_paso': 'crear_local_y_encargar', 'nombre_input': t},
+    }
+
+
 # Registro de acciones disponibles (lo usa el cerebro por nombre).
 ACCIONES = {
     'consultar_producto': consultar_producto,
     'consulta_ia': consulta_ia,
     'encargar': encargar,
+    'identificar_por_dni': identificar_por_dni,
+    'guardar_nombre_y_encargar': guardar_nombre_y_encargar,
 }
 
 # Prefijo especial de esperando: no es una acción sino un estado de selección.

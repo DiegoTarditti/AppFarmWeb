@@ -595,6 +595,7 @@ class DomicilioCliente(Base):
     localidad = Column(String(120))
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
+    geo_actualizado_en = Column(DateTime, nullable=True)
     origen = Column(String(12))            # pin | direccion
     creado_en = Column(DateTime, default=now_ar)
     ultimo_uso_en = Column(DateTime, nullable=True)
@@ -681,6 +682,13 @@ class PedidoReparto(Base):
     recibio = Column(String(35), nullable=True)
     observacion = Column(Text, nullable=True)
     producto = Column(String(200), nullable=True)
+    envio_costo = Column(DECIMAL(10, 2), nullable=True)
+    producto_observer_id = Column(Integer, nullable=True, index=True)
+    # WhatsApp publicación + tomado por cadete
+    waha_msg_id = Column(String(120), nullable=True, index=True)
+    publicado_en = Column(DateTime, nullable=True)
+    tomado_por_wsap = Column(String(80), nullable=True)
+    tomado_en = Column(DateTime, nullable=True)
 
 
 class ObsSyncLog(Base):
@@ -2568,6 +2576,10 @@ class BotConversacion(Base):
     cliente = relationship('Cliente', foreign_keys=[cliente_id])
     nodo = Column(String(50), default='inicio')      # estado del flujo conversacional
     esperando = Column(String(50))                   # acción esperando input del usuario
+    # Lo que el cliente "iba a encargar" cuando arranca el flujo de identificación
+    # (DNI / nombre). Se guarda acá porque los pasos de id pueden ser 1-3 turnos
+    # y `esperando` (50 chars) no alcanza para nombres largos de productos.
+    producto_pendiente = Column(Text, nullable=True)
     tiene_encargo = Column(Boolean, default=False, nullable=False,
                            server_default='false')   # hay un pedido concreto esperando
     creado_en = Column(DateTime, default=now_ar)
@@ -4473,6 +4485,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS cliente_local_id INTEGER",
         # Flag de encargo pendiente (producto encargado por el bot, visible en bandeja).
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS tiene_encargo BOOLEAN NOT NULL DEFAULT FALSE",
+        # Producto que el cliente "iba a encargar" cuando arranca el flujo de identificación (DNI/nombre).
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS producto_pendiente TEXT",
         # Presencia de agentes en el panel de atención.
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_presencia VARCHAR(12) NOT NULL DEFAULT 'online'",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",
@@ -4495,6 +4509,15 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS recibio VARCHAR(35)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS observacion TEXT",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS producto VARCHAR(200)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS envio_costo NUMERIC(10,2)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS producto_observer_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_producto_obs ON pedidos_reparto(producto_observer_id)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS waha_msg_id VARCHAR(120)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS publicado_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_por_wsap VARCHAR(80)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_en TIMESTAMP",
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_waha_msg ON pedidos_reparto(waha_msg_id)",
+        "ALTER TABLE domicilios_cliente ADD COLUMN IF NOT EXISTS geo_actualizado_en TIMESTAMP",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_cadete ON pedidos_reparto(cadete_id)",
     ]:
         conn.execute(text(stmt))

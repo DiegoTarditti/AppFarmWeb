@@ -99,6 +99,11 @@ services:
       BADIA_DATABASE_URL: ${BADIA_DATABASE_URL:-}
       # Slug de esta sucursal (si no, se autodetecta por db_name vs DATABASE_URL).
       SUCURSAL_LOCAL: ${SUCURSAL_LOCAL:-}
+      # WAHA: WhatsApp HTTP API para publicar pedidos a un grupo.
+      WAHA_URL: ${WAHA_URL:-http://waha:3000}
+      WAHA_API_KEY: ${WAHA_API_KEY:-admin}
+      WAHA_SESSION: ${WAHA_SESSION:-default}
+      WAHA_GRUPO_ENVIOS: ${WAHA_GRUPO_ENVIOS:-}
     ports:
       - "${WEB_PORT:-5000}:5000"
       # AppNúcleo (dashboard de grupo) corre standalone en 5001 para dev local.
@@ -149,6 +154,31 @@ services:
     volumes:
       - ./:/app
 
+  # WAHA: WhatsApp HTTP API (wrapper de whatsapp-web.js). Permite mandar mensajes
+  # a GRUPOS (Cloud API de Meta no lo permite). Una sesión = una cuenta WhatsApp.
+  # Web UI en http://localhost:3000 — primer login: escanear QR con el celular
+  # desde WhatsApp → Dispositivos vinculados → Vincular dispositivo.
+  waha:
+    image: devlikeapro/waha:latest
+    restart: unless-stopped
+    ports:
+      - "${WAHA_PORT:-3000}:3000"
+    environment:
+      WAHA_LOG_FORMAT: PRETTY
+      WHATSAPP_DEFAULT_ENGINE: WEBJS
+      # Credenciales del Swagger/dashboard (WAHA Core 2026+ pide login). Default
+      # admin/admin para test local. Cambialos en .env si exponés el puerto.
+      WHATSAPP_SWAGGER_USERNAME: ${WAHA_USER:-admin}
+      WHATSAPP_SWAGGER_PASSWORD: ${WAHA_PASS:-admin}
+      WAHA_DASHBOARD_USERNAME: ${WAHA_USER:-admin}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_PASS:-admin}
+      # API key para endpoints /api/* (si la seteás, hay que mandar header X-Api-Key).
+      # Default admin/admin → admin como key, simple para test local.
+      WHATSAPP_API_KEY: ${WAHA_API_KEY:-admin}
+    volumes:
+      - waha_sessions:/app/.sessions
+
 volumes:
   pgdata:
   observer_pgdata:
+  waha_sessions:

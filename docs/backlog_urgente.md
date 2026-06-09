@@ -66,9 +66,54 @@ línea `[migrate] init_db OK`. Si falta → re-setear el comando en Settings.
 
 ---
 
+## 🟡 P2 — Flujo nuevo /pedido/nuevo + WhatsApp grupo (2026-06-08)
+
+Pantalla limpia para tomar pedidos (alternativa a `/reparto`) + integración con
+WAHA (whatsapp-web.js) para publicar pedidos a un grupo de WhatsApp y aceptar
+"tomas" por reply.
+
+**Listo:**
+- `/pedido/nuevo` con autocomplete de cliente (live, multi-token) + autocomplete
+  de producto contra `obs_productos` (híbrido: link a obs_id si elige sugerencia,
+  texto libre si no) + buscador de dirección 📍 con sugerencias georef-ar.
+- Cotizador de envío integrado (cuadras manual override, badge zona/tramo,
+  semáforo de antigüedad del geocoding).
+- Persistencia automática del DomicilioCliente al crear pedido con nueva
+  dirección + lat/lng (anti-dup por dir+loc).
+- Servicio WAHA en docker-compose (Core, gratis). Sesión `default` paireada.
+- Tabla `pedidos_reparto` con columnas nuevas: `envio_costo`,
+  `producto_observer_id`, `waha_msg_id`, `publicado_en`, `tomado_por_wsap`,
+  `tomado_en`.
+- Tabla `domicilios_cliente.geo_actualizado_en` para track del semáforo.
+- Botón "📤 Publicar" en `/reparto/planilla` → manda formato pedido al grupo
+  configurado en `WAHA_GRUPO_ENVIOS`.
+- Webhook `/whatsapp/grupo/webhook` matchea replies con frases de toma
+  (`tomo`, `voy`, `lo tomo`, `yo voy`, `voy yo`, `lo agarro`, `oktomo`) →
+  asigna `tomado_por_wsap`, intenta match con `cadetes.nombre` para llenar
+  `cadete_id`, pasa pedido a `en_ruta`, responde en grupo. Anti-doble-toma
+  (segundo cadete que cita el mismo recibe `⚠️ ya lo tomó X`).
+
+**Pendiente (para usar en serio):**
+- Sacar `# TEMP TEST` en `routes/reparto.py::reparto_whatsapp_grupo_webhook`
+  que acepta mensajes propios (línea con `if msg.get('fromMe')` comentada).
+  En prod los cadetes mandan desde sus celulares, no del número vinculado.
+- Sacar `print('[WHATSAPP-WEBHOOK]', ...)` debug en el mismo handler.
+- Cargar cadetes reales en `/cadetes` con sus nombres (case-insensitive,
+  partial match contra pushName de WhatsApp) para que `cadete_id` enganche
+  automáticamente al "tomo".
+- (Opcional) Mapear `participant @lid` → teléfono → `cadetes.telefono` para
+  match robusto (hoy es solo por nombre).
+- (Opcional) Reducir info sensible del mensaje público si se usa grupo
+  compartido con otras farmacias: mandar solo `Pedido #N · zona · $ envío`
+  al grupo y los datos completos al DM del cadete cuando confirma.
+
+---
+
 ## ✅ Cerrado recientemente (para no re-discutir)
 
 - Métricas unificadas (`producto_metrics`) — cards == gráficos.
 - preDeploy + migraciones automáticas + render.yaml alineado (web starter, db basic_4gb).
 - `/pedidos/dia` rediseñado (tabla de cierres, Pedir, ✓/sin pedido).
 - Dedup chip de flag (`services/flags.py`).
+- Paleta de templates de reparto/caja/panel/envio/cadetes refrescada a tonos
+  más claros (zebra striping en planilla). 2026-06-08.

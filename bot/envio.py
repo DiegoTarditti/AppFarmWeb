@@ -339,14 +339,89 @@ def geocodificar(direccion, provincia='santa fe', localidad=None):
     return None
 
 
+def geocodificar_sugerencias(direccion, provincia='santa fe', localidad=None, max_=8):
+    """Lista de direcciones candidatas para autocomplete tipo Google Places.
+    Devuelve hasta `max_` resultados con {nomenclatura, direccion, localidad, lat, lng}.
+    Fuente: georef-ar (gratis, oficial AR).
+
+    Tolera direcciones con ', ciudad' pegada (común en datos importados de
+    ObServer): la corta antes de consultar y usa esa ciudad como localidad
+    si no se pasó una explícita."""
+    if not (direccion or '').strip():
+        return []
+    d = direccion.strip()
+    # Si viene "calle nro, ciudad" → separar
+    if ',' in d:
+        parte_dir, _, parte_loc = d.rpartition(',')
+        parte_dir = parte_dir.strip()
+        parte_loc = parte_loc.strip()
+        if parte_dir and parte_loc:
+            d = parte_dir
+            if not localidad:
+                localidad = parte_loc
+
+    def _query(q, loc):
+        params = {'direccion': q, 'provincia': provincia, 'max': max_}
+        if loc:
+            params['localidad'] = loc
+        try:
+            return requests.get(GEOREF_URL, params=params, timeout=15).json()
+        except Exception as e:  # noqa: BLE001
+            print('geocodificar_sugerencias error:', e)
+            return {}
+
+    data = _query(d, localidad)
+    direcciones = data.get('direcciones') or []
+    # Fallback 1: si filtramos por localidad y no encontró nada, reintentar
+    # sin localidad (la calle/nro puede estar en otra ciudad — ej: el usuario
+    # tiene Rosario seleccionado pero la dirección es de Funes).
+    if not direcciones and localidad:
+        data = _query(d, None)
+        direcciones = data.get('direcciones') or []
+    # Fallback 2: si tampoco encuentra, probar variante recortada
+    # (calle + primer número) por si pegaron CP/ciudad/extra.
+    if not direcciones:
+        for var in _variantes_direccion(d):
+            if var == d:
+                continue
+            data = _query(var, None)
+            direcciones = data.get('direcciones') or []
+            if direcciones:
+                break
+
+    out = []
+    for d in direcciones:
+        u = d.get('ubicacion') or {}
+        lat, lon = u.get('lat'), u.get('lon')
+        if lat is None or lon is None:
+            continue
+        loc = (d.get('localidad_censal') or {}).get('nombre') or ''
+        calle = (d.get('calle') or {}).get('nombre') or ''
+        altura = (d.get('altura') or {}).get('valor')
+        direccion_limpia = f"{calle} {altura}".strip() if calle else (d.get('nomenclatura') or '')
+        out.append({
+            'nomenclatura': d.get('nomenclatura') or '',
+            'direccion': direccion_limpia,
+            'localidad': loc,
+            'lat': float(lat), 'lng': float(lon),
+        })
+    return out
+
+
 def cotizar_por_direccion(direccion, localidad=None):
     """Dirección escrita → cotización. Atajo: si la localidad/dirección matchea
-    una zona nombrada, se usa esa tarifa sin geocodificar."""
+    una zona nombrada, se usa esa tarifa sin geocodificar. Usa el geocoder
+    multi-resultado (con fallbacks) para no fallar cuando la ciudad
+    seleccionada no coincide con la real de la calle."""
     z = cotizar(localidad=localidad or direccion)
     if z['fuente'] == 'zona':
         return z
-    coords = geocodificar(direccion, localidad=localidad)
-    if not coords:
+    sug = geocodificar_sugerencias(direccion, localidad=localidad, max_=1)
+    if not sug:
         return {'monto': None, 'fuente': None,
                 'detalle': 'no pude ubicar la dirección'}
-    return cotizar_por_coords(*coords)
+    s = sug[0]
+    r = cotizar_por_coords(s['lat'], s['lng'])
+    r['lat'], r['lng'] = float(s['lat']), float(s['lng'])
+    r['localidad_real'] = s.get('localidad') or ''
+    return r
