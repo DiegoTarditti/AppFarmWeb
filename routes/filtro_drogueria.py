@@ -23,8 +23,7 @@ from datetime import datetime
 from flask import jsonify, render_template, request
 
 import observer_source
-from database import (KellerhoffCatalogo, Laboratorio, LaboratorioDrogueria,
-                      Producto, Provider, get_db)
+from database import KellerhoffCatalogo, Laboratorio, LaboratorioDrogueria, Producto, Provider, get_db
 
 # Constantes de esta farmacia (PIERISTEI). Hardcode intencional.
 FARMACIA_NOMBRE = 'Farmacia PIERISTEI'
