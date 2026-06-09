@@ -344,10 +344,19 @@ def _georef_una(direccion, provincia, localidad):
 
 def geocodificar(direccion, provincia='santa fe', localidad=None):
     """Dirección escrita → (lat, lng) vía georef-ar (gratis, AR). None si falla.
-    Tolera que peguen CP/ciudad/provincia: prueba 'calle altura' recortado."""
+
+    Antes de geocodificar, pasa el input por `separar_direccion()` para mandar
+    SOLO la calle+número al geocoder (piso/depto/referencia NO entran).
+    Tolera que peguen CP/ciudad/provincia: prueba 'calle altura' recortado.
+    """
     if not (direccion or '').strip():
         return None
-    for var in _variantes_direccion(direccion):
+    # 1) Limpiar la dirección: quitar unidad (dto/piso/monoblock/etc).
+    #    separar_direccion preserva el casing/acentos del input.
+    from bot.direcciones import separar_direccion
+    limpio = separar_direccion(direccion)['direccion'] or direccion.strip()
+    # 2) Probar variantes para CP/ciudad pegados.
+    for var in _variantes_direccion(limpio):
         coords = _georef_una(var, provincia, localidad)
         if coords:
             return coords

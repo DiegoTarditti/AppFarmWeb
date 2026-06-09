@@ -101,8 +101,9 @@ async function cargar() {
             <div class="card-nombre">${esc(p.cliente_nombre)}</div>
             <div class="card-dir">
               ${p.lat && p.lng
-                ? `<a href="https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}" target="_blank">📍 ${esc(p.direccion)}</a>`
-                : esc(p.direccion)}
+                ? `<a href="https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}" target="_blank">📍 ${esc(p.direccion)}${p.piso ? ' Piso ' + esc(p.piso) : ''}${p.depto ? ' Dto ' + esc(p.depto) : ''}</a>`
+                : esc(p.direccion) + (p.piso ? ' Piso ' + esc(p.piso) : '') + (p.depto ? ' Dto ' + esc(p.depto) : '')}
+              ${p.referencia ? `<div style="font-size:.8em;color:var(--muted);margin-top:2px;">📝 ${esc(p.referencia)}</div>` : ''}
             </div>
           </div>
         </div>

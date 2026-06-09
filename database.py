@@ -596,6 +596,9 @@ class DomicilioCliente(Base):
     localidad = Column(String(120))
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
+    piso = Column(String(20), nullable=True)        # "1", "PB", "12"
+    depto = Column(String(20), nullable=True)        # "2", "B", "A"
+    referencia = Column(String(200), nullable=True)  # monoblock/torre/barrio/entre-calles
     geo_actualizado_en = Column(DateTime, nullable=True)
     origen = Column(String(12))            # pin | direccion
     creado_en = Column(DateTime, default=now_ar)
@@ -685,6 +688,9 @@ class PedidoReparto(Base):
     producto = Column(String(200), nullable=True)
     envio_costo = Column(DECIMAL(10, 2), nullable=True)
     producto_observer_id = Column(Integer, nullable=True, index=True)
+    piso = Column(String(20), nullable=True)
+    depto = Column(String(20), nullable=True)
+    referencia = Column(String(200), nullable=True)
     # WhatsApp publicación + tomado por cadete
     waha_msg_id = Column(String(120), nullable=True, index=True)
     publicado_en = Column(DateTime, nullable=True)
@@ -3301,6 +3307,40 @@ def _ejecutar_backfills_async():
                     """))
             except Exception:
                 pass
+            # Domicilios estructurados (idempotente — 2026-06-09): parsea
+            # `domicilios_cliente.direccion` mezclado (p.ej. 'bolivia 1614 DTO 2')
+            # y separa `piso`/`depto`/`referencia`. Gate: solo filas con los
+            # 3 campos NULL. Tras la 1ra corrida todo queda estructurado y es
+            # no-op. Loguea cuántas tocó para detectar volumen legacy.
+            try:
+                from bot.direcciones import separar_direccion
+                cand = bf_conn.execute(text(
+                    "SELECT id, direccion FROM domicilios_cliente "
+                    "WHERE piso IS NULL AND depto IS NULL AND referencia IS NULL "
+                    "  AND direccion IS NOT NULL AND direccion <> ''"
+                )).fetchall()
+                n_fix = 0
+                for (did, d) in cand:
+                    r = separar_direccion(d)
+                    # Solo persistir si realmente extrajimos algo de unidad
+                    if r['piso'] or r['depto'] or r['referencia']:
+                        bf_conn.execute(text(
+                            "UPDATE domicilios_cliente "
+                            "SET direccion = :d, piso = :p, depto = :dep, "
+                            "    referencia = :ref "
+                            "WHERE id = :id"
+                        ), {'d': r['direccion'], 'p': r['piso'],
+                            'dep': r['depto'], 'ref': r['referencia'],
+                            'id': did})
+                        n_fix += 1
+                if n_fix:
+                    import logging
+                    logging.getLogger(__name__).info(
+                        f'backfill_estructura_legacy: {n_fix} domicilios normalizados')
+            except Exception as _e_bf:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f'backfill_estructura_legacy FALLÓ (no-fatal): {_e_bf}')
     except Exception:
         # Si ni la conexión arranca, lo dejamos pasar — son backfills opcionales.
         pass
@@ -4525,7 +4565,14 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_en TIMESTAMP",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_waha_msg ON pedidos_reparto(waha_msg_id)",
         "ALTER TABLE domicilios_cliente ADD COLUMN IF NOT EXISTS geo_actualizado_en TIMESTAMP",
+        # Domicilios estructurados: piso/depto/referencia separados de direccion
+        "ALTER TABLE domicilios_cliente ADD COLUMN IF NOT EXISTS piso VARCHAR(20)",
+        "ALTER TABLE domicilios_cliente ADD COLUMN IF NOT EXISTS depto VARCHAR(20)",
+        "ALTER TABLE domicilios_cliente ADD COLUMN IF NOT EXISTS referencia VARCHAR(200)",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_cadete ON pedidos_reparto(cadete_id)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS piso VARCHAR(20)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS depto VARCHAR(20)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS referencia VARCHAR(200)",
     ]:
         conn.execute(text(stmt))
     # Token para link móvil del cadete (vista de reparto sin login)
@@ -4701,6 +4748,21 @@ def _pg_add_columns(conn):
     """))
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_informe_conv ON informe_enviado(conversacion_id)"))
+
+    # Domicilios estructurados (migración SQLite)
+    try:
+        existing_dc = {row[1] for row in conn.execute(text("PRAGMA table_info(domicilios_cliente)"))}
+        for col, sql_type in [
+            ('piso', 'VARCHAR(20)'),
+            ('depto', 'VARCHAR(20)'),
+            ('referencia', 'VARCHAR(200)'),
+            ('geo_actualizado_en', 'TIMESTAMP'),
+            ('cliente_id', 'INTEGER'),
+        ]:
+            if col not in existing_dc:
+                conn.execute(text(f"ALTER TABLE domicilios_cliente ADD COLUMN {col} {sql_type}"))
+    except Exception:
+        pass
 
     # Índices para queries frecuentes
     for stmt in [
