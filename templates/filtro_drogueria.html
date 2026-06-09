@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Filtro droguería</title>
+<style>
+  :root { --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; font-family:var(--font-sans); }
+  .ti { font-style:normal; line-height:1; display:inline-block; }
+
+  #app.dark {
+    --bg:#14141a; --bd:rgba(255,255,255,0.08); --topbar:#1a1a22; --card:#16161d;
+    --title:#f0f0f3; --txt:#c8c8ce; --muted:#6a6a72; --muted2:#8a8a92;
+    --accent:#1D9E75; --accenttxt:#5DCAA5; --logo-bg:#534AB7; --logo-tx:#EEEDFE;
+    --card-bd:#185FA5; --input:#1f1f29; --input-tx:#e0e0e6; --hov:#2e2e3a;
+    --btn-bg:#534AB7; --btn-tx:#EEEDFE; --save-bg:#0F6E56; --save-tx:#E1F5EE;
+    --row-bd:rgba(255,255,255,0.06); --code-bg:#23232d; --pre-bg:#0d0d12; --pre-tx:#c8c8ce;
+    --warn-bg:#2a1812; --warn-tx:#F0997B; --sep-bg:#1f1d2e; --sep-tx:#AFA9EC; --theme-bd:rgba(255,255,255,0.15);
+  }
+  #app.light {
+    --bg:#dbe5e6; --bd:#b8c8c9; --topbar:#cdd9da; --card:#eef4f4;
+    --title:#1f3a36; --txt:#2c3e3b; --muted:#6f807d; --muted2:#5f6e6b;
+    --accent:#0F6E56; --accenttxt:#0F6E56; --logo-bg:#0F6E56; --logo-tx:#E1F5EE;
+    --card-bd:#5DCAA5; --input:#fff; --input-tx:#2c3e3b; --hov:#dbe8e8;
+    --btn-bg:#0F6E56; --btn-tx:#E1F5EE; --save-bg:#0F6E56; --save-tx:#E1F5EE;
+    --row-bd:#dde7e7; --code-bg:#e2eeed; --pre-bg:#1c1c1e; --pre-tx:#e5e5e5;
+    --warn-bg:#f6e0d6; --warn-tx:#993c1d; --sep-bg:#dceaf5; --sep-tx:#0c447c; --theme-bd:#b8c8c9;
+  }
+
+  #app { background:var(--bg); color:var(--txt); min-height:100vh; }
+  .topbar { background:var(--topbar); border-bottom:0.5px solid var(--bd); display:flex; align-items:center; justify-content:space-between; padding:10px 18px; }
+  .logo { background:var(--logo-bg); color:var(--logo-tx); width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:700; }
+  .title { color:var(--title); font-size:14px; font-weight:600; }
+  .muted { color:var(--muted); } .muted2 { color:var(--muted2); } .accent-txt { color:var(--accenttxt); }
+  #theme-btn { border:0.5px solid var(--theme-bd); color:var(--muted2); cursor:pointer; display:flex; align-items:center; gap:6px; padding:5px 12px; border-radius:20px; background:transparent; font-size:11px; }
+  .wrap { max-width:1000px; margin:0 auto; padding:22px 18px; }
+  .card { background:var(--card); border:0.5px solid var(--bd); border-radius:12px; }
+  .input, select.input { background:var(--input); color:var(--input-tx); border:0.5px solid var(--bd); border-radius:8px; padding:7px 11px; font-size:13px; }
+  .btn { background:var(--btn-bg); color:var(--btn-tx); border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; }
+  .btn:disabled { opacity:.5; cursor:default; }
+  .btn-save { background:var(--save-bg); color:var(--save-tx); }
+  code { background:var(--code-bg); color:var(--title); padding:2px 7px; border-radius:6px; font-size:12px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th { color:var(--muted); font-weight:500; text-align:left; padding:0 8px 4px; }
+  td { padding:4px 8px; border-top:0.5px solid var(--row-bd); }
+  pre { background:var(--pre-bg); color:var(--pre-tx); padding:12px; border-radius:8px; overflow-x:auto; font-size:11px; line-height:1.45; }
+  details summary { cursor:pointer; color:var(--muted2); font-size:13px; user-select:none; padding:8px 0; }
+  .badge { font-size:11px; padding:2px 8px; border-radius:6px; }
+  .badge-orig { background:var(--sep-bg); color:var(--sep-tx); }
+  .badge-sep { background:var(--warn-bg); color:var(--warn-tx); }
+  .tabnum { font-variant-numeric:tabular-nums; }
+  a { color:var(--accenttxt); }
+</style>
+</head>
+<body>
+<div id="app" class="dark">
+
+  <div class="topbar">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="logo">+</div>
+      <span class="title">Filtro droguería</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <a href="/compras/labs-drogerias" target="_blank" class="btn"
+         style="text-decoration:none; padding:6px 13px; font-size:12px;"
+         title="Abrir la matriz lab × droguería en otra pestaña">⊞ Matriz lab/drog</a>
+      <button id="theme-btn"><span id="theme-icon">🌙</span><span id="theme-text">Oscuro</span></button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <p class="muted" style="font-size:13px; margin:0 0 12px;">
+      Separa un pedido de ObServer por la matriz lab × droguería y genera un archivo por droguería en su formato nativo.
+    </p>
+    <div id="aviso-picker" class="card" style="display:none; border-color:#7a5a1a; color:var(--warn-tx); padding:10px 14px; margin-bottom:16px; font-size:12.5px; line-height:1.5;"></div>
+
+    {% if error %}
+      <div class="card" style="border-color:#7a2a2a; color:var(--warn-tx); padding:12px 16px; margin-bottom:18px; font-size:13px;">{{ error }}</div>
+    {% endif %}
+
+    <div class="card" style="padding:16px; margin-bottom:20px; display:flex; flex-wrap:wrap; align-items:flex-end; gap:14px;">
+      <label style="font-size:13px; display:flex; flex-direction:column; gap:5px;">
+        <span class="title" style="font-size:12px;">Pedido</span>
+        <select id="sel-pedido" class="input" style="min-width:380px;">
+          {% if not pedidos %}
+            <option value="">— sin pedidos —</option>
+          {% else %}
+            {% for p in pedidos %}
+              <option value="{{ p.id_pedido }}" data-proveedor="{{ p.proveedor }}" data-fecha="{{ p.fecha }}">
+                N° {{ p.nro }} · {{ p.fecha[8:10] }}/{{ p.fecha[5:7] }} {{ p.fecha[11:16] }} · {{ p.proveedor }} · {{ p.n_items }} ít.{% if p.usuario %} · {{ p.usuario }}{% endif %}
+              </option>
+            {% endfor %}
+          {% endif %}
+        </select>
+      </label>
+      <button id="btn-analizar" class="btn" {% if not pedidos %}disabled{% endif %}>Analizar y generar</button>
+      <span id="estado" class="muted2" style="font-size:13px;"></span>
+    </div>
+
+    <div id="resultado" style="display:none;">
+      <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px;">
+        <div id="resumen" class="txt" style="font-size:13px;"></div>
+        <button id="btn-guardar" class="btn btn-save">💾 Guardar todos…</button>
+      </div>
+      <div id="grupos" style="display:flex; flex-direction:column; gap:14px;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (s, r=document) => r.querySelector(s);
+let GROUPS = [];
+
+// ── Tema (localStorage) ──
+const app = $('#app');
+function aplicarTema(t) {
+  app.className = t;
+  $('#theme-icon').textContent = t === 'dark' ? '🌙' : '☀️';
+  $('#theme-text').textContent = t === 'dark' ? 'Oscuro' : 'Claro';
+}
+aplicarTema(localStorage.getItem('filtroDrogTema') || 'dark');
+$('#theme-btn').addEventListener('click', () => {
+  const t = app.className === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('filtroDrogTema', t); aplicarTema(t);
+});
+
+// ── Diagnóstico: ¿está disponible el selector de carpeta? ──
+function chequearPicker() {
+  if (window.showSaveFilePicker) return;   // todo OK
+  const av = $('#aviso-picker');
+  let causa;
+  if (!window.isSecureContext) {
+    const url = location.origin;
+    causa = `estás entrando por <code>${url}</code>, que no es un contexto seguro (HTTP por IP).<br>`
+      + `<b>Fix recomendado:</b> en Edge abrí <code>edge://flags/#unsafely-treat-insecure-origin-as-secure</code> `
+      + `(Chrome: <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>), pegá <code>${url}</code>, `
+      + `ponelo en <b>Enabled</b> y <b>Relaunch</b>. Después el "Guardar como…" funciona y recuerda la carpeta.`;
+  } else {
+    causa = `tu navegador no soporta elegir carpeta. Usá <b>Edge o Chrome</b>.`;
+  }
+  av.innerHTML = `⚠ <b>No puedo abrir el diálogo de carpeta:</b> ${causa}<br>`
+    + `<b>Alternativa rápida:</b> mientras tanto los archivos se <b>descargan</b>. Para que el navegador te pregunte la carpeta en cada descarga: `
+    + `Configuración → Descargas → activá <b>"Preguntar dónde guardar cada archivo antes de descargarlo"</b>.`;
+  av.style.display = '';
+}
+
+// ── Guardado: un diálogo por archivo (elegís carpeta para cada uno) ──
+function toLatin1(str) {
+  const u = new Uint8Array(str.length);
+  for (let i = 0; i < str.length; i++) u[i] = str.charCodeAt(i) & 0xff;
+  return u;
+}
+function descargar(g) {
+  const blob = new Blob([toLatin1(g.content)], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = g.filename; a.click();
+  URL.revokeObjectURL(a.href);
+}
+// Devuelve 'ok' | 'cancel' | 'download'. El `id` hace que el browser recuerde
+// la última carpeta usada (por droguería) entre llamadas y sesiones.
+async function guardarArchivo(g) {
+  if (!g || !g.content || !g.filename) return 'cancel';
+  if (!window.showSaveFilePicker) { descargar(g); return 'download'; }
+  const ext = g.formato === 'ped' ? '.PED' : '.txt';
+  try {
+    const handle = await window.showSaveFilePicker({
+      id: 'filtroDrog_' + (g.drog_id || 'x'),   // carpeta recordada por droguería
+      suggestedName: g.filename,
+      types: [{ description: g.drogueria, accept: { 'text/plain': [ext] } }],
+    });
+    const w = await handle.createWritable();
+    await w.write(toLatin1(g.content));
+    await w.close();
+    return 'ok';
+  } catch (e) {
+    if (e && e.name === 'AbortError') return 'cancel';
+    throw e;
+  }
+}
+async function guardarUno(idx) {
+  const g = GROUPS[idx];
+  try {
+    const r = await guardarArchivo(g);
+    if (r === 'ok') setEstado(`✓ Guardado: ${g.filename}`);
+    else if (r === 'download') setEstado(`↓ Descargado: ${g.filename}`);
+  } catch (e) { setEstado('Error al guardar ' + g.filename + ': ' + e.message); }
+}
+async function guardar() {
+  const escribibles = GROUPS.filter(g => g.content && g.filename);
+  if (!escribibles.length) { alert('No hay archivos para guardar.'); return; }
+  let n = 0;
+  for (const g of escribibles) {
+    try {
+      const r = await guardarArchivo(g);
+      if (r === 'ok' || r === 'download') n++;
+    } catch (e) { setEstado('Error al guardar ' + g.filename + ': ' + e.message); return; }
+  }
+  setEstado(`✓ ${n} archivo(s) guardado(s).`);
+}
+function setEstado(t) { $('#estado').textContent = t; }
+
+async function analizar() {
+  const sel = $('#sel-pedido'), opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+  $('#btn-analizar').disabled = true;
+  setEstado('Analizando pedido en ObServer…');
+  try {
+    const r = await fetch('/filtro_drogueria/generar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_pedido: opt.value, proveedor: opt.dataset.proveedor, fecha: opt.dataset.fecha }),
+    });
+    const data = await r.json();
+    if (!data.ok) { setEstado('⚠ ' + data.error); return; }
+    GROUPS = data.groups; render(data); setEstado('');
+  } catch (e) { setEstado('Error: ' + e.message); }
+  finally { $('#btn-analizar').disabled = false; }
+}
+
+function esc(s) { return (s ?? '').toString().replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function render(data) {
+  $('#resultado').style.display = '';
+  const amb = data.ambiguos ? ` · <span style="color:var(--warn-tx)">${data.ambiguos} ambiguo(s) → quedan en origen</span>` : '';
+  $('#resumen').innerHTML =
+    `Pedido <b>#${data.id_pedido}</b> · origen <b>${esc(data.origen.nombre)}</b> · ${data.total_items} ítems → <b>${data.groups.length}</b> archivo(s)${amb}`;
+
+  $('#grupos').innerHTML = data.groups.map((g, idx) => {
+    const badge = g.es_origen
+      ? '<span class="badge badge-orig">queda en origen</span>'
+      : '<span class="badge badge-sep">separado</span>';
+    const warnFmt = g.aviso ? `<div style="color:var(--warn-tx); font-size:13px; padding:6px 16px;">⚠ ${esc(g.aviso)}</div>` : '';
+    const warnEan = g.sin_ean ? `<span style="color:var(--warn-tx); font-size:12px; margin-left:8px;">${g.sin_ean} sin EAN</span>` : '';
+    const filas = g.items.map((it, i) => `
+      <tr${it.ean ? '' : ' style="background:var(--warn-bg)"'}>
+        <td class="muted" style="text-align:right">${i + 1}</td>
+        <td style="text-align:right; font-weight:600">${it.cant}</td>
+        <td>${esc(it.producto)}</td>
+        <td class="muted2">${esc(it.lab)}</td>
+        <td class="tabnum">${esc(it.troquel)}</td>
+        <td class="tabnum"${it.ean ? '' : ' style="color:var(--warn-tx)"'}>${esc(it.ean) || '— sin EAN —'}</td>
+      </tr>`).join('');
+    return `
+    <div class="card" style="overflow:hidden;">
+      <div style="padding:12px 16px; display:flex; flex-wrap:wrap; align-items:center; gap:10px; border-bottom:0.5px solid var(--bd);">
+        <span class="title">📦 ${esc(g.drogueria)}</span> ${badge}
+        <span class="muted2" style="font-size:13px;">${g.n_items} ítems${warnEan}</span>
+        <span style="margin-left:auto; font-size:13px; display:flex; align-items:center; gap:10px;">
+          ${g.filename ? `<code>${esc(g.filename)}</code>` : ''}
+          ${g.formato ? `<span class="muted" style="font-size:11px;">(${g.formato})</span>` : ''}
+          ${g.content ? `<button class="btn btn-save" style="padding:5px 12px; font-size:12px;" onclick="guardarUno(${idx})">💾 Guardar</button>` : ''}
+        </span>
+      </div>
+      ${g.carpeta ? `<div class="muted2" style="font-size:12px; padding:8px 16px 0;">📁 Guardar en: <code style="font-size:11px;">${esc(g.carpeta)}</code></div>` : ''}
+      ${warnFmt}
+      <details style="padding:2px 16px 10px;">
+        <summary>Ver ${g.n_items} renglones / contenido</summary>
+        <div style="overflow-x:auto; margin-top:6px;">
+          <table>
+            <thead><tr>
+              <th style="text-align:right">#</th><th style="text-align:right">Cant</th>
+              <th>Producto</th><th>Lab</th><th>Troquel</th><th>EAN</th>
+            </tr></thead>
+            <tbody>${filas}</tbody>
+          </table>
+        </div>
+        ${g.content ? `<pre>${esc(g.content)}</pre>` : ''}
+      </details>
+    </div>`;
+  }).join('');
+}
+
+$('#btn-analizar').addEventListener('click', analizar);
+$('#btn-guardar').addEventListener('click', guardar);
+chequearPicker();
+</script>
+</body>
+</html>
