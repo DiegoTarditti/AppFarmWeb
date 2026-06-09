@@ -184,12 +184,6 @@
               <option value="tarde">Tarde</option>
             </select>
           </div>
-          <div class="field">
-            <label>Cadete</label>
-            <select id="pCadete" class="input">
-              <option value="">(heredar de ruta)</option>
-            </select>
-          </div>
           <div class="field check-line" style="justify-content:flex-start; padding-top:18px;">
             <label><input type="checkbox" id="pReceta"> Receta</label>
             <label><input type="checkbox" id="pPagado"> Pagado</label>
@@ -509,10 +503,6 @@ async function cargarSelects(){
   const d = await (await fetch('/reparto/api?fecha='+fechaVal())).json();
   const selC = document.getElementById('pCiudad');
   selC.innerHTML = (d.ciudades||['Rosario']).map(c=>`<option ${c==='Rosario'?'selected':''}>${esc(c)}</option>`).join('');
-  if(d.cadetes){
-    const selCad = document.getElementById('pCadete');
-    selCad.innerHTML = '<option value="">(heredar de ruta)</option>' + d.cadetes.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
-  }
   // Restaurar turno previo (recordado entre tomas)
   const turnoPrev = localStorage.getItem('pedido_nuevo_turno') || '';
   document.getElementById('pTurno').value = turnoPrev;
@@ -713,7 +703,6 @@ async function agregar(){
     requiere_receta: document.getElementById('pReceta').checked,
     pagado: document.getElementById('pPagado').checked,
     turno: document.getElementById('pTurno').value,
-    cadete_id: document.getElementById('pCadete').value || null,
     observacion: document.getElementById('pObservacion').value.trim(),
     producto: document.getElementById('pProducto').value.trim(),
     producto_observer_id: window._prodOid || null,
@@ -733,7 +722,6 @@ async function agregar(){
   document.getElementById('pCanal').value='mostrador';
   document.getElementById('pFormaPago').value='';
   // pTurno NO se resetea: queda el último elegido (también guardado en localStorage)
-  document.getElementById('pCadete').value='';
   document.getElementById('pReceta').checked=false;
   document.getElementById('pPagado').checked=false;
   document.getElementById('btnEditarCli').style.display='none';

@@ -8,6 +8,7 @@ Modelo híbrido (Fase 1):
 Las cuadras las provee el operador (Fase 1) o el bot desde la ubicación
 (Fase 2). lat/lng/radio_km de las zonas quedan NULL hasta Fase 2 (pin → círculo).
 """
+import json
 import math
 import re
 import unicodedata
@@ -112,7 +113,9 @@ def listar_tarifas():
                         'monto': float(t.monto or 0)} for t in tramos],
             'zonas': [{'id': z.id, 'nombre': z.nombre, 'monto': float(z.monto or 0),
                        'activa': z.activa, 'lat': z.lat, 'lng': z.lng,
-                       'radio_km': z.radio_km} for z in zonas],
+                       'radio_km': z.radio_km,
+                       'poligono': json.loads(z.poligono) if z.poligono else None,
+                       } for z in zonas],
         }
 
 
@@ -146,7 +149,8 @@ def eliminar_tramo(tramo_id):
         return {'ok': True}
 
 
-def guardar_zona(zona_id, nombre, monto, lat=None, lng=None, radio_km=None):
+def guardar_zona(zona_id, nombre, monto, lat=None, lng=None, radio_km=None,
+                 poligono_texto=None):
     nombre = (nombre or '').strip()
     if not nombre:
         return {'ok': False, 'error': 'nombre vacío'}
@@ -167,6 +171,11 @@ def guardar_zona(zona_id, nombre, monto, lat=None, lng=None, radio_km=None):
             z.lng = _f(lng)
         if radio_km is not None:
             z.radio_km = _f(radio_km)
+        # Polígono GeoJSON (reemplaza el círculo para detección geográfica).
+        if poligono_texto is not None:
+            from services import reparto as _rep
+            parsed = _rep.parse_poligono(poligono_texto)
+            z.poligono = json.dumps(parsed) if parsed else None
         s.commit()
         return {'ok': True, 'id': z.id}
 
@@ -270,20 +279,26 @@ def cuadras_desde_coords(lat, lng, cfg=None):
 
 
 def cotizar_por_coords(lat, lng):
-    """Cotiza desde un punto (pin de ubicación). Prioridad: zona por CÍRCULO
-    (lat/lng + radio_km) → tramo por cuadras estimadas."""
+    """Cotiza desde un punto. Prioridad: zona por POLÍGONO
+    (point-in-polygon) → tramo por cuadras estimadas.
+    La zona nombrada (match tolerante por nombre) sigue pisando los tramos
+    también (se llama desde cotizar() en el path de localidad)."""
     lat, lng = _f(lat), _f(lng)
     if lat is None or lng is None:
         return {'monto': None, 'fuente': None, 'detalle': 'ubicación inválida'}
     with database.get_db() as s:
-        zonas = (s.query(database.EnvioZona)
-                 .filter(database.EnvioZona.activa.is_(True),
-                         database.EnvioZona.lat.isnot(None),
-                         database.EnvioZona.lng.isnot(None),
-                         database.EnvioZona.radio_km.isnot(None))
-                 .order_by(database.EnvioZona.orden).all())
-        for z in zonas:
-            if _haversine_m(z.lat, z.lng, lat, lng) / 1000.0 <= z.radio_km:
+        # 1) Zonas con polígono: point-in-polygon.
+        from services import reparto as _rep
+        zonas_poly = (s.query(database.EnvioZona)
+                      .filter(database.EnvioZona.activa.is_(True),
+                              database.EnvioZona.poligono.isnot(None))
+                      .order_by(database.EnvioZona.orden).all())
+        for z in zonas_poly:
+            try:
+                poly = json.loads(z.poligono)
+            except (ValueError, TypeError):
+                continue
+            if _rep._punto_en_poligono(lat, lng, poly):
                 return {'monto': float(z.monto or 0), 'fuente': 'zona',
                         'detalle': z.nombre}
     cu = cuadras_desde_coords(lat, lng)

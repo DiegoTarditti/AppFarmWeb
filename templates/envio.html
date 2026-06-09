@@ -113,12 +113,12 @@
 
       <!-- Zonas -->
       <div class="card">
-        <h2>Zonas con tarifa fija</h2>
+        <h2>Zonas con tarifa fija (polígono)</h2>
         <table>
-          <thead><tr><th>Zona</th><th>Monto</th><th>Radio km</th><th>Pin</th><th></th></tr></thead>
+          <thead><tr><th>Zona</th><th>Monto</th><th>Polígono</th><th></th></tr></thead>
           <tbody id="tbZonas"></tbody>
         </table>
-        <div class="muted" style="font-size:11px; margin-top:6px;">El "Pin" (📍) geolocaliza la zona para detectarla desde la ubicación del cliente (Fase 2).</div>
+        <div class="muted" style="font-size:11px; margin-top:6px;">Pegá las esquinas del polígono desde Google Maps (lat, lng por línea). La zona pisa los tramos cuando las coords del cliente caen dentro.</div>
         <div style="display:flex; gap:6px; margin-top:10px;">
           <input id="nZonaNombre" class="input" placeholder="nombre (ej: Roldán)" style="flex:1;">
           <input id="nZonaMonto" type="number" min="0" class="input" placeholder="monto" style="flex:1;">
@@ -157,14 +157,25 @@ async function cargar(){
     </tr>`).join('') || '<tr><td colspan="3" class="muted">Sin tramos.</td></tr>';
   window._tramos = {}; (d.tramos||[]).forEach(t=>window._tramos[t.id]=t);
   // Zonas
-  document.getElementById('tbZonas').innerHTML = (d.zonas||[]).map(z=>`
-    <tr>
+  document.getElementById('tbZonas').innerHTML = (d.zonas||[]).map(z=>{
+    const nPts = z.poligono ? z.poligono.length : 0;
+    const polyLabel = nPts >= 3 ? `✓ ${nPts} pts` : '<span class="muted">sin polígono</span>';
+    return `<tr>
       <td><input class="input" value="${esc(z.nombre)}" onchange="saveZona(${z.id}, this.value, null, null)"></td>
       <td><input class="input" type="number" value="${z.monto}" onchange="saveZona(${z.id}, null, this.value, null)"></td>
-      <td><input class="input" type="number" step="0.5" value="${z.radio_km ?? ''}" placeholder="2" onchange="saveZona(${z.id}, null, null, this.value)" style="width:70px;"></td>
-      <td>${z.lat!=null ? '✓' : '<span class="muted">—</span>'} <button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="geoZona(${z.id})">📍</button></td>
+      <td style="max-width:300px;">
+        <div style="display:flex; gap:4px; align-items:center;">
+          <span style="font-size:11px;">${polyLabel}</span>
+          <button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="togglePoly(${z.id})" title="Definir/editar polígono">✏️</button>
+        </div>
+        <textarea id="poly_${z.id}" class="input" style="display:none; width:100%; min-height:60px; font-size:11px; font-family:monospace; margin-top:4px;"
+          placeholder="Pegar esquinas: lat, lng por línea&#10;-32.95, -60.65&#10;-32.96, -60.65&#10;-32.96, -60.66&#10;-32.95, -60.66"
+        >${(z.poligono||[]).map(p=>p.join(', ')).join('\n')}</textarea>
+        <button id="polyBtn_${z.id}" class="hbtn hbtn-ok" style="display:none; margin-top:4px; font-size:10px;" onclick="savePoly(${z.id})">Guardar polígono</button>
+      </td>
       <td><button class="hbtn hbtn-danger" onclick="delZona(${z.id})">Quitar</button></td>
-    </tr>`).join('') || '<tr><td colspan="5" class="muted">Sin zonas.</td></tr>';
+    </tr>`;
+  }).join('') || '<tr><td colspan="4" class="muted">Sin zonas.</td></tr>';
   window._zonas = {}; (d.zonas||[]).forEach(z=>window._zonas[z.id]=z);
 }
 
@@ -217,10 +228,23 @@ async function addTramo(){
 }
 async function delTramo(id){ if(confirm('¿Quitar tramo?')){ await jpost(`/envio/tramo/${id}/delete`); cargar(); } }
 
+function togglePoly(id){
+  const ta = document.getElementById('poly_'+id);
+  const btn = document.getElementById('polyBtn_'+id);
+  if(!ta) return;
+  const show = ta.style.display === 'none';
+  ta.style.display = show ? '' : 'none';
+  btn.style.display = show ? '' : 'none';
+}
+async function savePoly(id){
+  const ta = document.getElementById('poly_'+id);
+  if(!ta) return;
+  await jpost('/envio/zona', {id, poligono_texto: ta.value});
+  cargar();
+}
 async function saveZona(id, nombre, monto, radio){
   const z = window._zonas[id] || {};
   const body = {id, nombre: nombre!=null?nombre:z.nombre, monto: monto!=null?monto:z.monto};
-  if(radio!=null && radio!=='') body.radio_km = radio;
   await jpost('/envio/zona', body);
   cargar();
 }

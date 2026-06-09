@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Farmacia · Soporte — Maqueta UI</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/tabler-icons.min.css">
+<style>
+  :root {
+    --border-radius-lg: 12px;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: #0d0d12;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    font-family: var(--font-sans);
+  }
+  #wrap { width: 100%; max-width: 760px; }
+
+  #app { border-radius: var(--border-radius-lg); border:0.5px solid; overflow:hidden; }
+
+  .opt:hover { background:var(--hov); }
+
+  #app.dark {
+    --bg:#14141a; --bd:rgba(255,255,255,0.08); --topbar:#1a1a22; --side:#16161d; --chat:#14141a;
+    --title:#f0f0f3; --txt:#c8c8ce; --muted:#6a6a72; --muted2:#8a8a92; --accent:#1D9E75; --accenttxt:#5DCAA5;
+    --logo-bg:#534AB7; --logo-tx:#EEEDFE; --me-bg:#534AB7; --me-tx:#EEEDFE; --dot-bd:#1a1a22;
+    --bubin:#23232d; --bubin-tx:#e0e0e6; --bubbot:#1f1d2e; --bubbot-tx:#d8d4f0; --bot:#7F77DD;
+    --card:#16161d; --card-bd:#185FA5; --cardhead-bd:rgba(255,255,255,0.06); --cardic:#0c2236; --cardic-tx:#85B7EB;
+    --row-bd:rgba(255,255,255,0.05); --total-bg:#191921; --total:#f0f0f3; --qm:#23232d; --qm-tx:#9a9aa2; --qp:#1f1d2e; --qp-tx:#AFA9EC;
+    --pop:#1a1a22; --pop-bd:rgba(255,255,255,0.1); --caret:#85B7EB; --rx-bg:#3a1f1f; --rx-tx:#F09595;
+    --prod-bg:#0c2236; --prod-bd:#185FA5; --prod-tx:#85B7EB; --clip-bg:#1f1f29; --clip-tx:#9a9aa2;
+    --input:#1f1f29; --input-tx:#6a6a72; --send-bg:#534AB7; --send-tx:#EEEDFE;
+    --badge-bg:#534AB7; --badge-tx:#EEEDFE; --day-bg:#1a1a22; --hov:#2e2e3a; --menu:#23232d; --menu-tx:#e0e0e6;
+    --busy:#EF9F27; --busytx:#EF9F27; --busyav:#0F6E56; --busyav-tx:#E1F5EE; --away:#5F5E5A; --awaytx:#8a8a92; --awayav:#3a3a42; --awayav-tx:#9a9aa2;
+    --alert-bg:#2a1812; --alert-tx:#F0997B; --tagb-bg:#1f1d2e; --tagb-tx:#AFA9EC; --tagg-bg:#102a22; --tagg-tx:#5DCAA5;
+    --theme-bd:rgba(255,255,255,0.15);
+  }
+  #app.light {
+    --bg:#dbe5e6; --bd:#b8c8c9; --topbar:#cdd9da; --side:#d2dedf; --chat:#dde7e8;
+    --title:#1f3a36; --txt:#2c3e3b; --muted:#6f807d; --muted2:#5f6e6b; --accent:#0F6E56; --accenttxt:#0F6E56;
+    --logo-bg:#0F6E56; --logo-tx:#E1F5EE; --me-bg:#0F6E56; --me-tx:#E1F5EE; --dot-bd:#cdd9da;
+    --bubin:#eef4f4; --bubin-tx:#2c3e3b; --bubbot:#dceaf5; --bubbot-tx:#0c447c; --bot:#185FA5;
+    --card:#eef4f4; --card-bd:#5DCAA5; --cardhead-bd:#d0dcdc; --cardic:#d6efe6; --cardic-tx:#0F6E56;
+    --row-bd:#dde7e7; --total-bg:#e2eeed; --total:#0F6E56; --qm:#d8e3e3; --qm-tx:#5f6e6b; --qp:#d6efe6; --qp-tx:#0F6E56;
+    --pop:#eef4f4; --pop-bd:#c2d0d1; --caret:#0F6E56; --rx-bg:#f6dada; --rx-tx:#a32d2d;
+    --prod-bg:#d6efe6; --prod-bd:#5DCAA5; --prod-tx:#0F6E56; --clip-bg:#e2eeed; --clip-tx:#5f6e6b;
+    --input:#eef4f4; --input-tx:#8a9794; --send-bg:#0F6E56; --send-tx:#E1F5EE;
+    --badge-bg:#0F6E56; --badge-tx:#E1F5EE; --day-bg:#cdd9da; --hov:#dbe8e8; --menu:#eef4f4; --menu-tx:#2c3e3b;
+    --busy:#BA7517; --busytx:#854F0B; --busyav:#185FA5; --busyav-tx:#E6F1FB; --away:#888780; --awaytx:#5f6e6b; --awayav:#a8b4b5; --awayav-tx:#5a6664;
+    --alert-bg:#f6e0d6; --alert-tx:#993c1d; --tagb-bg:#dceaf5; --tagb-tx:#0c447c; --tagg-bg:#d6efe6; --tagg-tx:#0F6E56;
+    --theme-bd:#b8c8c9;
+  }
+  #app { background:var(--bg); border-color:var(--bd); }
+  .topbar { background:var(--topbar); border-color:var(--bd); }
+  .logo { background:var(--logo-bg); color:var(--logo-tx); }
+  .title { color:var(--title); } .txt { color:var(--txt); } .muted { color:var(--muted); } .muted2 { color:var(--muted2); }
+  .accent-txt { color:var(--accenttxt); }
+  #theme-btn { border-color:var(--theme-bd); color:var(--muted2); }
+  #me-btn { background:var(--me-bg); color:var(--me-tx); } #me-dot { border-color:var(--dot-bd); }
+  #me-toggle { color:var(--accenttxt); }
+  #me-menu { background:var(--menu); border-color:var(--pop-bd); } #me-menu .opt { color:var(--menu-tx); }
+  .busy-dot, .busy-bg { background:var(--busy); } .away-dot, .away-bg { background:var(--away); }
+  .ag-busy { background:var(--busyav); color:var(--busyav-tx); } .busy-bg { border-color:var(--dot-bd); } .busy-label { color:var(--busytx); }
+  .ag-away { background:var(--awayav); color:var(--awayav-tx); } .away-bg { border-color:var(--dot-bd); } .away-label { color:var(--awaytx); }
+  .col-side { background:var(--side); border-color:var(--bd); } .side-head { border-color:var(--bd); }
+  .conv { border-color:var(--bd); } .conv-active { background:var(--bubin); }
+  .badge { background:var(--badge-bg); color:var(--badge-tx); }
+  .col-chat { background:var(--chat); } .chat-head { border-color:var(--bd); }
+  .daypill { background:var(--day-bg); color:var(--muted); }
+  .bub-in { background:var(--bubin); color:var(--bubin-tx); } .bub-bot { background:var(--bubbot); color:var(--bubbot-tx); } .bot-ic { color:var(--bot); }
+  .card { background:var(--card); border-color:var(--card-bd); } .card-head { border-color:var(--cardhead-bd); }
+  .card-ic { background:var(--cardic); color:var(--cardic-tx); } .row { border-color:var(--row-bd); }
+  .card-total { background:var(--total-bg); border-color:var(--bd); } .total-amt { color:var(--total); }
+  .qbtn-m { background:var(--qm); color:var(--qm-tx); } .qbtn-p { background:var(--qp); color:var(--qp-tx); }
+  .composer { background:var(--side); border-color:var(--bd); }
+  .search-pop { background:var(--pop); border-color:var(--pop-bd); } .sp-head { border-color:var(--cardhead-bd); } .sp-row { border-color:var(--row-bd); }
+  .caret { background:var(--caret); } .rx { background:var(--rx-bg); color:var(--rx-tx); }
+  .btn-prod { background:var(--prod-bg); border-color:var(--prod-bd); color:var(--prod-tx); }
+  .btn-clip { background:var(--clip-bg); color:var(--clip-tx); }
+  .input { background:var(--input); color:var(--input-tx); border:0.5px solid var(--bd); }
+  .btn-send { background:var(--send-bg); color:var(--send-tx); }
+  .bt { border-color:var(--bd); }
+  .alert { background:var(--alert-bg); color:var(--alert-tx); }
+  .tag-blue { background:var(--tagb-bg); color:var(--tagb-tx); } .tag-green { background:var(--tagg-bg); color:var(--tagg-tx); }
+</style>
+</head>
+<body>
+<div id="wrap">
+<div id="app">
+
+  <div class="topbar" style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:0.5px solid;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="logo" style="width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center;"><i class="ti ti-plus" style="font-size:18px" aria-hidden="true"></i></div>
+      <span class="title" style="font-size:14px; font-weight:500;">Farmacia · Soporte</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:16px;">
+
+      <button id="theme-btn" aria-label="Cambiar tema" style="cursor:pointer; display:flex; align-items:center; gap:6px; padding:5px 10px; border-radius:20px; border:0.5px solid; background:transparent;">
+        <i id="theme-icon" class="ti ti-moon" style="font-size:14px" aria-hidden="true"></i>
+        <span id="theme-text" style="font-size:10px;">Oscuro</span>
+      </button>
+
+      <div style="display:flex; align-items:flex-start; gap:14px;">
+        <div style="position:relative; display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <button id="me-btn" aria-label="Cambiar mi estado" style="cursor:pointer; position:relative; width:26px; height:26px; border:none; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:500;">AL<span id="me-dot" style="position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; background:#1D9E75; border:2px solid;"></span></button>
+          <button id="me-toggle" style="cursor:pointer; border:none; background:transparent; display:flex; align-items:center; gap:3px; font-size:9px;"><span id="me-mini" style="width:5px;height:5px;border-radius:50%;background:#1D9E75;"></span><span id="me-label">Online</span><i class="ti ti-chevron-down" style="font-size:9px" aria-hidden="true"></i></button>
+          <div id="me-menu" style="display:none; position:absolute; top:54px; left:50%; transform:translateX(-50%); border:0.5px solid; border-radius:10px; padding:4px; min-width:118px; z-index:30;">
+            <div class="opt" data-s="online" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:11px;"><span style="width:7px;height:7px;border-radius:50%;background:#1D9E75;"></span>Online</div>
+            <div class="opt" data-s="busy" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:11px;"><span class="busy-dot" style="width:7px;height:7px;border-radius:50%;"></span>Ocupado</div>
+            <div class="opt" data-s="away" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:11px;"><span class="away-dot" style="width:7px;height:7px;border-radius:50%;"></span>Ausente</div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <div class="ag-busy" title="Bruno — ocupado" style="position:relative; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:500;">BM<span class="busy-bg" style="position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; border:2px solid;"></span></div>
+          <span class="busy-label" style="display:flex; align-items:center; gap:4px; font-size:9px;"><span class="busy-bg" style="width:5px;height:5px;border-radius:50%;"></span>Ocupado</span>
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:4px; opacity:0.5;">
+          <div class="ag-away" title="Caro — ausente" style="position:relative; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:500;">CR<span class="away-bg" style="position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; border:2px solid;"></span></div>
+          <span class="away-label" style="display:flex; align-items:center; gap:4px; font-size:9px;"><span class="away-bg" style="width:5px;height:5px;border-radius:50%;"></span>Ausente</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid; grid-template-columns:190px 1fr 175px; min-height:480px;">
+
+    <div class="col-side" style="border-right:0.5px solid;">
+      <div class="side-head" style="padding:10px 12px; display:flex; align-items:center; gap:8px; border-bottom:0.5px solid;">
+        <i class="ti ti-search muted" style="font-size:14px" aria-hidden="true"></i>
+        <span class="muted" style="font-size:12px;">Buscar conversación</span>
+      </div>
+
+      <div class="conv-active" style="margin:8px; border:1px solid #D85A30; border-radius:8px; padding:9px 11px; cursor:pointer;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+          <span class="title" style="font-size:13px; font-weight:500;">María González</span>
+          <span class="muted" style="font-size:10px;">2m</span>
+        </div>
+        <div class="muted2" style="font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Necesito ibuprofeno y algo…</div>
+      </div>
+
+      <div class="conv" style="padding:9px 12px; cursor:pointer; border-bottom:0.5px solid;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+          <span class="txt" style="font-size:13px;">Diego Pérez</span>
+          <span class="badge" style="display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 4px; border-radius:8px; font-size:10px;">3</span>
+        </div>
+        <div class="muted" style="font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">¿Tienen la vacuna antigripal?</div>
+      </div>
+
+      <div class="conv" style="padding:9px 12px; cursor:pointer; border-bottom:0.5px solid;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+          <span class="txt" style="font-size:13px;">Laura Méndez</span>
+          <span class="muted" style="font-size:10px;">18m</span>
+        </div>
+        <div class="muted" style="font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Gracias, paso a retirarlo 🙌</div>
+      </div>
+
+      <div class="conv" style="padding:9px 12px; cursor:pointer;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+          <span class="txt" style="font-size:13px;">Tomás Ruiz</span>
+          <span class="muted" style="font-size:10px;">1h</span>
+        </div>
+        <div class="muted" style="font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">¿Atienden OSDE?</div>
+      </div>
+    </div>
+
+    <div class="col-chat" style="display:flex; flex-direction:column;">
+      <div class="chat-head" style="padding:10px 14px; border-bottom:0.5px solid; display:flex; align-items:center; gap:8px;">
+        <div style="width:24px; height:24px; border-radius:50%; background:#185FA5; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:500; color:#E6F1FB;">MG</div>
+        <div>
+          <div class="title" style="font-size:13px; font-weight:500;">María González</div>
+          <div class="accent-txt" style="font-size:10px;">Atendida por Ana L.</div>
+        </div>
+      </div>
+
+      <div style="flex:1; padding:14px; display:flex; flex-direction:column; gap:10px;">
+        <div class="daypill" style="align-self:center; font-size:10px; padding:2px 10px; border-radius:10px;">Hoy</div>
+
+        <div style="align-self:flex-start; max-width:80%;">
+          <div class="bub-in" style="padding:8px 12px; border-radius:14px 14px 14px 4px; font-size:12px; line-height:1.5;">Hola! Necesito ibuprofeno y algo para la tos 🤧</div>
+          <div class="muted" style="font-size:9px; margin-top:3px; margin-left:4px;">11:02</div>
+        </div>
+
+        <div style="align-self:flex-start; max-width:80%;">
+          <div style="display:flex; align-items:center; gap:5px; margin-bottom:3px;"><i class="ti ti-robot bot-ic" style="font-size:11px" aria-hidden="true"></i><span class="bot-ic" style="font-size:9px;">Bot</span></div>
+          <div class="bub-bot" style="padding:8px 12px; border-radius:14px 14px 14px 4px; font-size:12px; line-height:1.5;">Te paso con un farmacéutico para ayudarte 👩‍⚕️</div>
+          <div class="muted" style="font-size:9px; margin-top:3px; margin-left:4px;">11:02</div>
+        </div>
+
+        <div style="align-self:flex-end; max-width:84%; width:280px;">
+          <div class="card" style="border:1px solid; border-radius:14px; overflow:hidden;">
+            <div class="card-head" style="padding:9px 13px; display:flex; align-items:center; gap:9px; border-bottom:0.5px solid;">
+              <div class="card-ic" style="width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center;"><i class="ti ti-clipboard-list" style="font-size:14px" aria-hidden="true"></i></div>
+              <div class="txt" style="font-size:11px;">Detalle de tu pedido</div>
+            </div>
+            <div style="padding:4px 13px;">
+              <div class="row" style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid;">
+                <div style="flex:1;">
+                  <div class="title" style="font-size:12px;">Ibupirac 600 mg</div>
+                  <div class="muted" style="font-size:10px;">Ibuprofeno · 20 comp.</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:7px; margin-left:8px;">
+                  <div style="display:flex; align-items:center; gap:5px;">
+                    <span class="qbtn-m" style="width:18px; height:18px; border-radius:5px; display:flex; align-items:center; justify-content:center; cursor:pointer;"><i class="ti ti-minus" style="font-size:11px" aria-hidden="true"></i></span>
+                    <span class="txt" style="font-size:11px; min-width:10px; text-align:center;">1</span>
+                    <span class="qbtn-p" style="width:18px; height:18px; border-radius:5px; display:flex; align-items:center; justify-content:center; cursor:pointer;"><i class="ti ti-plus" style="font-size:11px" aria-hidden="true"></i></span>
+                  </div>
+                  <div class="title" style="font-size:12px; min-width:48px; text-align:right;">$3.200</div>
+                </div>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0;">
+                <div style="flex:1;">
+                  <div class="title" style="font-size:12px;">Notos jarabe</div>
+                  <div class="muted" style="font-size:10px;">Dextrometorfano · 120 ml</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:7px; margin-left:8px;">
+                  <div style="display:flex; align-items:center; gap:5px;">
+                    <span class="qbtn-m" style="width:18px; height:18px; border-radius:5px; display:flex; align-items:center; justify-content:center; cursor:pointer;"><i class="ti ti-minus" style="font-size:11px" aria-hidden="true"></i></span>
+                    <span class="txt" style="font-size:11px; min-width:10px; text-align:center;">1</span>
+                    <span class="qbtn-p" style="width:18px; height:18px; border-radius:5px; display:flex; align-items:center; justify-content:center; cursor:pointer;"><i class="ti ti-plus" style="font-size:11px" aria-hidden="true"></i></span>
+                  </div>
+                  <div class="title" style="font-size:12px; min-width:48px; text-align:right;">$2.450</div>
+                </div>
+              </div>
+            </div>
+            <div class="card-total" style="padding:10px 13px; border-top:0.5px solid; display:flex; justify-content:space-between; align-items:center;">
+              <span class="muted2" style="font-size:11px;">Total</span>
+              <span class="total-amt" style="font-size:17px; font-weight:500;">$5.650</span>
+            </div>
+          </div>
+          <div class="muted" style="font-size:9px; margin-top:3px; text-align:right; margin-right:4px;">11:05 · ✓✓</div>
+        </div>
+
+        <div style="align-self:flex-start; max-width:80%;">
+          <div class="bub-in" style="padding:8px 12px; border-radius:14px 14px 14px 4px; font-size:12px; line-height:1.5;">Genial! ¿Lo retiro o me lo envían?</div>
+          <div class="muted" style="font-size:9px; margin-top:3px; margin-left:4px;">11:06</div>
+        </div>
+      </div>
+
+      <div class="composer" style="position:relative; border-top:0.5px solid;">
+        <div class="search-pop" style="margin:10px 13px 0; border:0.5px solid; border-radius:12px; overflow:hidden;">
+          <div class="sp-head" style="padding:8px 12px; display:flex; align-items:center; gap:8px; border-bottom:0.5px solid;">
+            <i class="ti ti-search accent-txt" style="font-size:13px" aria-hidden="true"></i>
+            <span class="txt" style="font-size:12px;">amoxi</span><span class="caret" style="width:1px; height:13px; display:inline-block;"></span>
+            <span class="muted" style="margin-left:auto; font-size:9px;">2 resultados</span>
+          </div>
+          <div class="sp-row" style="display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; border-bottom:0.5px solid;">
+            <div style="flex:1;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span class="title" style="font-size:12px;">Amoxidal 500 mg</span>
+                <span class="rx" style="font-size:8px; padding:2px 6px; border-radius:8px; display:inline-flex; align-items:center; gap:3px;"><i class="ti ti-prescription" style="font-size:9px" aria-hidden="true"></i>Receta</span>
+              </div>
+              <div class="muted" style="font-size:10px; margin-top:1px;">Amoxicilina · 14 comp.</div>
+              <div style="display:flex; align-items:center; gap:5px; margin-top:3px;"><span style="width:5px;height:5px;border-radius:50%;background:#1D9E75;"></span><span class="accent-txt" style="font-size:9px;">En stock · 24 u.</span></div>
+            </div>
+            <div style="text-align:right;">
+              <div class="title" style="font-size:12px;">$4.100</div>
+              <div class="card-ic" style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; margin-top:4px; margin-left:auto;"><i class="ti ti-plus" style="font-size:13px" aria-hidden="true"></i></div>
+            </div>
+          </div>
+          <div class="sp-row" style="display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:default; opacity:0.5;">
+            <div style="flex:1;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span class="title" style="font-size:12px;">Amoxi-Clavulánico 1 g</span>
+                <span class="rx" style="font-size:8px; padding:2px 6px; border-radius:8px; display:inline-flex; align-items:center; gap:3px;"><i class="ti ti-prescription" style="font-size:9px" aria-hidden="true"></i>Receta</span>
+              </div>
+              <div class="muted" style="font-size:10px; margin-top:1px;">Amox. + ác. clavulánico · 14 comp.</div>
+              <div style="display:flex; align-items:center; gap:5px; margin-top:3px;"><span class="away-bg" style="width:5px;height:5px;border-radius:50%;"></span><span class="muted2" style="font-size:9px;">Sin stock</span></div>
+            </div>
+            <div style="text-align:right;"><div class="muted2" style="font-size:12px;">$9.200</div></div>
+          </div>
+        </div>
+
+        <div style="padding:10px 13px; display:flex; align-items:center; gap:8px;">
+          <div class="btn-prod" style="width:34px; height:34px; border-radius:50%; border:0.5px solid; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;" title="Buscar producto"><i class="ti ti-pill" style="font-size:16px" aria-hidden="true"></i></div>
+          <div class="btn-clip" style="width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;" title="Adjuntar receta"><i class="ti ti-paperclip" style="font-size:16px" aria-hidden="true"></i></div>
+          <div class="input" style="flex:1; border-radius:18px; padding:8px 14px; font-size:12px;">Escribí un mensaje…</div>
+          <div class="btn-send" style="width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;"><i class="ti ti-send" style="font-size:15px" aria-hidden="true"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-side" style="border-left:0.5px solid; padding:16px 14px;">
+      <div style="display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:16px;">
+        <div style="width:48px; height:48px; border-radius:50%; background:#185FA5; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:500; color:#E6F1FB; margin-bottom:8px;">MG</div>
+        <div class="title" style="font-size:13px; font-weight:500;">María González</div>
+        <div class="muted" style="font-size:11px;">Cliente desde 2023</div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:10px; font-size:11px;">
+        <div>
+          <div class="muted" style="margin-bottom:2px;"><i class="ti ti-heart-rate-monitor" style="font-size:12px; vertical-align:-1px; margin-right:5px" aria-hidden="true"></i>Obra social</div>
+          <div class="txt">OSDE 210</div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:2px;"><i class="ti ti-map-pin" style="font-size:12px; vertical-align:-1px; margin-right:5px" aria-hidden="true"></i>Ubicación</div>
+          <div class="txt">Rosario, Santa Fe</div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:2px;"><i class="ti ti-history" style="font-size:12px; vertical-align:-1px; margin-right:5px" aria-hidden="true"></i>Última compra</div>
+          <div class="txt">12 mar · $8.300</div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px; padding-top:12px; border-top:0.5px solid;" class="bt">
+        <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px" aria-hidden="true"></i>Notas</div>
+        <div class="alert" style="font-size:10px; border-radius:8px; padding:7px 9px; line-height:1.4;">Alérgica a penicilina</div>
+      </div>
+
+      <div style="margin-top:14px; padding-top:12px; border-top:0.5px solid;" class="bt">
+        <div class="muted" style="font-size:10px; margin-bottom:6px;">Etiquetas</div>
+        <div style="display:flex; flex-wrap:wrap; gap:5px;">
+          <span class="tag-blue" style="font-size:10px; padding:3px 8px; border-radius:10px;">Frecuente</span>
+          <span class="tag-green" style="font-size:10px; padding:3px 8px; border-radius:10px;">Envío a domicilio</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<script>
+(function(){
+  var app=document.getElementById('app');
+  app.className='dark';
+  var tb=document.getElementById('theme-btn'), ti=document.getElementById('theme-icon'), tt=document.getElementById('theme-text');
+  tb.addEventListener('click',function(){
+    if(app.classList.contains('dark')){ app.className='light'; ti.className='ti ti-sun'; tt.textContent='Claro'; }
+    else { app.className='dark'; ti.className='ti ti-moon'; tt.textContent='Oscuro'; }
+  });
+
+  var labels={ online:'Online', busy:'Ocupado', away:'Ausente' };
+  var btn=document.getElementById('me-toggle'), avBtn=document.getElementById('me-btn'),
+      menu=document.getElementById('me-menu'), dot=document.getElementById('me-dot'),
+      mini=document.getElementById('me-mini'), label=document.getElementById('me-label');
+  function tg(e){ e.stopPropagation(); menu.style.display=menu.style.display==='none'?'block':'none'; }
+  btn.addEventListener('click',tg); avBtn.addEventListener('click',tg);
+  document.querySelectorAll('#me-menu .opt').forEach(function(o){
+    o.addEventListener('click',function(e){
+      e.stopPropagation();
+      var s=o.getAttribute('data-s');
+      var cs=getComputedStyle(app);
+      var col = s==='online'?'#1D9E75':(s==='busy'?cs.getPropertyValue('--busy'):cs.getPropertyValue('--away'));
+      var txt = s==='online'?cs.getPropertyValue('--accenttxt'):(s==='busy'?cs.getPropertyValue('--busytx'):cs.getPropertyValue('--awaytx'));
+      var avbg = s==='online'?cs.getPropertyValue('--me-bg'):(s==='busy'?cs.getPropertyValue('--busyav'):cs.getPropertyValue('--awayav'));
+      var avtx = s==='online'?cs.getPropertyValue('--me-tx'):(s==='busy'?cs.getPropertyValue('--busyav-tx'):cs.getPropertyValue('--awayav-tx'));
+      dot.style.background=col; mini.style.background=col; label.textContent=labels[s];
+      btn.style.color=txt; avBtn.style.background=avbg; avBtn.style.color=avtx;
+      avBtn.style.opacity = s==='away'?'0.55':'1'; btn.style.opacity = s==='away'?'0.55':'1';
+      menu.style.display='none';
+    });
+  });
+  document.addEventListener('click',function(){ menu.style.display='none'; });
+})();
+</script>
+</body>
+</html>
