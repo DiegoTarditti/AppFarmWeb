@@ -562,8 +562,8 @@ class EnvioTramo(Base):
 
 class EnvioZona(Base):
     """Tarifa fija por zona nombrada (refinería, centro, Roldán…). PISA a los
-    tramos. lat/lng/radio_km quedan NULL en Fase 1; en Fase 2 se completan para
-    resolver la zona desde un pin de ubicación (círculo geográfico)."""
+    tramos. poligono: JSON [[lat,lng], ...] para point-in-polygon (reemplaza
+    el círculo lat/lng/radio_km). lat/lng/radio_km quedan deprecados."""
     __tablename__ = 'envio_zonas'
     id = Column(Integer, primary_key=True)
     nombre = Column(String(80), nullable=False)
@@ -571,6 +571,7 @@ class EnvioZona(Base):
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     radio_km = Column(Float, nullable=True)
+    poligono = Column(Text, nullable=True)  # JSON [[lat,lng], ...]
     activa = Column(Boolean, nullable=False, default=True)
     orden = Column(Integer, nullable=False, default=0)
 
@@ -2981,6 +2982,12 @@ def init_db(database_url=None):
                 try:
                     conn.execute(text(
                         "ALTER TABLE rutas_reparto ADD COLUMN IF NOT EXISTS poligono TEXT"))
+                except Exception:  # noqa: BLE001
+                    pass
+                # Zona de envío: polígono GeoJSON (reemplaza círculo lat/lng/radio_km).
+                try:
+                    conn.execute(text(
+                        "ALTER TABLE envio_zonas ADD COLUMN IF NOT EXISTS poligono TEXT"))
                 except Exception:  # noqa: BLE001
                     pass
                 # Cadete (FK) por ruta — tabla de cadetes.

@@ -56,6 +56,38 @@ def test_crud_zona_y_tramo():
     assert envio.guardar_zona(None, '', 100)['ok'] is False   # nombre vacío
 
 
+# ── Polígono GeoJSON (zonas de envío) ────────────────────────────────────────
+
+def test_envio_zona_poligono_detecta():
+    """Punto dentro del polígono → zona + tarifa fija."""
+    envio.seed_si_vacio()
+    # Crear zona con polígono que cubra (-32.95, -60.65)
+    poligono = '-32.94,-60.64\n-32.96,-60.64\n-32.96,-60.66\n-32.94,-60.66'
+    z = envio.guardar_zona(None, 'CentroGeo', 7000, poligono_texto=poligono)
+    assert z['ok']
+    r = envio.cotizar_por_coords(-32.95, -60.65)
+    assert r['fuente'] == 'zona' and r['monto'] == 7000
+
+
+def test_envio_zona_poligono_fuera():
+    """Punto fuera → cae a tramos por distancia."""
+    envio.seed_si_vacio()
+    # Zona pequeña lejos del punto de prueba
+    poligono = '-33.0,-60.0\n-33.01,-60.0\n-33.01,-60.01\n-33.0,-60.01'
+    z = envio.guardar_zona(None, 'Pequeña', 5000, poligono_texto=poligono)
+    assert z['ok']
+    r = envio.cotizar_por_coords(-32.95, -60.65)
+    # No匹配 polygon → cae a cuadras/tramos
+    assert r['fuente'] != 'zona'
+
+
+def test_envio_zona_pisa_tramos():
+    """Zona nombrada pisa al tramo por distancia."""
+    envio.seed_si_vacio()
+    r = envio.cotizar(localidad='Roldán', cuadras=5)
+    assert r['fuente'] == 'zona' and r['monto'] == 15000
+
+
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 def test_panel_envio_renderiza(client):
@@ -88,17 +120,6 @@ def test_cuadras_desde_coords():
     assert envio.cuadras_desde_coords(-32.95, -60.65) == 0
     cu = envio.cuadras_desde_coords(-32.959, -60.65)   # ~1 km al sur
     assert 8 <= cu <= 18                                # ~13 cuadras
-
-
-def test_cotizar_por_coords_circulo_pisa_y_tramo():
-    envio.seed_si_vacio()
-    envio.guardar_config(farmacia_lat=-32.95, farmacia_lng=-60.65)
-    z = next(x for x in envio.listar_tarifas()['zonas'] if x['nombre'] == 'Roldán')
-    envio.guardar_zona(z['id'], 'Roldán', 15000, lat=-32.90, lng=-60.91, radio_km=5)
-    dentro = envio.cotizar_por_coords(-32.90, -60.91)   # dentro del círculo
-    assert dentro['monto'] == 15000 and dentro['fuente'] == 'zona'
-    cerca = envio.cotizar_por_coords(-32.952, -60.652)  # cerca de la farmacia
-    assert cerca['fuente'] == 'tramo' and cerca['cuadras'] is not None
 
 
 def test_cotizar_por_coords_sin_config_no_revienta():

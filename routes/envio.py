@@ -104,7 +104,8 @@ def init_app(app):
         b = request.json or {}
         return jsonify(envio.guardar_zona(
             b.get('id'), b.get('nombre'), b.get('monto'),
-            lat=b.get('lat'), lng=b.get('lng'), radio_km=b.get('radio_km')))
+            lat=b.get('lat'), lng=b.get('lng'), radio_km=b.get('radio_km'),
+            poligono_texto=b.get('poligono_texto')))
 
     @app.route('/envio/zona/<int:zid>/delete', methods=['POST'])
     @login_required
