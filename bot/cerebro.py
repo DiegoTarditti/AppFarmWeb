@@ -80,18 +80,96 @@ def _match_opcion(nodo, texto):
     return None
 
 
-def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=None):
+# ── Flujo de identificación post-selección de producto ─────────────────────
+# Pasos: id_confirmar_dni (si vinculado por tel) → id_pedir_dni → id_ofrecer_nombre
+# → id_pedir_nombre → derivar al operador con encargar(producto_pendiente).
+
+def _ident_iniciar(conv, producto_texto):
+    """El cliente eligió un producto. Decide si pedirle confirmación del DNI
+    (vínculo previo por teléfono + DNI en ficha), si pedirle el DNI desde cero,
+    o si encargar directo (vinculado sin DNI conocido).
+
+    Devuelve (resp, nuevo_nodo, nueva_esperando, derivar)."""
+    cid = conv['id']
+    store.set_producto_pendiente(cid, producto_texto)
+    # Caso 1: vinculado y con DNI conocido → confirmar últimos 3 dígitos.
+    if conv.get('cliente_id') or conv.get('cliente_observer_id'):
+        info = store.dni_de_cliente_vinculado(
+            cliente_id=conv.get('cliente_id'),
+            cliente_observer_id=conv.get('cliente_observer_id'))
+        if info:
+            _dni_full, ult3, nombre = info
+            texto = (f'¡Hola, {nombre}! 🙂\n'
+                     f'Te tengo registrado/a con DNI terminado en ***{ult3}.\n'
+                     '¿Confirmás que sos vos?')
+            return ({'texto': texto,
+                     'opciones': ['✅ Sí, soy yo', '❌ No, ese no soy yo'],
+                     'meta': {'camino': 'identificar', 'resuelto': True,
+                              'paso': 'confirmar_dni'}},
+                    'id_confirmar_dni', None, False)
+        # Caso 2: vinculado pero sin DNI conocido → encargar directo (ya tenemos ficha).
+        return _ident_encargar(conv, motivo='vinculado_sin_dni')
+    # Caso 3: no vinculado → pedir DNI desde cero.
+    flujo = get_flujo()
+    return ({'texto': flujo['id_pedir_dni']['mensaje'],
+             'opciones': [o['label'] for o in flujo['id_pedir_dni'].get('opciones', [])],
+             'meta': {'camino': 'identificar', 'resuelto': True, 'paso': 'pedir_dni'}},
+            'id_pedir_dni', 'identificar_por_dni', False)
+
+
+def _ident_encargar(conv, motivo='', observer_id_match=None, nombre_lead=None):
+    """Cierra el flujo de identificación: vincula si corresponde, crea lead local
+    si llegó un nombre, dispara `encargar(producto_pendiente)` y deriva al operador.
+    Limpia `producto_pendiente`. Devuelve la tupla estándar."""
+    cid = conv['id']
+    producto = store.get_producto_pendiente(cid) or 'producto'
+    # Vinculación por DNI (match único).
+    if observer_id_match:
+        try:
+            store.vincular_cliente(cid, observer_id_match)
+        except Exception:  # noqa: BLE001
+            pass
+    # Lead local opcional (nombre+apellido tipeados).
+    elif nombre_lead:
+        try:
+            partes = nombre_lead.strip().split()
+            datos = {'nombre': partes[0] if partes else nombre_lead,
+                     'apellido': ' '.join(partes[1:]) if len(partes) > 1 else None,
+                     'whatsapp': conv.get('canal_user_id')}
+            store.crear_cliente_local(cid, datos, creado_por='bot')
+        except Exception:  # noqa: BLE001
+            pass
+    # Disparar la acción encargar (la traemos del registro ACCIONES).
+    out = ACCIONES.get('encargar', lambda t: {'texto': '📝 ¡Anotado!'})(producto)
+    store.set_producto_pendiente(cid, None)
+    texto = out.get('texto', '📝 ¡Anotado! Lo paso al equipo.')
+    return ({'texto': texto, 'opciones': [],
+             'meta': {'camino': 'encargar', 'resuelto': False,
+                      'motivo': motivo or 'derivado_post_id'}},
+            NODO_INICIO, None, True)
+
+
+# Trigger words para que el cliente "salga" del flujo de identificación si quiere.
+_SKIP_ID = {'no', 'no quiero', 'paso', 'pasa', 'cancelar', 'salir'}
+
+
+def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=None, conv=None):
     """Lógica PURA del flujo (sin DB). Devuelve
     (resp{texto,opciones}, nuevo_nodo, nueva_esperando, derivar).
 
     `historial` (turnos previos en formato Anthropic) se le pasa al nodo de IA
     para que recuerde el hilo; el resto de las acciones lo ignora."""
     flujo = get_flujo()
-    # 0) Foto (receta): la procesa la IA visión, sin importar el nodo.
+    # 0) Foto: análisis de receta BLOQUEADO por ahora (pedido del cliente).
+    # Solo acusamos recibo y MANTENEMOS el estado actual → si estaba en un nodo
+    # *_receta_pedir esperando 'consultar_producto', después tipea el producto y
+    # se ejecuta la acción normal. Volver a leer_receta se reactiva sacando el
+    # comentario y restaurando el return original.
     if imagen_b64:
-        return ({'texto': leer_receta(imagen_b64, media_type),
-                 'opciones': _opciones_de(flujo[NODO_INICIO]),
-                 'meta': {'camino': 'receta', 'resuelto': True}}, NODO_INICIO, None, False)
+        return ({'texto': '📸 Recibí la foto, gracias — por ahora no analizamos imágenes. Seguí contándome 👇',
+                 'opciones': [],
+                 'meta': {'camino': 'receta_bloqueada', 'resuelto': True}},
+                nodo_actual, esperando, False)
 
     # 1) Comandos globales → menú principal.
     if texto.lower() in _GLOBALES:
@@ -112,10 +190,46 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
         query = esperando[len(PREFIJO_ELEGIR):]
         out = seleccionar_producto(texto, query)
         if isinstance(out, dict):
+            # Si seleccionar_producto matcheó un producto → NO derivar directo.
+            # Pasar por el flujo de identificación (DNI/nombre) primero.
+            meta = out.get('meta') or {}
+            if meta.get('proximo_paso') == 'iniciar_id' and conv is not None:
+                return _ident_iniciar(conv, meta.get('producto') or 'producto')
             nueva_esp = out.get('esperando', esperando)
-            resp = {'texto': out['texto'], 'opciones': out.get('opciones', []),
-                    'meta': {'camino': 'precio', 'resuelto': True, **(out.get('meta') or {})}}
+            resp = {'texto': out.get('texto', ''),
+                    'opciones': out.get('opciones', []),
+                    'meta': {'camino': 'precio', 'resuelto': True, **meta}}
             return (resp, nodo_actual, nueva_esp, out.get('derivar', False))
+
+    # 2b) Menú de confirmación de DNI vinculado por teléfono — interceptamos
+    # porque las opciones del menú son dinámicas (no usan `va_a` normal).
+    if nodo_actual == 'id_confirmar_dni' and conv is not None:
+        clean = (texto or '').strip().lower()
+        es_si = (clean in ('si', 'sí', 's', 'sí soy yo', 'soy yo', '1')
+                 or clean.startswith('✅')
+                 or 'soy yo' in clean)
+        es_no = (clean in ('no', 'n', '2')
+                 or clean.startswith('❌')
+                 or 'no soy' in clean
+                 or 'ese no' in clean)
+        if es_si:
+            return _ident_encargar(conv, motivo='confirmado_por_telefono')
+        if es_no:
+            # Desvincular y pedir DNI desde cero. El producto_pendiente queda.
+            try:
+                store.desvincular_cliente(conv['id'])
+            except Exception:  # noqa: BLE001
+                pass
+            return ({'texto': flujo['id_pedir_dni']['mensaje'],
+                     'opciones': [o['label'] for o in flujo['id_pedir_dni'].get('opciones', [])],
+                     'meta': {'camino': 'identificar', 'resuelto': True,
+                              'paso': 'pedir_dni_post_no'}},
+                    'id_pedir_dni', 'identificar_por_dni', False)
+        # No entendí → repreguntar.
+        return ({'texto': 'Decime "sí" o "no" 🙂',
+                 'opciones': ['✅ Sí, soy yo', '❌ No, ese no soy yo'],
+                 'meta': {'camino': 'identificar', 'resuelto': True, 'paso': 'reintentar'}},
+                'id_confirmar_dni', None, False)
 
     if esperando:
         accion = ACCIONES.get(esperando)
@@ -124,13 +238,40 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
             # camino por defecto según la acción; el dict de la acción puede
             # refinar la meta (motivo sin_stock/derivado, producto).
             camino_def = {'consultar_producto': 'precio', 'encargar': 'encargar',
-                          'consulta_ia': 'consulta_ia'}.get(esperando, 'otro')
+                          'consulta_ia': 'consulta_ia',
+                          'identificar_por_dni': 'identificar',
+                          'guardar_nombre_y_encargar': 'identificar'}.get(esperando, 'otro')
+            # Interceptar el flujo de identificación: las acciones devuelven
+            # `meta.proximo_paso` y cerebro decide el ramificado.
+            if isinstance(out, dict) and (out.get('meta') or {}).get('camino') == 'identificar' and conv is not None:
+                meta_id = out['meta']
+                paso = meta_id.get('proximo_paso')
+                if paso == 'vincular_y_encargar':
+                    return _ident_encargar(conv, motivo='dni_match',
+                                            observer_id_match=meta_id.get('observer_id'))
+                if paso == 'derivar_sin_id':
+                    return _ident_encargar(conv, motivo='sin_id')
+                if paso == 'crear_local_y_encargar':
+                    return _ident_encargar(conv, motivo='lead_local',
+                                            nombre_lead=meta_id.get('nombre_input'))
+                if paso == 'ofrecer_nombre':
+                    nodo_off = flujo['id_ofrecer_nombre']
+                    return ({'texto': nodo_off['mensaje'],
+                             'opciones': [o['label'] for o in nodo_off.get('opciones', [])],
+                             'meta': {'camino': 'identificar', 'resuelto': True,
+                                      'paso': 'ofrecer_nombre'}},
+                            'id_ofrecer_nombre', None, False)
+                if paso == 'reintentar':
+                    return ({'texto': out['texto'], 'opciones': out.get('opciones', []),
+                             'meta': meta_id},
+                            nodo_actual, esperando, False)
             # Una acción puede devolver un string (sigue en el mismo loop) o un
             # dict {texto, esperando, derivar, meta} para cortar el loop o derivar.
             if isinstance(out, dict):
                 # esperando: solo se cambia si la acción lo dice (sin la key → loop sigue).
                 nueva_esp = out['esperando'] if 'esperando' in out else esperando
-                resp = {'texto': out['texto'], 'opciones': out.get('opciones', []),
+                resp = {'texto': out.get('texto', ''),
+                        'opciones': out.get('opciones', []),
                         'meta': {'camino': camino_def, 'resuelto': True, **(out.get('meta') or {})},
                         'ofertas_meta': out.get('ofertas_meta', [])}
                 return (resp, nodo_actual, nueva_esp, out.get('derivar', False))
@@ -168,6 +309,11 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
         resp = _render(flujo[NODO_INICIO])
         resp['meta'] = {'camino': 'menu', 'resuelto': True}
         return (resp, NODO_INICIO, None, False)
+
+    # Cualquier menu que apunte a `encargar_post_id` dispara el cierre del flujo
+    # de identificación (encargar con lo que haya + derivar al operador).
+    if destino_key == 'encargar_post_id' and conv is not None:
+        return _ident_encargar(conv, motivo='salio_de_id')
 
     tipo = destino['tipo']
     if tipo == 'menu':
@@ -461,7 +607,7 @@ def procesar(canal, canal_user_id, texto, imagen_b64=None,
     # recuerde el hilo de la conversación.
     historial = store.get_historial_ia(cid)
     resp, nuevo_nodo, nueva_esperando, derivar = _resolver(
-        conv['nodo'], conv['esperando'], texto, imagen_b64, media_type, historial)
+        conv['nodo'], conv['esperando'], texto, imagen_b64, media_type, historial, conv=conv)
 
     store.set_estado_flujo(cid, nuevo_nodo, nueva_esperando)
     if derivar:

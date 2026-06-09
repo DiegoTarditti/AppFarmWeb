@@ -253,6 +253,98 @@ def match_cliente_por_telefono(telefono):
     return None
 
 
+def match_cliente_por_dni(dni):
+    """Devuelve (observer_id, ambiguo: bool) según el DNI.
+
+    Match EXACTO contra obs_clientes.documento_numero y clientes.dni.
+    Returns:
+        (observer_id, False) → match único, vincular sin dudas.
+        (None, True)         → hay 2+ matches → ambiguo, pedir confirmación extra.
+        (None, False)        → no hay match.
+    """
+    d = ''.join(ch for ch in (dni or '') if ch.isdigit())
+    if not (7 <= len(d) <= 8):
+        return (None, False)
+    try:
+        with database.get_db() as s:
+            # Match exacto en obs_clientes.documento_numero (INTEGER).
+            try:
+                rows_obs = s.execute(database.text(
+                    "SELECT observer_id FROM obs_clientes WHERE documento_numero = :n LIMIT 2"
+                ), {'n': int(d)}).fetchall()
+            except Exception:  # noqa: BLE001
+                rows_obs = []
+            ids = [r[0] for r in rows_obs]
+            # Y match en clientes.dni (VARCHAR) → resolver observer_id si existe.
+            try:
+                rows_loc = s.execute(database.text(
+                    "SELECT observer_id FROM clientes "
+                    "WHERE regexp_replace(coalesce(dni,''), '\\D', '', 'g') = :n LIMIT 2"
+                ), {'n': d}).fetchall()
+            except Exception:  # noqa: BLE001
+                rows_loc = []
+            ids += [r[0] for r in rows_loc if r[0] is not None]
+            ids = list(set(ids))
+            if len(ids) == 1:
+                return (ids[0], False)
+            if len(ids) >= 2:
+                return (None, True)  # ambiguo
+    except Exception:  # noqa: BLE001
+        return (None, False)
+    return (None, False)
+
+
+def dni_de_cliente_vinculado(cliente_id=None, cliente_observer_id=None):
+    """Devuelve (dni_completo: str, ultimos_3: str, nombre_cliente: str) del
+    cliente vinculado a la conversación, o None si no hay DNI cargado.
+    Sirve para preguntar "Te tengo como Juan, DNI ***456 — ¿sos vos?"."""
+    if not cliente_id and not cliente_observer_id:
+        return None
+    try:
+        with database.get_db() as s:
+            dni = None; nombre = None
+            if cliente_id:
+                c = s.get(database.Cliente, cliente_id)
+                if c:
+                    dni = (c.dni or '').strip()
+                    nombre = ((c.nombre or '') + ' ' + (c.apellido or '')).strip()
+                    if not cliente_observer_id and c.observer_id:
+                        cliente_observer_id = c.observer_id
+            if (not dni or not nombre) and cliente_observer_id:
+                oc = s.get(database.ObsCliente, cliente_observer_id)
+                if oc:
+                    if not dni and getattr(oc, 'documento_numero', None) is not None:
+                        dni = str(oc.documento_numero)
+                    if not nombre:
+                        nombre = (getattr(oc, 'apellido_nombre', None) or '').strip()
+            digs = ''.join(ch for ch in (dni or '') if ch.isdigit())
+            if not digs or not nombre:
+                return None
+            ult = digs[-3:]
+            # Primer nombre para humanizar el saludo (la ficha viene "APELLIDO, NOMBRE").
+            primer_nombre = nombre.split(',')[-1].strip().split(' ')[0].title() if ',' in nombre else nombre.split(' ')[0].title()
+            return (digs, ult, primer_nombre or nombre.title())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def set_producto_pendiente(conv_id, producto):
+    """Guarda el producto que el cliente iba a encargar mientras navega los pasos
+    de identificación (DNI/nombre). Si producto=None, limpia el campo."""
+    with database.get_db() as s:
+        conv = s.get(database.BotConversacion, conv_id)
+        if conv:
+            conv.producto_pendiente = producto or None
+            s.commit()
+
+
+def get_producto_pendiente(conv_id):
+    """Devuelve el producto guardado o None."""
+    with database.get_db() as s:
+        conv = s.get(database.BotConversacion, conv_id)
+        return (conv.producto_pendiente or None) if conv else None
+
+
 def buscar_clientes(query, limite=10):
     """Búsqueda de clientes por nombre (multi-token AND) o documento exacto."""
     q = (query or '').strip()

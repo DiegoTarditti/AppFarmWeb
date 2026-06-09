@@ -14,11 +14,12 @@ IMG = 'image/jpeg'
 # ── Selección de opciones ────────────────────────────────────────────────────
 
 def test_match_opcion_por_numero():
-    assert _match_opcion(FLUJO[NODO_INICIO], '1')['va_a'] == 'consultar_producto'
+    # Opción 1 del menú principal: "Consultar Precio / Stock" → submenú de modalidades.
+    assert _match_opcion(FLUJO[NODO_INICIO], '1')['va_a'] == 'consultar_precio_menu'
 
 
 def test_match_opcion_por_label_parcial():
-    assert _match_opcion(FLUJO[NODO_INICIO], 'horarios')['va_a'] == 'horarios'
+    assert _match_opcion(FLUJO[NODO_INICIO], 'vacunatorio')['va_a'] == 'vacunatorio'
 
 
 def test_match_opcion_invalida_devuelve_none():
@@ -56,15 +57,20 @@ def test_quiere_humano_sin_falsos_positivos():
     assert not _quiere_humano('algo para una persona con diabetes')
 
 
-def test_horarios_es_hoja_y_vuelve_al_inicio():
-    resp, nodo, esp, deriv = _resolver(NODO_INICIO, None, 'Horarios y dirección', None, IMG)
+def test_vacunatorio_es_hoja_y_vuelve_al_inicio():
+    # "Vacunatorio" reemplazó a "Horarios y dirección" como hoja texto accesible
+    # desde el menú principal (los horarios siguen vivos como nodo huérfano, sin link directo).
+    resp, nodo, esp, deriv = _resolver(NODO_INICIO, None, 'Vacunatorio', None, IMG)
     assert nodo == NODO_INICIO and not deriv
-    assert 'Donado' in resp['texto']
+    assert 'Vacunatorio' in resp['texto'] or 'vacuna' in resp['texto'].lower()
 
 
-def test_encargar_entra_en_pedir_input():
-    resp, nodo, esp, deriv = _resolver(NODO_INICIO, None, 'Encargar un producto', None, IMG)
-    assert nodo == 'encargar' and esp == 'encargar' and not deriv
+def test_consultar_modalidad_entra_en_pedir_input():
+    # Antes había "Encargar un producto" como entrada directa a un pedir_input desde inicio;
+    # ahora el patrón equivalente es: submenú Consultar Precio/Stock → elegir modalidad
+    # entra en un pedir_input con acción consultar_producto.
+    resp, nodo, esp, deriv = _resolver('consultar_precio_menu', None, 'Particular', None, IMG)
+    assert nodo == 'consultar_particular' and esp == 'consultar_producto' and not deriv
 
 
 def test_encargar_captura_y_deriva(monkeypatch):

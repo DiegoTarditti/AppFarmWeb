@@ -2576,6 +2576,10 @@ class BotConversacion(Base):
     cliente = relationship('Cliente', foreign_keys=[cliente_id])
     nodo = Column(String(50), default='inicio')      # estado del flujo conversacional
     esperando = Column(String(50))                   # acción esperando input del usuario
+    # Lo que el cliente "iba a encargar" cuando arranca el flujo de identificación
+    # (DNI / nombre). Se guarda acá porque los pasos de id pueden ser 1-3 turnos
+    # y `esperando` (50 chars) no alcanza para nombres largos de productos.
+    producto_pendiente = Column(Text, nullable=True)
     tiene_encargo = Column(Boolean, default=False, nullable=False,
                            server_default='false')   # hay un pedido concreto esperando
     creado_en = Column(DateTime, default=now_ar)
@@ -4481,6 +4485,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS cliente_local_id INTEGER",
         # Flag de encargo pendiente (producto encargado por el bot, visible en bandeja).
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS tiene_encargo BOOLEAN NOT NULL DEFAULT FALSE",
+        # Producto que el cliente "iba a encargar" cuando arranca el flujo de identificación (DNI/nombre).
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS producto_pendiente TEXT",
         # Presencia de agentes en el panel de atención.
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_presencia VARCHAR(12) NOT NULL DEFAULT 'online'",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",
