@@ -1860,3 +1860,96 @@ def get_laboratorios_disponibles():
                  'observer_id': l.observer_id}
                 for l in labs
                 if conteo.get(l.observer_id, 0) > 0]
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Pedidos a droguería (DW.Pedidos) — lectura directa, no se espeja en obs_*.
+# Usado por routes/filtro_drogueria.py para separar un pedido por la matriz
+# lab×droguería. DW.Pedidos es a nivel renglón (un row por producto).
+# ──────────────────────────────────────────────────────────────────────────
+
+def get_pedidos_recientes(limit=10):
+    """Últimos pedidos de DW.Pedidos agrupados por IdPedido, con nombre de proveedor.
+
+    Devuelve [{'id_pedido', 'fecha' (iso), 'proveedor_id', 'proveedor', 'items'}].
+    """
+    import re
+    conn = _connect(timeout=30)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute(f"""
+                SELECT TOP {int(limit)} p.IdPedido, MIN(p.FechaPedido) AS fecha,
+                       p.IdProveedor, COUNT(*) AS items, MAX(p.Comprobante) AS comprobante,
+                       MAX(u.Nombre) AS usuario
+                FROM DW.Pedidos p
+                LEFT JOIN DW.Usuarios u ON u.IdUsuario = p.SolicitadoPor
+                GROUP BY p.IdPedido, p.IdProveedor
+                ORDER BY MIN(p.FechaPedido) DESC
+            """)
+            peds = cur.fetchall()
+            ids = {p['IdProveedor'] for p in peds if p['IdProveedor'] is not None}
+            nombres = {}
+            if ids:
+                inlist = ','.join(str(int(x)) for x in ids)
+                cur.execute(f"SELECT IdProveedor, RazonSocial FROM DW.Proveedores "
+                            f"WHERE IdProveedor IN ({inlist})")
+                nombres = {r['IdProveedor']: r['RazonSocial'] for r in cur.fetchall()}
+            out = []
+            for p in peds:
+                comp = p['comprobante'] or ''
+                nums = re.findall(r'\d+', comp)
+                nro = str(int(nums[-1])) if nums else str(p['IdPedido'])
+                out.append({
+                    'id_pedido':    p['IdPedido'],
+                    'nro':          nro,                 # nº de comprobante (lo que se ve en ObServer)
+                    'comprobante':  comp,
+                    'usuario':      (p['usuario'] or '').strip(),   # "Creado por" en ObServer
+                    'fecha':        p['fecha'].isoformat() if p['fecha'] else None,
+                    'proveedor_id': p['IdProveedor'],
+                    'proveedor':    nombres.get(p['IdProveedor'], '?'),
+                    'n_items':      p['items'],
+                })
+            return out
+    finally:
+        conn.close()
+
+
+def get_pedido_items(id_pedido):
+    """Renglones de un pedido: DW.Pedidos + DW.Productos + DW.Laboratorios.
+
+    Devuelve [{'cantidad', 'encargada', 'comprobante', 'id_producto', 'producto',
+               'troquel', 'alfabeta', 'id_laboratorio', 'laboratorio'}].
+    """
+    conn = _connect(timeout=30)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("""
+                SELECT p.CantidadPedida, p.CantidadEncargada, p.Comprobante,
+                       pr.IdProducto, pr.Producto, pr.Troquel, pr.CodigoAlfabeta,
+                       pr.IdLaboratorio, l.Descripcion AS Laboratorio
+                FROM DW.Pedidos p
+                JOIN DW.Productos pr ON pr.IdProducto = p.IdProducto
+                LEFT JOIN DW.Laboratorios l ON l.IdLaboratorio = pr.IdLaboratorio
+                WHERE p.IdPedido = %s
+                ORDER BY pr.Producto
+            """, (int(id_pedido),))
+            out = []
+            for r in cur.fetchall():
+                out.append({
+                    'cantidad':       int(r['CantidadPedida'] or 0),
+                    'encargada':      int(r['CantidadEncargada'] or 0),
+                    'comprobante':    r['Comprobante'],
+                    'id_producto':    r['IdProducto'],
+                    'producto':       (r['Producto'] or '').strip(),
+                    'troquel':        str(r['Troquel']) if r['Troquel'] is not None else '',
+                    'alfabeta':       str(r['CodigoAlfabeta']) if r['CodigoAlfabeta'] is not None else '',
+                    'id_laboratorio': r['IdLaboratorio'],
+                    'laboratorio':    (r['Laboratorio'] or '').strip(),
+                })
+            return out
+    finally:
+        conn.close()
