@@ -247,7 +247,10 @@
 const USUARIOS = {{ usuarios | tojson }};
 
 function togglePerfilesEditar(rol) {
-    document.getElementById('ed-perfiles-section').classList.toggle('hidden', rol !== 'operador');
+    const esOp = rol === 'operador';
+    // Operador → ve Perfiles. Admin/farmacia/dev → ven Permisos por módulo.
+    document.getElementById('ed-perfiles-section').classList.toggle('hidden', !esOp);
+    document.getElementById('ed-permisos-section').classList.toggle('hidden', esOp);
 }
 document.getElementById('ed-rol').addEventListener('change', e => togglePerfilesEditar(e.target.value));
 
