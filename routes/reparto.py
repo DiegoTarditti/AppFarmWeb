@@ -291,53 +291,8 @@ def init_app(app):
                             'cadetes': [_cadete_dict(c) for c in cs],
                             'usuarios': usuarios_list})
 
-    # ── APIs de cliente: movidas a routes/clientes.py (/api/clientes/*).
-    #    Los endpoints viejos quedan como redirects 308 (preservan method+body
-    #    en POST) para no romper templates/reparto.html ni tests legacy.
-    #    Próxima sesión: migrar reparto.html + tests y borrar estos redirects.
-
-    @app.route('/reparto/api/buscar-cliente')
-    @login_required
-    def reparto_buscar_cliente():
-        qs = request.query_string.decode()
-        return redirect(f'/api/clientes/buscar{("?" + qs) if qs else ""}', code=308)
-
-    @app.route('/reparto/api/cliente')
-    @login_required
-    def reparto_ficha_cliente():
-        qs = request.query_string.decode()
-        return redirect(f'/api/clientes/ficha{("?" + qs) if qs else ""}', code=308)
-
-    @app.route('/reparto/cliente', methods=['POST'])
-    @login_required
-    def reparto_crear_cliente():
-        return redirect('/api/clientes', code=308)
-
-    @app.route('/reparto/cliente/<int:cid>', methods=['POST'])
-    @login_required
-    def reparto_editar_cliente(cid):
-        return redirect(f'/api/clientes/{cid}', code=308)
-
-    @app.route('/reparto/api/<int:oid>/domicilios')
-    @login_required
-    def reparto_domicilios(oid):
-        return redirect(f'/api/clientes/observer/{oid}/domicilios', code=308)
-
-    @app.route('/reparto/api/geocodificar')
-    @login_required
-    def reparto_geocodificar():
-        qs = request.query_string.decode()
-        return redirect(f'/api/clientes/geocodificar{("?" + qs) if qs else ""}', code=308)
-
-    @app.route('/reparto/api/separar-direccion', methods=['POST'])
-    @login_required
-    def reparto_separar_direccion():
-        return redirect('/api/clientes/separar-direccion', code=308)
-
-    @app.route('/reparto/api/domicilio/<int:dom_id>/geo', methods=['POST'])
-    @login_required
-    def reparto_domicilio_set_geo(dom_id):
-        return redirect(f'/api/clientes/domicilios/{dom_id}/geo', code=308)
+    # APIs de cliente viven en routes/clientes.py (/api/clientes/*).
+    # Redirects 308 retirados el 2026-06-10 — ya no hay callers vivos.
 
     @app.route('/reparto/pedido', methods=['POST'])
     @login_required

@@ -1,9 +1,8 @@
 """Listado, detalle y ABM local de clientes (espejo DW.Clientes + extensión local).
 
 También expone la API JSON `/api/clientes/*` usada por el componente
-`cliente_picker` (ver static/js/cliente_picker.js). Los paths viejos
-`/reparto/api/*` y `/reparto/cliente*` siguen vivos como redirects 308 en
-`routes/reparto.py` para no romper templates/reparto.html ni tests legacy.
+`cliente_picker` (ver static/js/cliente_picker.js), por templates/reparto.html
+y por tests/test_reparto.py.
 """
 
 from datetime import datetime
