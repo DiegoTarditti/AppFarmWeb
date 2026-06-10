@@ -978,10 +978,9 @@ una tarea aparte.
 ### ~~Branch protection en `main`~~ ✅ HECHO 2026-05-01
 - Repo hecho público + ruleset via API (id=15842390): require `Syntax check` + `Pytest`, no force-push, no delete. Rama `dev` para trabajo diario, `main` solo para bloques listos.
 
-### Migrar a Alembic
-- **Trigger**: pasamos las ~30 tablas en `database.py` o aparece una migración compleja (renombre, mover datos).
-- **Esfuerzo**: 1-2 días.
-- **Cómo**: instalar Alembic, generar baseline desde la DB actual. Convertir cada `ALTER TABLE IF NOT EXISTS` inline en una migración versionada.
+### ~~Migrar a Alembic~~ ✅ HECHO 2026-06-02 (PRs #145-147)
+- Baseline en `alembic/versions/ae43763059ec_baseline_schema.py`. Ver
+  entrada "HECHO — Adoptar Alembic" arriba en este mismo doc para detalle.
 
 ### Docstrings consistentes
 - **Trigger**: cuando un nuevo dev se sume al proyecto.

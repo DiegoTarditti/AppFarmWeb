@@ -638,9 +638,9 @@ def init_app(app):
         return redirect(url_for('cliente_detail', observer_id=observer_id))
 
     # ── API JSON usada por cliente_picker (static/js/cliente_picker.js) ─────
-    # Movido desde routes/reparto.py el 2026-06-10. Los paths viejos
-    # `/reparto/api/buscar-cliente`, `/reparto/api/cliente`,
-    # `/reparto/cliente`, etc. siguen vivos como redirects 308 en reparto.py.
+    # Movido desde routes/reparto.py el 2026-06-10 (commit f0eca4e). Los paths
+    # viejos `/reparto/api/*` y `/reparto/cliente*` se borraron el mismo día
+    # (commit ed7c0fb) tras migrar todos los callers.
 
     @app.route('/api/clientes/buscar')
     @login_required
