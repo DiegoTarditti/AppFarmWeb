@@ -257,12 +257,7 @@ def init_app(app):
             return 'Sin permiso', 403
         return render_template('reparto.html')
 
-    @app.route('/pedido/nuevo')
-    @login_required
-    def pedido_nuevo():
-        if not _ok():
-            return 'Sin permiso', 403
-        return render_template('pedido_nuevo.html')
+    # /pedido/nuevo se movió a routes/pedidos.py
 
     @app.route('/reparto/api')
     @login_required

@@ -302,6 +302,27 @@
       </div>
     </div>
   </div>
+
+  <!-- Modal: editar Obra Social del cliente -->
+  <div id="modalOS" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:50; align-items:center; justify-content:center;">
+    <div class="card" style="width:460px; max-height:80vh; display:flex; flex-direction:column; border:1px solid; border-radius:12px; overflow:hidden;">
+      <div class="card-head" style="padding:11px 14px; display:flex; justify-content:space-between; align-items:center; border-bottom:0.5px solid;">
+        <span class="title" style="font-size:13px; font-weight:600;">Asignar obra social</span>
+        <span onclick="cerrarModalOS()" class="muted" style="cursor:pointer; font-size:14px;">✕</span>
+      </div>
+      <div style="padding:12px 14px; overflow-y:auto;">
+        <div id="osActualBox" style="display:none; padding:8px 10px; border:0.5px solid; border-radius:8px; margin-bottom:10px;">
+          <div class="muted" style="font-size:10px; margin-bottom:2px;">Asignada actualmente</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <span id="osActualNombre" class="title" style="font-size:12px;"></span>
+            <button onclick="quitarOS()" class="hbtn" style="border-radius:8px; padding:4px 9px; font-size:11px; color:#ef4444; border-color:#ef4444;">Quitar</button>
+          </div>
+        </div>
+        <input id="osBuscar" placeholder="Buscar obra social…" autocomplete="off" oninput="filtrarOS()" class="input" style="width:100%; border-radius:8px; padding:7px 10px; font-size:12px; margin-bottom:10px;">
+        <div id="osLista" style="max-height:50vh; overflow-y:auto;"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -791,6 +812,65 @@ async function buscarClientesModal() {
       <span class="txt" style="font-size:12px;">${esc(c.nombre)}</span>
       <span class="muted" style="font-size:11px; flex-shrink:0;">${esc(String(c.documento || ''))}${c.telefono ? ' · ' + esc(c.telefono) : ''}</span>
     </div>`).join('');
+}
+
+/* ── Modal: editar OS del cliente ── */
+let _osTodas = null;   // cache de la lista global
+async function abrirEditarOS() {
+  const f = fichaData && fichaData.ficha;
+  if (!f || !f.observer_id) { alert('Vinculá un cliente antes de asignar OS.'); return; }
+  document.getElementById('modalOS').style.display = 'flex';
+  // Mostrar OS actual si tiene
+  const box = document.getElementById('osActualBox');
+  if (osInferida && osInferida.tiene_os) {
+    box.style.display = 'block';
+    document.getElementById('osActualNombre').textContent = osInferida.obra_social_nombre || '—';
+  } else {
+    box.style.display = 'none';
+  }
+  document.getElementById('osBuscar').value = '';
+  if (!_osTodas) {
+    _osTodas = await (await fetch('/atencion/api/obras-sociales')).json();
+  }
+  filtrarOS();
+  setTimeout(() => document.getElementById('osBuscar').focus(), 80);
+}
+function cerrarModalOS() { document.getElementById('modalOS').style.display = 'none'; }
+function filtrarOS() {
+  const q = (document.getElementById('osBuscar').value || '').trim().toLowerCase();
+  const items = (_osTodas || []).filter(o => !q || (o.descripcion || '').toLowerCase().includes(q)).slice(0, 80);
+  document.getElementById('osLista').innerHTML = items.length
+    ? items.map(o => `<div onclick="seleccionarOS(${o.observer_id})" class="conv" style="padding:7px 9px; border-bottom:0.5px solid; cursor:pointer;">
+        <span class="txt" style="font-size:12px;">${esc(o.descripcion)}</span>
+      </div>`).join('')
+    : '<div class="muted" style="font-size:11px; padding:10px; text-align:center;">Sin resultados</div>';
+}
+async function seleccionarOS(osId) {
+  const f = fichaData && fichaData.ficha;
+  if (!f || !f.observer_id) return;
+  const r = await fetch(`/atencion/api/clientes/${f.observer_id}/obra-social`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({obra_social_observer_id: osId}),
+  });
+  const d = await r.json();
+  if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo asignar')); return; }
+  osInferida = d.os && d.os.tiene_os ? d.os : null;
+  cerrarModalOS();
+  renderFicha();
+}
+async function quitarOS() {
+  const f = fichaData && fichaData.ficha;
+  if (!f || !f.observer_id) return;
+  if (!confirm('¿Quitar la obra social asignada?')) return;
+  const r = await fetch(`/atencion/api/clientes/${f.observer_id}/obra-social`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({obra_social_observer_id: null}),
+  });
+  const d = await r.json();
+  if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo quitar')); return; }
+  osInferida = d.os && d.os.tiene_os ? d.os : null;
+  cerrarModalOS();
+  renderFicha();
 }
 
 /* ── Modal: operadores ── */

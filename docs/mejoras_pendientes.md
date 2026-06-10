@@ -6,6 +6,76 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Componente reusable `cliente_picker` (2026-05-28)
+
+**Origen**: la sección "👤 Cliente + Dirección" de `/pedido/nuevo` está
+bien armada y ya funciona (buscador multi-palabra, dropdown de domicilios
+guardados, geocoder de dirección nueva, modales de alta/edición). Diego
+propuso extraerla como **componente reusable** para usarla desde varias
+pantallas en vez de duplicar HTML/JS.
+
+**Casos de uso identificados**:
+- `/atencion` — al atender un chat, botón "→ Crear pedido" que abre el
+  picker con teléfono del cliente precargado.
+- `/caja` — buscar cliente para refacturar / vincular ticket.
+- Futuras pantallas — anulación por DNI, histórico por cliente, etc.
+
+**Plan en 4 capas** (~4-5 h focales, riesgo bajo):
+
+1. **Macro Jinja reusable** en `templates/components/cliente_picker.html`:
+   ```jinja
+   {% macro cliente_picker(id_prefix='cli', modo='embedded', on_pick='') %}
+   ```
+   `modo='embedded'` (como hoy en /pedido/nuevo) o `modo='modal'` (botón
+   abre flotante).
+
+2. **JS namespaceado** en `static/js/cliente_picker.js`:
+   ```js
+   window.ClientePicker = {
+     init(prefix, opts),                  // arranca el componente
+     abrir(callback, opts),               // modo modal: callback(cliente, domicilio)
+     precargar(prefix, cliente_id),       // precargar desde otra pantalla
+   };
+   ```
+
+3. **Endpoints fuera del namespace `/reparto/`** (con redirect 301):
+   - `/reparto/api/buscar-cliente` → `/api/clientes/buscar`
+   - `/reparto/api/cliente`        → `/api/clientes/<id>`
+   - `/reparto/api/<oid>/domicilios` → `/api/clientes/<id>/domicilios`
+
+4. **Migración**:
+   - `/pedido/nuevo` reemplaza el bloque inline por `{{ cliente_picker(...) }}`
+     (cero cambio de UX visible).
+   - `/atencion` agrega botón "→ Crear pedido" con cliente precargado del chat.
+
+**Por qué SÍ vale la pena**:
+- Reuso real concreto (2-3 lugares ya identificados, más a futuro).
+- Mejoras al picker (mostrar último pedido, marcar VIP, etc.) propagan
+  a todas las pantallas que lo usen.
+- Riesgo bajo: componente acotado, si falla solo rompe donde se usa.
+- Replaza el 80% del valor que tendría una "abstracción de Flow" con 20%
+  del riesgo (ver descarte abajo).
+
+**Lo que NO vamos a hacer** (descartado 2026-05-28): construir una
+abstracción genérica de **Flow/state-machine** que reúna las 6 pantallas
+(`/atencion`, `/pedido/nuevo`, `/caja`, `/reparto`, `/reparto/planilla`,
+`/envio`) bajo un mismo motor de transiciones. Razones del descarte:
+- Las rutas actuales son simples; la abstracción las haría más complejas.
+- Regla del 3: hoy hay 1 flujo claro (pedido), no 3 repetidos. El shape
+  del Flow se diseña SOLO con info real de producción.
+- Flow engines genéricos tienen tasa de fracaso alta — son
+  desproporcionados para 1 farmacia con 4-state machine.
+
+**Camino intermedio adoptado** (en su lugar):
+- Botones de transición explícitos pantalla-a-pantalla cuando se necesite
+  ("→ Crear pedido", "→ Enviar a caja", "→ Marcar para reparto").
+- Componentes reusables como `cliente_picker` para puntos de fricción
+  concretos.
+- Si dentro de 1-2 meses operando aparecen 3 flujos genuinos repetidos,
+  recién ahí evaluar un Flow engine.
+
+---
+
 ## 🤖 Bot asistente / Atención / Caja — pendientes (2026-06-05)
 
 Hecho: bot Telegram, handoff/panel `/atencion`, ficha cliente, alta lead, UI
