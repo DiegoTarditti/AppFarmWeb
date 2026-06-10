@@ -51,6 +51,116 @@ PERMISOS_POR_ROL = {
 }
 
 
+# ── Perfiles de operador ─────────────────────────────────────────────────────
+# Modelo nuevo: un operador (rol='operador') tiene una LISTA de perfiles
+# (Usuario.perfiles_json). Cada perfil define su botón en el home y los prefijos
+# de path que habilita. Algunos heredan acceso a otra área (ej. caja).
+# Única fuente de verdad: de acá salen el home, el gating y los checks de /usuarios.
+PERFILES = {
+    'rendicion': {
+        'label': 'Rendición de Recetas', 'icono': '📋',
+        'url': '/rend-recetas?perfil=rendicion',
+        'prefijos': ['/rend-recetas', '/devoluciones'],
+    },
+    'chat_clientes': {
+        'label': 'Chat Clientes', 'icono': '💬',
+        'url': '/atencion',
+        'prefijos': ['/atencion', '/caja'],   # hereda caja
+    },
+    'pedido_manual': {
+        'label': 'Pedido Manual', 'icono': '🛒',
+        'url': '/pedido/nuevo',
+        'prefijos': ['/pedido/', '/reparto', '/api/reparto', '/caja'],   # hereda caja
+    },
+    'planilla_envios': {
+        'label': 'Planilla Envíos', 'icono': '🛵',
+        'url': '/reparto/planilla',
+        'prefijos': ['/reparto', '/api/reparto'],
+    },
+    'filtro_drogueria': {
+        'label': 'Filtro Droguería', 'icono': '⊞',
+        'url': '/filtro-drogueria',
+        'prefijos': ['/filtro-drogueria', '/filtro_drogueria'],
+    },
+    'audit_recetas': {
+        'label': 'Auditoría Recetas', 'icono': '✅',
+        'url': '/rend-recetas?perfil=auditor',
+        'prefijos': ['/rend-recetas', '/devoluciones'],
+    },
+    'pedidos_drog': {
+        'label': 'Pedidos a Droguerías', 'icono': '📦',
+        'url': '/compras/dia',
+        'prefijos': ['/compras/', '/pedidos/', '/api/compras/', '/api/pedidos/',
+                     '/pedidos-emitidos', '/api/pedido-emitido/', '/api/producto/',
+                     '/api/observer-product/', '/api/lab-drog/'],
+    },
+}
+
+# Paths comunes a todo operador (siempre permitidos).
+PERFILES_PATHS_COMUNES = ('/home', '/login', '/logout', '/cambiar-password',
+                          '/health', '/static/', '/api/notifications',
+                          '/api/sync-status', '/api/presencia')
+
+# Migración de roles viejos (uno por usuario) → lista de perfiles equivalente.
+ROL_LEGACY_A_PERFILES = {
+    'rendicion': ['rendicion'],
+    'auditor': ['audit_recetas'],
+    'operador': ['chat_clientes'],
+    'cajero': ['chat_clientes'],   # caja se hereda desde chat_clientes
+    'pedidos': ['pedidos_drog'],
+}
+
+
+def perfiles_de_usuario(user):
+    """Lista de slugs de perfil del usuario (desde Usuario.perfiles_json)."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return []
+    try:
+        data = json.loads(user.perfiles_json or '[]')
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return [p for p in data if p in PERFILES]
+
+
+def tiene_perfil(user, slug):
+    return slug in perfiles_de_usuario(user)
+
+
+def es_operador(user):
+    """True si el usuario es de tipo operador (no admin/farmacia/dev/remoto)."""
+    return getattr(user, 'rol', None) == 'operador'
+
+
+def prefijos_permitidos(user):
+    """Unión de los prefijos de todos los perfiles del usuario."""
+    pref = set()
+    for slug in perfiles_de_usuario(user):
+        pref.update(PERFILES[slug]['prefijos'])
+    return pref
+
+
+def botones_home(user):
+    """Botones del home para el usuario: [{slug, label, icono, url}] en el orden
+    del registro PERFILES."""
+    mis = set(perfiles_de_usuario(user))
+    return [{'slug': s, **{k: PERFILES[s][k] for k in ('label', 'icono', 'url')}}
+            for s in PERFILES if s in mis]
+
+
+def migrar_roles_a_perfiles():
+    """One-time: convierte los roles single-screen viejos a rol='operador' +
+    perfiles_json. Idempotente (tras convertir, esos roles ya no existen)."""
+    with database.get_db() as session:
+        legacy = session.query(Usuario).filter(
+            Usuario.rol.in_(list(ROL_LEGACY_A_PERFILES))).all()
+        for u in legacy:
+            u.perfiles_json = json.dumps(ROL_LEGACY_A_PERFILES.get(u.rol, []))
+            u.rol = 'operador'
+        if legacy:
+            session.commit()
+        return len(legacy)
+
+
 login_manager = LoginManager()
 login_manager.login_view = 'auth_login'
 login_manager.login_message = 'Iniciá sesión para continuar.'

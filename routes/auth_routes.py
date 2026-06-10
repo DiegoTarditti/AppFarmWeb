@@ -10,8 +10,14 @@ import database
 from auth import (
     MODULOS,
     NIVELES,
+    PERFILES,
+    PERFILES_PATHS_COMUNES,
+    botones_home,
+    es_operador,
     hash_password,
+    perfiles_de_usuario,
     permisos_default_rol,
+    prefijos_permitidos,
     requiere_permiso,
     seed_admin_si_falta,
     seed_pedidos_si_falta,
@@ -27,111 +33,33 @@ def init_app(app):
     seed_admin_si_falta()
     seed_pedidos_si_falta()
     seed_rendicion_si_falta()
+    from auth import migrar_roles_a_perfiles
+    migrar_roles_a_perfiles()
 
-    # ── Guard global para rol 'pedidos' ─────────────────────────────────
-    # Sólo puede navegar a /compras/* y a las APIs que use ese flujo.
-    # Cualquier otro path lo redirige a /compras/dia.
-    _PEDIDOS_PATHS_OK = (
-        '/pedidos/', '/api/pedidos/',
-        '/compras/', '/api/compras/',  # legacy: rutas no-renombradas (labs-drogerias, rapido)
-        '/api/producto/',
-        '/api/observer-product/', '/api/lab-drog/',
-        '/pedidos-emitidos', '/api/pedido-emitido/',
-        '/static/',
-    )
-    _PEDIDOS_PATHS_OK_EXACT = {
-        '/login', '/logout', '/cambiar-password', '/health',
-        '/api/notifications', '/api/sync-status', '/api/dockerpanel-info',
-    }
-
+    # ── Guard unificado de operadores ────────────────────────────────────
+    # Un operador (rol='operador') solo puede navegar a los prefijos de SUS
+    # perfiles (Usuario.perfiles_json) + los paths comunes. Cualquier otro path
+    # lo manda al home. Reemplaza los 5 guards single-rol anteriores.
     @app.before_request
-    def _restrict_rol_pedidos():
+    def _restrict_operador():
         if not current_user.is_authenticated:
             return None
-        if getattr(current_user, 'rol', None) != 'pedidos':
-            return None
+        if not es_operador(current_user):
+            return None   # admin/farmacia/dev/remoto: acceso normal (con sidebar)
         p = request.path or '/'
-        if p in _PEDIDOS_PATHS_OK_EXACT:
+        if any(p.startswith(c) for c in PERFILES_PATHS_COMUNES):
             return None
-        if any(p.startswith(pref) for pref in _PEDIDOS_PATHS_OK):
+        if any(p.startswith(pref) for pref in prefijos_permitidos(current_user)):
             return None
-        return redirect(url_for('compras_dia'))
+        return redirect(url_for('home_operador'))
 
-    # Rol 'rendicion' / 'auditor': solo acceden a /rend-recetas/* y /rend.
-    # Mantenemos /devoluciones/* en la lista por compat (rutas viejas que
-    # podrían quedar bookmarkeadas).
-    _RENDICION_PATHS_OK = ('/rend-recetas/', '/devoluciones/', '/static/')
-    _RENDICION_PATHS_OK_EXACT = {
-        '/rend-recetas', '/devoluciones', '/rend',
-        '/login', '/logout', '/cambiar-password', '/health',
-    }
-
-    @app.before_request
-    def _restrict_rol_rendicion():
-        if not current_user.is_authenticated:
-            return None
-        if getattr(current_user, 'rol', None) != 'rendicion':
-            return None
-        p = request.path or '/'
-        if p in _RENDICION_PATHS_OK_EXACT:
-            return None
-        if any(p.startswith(pref) for pref in _RENDICION_PATHS_OK):
-            return None
-        return redirect(url_for('devoluciones_buscar'))
-
-    # Rol 'auditor': mismo scope que rendicion (solo /devoluciones/*),
-    # pero ve TODAS las devoluciones (no solo las suyas) y agrega la
-    # segunda etapa del chequeo.
-    @app.before_request
-    def _restrict_rol_auditor():
-        if not current_user.is_authenticated:
-            return None
-        if getattr(current_user, 'rol', None) != 'auditor':
-            return None
-        p = request.path or '/'
-        if p in _RENDICION_PATHS_OK_EXACT:
-            return None
-        if any(p.startswith(pref) for pref in _RENDICION_PATHS_OK):
-            return None
-        return redirect(url_for('devoluciones_por_vendedor'))
-
-    # Rol 'operador': atiende el bot. Solo accede al panel /atencion/*.
-    _OPERADOR_PATHS_OK = ('/atencion/', '/static/')
-    _OPERADOR_PATHS_OK_EXACT = {
-        '/atencion', '/login', '/logout', '/cambiar-password', '/health',
-    }
-
-    @app.before_request
-    def _restrict_rol_operador():
-        if not current_user.is_authenticated:
-            return None
-        if getattr(current_user, 'rol', None) != 'operador':
-            return None
-        p = request.path or '/'
-        if p in _OPERADOR_PATHS_OK_EXACT:
-            return None
-        if any(p.startswith(pref) for pref in _OPERADOR_PATHS_OK):
-            return None
-        return redirect(url_for('atencion_panel'))
-
-    # Rol 'cajero': cobra los tickets. Solo accede a /caja/*.
-    _CAJERO_PATHS_OK = ('/caja/', '/static/')
-    _CAJERO_PATHS_OK_EXACT = {
-        '/caja', '/login', '/logout', '/cambiar-password', '/health',
-    }
-
-    @app.before_request
-    def _restrict_rol_cajero():
-        if not current_user.is_authenticated:
-            return None
-        if getattr(current_user, 'rol', None) != 'cajero':
-            return None
-        p = request.path or '/'
-        if p in _CAJERO_PATHS_OK_EXACT:
-            return None
-        if any(p.startswith(pref) for pref in _CAJERO_PATHS_OK):
-            return None
-        return redirect(url_for('caja_panel'))
+    @app.route('/home')
+    @login_required
+    def home_operador():
+        """Home standalone (sin sidebar) con un botón por perfil del operador."""
+        return render_template('home_operador.html',
+                               botones=botones_home(current_user),
+                               nombre=current_user.nombre_completo or current_user.username)
 
     @app.route('/login', methods=['GET', 'POST'])
     def auth_login():
@@ -155,16 +83,9 @@ def init_app(app):
                 flash('Tenés que cambiar tu contraseña antes de continuar.', 'warning')
                 return redirect(url_for('auth_cambiar_password'))
             # Rol 'pedidos' tiene una sola pantalla — saltearse el index.
-            if user.rol == 'pedidos':
-                return redirect(request.args.get('next') or url_for('compras_dia'))
-            if user.rol == 'rendicion':
-                return redirect(request.args.get('next') or url_for('devoluciones_buscar'))
-            if user.rol == 'auditor':
-                return redirect(request.args.get('next') or url_for('devoluciones_por_vendedor'))
+            # Operadores → home con botones por perfil. El resto → index (sidebar).
             if user.rol == 'operador':
-                return redirect(request.args.get('next') or url_for('atencion_panel'))
-            if user.rol == 'cajero':
-                return redirect(request.args.get('next') or url_for('caja_panel'))
+                return redirect(request.args.get('next') or url_for('home_operador'))
             return redirect(request.args.get('next') or url_for('index'))
         return render_template('login.html')
 
@@ -196,14 +117,8 @@ def init_app(app):
                 user.debe_cambiar_password = False
                 session.commit()
             flash('Contraseña actualizada.', 'success')
-            if current_user.rol == 'pedidos':
-                return redirect(url_for('compras_dia'))
-            if current_user.rol == 'rendicion':
-                return redirect(url_for('devoluciones_buscar'))
             if current_user.rol == 'operador':
-                return redirect(url_for('atencion_panel'))
-            if current_user.rol == 'cajero':
-                return redirect(url_for('caja_panel'))
+                return redirect(url_for('home_operador'))
             return redirect(url_for('index'))
         return render_template('cambiar_password.html')
 
@@ -316,4 +231,6 @@ def init_app(app):
 
 
 # Lista de roles válidos usada en crear/editar
-PERMISOS_ROLES = {'farmacia', 'dev', 'remoto', 'admin', 'pedidos', 'auditor', 'rendicion', 'operador', 'cajero'}
+PERMISOS_ROLES = {'farmacia', 'dev', 'remoto', 'admin', 'operador',
+                  # legacy (se migran a 'operador' al arranque; se aceptan por compat)
+                  'pedidos', 'auditor', 'rendicion', 'cajero'}
