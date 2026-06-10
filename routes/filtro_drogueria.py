@@ -24,7 +24,7 @@ from flask import jsonify, render_template, request
 
 import observer_source
 from database import KellerhoffCatalogo, Laboratorio, LaboratorioDrogueria, Producto, Provider, get_db
-from helpers import get_config
+from helpers import drogueria_defaults, get_config
 
 # La identidad de la farmacia (nombre/CUIT) sale de Config (id=1) y la config por
 # droguería (codcli/formato/sufijo/carpeta) de cada Provider → funciona en
@@ -103,12 +103,17 @@ def init_app(app):
             drog_nombre = {d.id: d.razon_social for d in
                            session.query(Provider).filter(Provider.tipo == 'drogueria')}
             # Config del archivo por droguería (antes DROG_CFG hardcodeado).
-            # Clave = Provider.id local; solo las que tienen formato configurado.
-            drog_cfg = {d.id: {'codcli': d.codcli or '', 'sufijo': d.sufijo or '',
-                               'formato': d.formato_archivo, 'carpeta': d.carpeta_filtro or ''}
-                        for d in session.query(Provider).filter(
-                            Provider.tipo == 'drogueria',
-                            Provider.formato_archivo.isnot(None))}
+            # Clave = Provider.id local. El formato/sufijo sale del Provider o, si
+            # no está cargado, del default por nombre (Kellerhoff/20 de Junio).
+            drog_cfg = {}
+            for d in session.query(Provider).filter(Provider.tipo == 'drogueria'):
+                dd = drogueria_defaults(d.razon_social)
+                fmt = d.formato_archivo or dd.get('formato_archivo')
+                if not fmt:
+                    continue   # droguería sin formato conocido ni configurado
+                drog_cfg[d.id] = {'codcli': d.codcli or '',
+                                  'sufijo': d.sufijo or dd.get('sufijo') or '',
+                                  'formato': fmt, 'carpeta': d.carpeta_filtro or ''}
 
             # Clasificación por renglón.
             grupos = {}        # drog_id -> [item]

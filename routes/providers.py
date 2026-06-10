@@ -14,6 +14,7 @@ from helpers import (
     _ensure_parser_file,
     _make_parser_slug,
     allowed_file,
+    drogueria_defaults,
     get_providers,
 )
 
@@ -259,6 +260,7 @@ def init_app(app):
                 claim_count = session.query(database.Claim).filter_by(proveedor_id=p.id).count()
                 horario_count = (session.query(database.ProveedorHorarioReparto)
                                  .filter_by(proveedor_id=p.id).count())
+                _dd = drogueria_defaults(p.razon_social) if (p.tipo or 'drogueria') == 'drogueria' else {}
                 provider_data.append({
                     'id': p.id,
                     'razon_social': p.razon_social,
@@ -275,8 +277,9 @@ def init_app(app):
                     'horario_count': horario_count,
                     'matriz_visible': p.matriz_visible if p.tipo == 'drogueria' else None,
                     'codcli': p.codcli or '',
-                    'formato_archivo': p.formato_archivo or '',
-                    'sufijo': p.sufijo or '',
+                    # formato/sufijo: lo guardado o el default por nombre de droguería.
+                    'formato_archivo': p.formato_archivo or _dd.get('formato_archivo', ''),
+                    'sufijo': p.sufijo or _dd.get('sufijo', ''),
                     'carpeta_filtro': p.carpeta_filtro or '',
                 })
         return render_template('providers.html', providers=provider_data, tipo_filter=tipo_filter)
