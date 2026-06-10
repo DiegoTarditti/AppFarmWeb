@@ -63,9 +63,6 @@
       <span class="title">Filtro droguería</span>
     </div>
     <div style="display:flex; align-items:center; gap:12px;">
-      <a href="/compras/labs-drogerias" target="_blank" class="btn"
-         style="text-decoration:none; padding:6px 13px; font-size:12px;"
-         title="Abrir la matriz lab × droguería en otra pestaña">⊞ Matriz lab/drog</a>
       <button id="help-btn" title="Estado de la configuración del filtro"
          style="border:0.5px solid {% if setup_faltante %}var(--warn-tx){% else %}var(--theme-bd){% endif %}; color:{% if setup_faltante %}var(--warn-tx){% else %}var(--muted2){% endif %}; cursor:pointer; padding:5px 12px; border-radius:20px; background:transparent; font-size:11px;">
         {% if setup_faltante %}⚠ Falta configurar{% else %}❔ Ayuda{% endif %}
