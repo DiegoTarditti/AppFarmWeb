@@ -14,13 +14,41 @@ Flow:
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
+from flask import current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
 import database
 import observer_source
+from auth import perfiles_de_usuario
+
+
+def _rol_efectivo():
+    """Rol que la lógica de /rend-recetas espera ('rendicion'|'auditor').
+
+    Modelo nuevo: los operadores son rol='operador' + perfiles. Acá traducimos
+    operador + ?perfil (persistido en sesión) al rol equivalente, validando
+    contra los perfiles del usuario. Admin/dev/farmacia conservan su rol real.
+    Así toda la lógica que ramifica por rol sigue funcionando sin tocarse."""
+    real = current_user.rol if current_user.is_authenticated else None
+    if real != 'operador':
+        return real
+    perfil = request.args.get('perfil')
+    if perfil in ('rendicion', 'auditor'):
+        session['rend_perfil'] = perfil
+    perfil = session.get('rend_perfil')
+    perfiles = perfiles_de_usuario(current_user)
+    if perfil == 'auditor' and 'audit_recetas' in perfiles:
+        return 'auditor'
+    if perfil == 'rendicion' and 'rendicion' in perfiles:
+        return 'rendicion'
+    # Sin param válido: auditor manda si tiene ambos perfiles.
+    if 'audit_recetas' in perfiles:
+        return 'auditor'
+    if 'rendicion' in perfiles:
+        return 'rendicion'
+    return 'rendicion'
 
 # Carga incremental de recetas (ver devoluciones_buscar):
 # - Al rendir traemos TODO desde la última carga del vendedor hasta hoy.
@@ -196,7 +224,7 @@ def init_app(app):
         with database.get_db() as session:
             # Para rol rendicion: solo sus propias rendiciones.
             nombre_u = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
-            rol = getattr(current_user, 'rol', None)
+            rol = _rol_efectivo()
 
             # Agregado por (vendedor, nro_presentacion).
             base = (session.query(
@@ -321,7 +349,7 @@ def init_app(app):
     @login_required
     def rendicion_lotes_list():
         """Listado de lotes de rendición. Para rol=rendicion: solo los suyos."""
-        rol = getattr(current_user, 'rol', None)
+        rol = _rol_efectivo()
         nombre_user = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
         with database.get_db() as session:
             from sqlalchemy import func as _f
@@ -391,7 +419,7 @@ def init_app(app):
         etiqueta = f'Rendición #{nro}'
 
         # Resolver vendedor: si rol=rendicion, forzar al matcheado por nombre.
-        rol = getattr(current_user, 'rol', None)
+        rol = _rol_efectivo()
         vendedor_id = (request.form.get('vendedor_id') or '').strip() or None
         vendedor_nombre = (request.form.get('vendedor_nombre') or '').strip() or None
         if rol == 'rendicion':
@@ -583,7 +611,7 @@ def init_app(app):
         """Detecta DevolucionReceta con mismo id_operacion_observer en lotes
         distintos. Aplica reglas para identificar qué se mantiene y qué se
         descarta. NO toca nada — solo muestra."""
-        if getattr(current_user, 'rol', None) not in ('auditor', 'admin', 'dev'):
+        if _rol_efectivo() not in ('auditor', 'admin', 'dev'):
             flash('Sin permiso.', 'error')
             return redirect(url_for('devoluciones_list'))
         grupos = _detectar_duplicados()
@@ -595,7 +623,7 @@ def init_app(app):
         """Aplica la deduplicación: descarta los perdedores según las reglas
         (mantiene la fila ganadora, marca el resto como estado=descartada
         con nota_cierre indicando el winner)."""
-        if getattr(current_user, 'rol', None) not in ('auditor', 'admin', 'dev'):
+        if _rol_efectivo() not in ('auditor', 'admin', 'dev'):
             flash('Sin permiso.', 'error')
             return redirect(url_for('devoluciones_list'))
         grupos = _detectar_duplicados()
@@ -629,7 +657,7 @@ def init_app(app):
         """Asigna en bulk un lote a todas las DevolucionReceta sin
         rendicion_lote_id que matcheen vendedor (y opcionalmente rango fecha).
         Solo auditor/admin/dev."""
-        if getattr(current_user, 'rol', None) not in ('auditor', 'admin', 'dev'):
+        if _rol_efectivo() not in ('auditor', 'admin', 'dev'):
             flash('Sin permiso.', 'error')
             return redirect(url_for('devoluciones_list'))
         lote_id = request.form.get('lote_id', type=int)
@@ -659,7 +687,7 @@ def init_app(app):
         """Marca/desmarca un lote como físicamente entregado a la OS.
         Solo auditor/admin/dev. Si se marca como entregada y el lote está
         abierto, lo cierra automáticamente (la entrega implica cierre)."""
-        if getattr(current_user, 'rol', None) not in ('auditor', 'admin', 'dev'):
+        if _rol_efectivo() not in ('auditor', 'admin', 'dev'):
             flash('Solo auditor o admin puede marcar la entrega.', 'error')
             return redirect(url_for('rendicion_lotes_list'))
         with database.get_db() as session:
@@ -695,7 +723,7 @@ def init_app(app):
     def rendicion_lote_eliminar(id):
         """Elimina un lote — solo si está vacío (sin devoluciones).
         Para limpiar lotes creados por error. Admin/auditor/dev only."""
-        if getattr(current_user, 'rol', None) not in ('auditor', 'admin', 'dev'):
+        if _rol_efectivo() not in ('auditor', 'admin', 'dev'):
             flash('Sin permiso para eliminar lotes.', 'error')
             return redirect(url_for('rendicion_lotes_list'))
         with database.get_db() as session:
@@ -717,7 +745,7 @@ def init_app(app):
     @app.route('/rend-recetas/lotes/<int:id>/reabrir', methods=['POST'])
     @login_required
     def rendicion_lote_reabrir(id):
-        if getattr(current_user, 'rol', None) not in ('admin', 'dev'):
+        if _rol_efectivo() not in ('admin', 'dev'):
             flash('Solo admin puede reabrir rendiciones.', 'error')
             return redirect(url_for('rendicion_lotes_list'))
         with database.get_db() as session:
@@ -751,7 +779,7 @@ def init_app(app):
         per_page = 50
         offset = (page - 1) * per_page
 
-        rol_actual_lista = getattr(current_user, 'rol', None)
+        rol_actual_lista = _rol_efectivo()
 
         with database.get_db() as session:
             base = session.query(database.DevolucionReceta).options(
@@ -1007,14 +1035,14 @@ def init_app(app):
     def devoluciones_buscar():
         # Auditor no carga recetas — solo revisa lo ya cargado. Redirigir
         # a la vista por-vendedor que es su flujo natural.
-        if getattr(current_user, 'rol', None) == 'auditor':
+        if _rol_efectivo() == 'auditor':
             flash('El rol auditor no carga recetas — usá la vista por vendedor para revisar lo cargado.', 'info')
             return redirect(url_for('devoluciones_por_vendedor'))
         # Catálogos: obras sociales desde la DB local sincronizada (rápido, no
         # depende de SQL Server estar online en cada búsqueda).
         # Filtramos las OS ocultas para el rol del operador (lista negra
         # configurable desde /devoluciones/filtros-os).
-        rol_param = getattr(current_user, 'rol', None)
+        rol_param = _rol_efectivo()
         with database.get_db() as session:
             os_ocultas = set()
             if rol_param:
@@ -1042,7 +1070,7 @@ def init_app(app):
 
         # Auto-sugerencia: si el user es rol=rendicion, pre-seleccionar el
         # vendedor de ObServer cuyo nombre matchea con nombre_completo.
-        rol_actual_get = getattr(current_user, 'rol', None)
+        rol_actual_get = _rol_efectivo()
         nombre_user = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
         vendedor_sugerido = ''
         if rol_actual_get == 'rendicion' and nombre_user:
@@ -1350,7 +1378,7 @@ def init_app(app):
         # Filtramos motivos según el rol del operador: rendicion ve solo los
         # suyos + 'ambos', auditor ve solo los suyos + 'ambos'. Cualquier
         # otro rol (admin, dev) ve todos.
-        rol_actual = getattr(current_user, 'rol', None)
+        rol_actual = _rol_efectivo()
         with database.get_db() as session:
             q_motivos = (session.query(database.MotivoDevolucion)
                          .filter_by(activo=True))
@@ -1444,7 +1472,7 @@ def init_app(app):
         # Lote de rendición (nuevo modelo). El nro_presentacion se desnormaliza
         # desde el lote para compat con queries viejas.
         lote_id = request.form.get('lote_id', type=int)
-        rol_g = getattr(current_user, 'rol', None)
+        rol_g = _rol_efectivo()
         # Para rol=rendicion las recetas SIEMPRE se guardan con el nombre_completo
         # del usuario (no el alias corto de ObServer que viene en el hidden). Los
         # listados de este rol filtran por vendedor_nombre == nombre_completo; si
@@ -2066,7 +2094,7 @@ def init_app(app):
         q_vendedor = (request.args.get('vendedor') or '').strip()
         q_estado = (request.args.get('estado') or '').strip()
         q_auditoria = (request.args.get('auditoria') or '').strip()
-        rol = getattr(current_user, 'rol', None)
+        rol = _rol_efectivo()
 
         with database.get_db() as session:
             D = database.DevolucionReceta
@@ -2158,7 +2186,7 @@ def init_app(app):
         """Etapa 2: el auditor revisa lo cargado por rendicion y agrega
         motivo + observaciones de auditoría. El motivo debe ser uno con
         uso_rol IN ('auditor', 'ambos')."""
-        if getattr(current_user, 'rol', None) not in ('auditor', 'admin', 'dev'):
+        if _rol_efectivo() not in ('auditor', 'admin', 'dev'):
             flash('No tenés permiso para auditar.', 'error')
             return redirect(url_for('devoluciones_list'))
 

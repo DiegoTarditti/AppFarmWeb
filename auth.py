@@ -84,7 +84,7 @@ PERFILES = {
     },
     'audit_recetas': {
         'label': 'Auditoría Recetas', 'icono': '✅',
-        'url': '/rend-recetas?perfil=auditor',
+        'url': '/rend-recetas/por-vendedor?perfil=auditor',
         'prefijos': ['/rend-recetas', '/devoluciones'],
     },
     'pedidos_drog': {
