@@ -61,7 +61,9 @@ def init_app(app):
                 pedidos = observer_source.get_pedidos_recientes(10)
             except Exception as e:  # noqa: BLE001
                 error = f'No pude leer pedidos de ObServer: {e}'
-        return render_template('filtro_drogueria.html', pedidos=pedidos, error=error)
+        setup = _setup_checks()
+        return render_template('filtro_drogueria.html', pedidos=pedidos, error=error,
+                               setup=setup, setup_faltante=any(not c['ok'] for c in setup))
 
     @app.route('/filtro_drogueria/generar', methods=['POST'])
     def filtro_drogueria_generar():
@@ -183,6 +185,53 @@ def init_app(app):
             'ambiguos': len(ambiguos),
             'groups': out_groups,
         })
+
+
+# ── Aviso guiado de configuración ────────────────────────────────────────────
+
+def _setup_checks():
+    """Chequeos para que el filtro funcione en esta farmacia. Cada item:
+    {ok, label, accion, link, link_txt}. El template muestra el aviso solo si
+    algún ok es False."""
+    checks = []
+    cfg = get_config()
+    checks.append({
+        'ok': bool((cfg.get('farmacia_cuit') or '').strip()),
+        'label': 'CUIT de la farmacia',
+        'accion': 'Cargalo en Configuración — lo usa el archivo de 20 de Junio.',
+        'link': '/settings', 'link_txt': 'Configuración',
+    })
+    with get_db() as s:
+        drogs = s.query(Provider).filter(Provider.tipo == 'drogueria').all()
+        con_fmt = [d for d in drogs
+                   if d.formato_archivo or drogueria_defaults(d.razon_social).get('formato_archivo')]
+        checks.append({
+            'ok': bool(con_fmt),
+            'label': 'Droguerías con formato de archivo',
+            'accion': 'Configurá Kellerhoff y/o 20 de Junio en Droguerías.',
+            'link': '/providers?tipo=drogueria', 'link_txt': 'Droguerías',
+        })
+        sin_codcli = [d.razon_social for d in con_fmt if not (d.codcli or '').strip()]
+        checks.append({
+            'ok': not sin_codcli,
+            'label': 'Código de cliente (codcli) por droguería',
+            'accion': ('Falta el codcli en: ' + ', '.join(sin_codcli) + '.') if sin_codcli
+                      else 'Todas las droguerías con formato tienen codcli.',
+            'link': '/providers?tipo=drogueria', 'link_txt': 'Droguerías',
+        })
+        checks.append({
+            'ok': s.query(KellerhoffCatalogo).count() > 0,
+            'label': 'Catálogo Kellerhoff importado',
+            'accion': 'Importalo — resuelve los EAN por alfabeta/troquel.',
+            'link': '/kellerhoff/catalogo', 'link_txt': 'Catálogo',
+        })
+        checks.append({
+            'ok': s.query(LaboratorioDrogueria).count() > 0,
+            'label': 'Matriz lab × droguería',
+            'accion': 'Cargá qué laboratorio va a qué droguería.',
+            'link': '/compras/labs-drogerias', 'link_txt': 'Matriz',
+        })
+    return checks
 
 
 # ── Helpers de mapeo / EAN ───────────────────────────────────────────────────

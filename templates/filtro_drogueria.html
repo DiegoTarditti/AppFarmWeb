@@ -66,6 +66,10 @@
       <a href="/compras/labs-drogerias" target="_blank" class="btn"
          style="text-decoration:none; padding:6px 13px; font-size:12px;"
          title="Abrir la matriz lab × droguería en otra pestaña">⊞ Matriz lab/drog</a>
+      <button id="help-btn" title="Estado de la configuración del filtro"
+         style="border:0.5px solid {% if setup_faltante %}var(--warn-tx){% else %}var(--theme-bd){% endif %}; color:{% if setup_faltante %}var(--warn-tx){% else %}var(--muted2){% endif %}; cursor:pointer; padding:5px 12px; border-radius:20px; background:transparent; font-size:11px;">
+        {% if setup_faltante %}⚠ Falta configurar{% else %}❔ Ayuda{% endif %}
+      </button>
       <button id="theme-btn"><span id="theme-icon">🌙</span><span id="theme-text">Oscuro</span></button>
     </div>
   </div>
@@ -74,6 +78,29 @@
     <p class="muted" style="font-size:13px; margin:0 0 12px;">
       Separa un pedido de ObServer por la matriz lab × droguería y genera un archivo por droguería en su formato nativo.
     </p>
+
+    <div id="setup-panel" class="card" style="padding:14px 16px; margin-bottom:16px; {% if not setup_faltante %}display:none;{% endif %}">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <span class="title" style="font-size:13px;">Configuración del filtro en esta farmacia</span>
+        {% if setup_faltante %}<span class="badge badge-sep">Falta configurar algo</span>{% else %}<span class="badge badge-orig">Todo listo ✓</span>{% endif %}
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        {% for c in setup %}
+        <div style="display:flex; align-items:flex-start; gap:9px; font-size:12.5px;">
+          <span style="flex-shrink:0;">{% if c.ok %}✅{% else %}⚠️{% endif %}</span>
+          <div>
+            <span class="title" style="font-size:12.5px;">{{ c.label }}</span>
+            {% if not c.ok %}
+            <div class="muted2" style="margin-top:2px;">{{ c.accion }}
+              <a href="{{ c.link }}" target="_blank" style="margin-left:4px;">{{ c.link_txt }} →</a>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
     <div id="aviso-picker" class="card" style="display:none; border-color:#7a5a1a; color:var(--warn-tx); padding:10px 14px; margin-bottom:16px; font-size:12.5px; line-height:1.5;"></div>
 
     {% if error %}
@@ -112,6 +139,12 @@
 <script>
 const $ = (s, r=document) => r.querySelector(s);
 let GROUPS = [];
+
+// Toggle del panel de configuración (botón ❔/⚠ del topbar).
+$('#help-btn').addEventListener('click', () => {
+  const p = $('#setup-panel');
+  p.style.display = (p.style.display === 'none') ? 'block' : 'none';
+});
 
 // ── Tema (localStorage) ──
 const app = $('#app');
