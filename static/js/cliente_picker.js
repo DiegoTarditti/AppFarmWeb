@@ -104,7 +104,7 @@
 
   function refreshDomWrapVisibility(){
     const wrap = $('pDomWrap');
-    if (!wrap) return;
+    if (!wrap) return;  // host sin bloque domicilio (ej. /reparto)
     const n = (window._doms||[]).length;
     const hayCoords = window._domLat != null && window._domLng != null;
     wrap.style.display = (n>0 || hayCoords) ? '' : 'none';
@@ -114,22 +114,25 @@
     const sel = $('pDom');
     const single = $('pDomSingle');
     const count = $('pDomCount');
+    if (!sel) return;  // host sin bloque domicilio
     const n = (doms || []).length;
     if (n >= 2){
       sel.style.display = '';
-      single.style.display = 'none';
-      count.textContent = `(${n} guardados)`;
+      if (single) single.style.display = 'none';
+      if (count) count.textContent = `(${n} guardados)`;
     } else if (n === 1){
       sel.style.display = 'none';
       const d = doms[0];
-      const loc = d.localidad ? ` · ${esc(d.localidad)}` : '';
-      single.innerHTML = `<b>${esc(d.etiqueta||'Casa')}</b> — ${esc(d.direccion||'')}${loc}`;
-      single.style.display = '';
-      count.textContent = '';
+      if (single){
+        const loc = d.localidad ? ` · ${esc(d.localidad)}` : '';
+        single.innerHTML = `<b>${esc(d.etiqueta||'Casa')}</b> — ${esc(d.direccion||'')}${loc}`;
+        single.style.display = '';
+      }
+      if (count) count.textContent = '';
     } else {
       sel.style.display = 'none';
-      single.style.display = 'none';
-      count.textContent = '';
+      if (single) single.style.display = 'none';
+      if (count) count.textContent = '';
     }
     refreshDomWrapVisibility();
   }
@@ -208,9 +211,11 @@
           const r = await jpost('/api/clientes/separar-direccion', {texto: _dirEl.value});
           if (r && r.direccion){
             _dirEl.value = r.direccion;
-            $('pPiso').value = r.piso || '';
-            $('pDepto').value = r.depto || '';
-            $('pRef').value = r.referencia || '';
+            // pPiso/pDepto/pRef solo existen en hosts con bloque domicilio
+            // estructurado (pedido_nuevo). En /reparto solo hay pDir.
+            const _piso = $('pPiso');   if (_piso)  _piso.value  = r.piso || '';
+            const _dpto = $('pDepto');  if (_dpto)  _dpto.value  = r.depto || '';
+            const _ref  = $('pRef');    if (_ref)   _ref.value   = r.referencia || '';
           }
         } catch(e) { /* ok, dejamos como está */ }
       }
@@ -349,6 +354,9 @@
       dni: $('ncDni').value.trim(),
       telefono: $('ncTel').value.trim(),
     };
+    // Hosts que tienen domicilio + ciudad en el modal (ej. /reparto) los suman.
+    const _dom = $('ncDom');     if (_dom && _dom.value.trim())     body.domicilio = _dom.value.trim();
+    const _ciu = $('ncCiudad');  if (_ciu && _ciu.value)            body.ciudad    = _ciu.value;
     if(!body.nombre && !body.apellido && !body.dni){
       alert('Completá al menos nombre, apellido o DNI.');
       return;
@@ -357,6 +365,13 @@
     if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
     window._cid = d.cliente_id;
     $('pCliente').value = [body.apellido, body.nombre].filter(Boolean).join(', ') || body.dni;
+    if (body.domicilio) $('pDir').value = body.domicilio;
+    if (body.ciudad){
+      const selC = $('pCiudad');
+      for(let i=0;i<selC.options.length;i++){
+        if(selC.options[i].value===body.ciudad){ selC.selectedIndex=i; break; }
+      }
+    }
     $('btnEditarCli').style.display = 'inline-block';
     $('pDom').innerHTML = '<option value="">— escribir dirección —</option>';
     cerrarModal('modalNuevo');

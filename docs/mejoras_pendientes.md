@@ -55,26 +55,23 @@ pantallas en vez de duplicar HTML/JS.
 
 ---
 
-## ⏳ Pendiente — Aplicar `cliente_picker` a `/reparto` (2026-06-10)
+## ✅ Aplicar `cliente_picker` a `/reparto` — opción 3 (2026-06-10)
 
-**Bloqueo**: el HTML de `/reparto` usa un layout `label.muted` con styles
-inline distinto al `grid grid-cliente` del macro. Swap directo rompe el
-visual.
+Migrado el JS sin tocar el HTML del layout. Se borraron las 7 funciones
+duplicadas (`buscarCli`, `pickCli`, `abrirNuevoCliente`, `cerrarModal`,
+`guardarNuevoCliente`, `abrirEditarCliente`, `guardarEditarCliente`) y
+los onclicks ahora apuntan a `ClientePicker.X()`. El módulo se hizo
+defensivo (chequea `if(!el)` antes de tocar `pPiso`, `pDepto`, `pRef`,
+`pDomWrap`, `pDomSingle`, `pDomCount`) y se le sumó soporte para los
+campos extra del modal de `/reparto` (`ncDom`, `ncCiudad`) — son
+opcionales: si están, se mandan al POST de crear cliente.
 
-**Opciones**:
-1. **Refactor del macro** para aceptar `layout='grid'|'inline'` y emitir
-   markup distinto. ~1h.
-2. **Refactor de `/reparto`** para adoptar el layout del macro
-   (visualmente cambia, suma campos útiles: piso/depto/ref/coords). ~30 min
-   + revisar regresión visual.
-3. **Solo migrar el JS**: dejar el HTML como está en `/reparto` pero
-   borrar las funciones JS duplicadas (`buscarCli`, `pickCli`,
-   `abrirEditarCliente`, etc.) y usar `cliente_picker.js`. Requiere hacer
-   las funciones del módulo **defensivas** (chequear `if(!el)` antes de
-   acceder a DOM que solo existe en `pedido_nuevo`). ~45 min.
+Resultado: `reparto.html` baja de 509 → 413 líneas. Tests siguen
+verdes (20/20 en test_clientes_api.py).
 
-**Recomendación**: opción 3 si el objetivo es eliminar duplicación sin
-cambiar UX. Opción 2 si querés unificar visual también.
+**Pendientes opciones 1 y 2** (unificar layout o parametrizar macro):
+no urgentes, se hace cuando vos quieras unificar visual entre las dos
+pantallas.
 
 ---
 
