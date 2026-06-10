@@ -35,6 +35,7 @@ class Config(Base):
     __tablename__ = 'configuracion'
     id = Column(Integer, primary_key=True)
     farmacia_nombre = Column(String(200), nullable=False, default='Farmacia')
+    farmacia_cuit = Column(String(20), nullable=True)   # identidad para archivos (filtro droguería)
     ruta_facturas = Column(String(500), nullable=True)
     # Rutas predeterminadas adicionales (todas opcionales)
     ruta_excels = Column(String(500), nullable=True)        # ofertas, módulos, ERP
@@ -1092,6 +1093,11 @@ class Provider(Base):
     matriz_orden   = Column(Integer, nullable=True)
     # Si el proveedor maneja packs (blísters/displays) → habilita "Cargar Packs".
     usa_packs = Column(Boolean, nullable=False, default=False, server_default='false')
+    # Filtro droguería: config del archivo de pedido (antes hardcodeada en DROG_CFG).
+    codcli          = Column(String(20), nullable=True)    # código de cliente con esta droguería
+    formato_archivo = Column(String(20), nullable=True)    # 'ped' | 'txt20j' | None
+    sufijo          = Column(String(10), nullable=True)    # 'KEL' | '20J'
+    carpeta_filtro  = Column(String(200), nullable=True)   # 'P:\\Kellerhoff'
     claims = relationship('Claim', back_populates='provider')
 
 
@@ -3724,6 +3730,11 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS descuento_sin_transfer DECIMAL(5, 2)"))
     # usa_packs: habilita "Cargar Packs" en /compras/laboratorio (lab y prov).
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS usa_packs BOOLEAN NOT NULL DEFAULT FALSE"))
+    # Filtro droguería: config del archivo de pedido por droguería (antes DROG_CFG).
+    conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS codcli VARCHAR(20)"))
+    conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS formato_archivo VARCHAR(20)"))
+    conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS sufijo VARCHAR(10)"))
+    conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS carpeta_filtro VARCHAR(200)"))
     conn.execute(text("ALTER TABLE laboratorios ADD COLUMN IF NOT EXISTS usa_packs BOOLEAN NOT NULL DEFAULT FALSE"))
     # OfertaMinimo: campos nuevos Fase 2 compra rápida
     conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS drogueria_id INTEGER REFERENCES proveedores(id)"))
@@ -3835,6 +3846,7 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS observer_ventas_meses INTEGER NOT NULL DEFAULT 16"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS transfer_excedente_meses DECIMAL(5,1) NOT NULL DEFAULT 6.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS transfer_necesita_meses DECIMAL(5,1) NOT NULL DEFAULT 2.0"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS farmacia_cuit VARCHAR(20)"))
     # sucursales: se unificó a una sola URL — limpiar la columna interna obsoleta.
     conn.execute(text("ALTER TABLE sucursales DROP COLUMN IF EXISTS url_interna"))
     # Rutas predeterminadas adicionales (cliente local)

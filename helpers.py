@@ -460,6 +460,7 @@ def get_config():
             session.commit()
         return {
             'farmacia_nombre': cfg.farmacia_nombre,
+            'farmacia_cuit': cfg.farmacia_cuit or '',
             'ruta_facturas': cfg.ruta_facturas or '',
             'ruta_excels': cfg.ruta_excels or '',
             'ruta_descargas': cfg.ruta_descargas or '',

@@ -274,6 +274,10 @@ def init_app(app):
                     'tiene_horarios': horario_count > 0,
                     'horario_count': horario_count,
                     'matriz_visible': p.matriz_visible if p.tipo == 'drogueria' else None,
+                    'codcli': p.codcli or '',
+                    'formato_archivo': p.formato_archivo or '',
+                    'sufijo': p.sufijo or '',
+                    'carpeta_filtro': p.carpeta_filtro or '',
                 })
         return render_template('providers.html', providers=provider_data, tipo_filter=tipo_filter)
 
@@ -378,6 +382,12 @@ def init_app(app):
                     setattr(provider, field, float(raw) if raw else None)
                 except ValueError:
                     pass
+            # Filtro droguería: config del archivo de pedido.
+            provider.codcli = (request.form.get('codcli') or '').strip() or None
+            fmt = (request.form.get('formato_archivo') or '').strip().lower()
+            provider.formato_archivo = fmt if fmt in ('ped', 'txt20j') else None
+            provider.sufijo = (request.form.get('sufijo') or '').strip() or None
+            provider.carpeta_filtro = (request.form.get('carpeta_filtro') or '').strip() or None
             session.commit()
         return redirect(url_for('providers_list', tipo=request.form.get('tipo_filter') or None))
 

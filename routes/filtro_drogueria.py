@@ -24,20 +24,11 @@ from flask import jsonify, render_template, request
 
 import observer_source
 from database import KellerhoffCatalogo, Laboratorio, LaboratorioDrogueria, Producto, Provider, get_db
+from helpers import get_config
 
-# Constantes de esta farmacia (PIERISTEI). Hardcode intencional.
-FARMACIA_NOMBRE = 'Farmacia PIERISTEI'
-FARMACIA_CUIT = '20172294783'
-
-# Config por droguería. Clave = Provider.id (nuestra DB).
-#   formato: 'ped' (Kellerhoff) | 'txt20j' (20 de Junio)
-#   Monroe / Del Sud: pendientes de un ejemplo de formato → se agregan acá.
-DROG_CFG = {
-    1: {'codcli': '2440', 'sufijo': 'KEL', 'formato': 'ped',
-        'carpeta': r'P:\Kellerhoff'},
-    2: {'codcli': '395', 'sufijo': '20J', 'formato': 'txt20j',
-        'carpeta': r'P:\20 de Junio'},
-}
+# La identidad de la farmacia (nombre/CUIT) sale de Config (id=1) y la config por
+# droguería (codcli/formato/sufijo/carpeta) de cada Provider → funciona en
+# cualquier farmacia sin hardcode. Se editan en /settings y /providers.
 
 
 def _norm(s):
@@ -111,6 +102,13 @@ def init_app(app):
                 matriz.setdefault(r.laboratorio_id, set()).add(r.drogueria_id)
             drog_nombre = {d.id: d.razon_social for d in
                            session.query(Provider).filter(Provider.tipo == 'drogueria')}
+            # Config del archivo por droguería (antes DROG_CFG hardcodeado).
+            # Clave = Provider.id local; solo las que tienen formato configurado.
+            drog_cfg = {d.id: {'codcli': d.codcli or '', 'sufijo': d.sufijo or '',
+                               'formato': d.formato_archivo, 'carpeta': d.carpeta_filtro or ''}
+                        for d in session.query(Provider).filter(
+                            Provider.tipo == 'drogueria',
+                            Provider.formato_archivo.isnot(None))}
 
             # Clasificación por renglón.
             grupos = {}        # drog_id -> [item]
@@ -131,10 +129,15 @@ def init_app(app):
             # EAN map (alfabeta/troquel → ean) desde catálogo Kellerhoff + fallback local.
             ean_of = _build_ean_resolver(items, session)
 
+            # Identidad de la farmacia (encabezado de los archivos).
+            cfg_farm = get_config()
+            farm_nombre = cfg_farm.get('farmacia_nombre') or 'Farmacia'
+            farm_cuit = cfg_farm.get('farmacia_cuit') or ''
+
             out_groups = []
             for drog_id, its in sorted(grupos.items(),
                                        key=lambda kv: (kv[0] != source_id, kv[0])):
-                cfg = DROG_CFG.get(drog_id)
+                cfg = drog_cfg.get(drog_id)
                 nombre = drog_nombre.get(drog_id, f'Drog #{drog_id}')
                 sin_ean = sum(1 for it in its if not ean_of(it))
                 if not cfg:
@@ -153,7 +156,7 @@ def init_app(app):
                     filename = f'S{cfg["codcli"]}{num[-3:]}{cfg["sufijo"]}.PED'
                 else:  # txt20j
                     content = _fmt_txt20j(its, comp_field, cfg['codcli'],
-                                          fecha_ddmmaaaa, ean_of)
+                                          fecha_ddmmaaaa, ean_of, farm_nombre, farm_cuit)
                     filename = f'2{fecha_ddmmaaaa}{comp_field}.txt'
                 out_groups.append({
                     'drog_id': drog_id, 'drogueria': nombre,
@@ -248,10 +251,10 @@ def _fmt_ped(items, ean_of):
     return ''.join(l + '\r\n' for l in lines)
 
 
-def _fmt_txt20j(items, comprob, codcli, fecha_ddmmaaaa, ean_of):
+def _fmt_txt20j(items, comprob, codcli, fecha_ddmmaaaa, ean_of, farmacia_nombre, farmacia_cuit):
     """20 de Junio .txt: C|...| + D|ean|cant|desc|troquel| + F|count|."""
     lines = [
-        f'C|{FARMACIA_NOMBRE:<40}|{codcli:<10}|{FARMACIA_CUIT:<11}|'
+        f'C|{farmacia_nombre:<40}|{codcli:<10}|{farmacia_cuit:<11}|'
         f'{fecha_ddmmaaaa}|{comprob:<10}|'
     ]
     for it in items:
