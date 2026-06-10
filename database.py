@@ -2000,6 +2000,7 @@ class Usuario(Base):
     nombre_completo = Column(String(200))
     rol = Column(String(20), nullable=False, default='remoto')   # farmacia | dev | remoto | admin
     permisos_json = Column(Text, nullable=False, default='{}')   # {"facturas":"editar","stock":"ver",...}
+    perfiles_json = Column(Text, nullable=True)   # operadores: ["chat_clientes","pedido_manual",...]
     activo = Column(Boolean, nullable=False, default=True)
     debe_cambiar_password = Column(Boolean, nullable=False, default=False)
     ultimo_login = Column(DateTime, nullable=True)
@@ -4549,6 +4550,8 @@ def _pg_add_columns(conn):
         # Presencia de agentes en el panel de atención.
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_presencia VARCHAR(12) NOT NULL DEFAULT 'online'",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",
+        # Perfiles de operador (lista de slugs). Reemplaza los roles single-screen.
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS perfiles_json TEXT",
         # Ciudad en el lead local (alta de clientes del bot).
         "ALTER TABLE clientes_locales ADD COLUMN IF NOT EXISTS ciudad VARCHAR(120)",
     ]:
