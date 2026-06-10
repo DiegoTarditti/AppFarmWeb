@@ -1,13 +1,25 @@
-"""Listado, detalle y ABM local de clientes (espejo DW.Clientes + extensión local)."""
+"""Listado, detalle y ABM local de clientes (espejo DW.Clientes + extensión local).
+
+También expone la API JSON `/api/clientes/*` usada por el componente
+`cliente_picker` (ver static/js/cliente_picker.js). Los paths viejos
+`/reparto/api/*` y `/reparto/cliente*` siguen vivos como redirects 308 en
+`routes/reparto.py` para no romper templates/reparto.html ni tests legacy.
+"""
 
 from datetime import datetime
 
-from flask import flash, redirect, render_template, request, url_for
-from flask_login import login_required
+from flask import flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
 from sqlalchemy import func as _f
 from sqlalchemy import or_
 
 import database
+
+_ROLES_OK = ('admin', 'dev', 'farmacia')
+
+
+def _api_ok():
+    return getattr(current_user, 'rol', None) in _ROLES_OK
 
 
 def init_app(app):
@@ -625,3 +637,139 @@ def init_app(app):
                 session.commit()
                 flash('Datos locales eliminados.', 'success')
         return redirect(url_for('cliente_detail', observer_id=observer_id))
+
+    # ── API JSON usada por cliente_picker (static/js/cliente_picker.js) ─────
+    # Movido desde routes/reparto.py el 2026-06-10. Los paths viejos
+    # `/reparto/api/buscar-cliente`, `/reparto/api/cliente`,
+    # `/reparto/cliente`, etc. siguen vivos como redirects 308 en reparto.py.
+
+    @app.route('/api/clientes/buscar')
+    @login_required
+    def api_clientes_buscar():
+        if not _api_ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        from bot import store
+        return jsonify({'clientes': store.buscar_clientes_unificado(
+            request.args.get('q', ''), limite=12)})
+
+    @app.route('/api/clientes/ficha')
+    @login_required
+    def api_clientes_ficha():
+        """Ficha de un cliente para precarga del form.
+        Acepta ?cliente_id= o ?observer_id= (resuelve con get_or_create)."""
+        if not _api_ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        from bot import store
+        cliente_id = request.args.get('cliente_id', type=int)
+        observer_id = request.args.get('observer_id', type=int)
+        if not cliente_id and not observer_id:
+            return jsonify({'error': 'falta cliente_id o observer_id'}), 400
+        with database.get_db() as s:
+            if not cliente_id and observer_id:
+                cliente_id = database.get_or_create_cliente(
+                    s, observer_id=observer_id, creado_por=current_user.id)
+                s.commit()
+            ficha = store._ficha_de_cliente(s, cliente_id)
+            if ficha:
+                ficha['domicilios'] = store.listar_domicilios_de_cliente(
+                    cliente_id=cliente_id)
+                c = s.get(database.Cliente, cliente_id)
+                if c:
+                    ficha['raw'] = {
+                        'nombre': c.nombre or '', 'apellido': c.apellido or '',
+                        'dni': c.dni or '', 'telefono': c.telefono or '',
+                        'domicilio': c.domicilio or '', 'ciudad': c.ciudad or '',
+                    }
+            return jsonify(ficha or {'error': 'no encontrado'}), 200 if ficha else 404
+
+    @app.route('/api/clientes', methods=['POST'])
+    @login_required
+    def api_clientes_crear():
+        """Alta de un cliente nuevo (lead puro, sin ObServer)."""
+        if not _api_ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        lead = {}
+        for k in ('nombre', 'apellido', 'dni', 'telefono', 'domicilio', 'ciudad'):
+            v = (b.get(k) or '').strip()
+            if v:
+                lead[k] = v
+        if not lead:
+            return jsonify({'ok': False, 'error': 'sin datos'}), 400
+        with database.get_db() as s:
+            cid = database.get_or_create_cliente(
+                s, lead=lead, creado_por=current_user.id)
+            s.commit()
+        return jsonify({'ok': True, 'cliente_id': cid})
+
+    @app.route('/api/clientes/<int:cid>', methods=['POST'])
+    @login_required
+    def api_clientes_editar(cid):
+        """Edita campos de la fila Clientes (NUNCA obs_clientes)."""
+        if not _api_ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        with database.get_db() as s:
+            c = s.get(database.Cliente, cid)
+            if not c:
+                return jsonify({'ok': False, 'error': 'no existe'}), 404
+            for k in ('nombre', 'apellido', 'dni', 'telefono', 'domicilio',
+                       'ciudad', 'notas'):
+                if k in b:
+                    setattr(c, k, (b[k] or '').strip() or None)
+            c.actualizado_en = database.now_ar()
+            s.commit()
+        return jsonify({'ok': True})
+
+    @app.route('/api/clientes/observer/<int:oid>/domicilios')
+    @login_required
+    def api_clientes_domicilios_observer(oid):
+        if not _api_ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        from bot import store
+        return jsonify({'domicilios': store.listar_domicilios_de_cliente(observer_id=oid)})
+
+    @app.route('/api/clientes/geocodificar')
+    @login_required
+    def api_clientes_geocodificar():
+        if not _api_ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        q = (request.args.get('q') or '').strip()
+        loc = (request.args.get('loc') or '').strip() or None
+        if len(q) < 3:
+            return jsonify({'sugerencias': []})
+        from bot import envio as _envio
+        return jsonify({'sugerencias': _envio.geocodificar_sugerencias(q, localidad=loc)})
+
+    @app.route('/api/clientes/separar-direccion', methods=['POST'])
+    @login_required
+    def api_clientes_separar_direccion():
+        """Server-side parser: separa 'calle+número' de
+        'piso / depto / referencia' para no duplicar lógica en JS."""
+        if not _api_ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        b = request.json or {}
+        texto = (b.get('texto') or b.get('direccion') or '').strip()
+        from bot.direcciones import separar_direccion
+        return jsonify(separar_direccion(texto))
+
+    @app.route('/api/clientes/domicilios/<int:dom_id>/geo', methods=['POST'])
+    @login_required
+    def api_clientes_domicilio_set_geo(dom_id):
+        if not _api_ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        try:
+            lat = float(b['lat'])
+            lng = float(b['lng'])
+        except (KeyError, TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'lat/lng inválidos'}), 400
+        with database.get_db() as s:
+            d = s.get(database.DomicilioCliente, dom_id)
+            if not d:
+                return jsonify({'ok': False, 'error': 'domicilio no existe'}), 404
+            d.lat, d.lng = lat, lng
+            d.geo_actualizado_en = database.now_ar()
+            s.commit()
+            return jsonify({'ok': True, 'lat': lat, 'lng': lng,
+                            'geo_actualizado_en': d.geo_actualizado_en.isoformat()})

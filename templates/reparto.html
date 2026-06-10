@@ -341,7 +341,7 @@ function pedCard(p, optRutas){
 
 async function buscarCli(){
   const q = document.getElementById('pCliente').value.trim(); if(q.length<2) return;
-  const d = await (await fetch('/reparto/api/buscar-cliente?q='+encodeURIComponent(q))).json();
+  const d = await (await fetch('/api/clientes/buscar?q='+encodeURIComponent(q))).json();
   const box = document.getElementById('resCli');
   const cs = d.clientes||[];
   box.style.display = cs.length?'block':'none';
@@ -360,7 +360,7 @@ async function pickCli(ref, nombre, cid, oid){
   document.getElementById('pCliente').value = nombre;
   document.getElementById('resCli').style.display='none';
   const params = cid ? `cliente_id=${cid}` : `observer_id=${oid}`;
-  const ficha = await (await fetch(`/reparto/api/cliente?${params}`)).json();
+  const ficha = await (await fetch(`/api/clientes/ficha?${params}`)).json();
   if(ficha && !ficha.error){
     if(ficha.domicilio) document.getElementById('pDir').value = ficha.domicilio;
     if(ficha.ciudad){
@@ -399,7 +399,7 @@ async function guardarNuevoCliente(){
     ciudad: document.getElementById('ncCiudad').value || '',
   };
   if(!body.nombre && !body.apellido && !body.dni){ alert('Completá al menos nombre, apellido o DNI.'); return; }
-  const d = await jpost('/reparto/cliente', body);
+  const d = await jpost('/api/clientes', body);
   if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
   window._cid = d.cliente_id;
   document.getElementById('pCliente').value = [body.apellido, body.nombre].filter(Boolean).join(', ') || body.dni;
@@ -419,7 +419,7 @@ function abrirEditarCliente(cid, oid){
   window._editCid = cid;
   document.getElementById('modalEditar').style.display='flex';
   const params = cid ? `cliente_id=${cid}` : `observer_id=${oid}`;
-  fetch(`/reparto/api/cliente?${params}`).then(r=>r.json()).then(f=>{
+  fetch(`/api/clientes/ficha?${params}`).then(r=>r.json()).then(f=>{
     document.getElementById('edObsRef').textContent = f.fuente==='observer' ? `Fuente ObServer (ref: ${f.nombre})` : 'Cliente local';
     const r = f.raw || {};
     document.getElementById('edNombre').value = r.nombre || '';
@@ -442,7 +442,7 @@ async function guardarEditarCliente(){
     domicilio: document.getElementById('edDom').value.trim(),
     ciudad: document.getElementById('edCiudad').value.trim(),
   };
-  const d = await jpost(`/reparto/cliente/${cid}`, body);
+  const d = await jpost(`/api/clientes/${cid}`, body);
   if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
   const nombre = [body.apellido, body.nombre].filter(Boolean).join(', ') || body.dni;
   if(nombre) document.getElementById('pCliente').value = nombre;

@@ -171,6 +171,7 @@
           <button onclick="toggleTransfer()" class="hbtn hbtn-info" style="font-size:12px; padding:5px 11px; border-radius:8px;">Transferir</button>
           <button onclick="devolverCola()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">A la cola</button>
           <button onclick="cerrarConv()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">Al bot</button>
+          <button onclick="abrirPedidoNuevo()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;" title="Abrir pantalla de tomar pedido con el cliente precargado">📝 Pedido</button>
           <button onclick="resetTesting()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px; color:#ef4444; border-color:#ef4444;" title="Borrar mensajes, domicilios y vínculo de cliente (solo para testing)">🔄 Reset</button>
         </div>
       </div>
@@ -621,6 +622,15 @@ async function cerrarConv() {
   document.getElementById('chatHeadInner').innerHTML = '<span class="muted" style="font-size:13px;">Elegí una conversación 👈</span>';
   document.getElementById('ficha').innerHTML = '<div class="muted">Abrí una conversación para ver al cliente.</div>';
   cargarBandeja();
+}
+
+function abrirPedidoNuevo() {
+  // Salto a /pedido/nuevo con el cliente precargado por observer_id si la
+  // conversación ya tiene cliente vinculado. Si no, abre limpio y el operador
+  // completa a mano (igual queda mejor que ir al menú).
+  const oid = fichaData && fichaData.ficha && fichaData.ficha.observer_id;
+  const url = oid ? `/pedido/nuevo?observer_id=${oid}` : '/pedido/nuevo';
+  window.open(url, '_blank');
 }
 
 /* ── Ficha del cliente ── */

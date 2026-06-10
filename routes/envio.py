@@ -3,15 +3,16 @@ grilla (tramos por cuadras + zonas con tarifa fija). Solo lectura/edición; el
 cálculo automático desde la ubicación (pin) es Fase 2.
 
 Rutas:
-  GET  /envio                  → panel (cotizador + config)
-  GET  /envio/api/tarifas      → JSON {tramos, zonas}
-  GET  /envio/api/cotizar      → JSON cotización (localidad / cuadras)
-  POST /envio/tramo            → crear/editar tramo
-  POST /envio/tramo/<id>/delete
-  POST /envio/zona             → crear/editar zona
-  POST /envio/zona/<id>/delete
+  GET  /config/envio                  → panel (cotizador + config)
+  GET  /config/envio/api/tarifas      → JSON {tramos, zonas}
+  GET  /config/envio/api/cotizar      → JSON cotización (localidad / cuadras)
+  POST /config/envio/save             → guardar config de farmacia
+  POST /config/envio/tramo            → crear/editar tramo
+  POST /config/envio/tramo/<id>/delete
+  POST /config/envio/zona             → crear/editar zona
+  POST /config/envio/zona/<id>/delete
 """
-from flask import jsonify, render_template, request
+from flask import jsonify, render_template, request, redirect, url_for
 from flask_login import current_user, login_required
 
 from bot import envio
@@ -25,21 +26,21 @@ def _ok():
 
 def init_app(app):
 
-    @app.route('/envio')
+    @app.route('/config/envio')
     @login_required
     def envio_panel():
         if not _ok():
             return 'Sin permiso', 403
         return render_template('envio.html')
 
-    @app.route('/envio/api/tarifas')
+    @app.route('/config/envio/api/tarifas')
     @login_required
     def envio_tarifas():
         if not _ok():
             return jsonify({'error': 'sin permiso'}), 403
         return jsonify(envio.listar_tarifas())
 
-    @app.route('/envio/api/cotizar')
+    @app.route('/config/envio/api/cotizar')
     @login_required
     def envio_cotizar():
         if not _ok():
@@ -54,7 +55,7 @@ def init_app(app):
         return jsonify(envio.cotizar(localidad=request.args.get('localidad'),
                                      cuadras=request.args.get('cuadras')))
 
-    @app.route('/envio/config', methods=['POST'])
+    @app.route('/config/envio/save', methods=['POST'])
     @login_required
     def envio_config_guardar():
         if not _ok():
@@ -65,7 +66,7 @@ def init_app(app):
             factor_cuadras=b.get('factor_cuadras'),
             metros_por_cuadra=b.get('metros_por_cuadra')))
 
-    @app.route('/envio/config/geolocalizar', methods=['POST'])
+    @app.route('/config/envio/geolocalizar', methods=['POST'])
     @login_required
     def envio_config_geo():
         if not _ok():
@@ -74,14 +75,14 @@ def init_app(app):
         return jsonify(envio.geolocalizar_farmacia(
             b.get('direccion', ''), localidad=b.get('localidad') or 'Rosario'))
 
-    @app.route('/envio/zona/<int:zid>/geolocalizar', methods=['POST'])
+    @app.route('/config/envio/zona/<int:zid>/geolocalizar', methods=['POST'])
     @login_required
     def envio_zona_geo(zid):
         if not _ok():
             return jsonify({'ok': False, 'error': 'sin permiso'}), 403
         return jsonify(envio.geolocalizar_zona(zid))
 
-    @app.route('/envio/tramo', methods=['POST'])
+    @app.route('/config/envio/tramo', methods=['POST'])
     @login_required
     def envio_tramo_guardar():
         if not _ok():
@@ -89,14 +90,14 @@ def init_app(app):
         b = request.json or {}
         return jsonify(envio.guardar_tramo(b.get('id'), b.get('hasta_cuadras'), b.get('monto')))
 
-    @app.route('/envio/tramo/<int:tid>/delete', methods=['POST'])
+    @app.route('/config/envio/tramo/<int:tid>/delete', methods=['POST'])
     @login_required
     def envio_tramo_eliminar(tid):
         if not _ok():
             return jsonify({'ok': False, 'error': 'sin permiso'}), 403
         return jsonify(envio.eliminar_tramo(tid))
 
-    @app.route('/envio/zona', methods=['POST'])
+    @app.route('/config/envio/zona', methods=['POST'])
     @login_required
     def envio_zona_guardar():
         if not _ok():
@@ -107,9 +108,15 @@ def init_app(app):
             lat=b.get('lat'), lng=b.get('lng'), radio_km=b.get('radio_km'),
             poligono_texto=b.get('poligono_texto')))
 
-    @app.route('/envio/zona/<int:zid>/delete', methods=['POST'])
+    @app.route('/config/envio/zona/<int:zid>/delete', methods=['POST'])
     @login_required
     def envio_zona_eliminar(zid):
         if not _ok():
             return jsonify({'ok': False, 'error': 'sin permiso'}), 403
         return jsonify(envio.eliminar_zona(zid))
+
+    # ── Legacy redirects 301 ──────────────────────────────────────────────
+    @app.route('/envio')
+    @login_required
+    def envio_legacy_panel_redirect():
+        return redirect('/config/envio', code=301)
