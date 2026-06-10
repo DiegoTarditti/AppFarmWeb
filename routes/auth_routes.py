@@ -133,10 +133,14 @@ def init_app(app):
                 'rol': u.rol, 'activo': u.activo,
                 'ultimo_login': u.ultimo_login.strftime('%d/%m/%Y %H:%M') if u.ultimo_login else '—',
                 'permisos': json.loads(u.permisos_json or '{}'),
+                'perfiles': perfiles_de_usuario(u),
             } for u in users]
+        # Perfiles para los checkboxes: [{slug, label, icono}]
+        perfiles_reg = [{'slug': s, 'label': PERFILES[s]['label'],
+                         'icono': PERFILES[s]['icono']} for s in PERFILES]
         return render_template('usuarios_list.html', usuarios=data,
-                               modulos=MODULOS, niveles=NIVELES,
-                               roles=['farmacia', 'dev', 'remoto', 'admin', 'pedidos', 'auditor', 'rendicion', 'operador', 'cajero'])
+                               modulos=MODULOS, niveles=NIVELES, perfiles_reg=perfiles_reg,
+                               roles=['operador', 'farmacia', 'remoto', 'admin', 'dev'])
 
     @app.route('/usuarios/crear', methods=['POST'])
     @requiere_permiso('usuarios', 'admin')
@@ -156,11 +160,13 @@ def init_app(app):
             if session.query(Usuario).filter_by(username=username).first():
                 flash('Ya existe un usuario con ese nombre.', 'error')
                 return redirect(url_for('usuarios_list'))
+            perfiles_sel = [s for s in PERFILES if request.form.get(f'perfil_{s}') == '1']
             u = Usuario(
                 username=username, email=email, nombre_completo=nombre,
                 password_hash=hash_password(password),
                 rol=rol,
                 permisos_json=json.dumps(permisos_default_rol(rol)),
+                perfiles_json=json.dumps(perfiles_sel),
                 activo=True, debe_cambiar_password=True,
             )
             session.add(u)
@@ -191,6 +197,8 @@ def init_app(app):
                     permisos_form[mod] = nivel
             if permisos_form:
                 u.permisos_json = json.dumps(permisos_form)
+            # Perfiles de operador (checkboxes)
+            u.perfiles_json = json.dumps([s for s in PERFILES if request.form.get(f'perfil_{s}') == '1'])
             session.commit()
         flash('Usuario actualizado.', 'success')
         return redirect(url_for('usuarios_list'))
