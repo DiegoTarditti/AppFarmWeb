@@ -14,8 +14,8 @@ IMG = 'image/jpeg'
 # ── Selección de opciones ────────────────────────────────────────────────────
 
 def test_match_opcion_por_numero():
-    # Opción 1 del menú principal: "Consultar Precio / Stock" → submenú de modalidades.
-    assert _match_opcion(FLUJO[NODO_INICIO], '1')['va_a'] == 'consultar_precio_menu'
+    # Opción 1 del menú principal: "Consultar Precio / Stock" → pide el medicamento.
+    assert _match_opcion(FLUJO[NODO_INICIO], '1')['va_a'] == 'consultar_producto'
 
 
 def test_match_opcion_por_label_parcial():
@@ -65,12 +65,34 @@ def test_vacunatorio_es_hoja_y_vuelve_al_inicio():
     assert 'Vacunatorio' in resp['texto'] or 'vacuna' in resp['texto'].lower()
 
 
-def test_consultar_modalidad_entra_en_pedir_input():
-    # Antes había "Encargar un producto" como entrada directa a un pedir_input desde inicio;
-    # ahora el patrón equivalente es: submenú Consultar Precio/Stock → elegir modalidad
-    # entra en un pedir_input con acción consultar_producto.
-    resp, nodo, esp, deriv = _resolver('consultar_precio_menu', None, 'Particular', None, IMG)
-    assert nodo == 'consultar_particular' and esp == 'consultar_producto' and not deriv
+def test_consultar_precio_pide_medicamento():
+    # "Consultar Precio / Stock" → pedir_input directo que pide el medicamento.
+    resp, nodo, esp, deriv = _resolver(NODO_INICIO, None, 'Consultar Precio / Stock', None, IMG)
+    assert nodo == 'consultar_producto' and esp == 'consultar_producto' and not deriv
+
+
+def test_compra_farmacia_entra_al_flujo_guiado():
+    # "Compra Farmacia" arranca el flujo guiado (lo continúa _flujo_compra): pide producto.
+    resp, nodo, esp, deriv = _resolver(NODO_INICIO, None, 'Compra Farmacia', None, IMG)
+    assert nodo == 'compra_producto' and esp is None and not deriv
+    assert 'producto' in resp['texto'].lower()
+
+
+def test_magistral_entra_al_flujo():
+    resp, nodo, esp, deriv = _resolver(NODO_INICIO, None, 'Fórmulas Magistrales', None, IMG)
+    assert nodo == 'magistral_receta' and not deriv
+    assert 'receta' in resp['texto'].lower()
+
+
+def test_compra_flujo_os_receta_deriva():
+    # Máquina de estados: en compra_os "No" → pregunta receta; receta "No" → deriva.
+    conv = store.get_conversacion('telegram', 'compratest', nombre='X')
+    cid = conv['id']
+    r = cerebro._flujo_compra(cid, 'compra_os', None, 'No', None)
+    assert 'receta' in r['texto'].lower()
+    r = cerebro._flujo_compra(cid, 'compra_receta', None, 'No', None)
+    assert 'equipo' in r['texto'].lower()
+    assert store.get_conversacion('telegram', 'compratest')['estado_atencion'] == 'cola'
 
 
 def test_encargar_captura_y_deriva(monkeypatch):

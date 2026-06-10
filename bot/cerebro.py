@@ -11,6 +11,7 @@ import os
 
 from bot import envio, store
 from bot.acciones import ACCIONES, PREFIJO_ELEGIR, seleccionar_producto
+from bot.data import buscar_productos
 from bot.flujo import NODO_INICIO, get_flujo
 from bot.ia import leer_receta
 
@@ -304,6 +305,16 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
                 nodo_actual, None, False)
 
     destino_key = op['va_a']
+    # Entradas a los flujos guiados (los continúa _flujo_compra).
+    if destino_key == 'compra_inicio':
+        return ({'texto': '🛒 Dale. ¿Qué producto querés comprar? 👇',
+                 'opciones': [], 'meta': {'camino': 'compra', 'resuelto': True}},
+                'compra_producto', None, False)
+    if destino_key == 'magistral_inicio':
+        return ({'texto': '🧪 Fórmulas magistrales.\n¿Tenés la receta médica?',
+                 'opciones': ['✅ Sí, ya la tengo', '❌ Todavía no'],
+                 'meta': {'camino': 'magistral', 'resuelto': True}},
+                'magistral_receta', None, False)
     destino = flujo.get(destino_key)
     if not destino:
         resp = _render(flujo[NODO_INICIO])
@@ -571,6 +582,142 @@ def _flujo_envio(cid, nodo, esperando, texto, ubicacion):
     return None
 
 
+# ── Flujo guiado de Compra Farmacia + Fórmulas Magistrales ───────────────────
+# Eje: el PRODUCTO. Buscamos stock → si hay seguimos, si no ofrecemos encargo.
+# Después juntamos obra social (opcional) y receta (opcional) y derivamos al
+# operador con el resumen (notas de sistema). Magistral es un flujo aparte.
+
+def _dijo_si(texto):
+    t = (texto or '').strip().lower()
+    return ('✅' in (texto or '') or t in ('si', 'sí', 's', '1', 'sip', 'dale', 'ok')
+            or t.startswith(('si ', 'sí ')) or 'tengo' in t or 'quiero' in t or 'encarg' in t)
+
+
+def _dijo_no(texto):
+    t = (texto or '').strip().lower()
+    return ('❌' in (texto or '') or t in ('no', 'n', '2', 'nop', 'paso')
+            or t.startswith('no ') or 'todavia no' in t or 'todavía no' in t or 'gracias' in t)
+
+
+def _es_omitir(texto):
+    t = (texto or '').strip().lower()
+    return ('omitir' in t or 'saltar' in t or 'seguir' in t or 'sin foto' in t
+            or t in ('-', 'skip', 'no se', 'no sé'))
+
+
+def _precio_txt(p):
+    return f'${p:,.0f}'.replace(',', '.') if p else 's/precio'
+
+
+def _flujo_compra(cid, nodo, esperando, texto, imagen_b64):
+    """Máquina de estados de Compra Farmacia / Magistral. Devuelve la respuesta
+    o None si el mensaje no es parte del flujo (sigue el flujo normal)."""
+    if (texto or '').lower() in _GLOBALES or _quiere_humano(texto):
+        return None
+    if not (nodo.startswith('compra_') or nodo.startswith('magistral_')):
+        return None
+    # Tocó otra opción del menú estando en el flujo → salir.
+    if _es_opcion_menu(texto):
+        store.set_estado_flujo(cid, NODO_INICIO, None)
+        return None
+
+    # ── Compra ──
+    if nodo == 'compra_producto':
+        return _compra_buscar(cid, texto)
+    if nodo == 'compra_encargo':
+        if _dijo_si(texto):
+            store.nota_sistema(cid, '🛒 COMPRA — pidió ENCARGAR el producto.')
+            return _compra_preguntar_os(cid)
+        store.set_estado_flujo(cid, NODO_INICIO, None)
+        return {'texto': 'Dale, no hay problema 🙂 ¿Algo más? Escribí "menú".', 'opciones': _menu_ops()}
+    if nodo == 'compra_os':
+        if _dijo_si(texto):
+            store.set_estado_flujo(cid, 'compra_os_cual', None)
+            return {'texto': '🏥 ¿Cuál es tu obra social? (podés tocar "Omitir")', 'opciones': ['Omitir']}
+        store.nota_sistema(cid, '🏥 Obra social: NO usa.')
+        return _compra_preguntar_receta(cid)
+    if nodo == 'compra_os_cual':
+        if not _es_omitir(texto):
+            store.nota_sistema(cid, f'🏥 Obra social: {texto.strip()[:60]}')
+        return _compra_preguntar_receta(cid)
+    if nodo == 'compra_receta':
+        if _dijo_si(texto):
+            store.set_estado_flujo(cid, 'compra_receta_foto', None)
+            return {'texto': '📸 Mandá la foto de la receta (o tocá "Seguir sin foto").',
+                    'opciones': ['Seguir sin foto']}
+        store.nota_sistema(cid, '📋 Receta: NO la tiene.')
+        return _compra_cierre(cid, sin_receta=True)
+    if nodo == 'compra_receta_foto':
+        if imagen_b64:
+            store.nota_sistema(cid, '📋 Receta: 📸 envió foto.')
+        elif _es_omitir(texto):
+            store.nota_sistema(cid, '📋 Receta: la tiene, sigue sin foto.')
+        else:
+            store.nota_sistema(cid, f'📋 Receta: {texto.strip()[:60]}')
+        return _compra_cierre(cid)
+
+    # ── Magistral ──
+    if nodo == 'magistral_receta':
+        if _dijo_si(texto):
+            store.set_estado_flujo(cid, 'magistral_foto', None)
+            return {'texto': '📸 Mandá la foto de la receta (o tocá "Seguir sin foto").',
+                    'opciones': ['Seguir sin foto']}
+        store.nota_sistema(cid, '🧪 MAGISTRAL — sin receta.')
+        store.set_estado_flujo(cid, 'magistral_preparar', None)
+        return {'texto': '⚠️ Para prepararla vas a tener que traer la receta original.\n\n'
+                         '¿Qué necesitás preparar? 👇', 'opciones': []}
+    if nodo == 'magistral_foto':
+        if imagen_b64:
+            store.nota_sistema(cid, '🧪 MAGISTRAL — 📸 envió receta.')
+        store.set_estado_flujo(cid, 'magistral_preparar', None)
+        return {'texto': '¿Qué necesitás preparar? 👇', 'opciones': []}
+    if nodo == 'magistral_preparar':
+        store.nota_sistema(cid, f'🧪 MAGISTRAL — preparar: {(texto or "").strip()[:120]}')
+        store.set_estado_flujo(cid, NODO_INICIO, None)
+        store.set_atencion(cid, 'cola')
+        return {'texto': '¡Listo! 🧪 Te paso con el equipo para coordinar la preparación 🙂', 'opciones': []}
+    return None
+
+
+def _compra_buscar(cid, texto):
+    if len((texto or '').strip()) < 3:
+        return {'texto': 'Escribime el nombre del producto (al menos 3 letras) 🙂', 'opciones': []}
+    rows = buscar_productos(texto, limite=4)
+    if not rows:
+        return {'texto': f'No encontré "{texto.strip()}" 🤔 Probá con otro nombre, o escribí "menú".',
+                'opciones': []}
+    store.set_producto_pendiente(cid, texto.strip())
+    con_stock = next((r for r in rows if r['stock'] > 0), None)
+    if con_stock:
+        store.nota_sistema(cid, f'🛒 COMPRA — quiere: {texto.strip()} | EN STOCK: '
+                                f'{con_stock["producto"]} ({con_stock["stock"]}u, {_precio_txt(con_stock["precio"])})')
+        return _compra_preguntar_os(
+            cid, intro=f'✅ Tengo {con_stock["producto"]} — {_precio_txt(con_stock["precio"])} '
+                       f'({con_stock["stock"]}u).\n\n')
+    store.nota_sistema(cid, f'🛒 COMPRA — quiere: {texto.strip()} | SIN STOCK')
+    store.set_estado_flujo(cid, 'compra_encargo', None)
+    return {'texto': f'❌ No tengo stock de "{texto.strip()}" ahora.\n¿Querés que te lo encarguemos?',
+            'opciones': ['✅ Sí, encargámelo', '❌ No, gracias']}
+
+
+def _compra_preguntar_os(cid, intro=''):
+    store.set_estado_flujo(cid, 'compra_os', None)
+    return {'texto': intro + '¿Vas a usar obra social? 🏥', 'opciones': ['✅ Sí', '❌ No']}
+
+
+def _compra_preguntar_receta(cid):
+    store.set_estado_flujo(cid, 'compra_receta', None)
+    return {'texto': '¿Tenés la receta médica? 📋', 'opciones': ['✅ Sí', '❌ No']}
+
+
+def _compra_cierre(cid, sin_receta=False):
+    store.set_estado_flujo(cid, NODO_INICIO, None)
+    store.set_atencion(cid, 'cola')
+    extra = '\n(Acordate de traer la receta original para retirar.)' if sin_receta else ''
+    return {'texto': '¡Genial! 🛒 Te paso con el equipo para concretar la compra '
+                     '(precio final con cobertura, pago y entrega).' + extra, 'opciones': []}
+
+
 def procesar(canal, canal_user_id, texto, imagen_b64=None,
              media_type='image/jpeg', nombre=None, linea=None, ubicacion=None):
     texto = (texto or '').strip()
@@ -602,6 +749,14 @@ def procesar(canal, canal_user_id, texto, imagen_b64=None,
         if resp_envio.get('texto'):
             store.guardar_mensaje(cid, 'bot', resp_envio['texto'])
         return resp_envio
+
+    # Flujo guiado de Compra Farmacia / Magistral (máquina de estados compra_*).
+    resp_compra = _flujo_compra(cid, conv['nodo'] or NODO_INICIO,
+                                conv['esperando'], texto, imagen_b64)
+    if resp_compra is not None:
+        if resp_compra.get('texto'):
+            store.guardar_mensaje(cid, 'bot', resp_compra['texto'])
+        return resp_compra
 
     # Historial (incluye el mensaje recién guardado) para que el nodo de IA
     # recuerde el hilo de la conversación.
