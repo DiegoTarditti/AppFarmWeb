@@ -51,10 +51,8 @@ f0eca4e refactor: cliente_picker + /api/clientes + /config/envio + deep-link
 - [ ] Verificar deploy OK en Render (logs sin errores, /ping responde)
 - [ ] Probar las mismas 4 cosas en producción
 
-### 3. Cline pendiente
-Cuando termine la task de tests para `/config/envio` que le tiré:
-- [ ] Revisar el resultado (22 tests esperados, mismo patrón que test_clientes_api.py)
-- [ ] Si pasan todos, `git add tests/test_envio_api.py && git commit`
+### 3. ~~Cline pendiente~~ ✅ hecho 2026-06-10
+Tests para `/config/envio` (26 tests, todos pasan) → commit `<pending>`.
 
 ---
 
