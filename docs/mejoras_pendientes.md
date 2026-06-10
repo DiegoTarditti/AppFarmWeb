@@ -6,7 +6,7 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
-## ⏳ Pendiente — Componente reusable `cliente_picker` (2026-05-28)
+## ✅ Componente reusable `cliente_picker` (2026-05-28 → 2026-06-10)
 
 **Origen**: la sección "👤 Cliente + Dirección" de `/pedido/nuevo` está
 bien armada y ya funciona (buscador multi-palabra, dropdown de domicilios
@@ -20,35 +20,84 @@ pantallas en vez de duplicar HTML/JS.
 - `/caja` — buscar cliente para refacturar / vincular ticket.
 - Futuras pantallas — anulación por DNI, histórico por cliente, etc.
 
-**Plan en 4 capas** (~4-5 h focales, riesgo bajo):
+**Implementado (2026-06-10)** — commits `53bf194`, `f0eca4e`, `ed7c0fb`, `f94d915`:
 
-1. **Macro Jinja reusable** en `templates/components/cliente_picker.html`:
-   ```jinja
-   {% macro cliente_picker(id_prefix='cli', modo='embedded', on_pick='') %}
-   ```
-   `modo='embedded'` (como hoy en /pedido/nuevo) o `modo='modal'` (botón
-   abre flotante).
+1. ✅ **Macro Jinja** en `templates/_cliente_picker.html` (`cliente_picker()`
+   y `cliente_picker_modales()`).
+2. ✅ **Módulo JS** en `static/js/cliente_picker.js`. API pública:
+   `ClientePicker.init({onAddressChange, onClienteSelected, onClear})`,
+   `.getValues()`, `.clear()`, `.loadCliente({cliente_id, observer_id})`,
+   `.pickCli()`, etc.
+   - **Limitación actual**: una sola instancia por página (IDs fijos
+     `pCliente`, `pDir`, etc.). Multi-instancia requiere namespacing —
+     ver entry "Namespacing multi-instancia" más abajo.
+3. ✅ **Endpoints `/api/clientes/*`** en `routes/clientes.py` (8 endpoints):
+   `/buscar`, `/ficha`, `POST /` (crear), `POST /<cid>` (editar),
+   `/observer/<oid>/domicilios`, `/geocodificar`, `/separar-direccion`,
+   `POST /domicilios/<dom_id>/geo`. Los viejos `/reparto/api/*` y
+   `/reparto/cliente*` se borraron una sesión después de la migración
+   completa de callers (commit `ed7c0fb`).
+4. ✅ **Migración de pantallas**:
+   - `/pedido/nuevo` — usa el macro. Bajó de 787 → 366 líneas.
+   - `/atencion` — botón "📝 Pedido" en toolbar de conversación que abre
+     `/pedido/nuevo?observer_id=X`. Receiver: `pedido_nuevo.html` detecta
+     query param y llama `ClientePicker.loadCliente()`.
+   - `/reparto` — sigue con su buscador embebido propio (layout muy
+     distinto al picker, no es swap directo, ver entry "Aplicar a /reparto"
+     abajo).
 
-2. **JS namespaceado** en `static/js/cliente_picker.js`:
-   ```js
-   window.ClientePicker = {
-     init(prefix, opts),                  // arranca el componente
-     abrir(callback, opts),               // modo modal: callback(cliente, domicilio)
-     precargar(prefix, cliente_id),       // precargar desde otra pantalla
-   };
-   ```
+**Lecciones de la implementación**:
+- El "modo modal" del plan original NO se hizo. Hoy solo hay modo
+  embedded (`{{ cliente_picker() }}` se incrusta en un `<div>`). Si
+  aparece caso de uso del modal, se agrega.
+- El "namespacing por prefix" se simplificó a IDs fijos. Una sola
+  instancia por página alcanza para todo lo que tenemos hoy.
 
-3. **Endpoints fuera del namespace `/reparto/`** (con redirect 301):
-   - `/reparto/api/buscar-cliente` → `/api/clientes/buscar`
-   - `/reparto/api/cliente`        → `/api/clientes/<id>`
-   - `/reparto/api/<oid>/domicilios` → `/api/clientes/<id>/domicilios`
+---
 
-4. **Migración**:
-   - `/pedido/nuevo` reemplaza el bloque inline por `{{ cliente_picker(...) }}`
-     (cero cambio de UX visible).
-   - `/atencion` agrega botón "→ Crear pedido" con cliente precargado del chat.
+## ⏳ Pendiente — Aplicar `cliente_picker` a `/reparto` (2026-06-10)
 
-**Por qué SÍ vale la pena**:
+**Bloqueo**: el HTML de `/reparto` usa un layout `label.muted` con styles
+inline distinto al `grid grid-cliente` del macro. Swap directo rompe el
+visual.
+
+**Opciones**:
+1. **Refactor del macro** para aceptar `layout='grid'|'inline'` y emitir
+   markup distinto. ~1h.
+2. **Refactor de `/reparto`** para adoptar el layout del macro
+   (visualmente cambia, suma campos útiles: piso/depto/ref/coords). ~30 min
+   + revisar regresión visual.
+3. **Solo migrar el JS**: dejar el HTML como está en `/reparto` pero
+   borrar las funciones JS duplicadas (`buscarCli`, `pickCli`,
+   `abrirEditarCliente`, etc.) y usar `cliente_picker.js`. Requiere hacer
+   las funciones del módulo **defensivas** (chequear `if(!el)` antes de
+   acceder a DOM que solo existe en `pedido_nuevo`). ~45 min.
+
+**Recomendación**: opción 3 si el objetivo es eliminar duplicación sin
+cambiar UX. Opción 2 si querés unificar visual también.
+
+---
+
+## ⏳ Pendiente — Namespacing multi-instancia del `cliente_picker` (2026-06-10)
+
+**Caso de uso**: si en alguna pantalla quisieras 2 buscadores de cliente
+(ej. cliente comprador + cliente destinatario en envíos a terceros), el
+módulo actual no lo soporta porque usa IDs fijos.
+
+**Plan**:
+- `cliente_picker(prefix='pedido')` macro recibe prefix para IDs.
+- `ClientePicker(prefix, opts)` factory devuelve instancia con
+  `.getValues()`, `.clear()`, etc.
+- Document-click listener acepta múltiples prefijos.
+
+**Cuándo**: cuando aparezca el primer caso real de 2 instancias.
+No anticipar.
+
+---
+
+### Justificación histórica del `cliente_picker` (mayo 2026)
+
+**Por qué SÍ valía la pena**:
 - Reuso real concreto (2-3 lugares ya identificados, más a futuro).
 - Mejoras al picker (mostrar último pedido, marcar VIP, etc.) propagan
   a todas las pantallas que lo usen.
