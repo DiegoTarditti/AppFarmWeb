@@ -8,7 +8,7 @@ import json
 import uuid
 from datetime import datetime
 
-from flask import jsonify, redirect, render_template, request
+from flask import jsonify, render_template, request
 from flask_login import current_user, login_required
 
 import database
