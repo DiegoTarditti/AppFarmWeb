@@ -460,6 +460,7 @@ def get_config():
             session.commit()
         return {
             'farmacia_nombre': cfg.farmacia_nombre,
+            'farmacia_cuit': cfg.farmacia_cuit or '',
             'ruta_facturas': cfg.ruta_facturas or '',
             'ruta_excels': cfg.ruta_excels or '',
             'ruta_descargas': cfg.ruta_descargas or '',
@@ -479,6 +480,25 @@ def get_config():
             'transfer_excedente_meses': float(cfg.transfer_excedente_meses or 6.0),
             'transfer_necesita_meses': float(cfg.transfer_necesita_meses or 2.0),
         }
+
+
+# Defaults de formato de archivo por droguería (intrínsecos a la droguería, no a
+# la farmacia: Kellerhoff siempre .ped/KEL, 20 de Junio siempre .txt/20J). Así al
+# instalar una farmacia solo hace falta cargar codcli + carpeta en /providers.
+DROGUERIA_FORMATOS = {
+    'kellerhoff': {'formato_archivo': 'ped', 'sufijo': 'KEL'},
+    '20dejunio': {'formato_archivo': 'txt20j', 'sufijo': '20J'},
+}
+
+
+def drogueria_defaults(razon_social):
+    """formato/sufijo default según el nombre de la droguería (match por substring).
+    Devuelve {} si no matchea ninguna conocida."""
+    norm = re.sub(r'[^a-z0-9]', '', (razon_social or '').lower())
+    for clave, vals in DROGUERIA_FORMATOS.items():
+        if clave in norm:
+            return dict(vals)
+    return {}
 
 
 # ── Product helpers ──────────────────────────────────────────────────────────

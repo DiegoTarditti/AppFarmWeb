@@ -82,6 +82,13 @@
                        placeholder="Farmacia San Martín"
                        class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
                 <p class="text-xs text-[#999] mt-1.5">Se muestra en el inicio y en el encabezado de los PDF de reclamos y análisis de compra.</p>
+                <label class="block text-xs font-medium text-[#6f6f6f] mb-2 mt-4 uppercase tracking-wide">
+                    CUIT de la farmacia
+                </label>
+                <input type="text" name="farmacia_cuit" value="{{ config.farmacia_cuit }}"
+                       placeholder="20-12345678-3"
+                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand" style="font-family:ui-monospace,monospace;">
+                <p class="text-xs text-[#999] mt-1.5">Se usa en los archivos de pedido del filtro droguería (encabezado de 20 de Junio).</p>
             </div>
         </div>
 

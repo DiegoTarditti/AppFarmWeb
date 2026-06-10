@@ -107,6 +107,7 @@ def init_app(app):
                 cfg = database.Config(id=1)
                 session.add(cfg)
             cfg.farmacia_nombre = nombre
+            cfg.farmacia_cuit = (request.form.get('farmacia_cuit') or '').strip() or None
             cfg.ruta_facturas = ruta or None
             cfg.ruta_excels = (request.form.get('ruta_excels') or '').strip() or None
             cfg.ruta_descargas = (request.form.get('ruta_descargas') or '').strip() or None

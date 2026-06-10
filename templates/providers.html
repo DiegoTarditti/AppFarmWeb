@@ -343,6 +343,31 @@
                                    value="{{ p.descuento_sin_transfer or '' }}" placeholder="ej: 28.50" class="ds-input">
                         </div>
                     </div>
+                    <div class="mt-3" style="border-top:1px dashed var(--ds-line); padding-top:12px;">
+                        <label class="ds-label" style="opacity:.85;">Filtro droguería — archivo de pedido</label>
+                        <div class="grid grid-cols-4 gap-3 mt-1">
+                            <div>
+                                <label class="ds-label">Formato</label>
+                                <select name="formato_archivo" class="ds-select">
+                                    <option value="" {% if not p.formato_archivo %}selected{% endif %}>(ninguno)</option>
+                                    <option value="ped" {% if p.formato_archivo == 'ped' %}selected{% endif %}>.ped (Kellerhoff)</option>
+                                    <option value="txt20j" {% if p.formato_archivo == 'txt20j' %}selected{% endif %}>.txt (20 de Junio)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="ds-label">Cód. cliente</label>
+                                <input type="text" name="codcli" value="{{ p.codcli }}" placeholder="2440" class="ds-input" style="font-family:ui-monospace,monospace;">
+                            </div>
+                            <div>
+                                <label class="ds-label">Sufijo</label>
+                                <input type="text" name="sufijo" value="{{ p.sufijo }}" placeholder="KEL" class="ds-input" style="font-family:ui-monospace,monospace;">
+                            </div>
+                            <div>
+                                <label class="ds-label">Carpeta destino</label>
+                                <input type="text" name="carpeta_filtro" value="{{ p.carpeta_filtro }}" placeholder="P:\Kellerhoff" class="ds-input" style="font-family:ui-monospace,monospace;">
+                            </div>
+                        </div>
+                    </div>
                     {% endif %}
                     <input type="hidden" name="tipo_filter" value="{{ tipo_filter }}">
                     <div class="mt-4 flex items-center gap-2">

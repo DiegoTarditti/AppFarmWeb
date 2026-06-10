@@ -14,6 +14,7 @@ from helpers import (
     _ensure_parser_file,
     _make_parser_slug,
     allowed_file,
+    drogueria_defaults,
     get_providers,
 )
 
@@ -259,6 +260,7 @@ def init_app(app):
                 claim_count = session.query(database.Claim).filter_by(proveedor_id=p.id).count()
                 horario_count = (session.query(database.ProveedorHorarioReparto)
                                  .filter_by(proveedor_id=p.id).count())
+                _dd = drogueria_defaults(p.razon_social) if (p.tipo or 'drogueria') == 'drogueria' else {}
                 provider_data.append({
                     'id': p.id,
                     'razon_social': p.razon_social,
@@ -274,6 +276,11 @@ def init_app(app):
                     'tiene_horarios': horario_count > 0,
                     'horario_count': horario_count,
                     'matriz_visible': p.matriz_visible if p.tipo == 'drogueria' else None,
+                    'codcli': p.codcli or '',
+                    # formato/sufijo: lo guardado o el default por nombre de droguería.
+                    'formato_archivo': p.formato_archivo or _dd.get('formato_archivo', ''),
+                    'sufijo': p.sufijo or _dd.get('sufijo', ''),
+                    'carpeta_filtro': p.carpeta_filtro or '',
                 })
         return render_template('providers.html', providers=provider_data, tipo_filter=tipo_filter)
 
@@ -378,6 +385,12 @@ def init_app(app):
                     setattr(provider, field, float(raw) if raw else None)
                 except ValueError:
                     pass
+            # Filtro droguería: config del archivo de pedido.
+            provider.codcli = (request.form.get('codcli') or '').strip() or None
+            fmt = (request.form.get('formato_archivo') or '').strip().lower()
+            provider.formato_archivo = fmt if fmt in ('ped', 'txt20j') else None
+            provider.sufijo = (request.form.get('sufijo') or '').strip() or None
+            provider.carpeta_filtro = (request.form.get('carpeta_filtro') or '').strip() or None
             session.commit()
         return redirect(url_for('providers_list', tipo=request.form.get('tipo_filter') or None))
 

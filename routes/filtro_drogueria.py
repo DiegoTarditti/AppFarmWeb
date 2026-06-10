@@ -24,20 +24,11 @@ from flask import jsonify, render_template, request
 
 import observer_source
 from database import KellerhoffCatalogo, Laboratorio, LaboratorioDrogueria, Producto, Provider, get_db
+from helpers import drogueria_defaults, get_config
 
-# Constantes de esta farmacia (PIERISTEI). Hardcode intencional.
-FARMACIA_NOMBRE = 'Farmacia PIERISTEI'
-FARMACIA_CUIT = '20172294783'
-
-# Config por droguería. Clave = Provider.id (nuestra DB).
-#   formato: 'ped' (Kellerhoff) | 'txt20j' (20 de Junio)
-#   Monroe / Del Sud: pendientes de un ejemplo de formato → se agregan acá.
-DROG_CFG = {
-    1: {'codcli': '2440', 'sufijo': 'KEL', 'formato': 'ped',
-        'carpeta': r'P:\Kellerhoff'},
-    2: {'codcli': '395', 'sufijo': '20J', 'formato': 'txt20j',
-        'carpeta': r'P:\20 de Junio'},
-}
+# La identidad de la farmacia (nombre/CUIT) sale de Config (id=1) y la config por
+# droguería (codcli/formato/sufijo/carpeta) de cada Provider → funciona en
+# cualquier farmacia sin hardcode. Se editan en /settings y /providers.
 
 
 def _norm(s):
@@ -70,7 +61,9 @@ def init_app(app):
                 pedidos = observer_source.get_pedidos_recientes(10)
             except Exception as e:  # noqa: BLE001
                 error = f'No pude leer pedidos de ObServer: {e}'
-        return render_template('filtro_drogueria.html', pedidos=pedidos, error=error)
+        setup = _setup_checks()
+        return render_template('filtro_drogueria.html', pedidos=pedidos, error=error,
+                               setup=setup, setup_faltante=any(not c['ok'] for c in setup))
 
     @app.route('/filtro_drogueria/generar', methods=['POST'])
     def filtro_drogueria_generar():
@@ -111,6 +104,18 @@ def init_app(app):
                 matriz.setdefault(r.laboratorio_id, set()).add(r.drogueria_id)
             drog_nombre = {d.id: d.razon_social for d in
                            session.query(Provider).filter(Provider.tipo == 'drogueria')}
+            # Config del archivo por droguería (antes DROG_CFG hardcodeado).
+            # Clave = Provider.id local. El formato/sufijo sale del Provider o, si
+            # no está cargado, del default por nombre (Kellerhoff/20 de Junio).
+            drog_cfg = {}
+            for d in session.query(Provider).filter(Provider.tipo == 'drogueria'):
+                dd = drogueria_defaults(d.razon_social)
+                fmt = d.formato_archivo or dd.get('formato_archivo')
+                if not fmt:
+                    continue   # droguería sin formato conocido ni configurado
+                drog_cfg[d.id] = {'codcli': d.codcli or '',
+                                  'sufijo': d.sufijo or dd.get('sufijo') or '',
+                                  'formato': fmt, 'carpeta': d.carpeta_filtro or ''}
 
             # Clasificación por renglón.
             grupos = {}        # drog_id -> [item]
@@ -131,10 +136,15 @@ def init_app(app):
             # EAN map (alfabeta/troquel → ean) desde catálogo Kellerhoff + fallback local.
             ean_of = _build_ean_resolver(items, session)
 
+            # Identidad de la farmacia (encabezado de los archivos).
+            cfg_farm = get_config()
+            farm_nombre = cfg_farm.get('farmacia_nombre') or 'Farmacia'
+            farm_cuit = cfg_farm.get('farmacia_cuit') or ''
+
             out_groups = []
             for drog_id, its in sorted(grupos.items(),
                                        key=lambda kv: (kv[0] != source_id, kv[0])):
-                cfg = DROG_CFG.get(drog_id)
+                cfg = drog_cfg.get(drog_id)
                 nombre = drog_nombre.get(drog_id, f'Drog #{drog_id}')
                 sin_ean = sum(1 for it in its if not ean_of(it))
                 if not cfg:
@@ -153,7 +163,7 @@ def init_app(app):
                     filename = f'S{cfg["codcli"]}{num[-3:]}{cfg["sufijo"]}.PED'
                 else:  # txt20j
                     content = _fmt_txt20j(its, comp_field, cfg['codcli'],
-                                          fecha_ddmmaaaa, ean_of)
+                                          fecha_ddmmaaaa, ean_of, farm_nombre, farm_cuit)
                     filename = f'2{fecha_ddmmaaaa}{comp_field}.txt'
                 out_groups.append({
                     'drog_id': drog_id, 'drogueria': nombre,
@@ -175,6 +185,53 @@ def init_app(app):
             'ambiguos': len(ambiguos),
             'groups': out_groups,
         })
+
+
+# ── Aviso guiado de configuración ────────────────────────────────────────────
+
+def _setup_checks():
+    """Chequeos para que el filtro funcione en esta farmacia. Cada item:
+    {ok, label, accion, link, link_txt}. El template muestra el aviso solo si
+    algún ok es False."""
+    checks = []
+    cfg = get_config()
+    checks.append({
+        'ok': bool((cfg.get('farmacia_cuit') or '').strip()),
+        'label': 'CUIT de la farmacia',
+        'accion': 'Cargalo en Configuración — lo usa el archivo de 20 de Junio.',
+        'link': '/settings', 'link_txt': 'Configuración',
+    })
+    with get_db() as s:
+        drogs = s.query(Provider).filter(Provider.tipo == 'drogueria').all()
+        con_fmt = [d for d in drogs
+                   if d.formato_archivo or drogueria_defaults(d.razon_social).get('formato_archivo')]
+        checks.append({
+            'ok': bool(con_fmt),
+            'label': 'Droguerías con formato de archivo',
+            'accion': 'Configurá Kellerhoff y/o 20 de Junio en Droguerías.',
+            'link': '/providers?tipo=drogueria', 'link_txt': 'Droguerías',
+        })
+        sin_codcli = [d.razon_social for d in con_fmt if not (d.codcli or '').strip()]
+        checks.append({
+            'ok': not sin_codcli,
+            'label': 'Código de cliente (codcli) por droguería',
+            'accion': ('Falta el codcli en: ' + ', '.join(sin_codcli) + '.') if sin_codcli
+                      else 'Todas las droguerías con formato tienen codcli.',
+            'link': '/providers?tipo=drogueria', 'link_txt': 'Droguerías',
+        })
+        checks.append({
+            'ok': s.query(KellerhoffCatalogo).count() > 0,
+            'label': 'Catálogo Kellerhoff importado',
+            'accion': 'Importalo — resuelve los EAN por alfabeta/troquel.',
+            'link': '/kellerhoff/catalogo', 'link_txt': 'Catálogo',
+        })
+        checks.append({
+            'ok': s.query(LaboratorioDrogueria).count() > 0,
+            'label': 'Matriz lab × droguería',
+            'accion': 'Cargá qué laboratorio va a qué droguería.',
+            'link': '/compras/labs-drogerias', 'link_txt': 'Matriz',
+        })
+    return checks
 
 
 # ── Helpers de mapeo / EAN ───────────────────────────────────────────────────
@@ -248,10 +305,10 @@ def _fmt_ped(items, ean_of):
     return ''.join(l + '\r\n' for l in lines)
 
 
-def _fmt_txt20j(items, comprob, codcli, fecha_ddmmaaaa, ean_of):
+def _fmt_txt20j(items, comprob, codcli, fecha_ddmmaaaa, ean_of, farmacia_nombre, farmacia_cuit):
     """20 de Junio .txt: C|...| + D|ean|cant|desc|troquel| + F|count|."""
     lines = [
-        f'C|{FARMACIA_NOMBRE:<40}|{codcli:<10}|{FARMACIA_CUIT:<11}|'
+        f'C|{farmacia_nombre:<40}|{codcli:<10}|{farmacia_cuit:<11}|'
         f'{fecha_ddmmaaaa}|{comprob:<10}|'
     ]
     for it in items:
