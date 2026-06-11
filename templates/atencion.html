@@ -540,14 +540,48 @@ function pintarResumenEncargo() {
   const chat = document.getElementById('chat');
   let card = document.getElementById('resumenEncargo');
   if (!encargoNotas.length) { if (card) card.remove(); return; }
+  // Parsear las notas del bot en campos estructurados (más legible que listarlas crudas).
+  const enc = { producto: '', stock: '', os: '', receta: '', magistral: '' };
+  for (const t of encargoNotas) {
+    if (t.startsWith('🛒')) {
+      const m = t.match(/quiere:\s*([^|]+)/);
+      if (m) enc.producto = m[1].trim();
+      if (/ENCARGAR/i.test(t)) enc.stock = 'a encargar';
+      else if (/SIN STOCK/i.test(t)) enc.stock = 'sin stock';
+      else if (/EN STOCK/i.test(t)) enc.stock = 'en stock';
+    } else if (t.startsWith('🏥')) {
+      enc.os = t.replace(/^🏥\s*Obra social:\s*/, '').trim();
+    } else if (t.startsWith('📋')) {
+      enc.receta = t.replace(/^📋\s*Receta:\s*/, '').trim();
+    } else if (t.startsWith('🧪')) {
+      enc.magistral = t.replace(/^🧪\s*MAGISTRAL\s*—\s*/, '').trim();
+    }
+  }
+  const linea = (ic, lab, val, badge) => val ?
+    `<div style="display:flex;gap:6px;align-items:baseline;margin-top:2px;">
+       <span style="width:15px;flex-shrink:0;">${ic}</span>
+       <span class="muted2" style="font-size:10px;width:52px;flex-shrink:0;">${lab}</span>
+       <span style="font-size:12px;">${esc(val)}${badge || ''}</span>
+     </div>` : '';
+  const enStock = enc.stock === 'en stock';
+  const badge = enc.stock ?
+    ` <span style="font-size:9px;padding:1px 6px;border-radius:6px;background:${enStock ? 'var(--ok-bg,#0f3d2e)' : 'var(--warn-bg)'};color:${enStock ? 'var(--ok-tx,#4ade80)' : 'var(--warn-tx)'};">${enc.stock}</span>` : '';
+  let body;
+  if (enc.magistral) {
+    body = linea('🧪', 'Magistral', enc.magistral);
+  } else {
+    body = linea('🛒', 'Producto', enc.producto || '(sin especificar)', badge)
+         + linea('🏥', 'OS', enc.os === 'NO usa.' ? 'no usa' : enc.os)
+         + linea('📋', 'Receta', enc.receta);
+  }
+  if (!body) body = encargoNotas.map(t => `<div style="font-size:12px;line-height:1.5;">${esc(t)}</div>`).join('');
   if (!card) {
     card = document.createElement('div');
     card.id = 'resumenEncargo';
     card.style.cssText = 'position:sticky; top:0; z-index:5; align-self:stretch; margin:-16px -16px 8px; padding:10px 14px; background:var(--tagg-bg); border-bottom:2px solid var(--accent);';
     chat.insertBefore(card, chat.firstChild);
   }
-  card.innerHTML = '<div class="title" style="font-size:11px; margin-bottom:5px;">📋 Encargo del cliente (lo que pidió por el bot)</div>'
-    + encargoNotas.map(t => `<div style="font-size:12px; line-height:1.5;">${esc(t)}</div>`).join('');
+  card.innerHTML = '<div class="title" style="font-size:11px; margin-bottom:4px;">📋 Encargo del cliente (por el bot)</div>' + body;
 }
 function pintarHeader() {
   const c = convData; if (!c) return;
