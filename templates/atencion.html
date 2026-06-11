@@ -422,7 +422,7 @@ function renderBandeja() {
 
 /* ── Chat ── */
 async function abrirConv(id) {
-  convAbierta = id; ultimoMsgId = 0;
+  convAbierta = id; ultimoMsgId = 0; encargoNotas = [];
   document.getElementById('panelTransfer').style.display = 'none';
   document.getElementById('searchPop').style.display = 'none';
   vaciarPedido();
@@ -440,10 +440,33 @@ async function refrescarChat(reset) {
   const d = await r.json();
   convData = d.conversacion;
   const chat = document.getElementById('chat');
-  if (reset) chat.innerHTML = '';
+  if (reset) { chat.innerHTML = ''; encargoNotas = []; }
   pintarHeader();
-  for (const m of (d.mensajes || [])) { chat.appendChild(burbuja(m)); ultimoMsgId = Math.max(ultimoMsgId, m.id); }
+  for (const m of (d.mensajes || [])) {
+    chat.appendChild(burbuja(m)); ultimoMsgId = Math.max(ultimoMsgId, m.id);
+    if (m.origen === 'sistema' && _ENCARGO_RE.test(m.texto || '')) encargoNotas.push(m.texto);
+  }
+  pintarResumenEncargo();
   if (d.mensajes && d.mensajes.length) chat.scrollTop = chat.scrollHeight;
+}
+
+// Resumen del encargo: junta las notas del bot (🛒 Compra / 🧪 Magistral / 🏥 OS /
+// 📋 receta) y las FIJA arriba del chat, para que el operador vea al toque lo que
+// el cliente pidió por el bot (en vez de cazarlas sueltas en el historial).
+let encargoNotas = [];
+const _ENCARGO_RE = /^(🛒|🧪|🏥|📋|💊)/;
+function pintarResumenEncargo() {
+  const chat = document.getElementById('chat');
+  let card = document.getElementById('resumenEncargo');
+  if (!encargoNotas.length) { if (card) card.remove(); return; }
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'resumenEncargo';
+    card.style.cssText = 'position:sticky; top:0; z-index:5; align-self:stretch; margin:-16px -16px 8px; padding:10px 14px; background:var(--tagg-bg); border-bottom:2px solid var(--accent);';
+    chat.insertBefore(card, chat.firstChild);
+  }
+  card.innerHTML = '<div class="title" style="font-size:11px; margin-bottom:5px;">📋 Encargo del cliente (lo que pidió por el bot)</div>'
+    + encargoNotas.map(t => `<div style="font-size:12px; line-height:1.5;">${esc(t)}</div>`).join('');
 }
 function pintarHeader() {
   const c = convData; if (!c) return;
