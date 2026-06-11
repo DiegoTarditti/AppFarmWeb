@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Filtro droguería — desde archivo</title>
+<style>
+  :root {
+    --bg:#22222d; --surface:#2c2c39; --txt:#ececf0; --title:#fafafc;
+    --muted:#9c9ca4; --muted2:#7a7a82; --border:rgba(255,255,255,0.18);
+    --accent:#1D9E75; --warn-tx:#EAB308; --warn-bg:rgba(234,179,8,0.16);
+    --info:#185FA5;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .topbar { padding:12px 22px; background:var(--surface);
+            border-bottom:1px solid var(--border); display:flex;
+            align-items:center; gap:12px; }
+  .wrap { max-width:1100px; margin:0 auto; padding:24px 22px; }
+  .card { background:var(--surface); border:1px solid var(--border);
+          border-radius:14px; padding:18px 20px; margin-bottom:18px; }
+  h1 { font-size:18px; color:var(--title); margin:0; }
+  h2 { font-size:13px; color:var(--muted); margin:0 0 12px;
+       text-transform:uppercase; letter-spacing:.6px; }
+  label { display:block; font-size:11px; color:var(--muted);
+          margin-bottom:4px; font-weight:600; }
+  input[type=file] { background:#3a3a47; color:var(--txt);
+                     border:1px solid var(--border); border-radius:8px;
+                     padding:7px 9px; font-size:13px; width:100%; }
+  .btn { background:var(--accent); color:#06241a; border:none;
+         border-radius:8px; padding:9px 18px; font-weight:700;
+         font-size:13px; cursor:pointer; }
+  .btn:hover { filter:brightness(1.1); }
+  .btn-info { background:var(--info); color:#fff; }
+  .muted { color:var(--muted); font-size:12px; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px;
+          font-size:11px; font-weight:600; margin-left:6px;
+          background:var(--accent); color:#06241a; }
+  .pill-origen { background:var(--info); color:#fff; }
+  .pill-warn { background:var(--warn-bg); color:var(--warn-tx); }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th { text-align:left; color:var(--muted); font-weight:600;
+       padding:8px 6px; border-bottom:1px solid var(--border); }
+  td { padding:6px; border-bottom:1px solid rgba(255,255,255,0.05); }
+  .err { background:rgba(220,90,90,0.20); border:1px solid #c5575a;
+         color:#fad9d9; padding:10px 12px; border-radius:8px;
+         font-size:13px; }
+  .grid-cab { display:grid;
+              grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+              gap:10px 18px; font-size:12px; }
+  .grid-cab b { display:block; font-size:11px;
+                color:var(--muted); margin-bottom:2px; font-weight:600; }
+  .drog-grid { display:grid;
+               grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));
+               gap:14px; }
+  .drog { background:#1f1f29; border:1px solid var(--border);
+          border-radius:12px; padding:14px; }
+  .drog-h { display:flex; justify-content:space-between; align-items:center;
+            margin-bottom:8px; }
+  .drog-h b { font-size:14px; color:var(--title); }
+  .drog-meta { font-size:11px; color:var(--muted); margin-bottom:10px; }
+  .drog-aviso { background:var(--warn-bg); color:var(--warn-tx);
+                padding:6px 8px; border-radius:6px; font-size:11px;
+                margin-bottom:8px; }
+  .row-no-lab { background:rgba(234,179,8,0.06); }
+  details { font-size:11px; color:var(--muted); margin-top:6px; }
+  details summary { cursor:pointer; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>📦 Filtro droguería — desde archivo</h1>
+    <span class="muted" style="margin-left:auto;">
+      <a href="/filtro-drogueria" style="color:var(--muted);">← Filtro normal (SQL)</a>
+    </span>
+  </div>
+
+  <div class="wrap">
+    <div class="card">
+      <h2>Subí el archivo del pedido</h2>
+      <p class="muted" style="margin-top:0;">
+        Acepta <code>.txt</code> de 20 de Junio o <code>.PED</code> de Kellerhoff.
+        Los archivos generalmente están en
+        <code>\\server-1\ObServerGestion\Pedidos\&lt;droguería&gt;\</code>.
+      </p>
+      <form id="form-subir" style="display:flex; gap:12px; align-items:flex-end;">
+        <div style="flex:1;">
+          <label>Archivo</label>
+          <input type="file" id="archivo" name="archivo" accept=".txt,.ped,.PED" required>
+        </div>
+        <button type="button" id="btn-parsear" class="btn btn-info">Solo previsualizar</button>
+        <button type="submit" class="btn">Separar y descargar</button>
+      </form>
+      <div id="error" class="err" style="display:none; margin-top:12px;"></div>
+    </div>
+
+    <!-- Preview (solo se llena con "Solo previsualizar") -->
+    <div id="preview" style="display:none;">
+      <div class="card">
+        <h2>📋 Cabecera (preview)</h2>
+        <div class="grid-cab" id="cabecera-grid"></div>
+        <div style="margin-top:10px; font-size:12px;" class="muted">
+          Origen: <span id="origen-pill" class="pill"></span>
+          · Renglones: <b id="n-items" style="color:var(--title)">—</b>
+          · Total declarado: <b id="total-decl" style="color:var(--title)">—</b>
+        </div>
+      </div>
+      <div class="card">
+        <h2>🛒 Renglones (preview)</h2>
+        <div style="overflow:auto; max-height:50vh;">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th><th>Cant</th><th>EAN</th><th>Alfabeta</th>
+                <th>Troquel</th><th>Descripción</th>
+              </tr>
+            </thead>
+            <tbody id="renglones"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Separación (se llena con "Separar y descargar") -->
+    <div id="separacion" style="display:none;">
+      <div class="card">
+        <h2>📋 Resumen</h2>
+        <div class="grid-cab" id="sep-cabecera"></div>
+        <div style="margin-top:10px; font-size:12px;" class="muted">
+          Total renglones: <b id="sep-total" style="color:var(--title)">—</b>
+          · Ambiguos (>1 droguería): <b id="sep-amb" style="color:var(--title)">—</b>
+        </div>
+      </div>
+      <div class="card">
+        <h2>📦 Archivos generados por droguería</h2>
+        <div class="drog-grid" id="drog-grid"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => (s == null ? '' : String(s).replace(/[&<>"]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
+
+function pintarCabecera(targetId, cab) {
+  const t = $(targetId);
+  t.innerHTML = Object.keys(cab).length === 0
+    ? '<div class="muted">(este formato no trae cabecera estructurada)</div>'
+    : Object.entries(cab).map(
+        ([k, v]) => `<div><b>${esc(k)}</b>${esc(v)}</div>`
+      ).join('');
+}
+
+function mostrarError(msg) {
+  $('error').textContent = msg;
+  $('error').style.display = 'block';
+  $('preview').style.display = 'none';
+  $('separacion').style.display = 'none';
+}
+
+async function enviarArchivo(url) {
+  $('error').style.display = 'none';
+  $('preview').style.display = 'none';
+  $('separacion').style.display = 'none';
+  const f = $('archivo').files[0];
+  if (!f) { mostrarError('Elegí un archivo primero.'); return null; }
+  const fd = new FormData();
+  fd.append('archivo', f);
+  try {
+    const res = await fetch(url, { method: 'POST', body: fd });
+    const d = await res.json();
+    if (!d.ok) { mostrarError(d.error || 'Error desconocido'); return null; }
+    return d;
+  } catch (e) {
+    mostrarError('No se pudo subir: ' + e);
+    return null;
+  }
+}
+
+$('btn-parsear').addEventListener('click', async () => {
+  const d = await enviarArchivo('/filtro-drogueria/archivo/parsear');
+  if (!d) return;
+  $('origen-pill').textContent = d.origen;
+  $('n-items').textContent = d.items.length;
+  $('total-decl').textContent = d.total_declarado ?? '—';
+  pintarCabecera('cabecera-grid', d.cabecera || {});
+  $('renglones').innerHTML = d.items.map((it, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><b>${esc(it.cantidad)}</b></td>
+      <td>${esc(it.ean)}</td>
+      <td>${esc(it.alfabeta)}</td>
+      <td>${esc(it.troquel)}</td>
+      <td>${esc(it.descripcion)}</td>
+    </tr>
+  `).join('');
+  $('preview').style.display = 'block';
+});
+
+$('form-subir').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const d = await enviarArchivo('/filtro-drogueria/archivo/separar');
+  if (!d) return;
+  pintarCabecera('sep-cabecera', {
+    'archivo origen': d.filename_original,
+    'droguería origen': d.origen,
+    ...(d.cabecera || {}),
+  });
+  $('sep-total').textContent = d.total_items;
+  $('sep-amb').textContent = d.ambiguos;
+  $('drog-grid').innerHTML = d.groups.map(g => {
+    const pillCls = g.es_origen ? 'pill pill-origen' : 'pill';
+    const pillTxt = g.es_origen ? 'origen' : 'redirigido';
+    const aviso = g.aviso ? `<div class="drog-aviso">⚠ ${esc(g.aviso)}</div>` : '';
+    const sinLab = g.sin_lab > 0
+      ? `<span class="pill pill-warn">${g.sin_lab} sin lab</span>` : '';
+    const btnDescarga = g.content_b64
+      ? `<button class="btn" onclick="descargar('${g.filename}', '${g.content_b64}')">⬇ ${esc(g.filename)}</button>`
+      : `<span class="muted">(sin archivo)</span>`;
+    const filas = (g.items_preview || []).map(it => `
+      <tr class="${it.lab_resuelto ? '' : 'row-no-lab'}">
+        <td><b>${esc(it.cantidad)}</b></td>
+        <td>${esc(it.ean)}</td>
+        <td>${esc(it.alfabeta)}</td>
+        <td>${esc(it.troquel)}</td>
+        <td>${esc(it.descripcion)}</td>
+      </tr>`).join('');
+    return `
+      <div class="drog">
+        <div class="drog-h">
+          <b>${esc(g.drogueria)}</b>
+          <span class="${pillCls}">${pillTxt}</span>
+        </div>
+        <div class="drog-meta">
+          ${g.n_items} renglones ${sinLab}
+          · formato ${esc(g.formato || '—')}
+        </div>
+        ${aviso}
+        <div style="margin-bottom:10px;">${btnDescarga}</div>
+        <details>
+          <summary>Ver renglones</summary>
+          <div style="overflow:auto; max-height:30vh; margin-top:6px;">
+            <table>
+              <thead><tr>
+                <th>Cant</th><th>EAN</th><th>Alfabeta</th>
+                <th>Troquel</th><th>Descripción</th>
+              </tr></thead>
+              <tbody>${filas}</tbody>
+            </table>
+          </div>
+        </details>
+      </div>`;
+  }).join('');
+  $('separacion').style.display = 'block';
+});
+
+function descargar(filename, contentB64) {
+  // base64 → binario (preservando bytes 0-255, no UTF-8)
+  const bin = atob(contentB64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const blob = new Blob([bytes], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+</script>
+</body>
+</html>
