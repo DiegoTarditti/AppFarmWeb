@@ -68,7 +68,7 @@
                     <td class="px-3 py-2.5 text-right">
                         {% if tiene_permiso('usuarios', 'admin') %}
                         <button type="button"
-                                onclick="abrirEditar({{ u.id }}, {{ u.username | tojson }}, {{ u.email | tojson }}, {{ u.nombre_completo | tojson }}, {{ u.rol | tojson }}, {{ u.activo | tojson }}, {{ u.permisos | tojson }}, {{ u.perfiles | tojson }})"
+                                onclick="abrirEditar({{ u.id }})"
                                 class="text-xs text-sky-700 hover:underline mr-3">Editar</button>
                         <form method="post" action="{{ url_for('usuarios_reset_password', user_id=u.id) }}"
                               class="inline" onsubmit="return promptReset(this);">
@@ -243,27 +243,35 @@
 </div>
 
 <script>
+// Datos de los usuarios (seguro acá dentro del <script>, no en un atributo onclick).
+const USUARIOS = {{ usuarios | tojson }};
+
 function togglePerfilesEditar(rol) {
-    document.getElementById('ed-perfiles-section').classList.toggle('hidden', rol !== 'operador');
+    const esOp = rol === 'operador';
+    // Operador → ve Perfiles. Admin/farmacia/dev → ven Permisos por módulo.
+    document.getElementById('ed-perfiles-section').classList.toggle('hidden', !esOp);
+    document.getElementById('ed-permisos-section').classList.toggle('hidden', esOp);
 }
 document.getElementById('ed-rol').addEventListener('change', e => togglePerfilesEditar(e.target.value));
 
-function abrirEditar(id, username, email, nombre, rol, activo, permisos, perfiles) {
-    document.getElementById('ed-username').textContent = username;
-    document.getElementById('ed-email').value = email || '';
-    document.getElementById('ed-nombre').value = nombre || '';
-    document.getElementById('ed-rol').value = rol;
-    document.getElementById('ed-activo').value = activo ? '1' : '0';
+function abrirEditar(id) {
+    const u = USUARIOS.find(x => x.id === id);
+    if (!u) return;
+    document.getElementById('ed-username').textContent = u.username;
+    document.getElementById('ed-email').value = u.email || '';
+    document.getElementById('ed-nombre').value = u.nombre_completo || '';
+    document.getElementById('ed-rol').value = u.rol;
+    document.getElementById('ed-activo').value = u.activo ? '1' : '0';
     // Resetear permisos y setear los existentes
     document.querySelectorAll('#permisos-grid select').forEach(s => s.value = '');
-    for (const [mod, nivel] of Object.entries(permisos || {})) {
+    for (const [mod, nivel] of Object.entries(u.permisos || {})) {
         const sel = document.querySelector(`#permisos-grid select[name="perm_${mod}"]`);
         if (sel) sel.value = nivel;
     }
     // Resetear perfiles y marcar los del usuario
-    const setPerf = new Set(perfiles || []);
+    const setPerf = new Set(u.perfiles || []);
     document.querySelectorAll('.ed-perfil-chk').forEach(c => { c.checked = setPerf.has(c.dataset.slug); });
-    togglePerfilesEditar(rol);
+    togglePerfilesEditar(u.rol);
     document.getElementById('form-editar').action = '/usuarios/' + id + '/editar';
     document.getElementById('modal-editar').classList.remove('hidden');
 }
