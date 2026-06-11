@@ -39,6 +39,25 @@ TOOLS = [{
     },
 }]
 
+# Tool para que la IA derive a una persona en los casos que el matcher por
+# keywords (cerebro._quiere_humano) no capta: cliente molesto/frustrado, reclamo,
+# problema con un pedido, consulta sensible, o algo que no puede resolver.
+DERIVAR_TOOL = {
+    'name': 'derivar_a_humano',
+    'description': ('Derivá la conversación a una persona del equipo cuando: el cliente '
+                    'está frustrado o molesto, hay un reclamo o un problema con un pedido, '
+                    'es una consulta sensible/compleja que excede la venta libre, o no podés '
+                    'resolverlo con la info disponible. Antes de derivar, escribí un mensaje '
+                    'breve y amable avisando que lo pasás con alguien.'),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'motivo': {'type': 'string', 'description': 'razón corta de la derivación (para el operador)'},
+        },
+        'required': ['motivo'],
+    },
+}
+
 
 SYSTEM_RECETA = """Sos el asistente de Farmacia Badia (Rosario). Te mandan la FOTO de una receta médica.
 
@@ -66,18 +85,29 @@ SYSTEM_RECETA += _INFO
 
 
 def _conversar_con_tool(client, system, messages, model=MODEL_TEXTO,
-                        max_vueltas=6, max_tokens=800):
+                        max_vueltas=6, max_tokens=800, tools=None):
     """Loop de tool use compartido: corre la conversación resolviendo las
-    llamadas a buscar_producto hasta que el modelo responde texto."""
+    llamadas a buscar_producto hasta que el modelo responde texto.
+
+    Si `tools` incluye derivar_a_humano y el modelo lo llama, corta y devuelve un
+    dict {derivar: True, texto, motivo} en vez de un string."""
+    tools = tools if tools is not None else TOOLS
     for _ in range(max_vueltas):
         resp = client.messages.create(model=model, max_tokens=max_tokens,
-                                      system=system, tools=TOOLS, messages=messages)
+                                      system=system, tools=tools, messages=messages)
         if resp.stop_reason != 'tool_use':
             txt = ''.join(b.text for b in resp.content
                           if getattr(b, 'type', '') == 'text').strip()
-            # Defensa: limpiar Markdown de negrita (Telegram/WhatsApp lo muestran
-            # literal sin parse_mode).
+            # Defensa: limpiar Markdown de negrita (Telegram/WhatsApp lo muestran literal).
             return txt.replace('**', '').replace('__', '')
+        # ¿Pidió derivar? → cortamos y devolvemos el flag (el cerebro hace el handoff).
+        for b in resp.content:
+            if getattr(b, 'type', '') == 'tool_use' and b.name == 'derivar_a_humano':
+                txt = ''.join(x.text for x in resp.content if getattr(x, 'type', '') == 'text').strip()
+                return {'derivar': True,
+                        'texto': txt.replace('**', '').replace('__', '')
+                                 or 'Te paso con una persona del equipo, ya te responden 🙂',
+                        'motivo': (b.input or {}).get('motivo', '')}
         messages.append({'role': 'assistant', 'content': resp.content})
         results = []
         for b in resp.content:
@@ -126,8 +156,13 @@ def consulta_ia(texto, historial=None):
         from anthropic import Anthropic
         client = Anthropic(api_key=api_key)
         messages = list(historial) if historial else [{'role': 'user', 'content': texto}]
-        texto_resp = _conversar_con_tool(client, SYSTEM, messages, max_vueltas=4, max_tokens=600)
-        return texto_resp or '¿Me lo reformulás? 🙂'
+        out = _conversar_con_tool(client, SYSTEM, messages, max_vueltas=4, max_tokens=600,
+                                  tools=TOOLS + [DERIVAR_TOOL])
+        if isinstance(out, dict) and out.get('derivar'):
+            return {'texto': out['texto'], 'derivar': True,
+                    'meta': {'camino': 'consulta_ia', 'resuelto': False,
+                             'motivo': 'ia_derivo', 'tema': out.get('motivo')}}
+        return out or '¿Me lo reformulás? 🙂'
     except Exception as e:  # noqa: BLE001
         print('consulta_ia error:', e)
         return 'Uy, tuve un problema para responder. Probá de nuevo o escribí "menú" 🙏'

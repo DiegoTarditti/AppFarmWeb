@@ -1,165 +1,79 @@
-# Próximos pasos — checkpoint sesión 2026-06-10
+# Próximos pasos — roadmap por horizonte
 
-> Punch list corta de qué falta después de la sesión del 10/06.
-> Para roadmap largo ver [`flujo_pedido_despacho.md`](flujo_pedido_despacho.md).
-> Para backlog vivo completo ver [`mejoras_pendientes.md`](mejoras_pendientes.md).
-
----
-
-## ✅ Qué se cerró hoy
-
-7 commits (branch +7 ahead de origin):
-
-```
-f4100d1 refactor: migrar JS de /reparto a cliente_picker (opcion 3)
-8dd3114 test: cobertura para los 8 endpoints /api/clientes/* (20 tests)
-214e330 docs(backlog): marcar Alembic como hecho + limpiar comentario obsoleto
-87b1051 docs(backlog): cerrar cliente_picker + pendientes /reparto y namespacing
-f94d915 chore: borrar import 'redirect' huerfano de reparto.py
-ed7c0fb refactor: borrar redirects 308 legacy /reparto/api/* → /api/clientes/*
-f0eca4e refactor: cliente_picker + /api/clientes + /config/envio + deep-link
-```
-
-**Cambios visibles:**
-- Componente `cliente_picker` reusable (macro Jinja + JS) — usado por
-  `/pedido/nuevo` y `/reparto`.
-- Endpoints `/api/clientes/*` con namespace propio (antes `/reparto/api/*`).
-- `/envio` → `/config/envio` (redirect 301 para no romper bookmarks).
-- Botón "📝 Pedido" en `/atencion` que abre `/pedido/nuevo?observer_id=X`
-  con cliente precargado.
-
-**Métricas:**
-- `pedido_nuevo.html`: 787 → 366 líneas (-53%)
-- `reparto.html`: 509 → 413 líneas (-19%)
-- `routes/reparto.py`: -130 líneas
-- 20 tests nuevos para `/api/clientes/*` (todos pasan)
+> Roadmap vivo del flujo venta → cobro → reparto. La arquitectura/detalle está en
+> [`flujo_reparto.md`](flujo_reparto.md); acá va el **orden y la prioridad**.
+> Convención: Claude orquesta/revisa · Cline ejecuta · se revisa contra el repo real.
 
 ---
 
-## 🔴 Inmediato (próxima vez que abras la app)
+## ✅ Qué se cerró (en el repo, verificado)
+- **Filtro droguería multifarmacia** — config data-driven (`Config.farmacia_cuit` +
+  campos en `Provider`), defaults por nombre de droguería, aviso guiado. (PR #191)
+- **Perfiles de operador + home standalone** — registro `PERFILES`, gating unificado
+  (1 guard reemplaza 5), `/home`, checks en `/usuarios`, `/rend-recetas` por `?perfil`. (PR #192)
+- **Rediseño del bot** — Consultar Precio/Stock = 1 paso · Compra Farmacia guiada
+  (stock→encargo→OS→receta→deriva) · Magistral aparte. (PR #193)
+- **Docs maestros** — `flujo_reparto.md` (arquitectura) + este roadmap.
 
-### 1. Probar en browser (5 min)
-- [ ] `/atencion` con conversación abierta + cliente vinculado → click "📝 Pedido"
-      → debe abrir `/pedido/nuevo` con cliente, dirección, ciudad, domicilios precargados.
-- [ ] `/reparto` → buscar cliente, "＋ nuevo cliente", "✏️ editar", agregar pedido — todo
-      igual que antes (no debe haber regresión visible).
-- [ ] `/pedido/nuevo` sin params → flujo normal de toma de pedido.
-- [ ] `/envio` → debe redirigir a `/config/envio` (verificar en barra de URL).
-
-### 2. Bajar a Render (cuando estés conforme)
-- [ ] `git push` (rama main, +7 commits)
-- [ ] Verificar deploy OK en Render (logs sin errores, /ping responde)
-- [ ] Probar las mismas 4 cosas en producción
-
-### 3. ~~Cline pendiente~~ ✅ hecho 2026-06-10
-Tests para `/config/envio` (26 tests, todos pasan) → commit `<pending>`.
+> ⚠️ Los ~7 commits que reportó **Cline** (proximos_pasos.md, refactor `/config/envio`,
+> `/api/clientes/*`) **NO están en este repo** (ni local ni remoto). Hasta que Cline
+> haga `git push`, no se pueden revisar ni mergear. Ver §📍 Notas.
 
 ---
 
-## 🟡 Corto plazo (1-2 sesiones próximas)
+## 🔴 Inmediato (5-10 min)
+- [ ] **Mergear #194** (re-aplica 3 fixes perdidos: botón Editar, ocultar permisos
+  para operador, quitar botón matriz del filtro). Después `git pull` y confirmar con
+  `git log --graph` que `80209b0` quedó en el tronco.
+- [ ] **Que Cline pushee su rama** a este remoto → recién ahí reviso /config/envio +
+  /api/clientes + el doc de Cline.
+- [ ] **Valores de PROD en el `.env` de la LAN** antes de salir en serio:
+  `ATENCION_AUTO_BOT_MINUTOS` 30→180 · `ATENCION_REENGANCHE_MINUTOS` 1→5.
+- [ ] **Regenerar el token de Telegram** (quedó expuesto en chats de desarrollo).
+- [ ] **Reiniciar `bot`** para que tome el rediseño del menú (`docker-compose restart bot`).
 
-### Mejoras al `cliente_picker` (cuando aparezca caso)
-- **Namespacing multi-instancia** — solo si necesitás 2 buscadores en
-  la misma pantalla. Ver entry en `mejoras_pendientes.md`.
-- **Unificar visual entre `/pedido/nuevo` y `/reparto`** — hoy usan el
-  mismo JS pero distinto HTML (grid vs inline). Las opciones 1 y 2 del
-  backlog quedaron sin hacer. No urgente.
+## 🟡 Corto plazo (1-2 sesiones)
+- [ ] **Verificar el namespacing de Cline** (`/config/envio` redirect 301, `/api/clientes/*`
+  redirect 308) — confirmar que los POST sobreviven el redirect y la CI verde.
+- [ ] **Fase A — Transacción en /atencion**: pantalla de cierre con `forma_pago`
+  inteligente (link MP / alias transf / vuelto efvo / ult4 tarjeta) + destino (2 ejes:
+  stock × salida) + OS/receta. Arma el pedido con los campos de `flujo_reparto.md §3`.
+- [ ] **Migrar URLs viejas** que andan por redirect (`reparto.html`, `pedido_nuevo.html:234`,
+  `tests/test_reparto.py`) a las nuevas — sacar la deuda.
+- [ ] **Tests E2E** del flujo de compra del bot + del cierre de transacción.
+- [ ] **Ficha real de Badia** en `bot/info.py` (hoy datos de prueba).
 
-### Aplicar el deep-link cliente a otras pantallas
-- **`/caja`** — al cobrar, mostrar/editar ficha del cliente via picker.
-- **Otras** que aparezcan.
+## 🟢 Medio plazo (Tier 2 — logística)
+- [ ] **Campos DB nuevos en `PedidoReparto`** (tabla completa, ver `flujo_reparto.md §3`):
+  pago (link_mp, dato_pago_mp, paga_con, vuelto, tarjeta_ult4…), cobertura
+  (obra_social, requiere_receta, requiere_firma), logística (stock, pedido_a_drogueria_id,
+  destino mutable, prioridad), timestamps por evento (`ts_*`).
+- [ ] **Fase B — Caja + despacho**: vista filtrada del cajero, copiar nro op, marcar
+  RETIRADO, recibir droguería (destrabar "Pedido a X").
+- [ ] **Fase C — Planilla live**: timers/SLA (20'/40'), prioridad, colores, push.
+- [ ] **State machine del cadete** (Fase D): TOMAR (inline grupo), chat 1:1 + feedback
+  + link mobile.
+- [ ] **Caja → contabilidad**: enganchar cobros con `flujo_fondos`/`cuentas`.
 
-### Tests E2E del deep-link
-- Hoy se prueba a mano (paso 1 de arriba). Si rompe algo, no avisa.
-- Test sugerido: que `GET /pedido/nuevo?observer_id=X` renderiza el HTML
-  con el script de precarga visible.
-
----
-
-## 🟢 Medio plazo (Tier 2 — pedido completo)
-
-Pendiente desde el análisis del 28/05 (ver
-[`flujo_pedido_despacho.md`](flujo_pedido_despacho.md) sección "Próximos
-pasos sugeridos / Tier 2").
-
-### Campos nuevos en `pedido` + `pedido_reparto` (DB migration)
-
-| Campo | Tabla | Tipo | Por qué |
-|---|---|---|---|
-| `obra_social` | pedido | text/FK | Para PAMI (solo cobra envío) y similares |
-| `requiere_receta` | pedido | bool | Documento que el cadete debe traer |
-| `requiere_firma` | pedido | bool | Autorización PAMI |
-| `stock_status` | pedido | enum('hay','esperar_drogueria') | Eje ortogonal a destino |
-| `pedido_a_drogueria_id` | pedido | FK proveedores | Si stock=esperar |
-| `prioridad` | pedido | enum('normal','alta','urgente') | SLA + visualización |
-| `total_paciente` | pedido | decimal | Lo que cobra al cliente |
-| `total_envio` | pedido | decimal | Separado para liquidar al cadete |
-| `paga_con` | pedido | decimal | Si efectivo |
-| `vuelto` | pedido | decimal | Calculado |
-| `link_mp` | pedido | text | Generado al elegir Link MP |
-| `nro_op` | pedido | text | Pegado del panel MP por el operador |
-| `ultimos_4` | pedido | text(4) | Tarjeta crédito (NUNCA PAN completo) |
-| `marca_tarjeta` | pedido | text | Visa/Master/etc |
-
-**Esfuerzo:** 1 sesión completa.
-- Crear migración con Alembic (ya está adoptado, ver `alembic/versions/`).
-- Sumar campos al modelo en `database.py`.
-- Adaptar UI en `pedido_nuevo.html` (dropdown OS, prioridad, etc.).
-- Adaptar payload del POST `/reparto/pedido`.
-
-### Estado del pedido — state machine
-
-Pendiente del análisis (`flujo_pedido_despacho.md` etapa 5):
-```
-disponible → tomado → retirado → en_camino → llegué → entregado/fallido
-```
-
-Con `ts_*` por transición. Permite:
-- Timers escalonados en planilla (20 min sin tomar → warning, 40 min sin retirar).
-- Métricas de cadete (tiempo promedio por etapa).
-- Modelo predictivo simple (distancia / velocidad_cadete).
-
-**Esfuerzo:** 1-2 sesiones.
-
----
-
-## 🔵 Largo plazo (cuando haya demanda)
-
-Pendientes del análisis del flujo operativo (`flujo_pedido_despacho.md`):
-
-- **Cuenta corriente del cadete** (`cadete_cta_cte`) — envío entero al
-  cadete, efvo en mano no acumula, online sí.
-- **Ticket térmico 80mm** para el cadete (ESC/POS).
-- **Publicación al grupo Telegram** con botón inline TOMAR + chat 1:1
-  post-tomar.
-- **Sistema de incentivos** con ranking semanal/mensual.
-- **Checkpoint retorno** del cadete con checklist (receta, autorización,
-  vuelto, troquel).
-- **Horarios de operadores + routing por tipo de consulta**
-  (`operador_horario` + `tipo_consulta` con keywords + backup +
-  re-encolar).
+## 🔵 Largo plazo
+- [ ] **Cuenta corriente del cadete** + liquidación (`cadete_cta_cte`, `flujo_reparto.md §9`).
+- [ ] **Ticket térmico 80mm** (ESC/POS) del cadete (`§8`).
+- [ ] **Grupo cadetes Telegram → WhatsApp** (Fase 2 WhatsApp: número dedicado, Cloud API).
+- [ ] **Analytics + estimación de tiempos + incentivos** (`§12`).
+- [ ] **Horarios / turnos** (mañana/tarde, orden en ruta).
 
 ---
 
 ## 📍 Notas operativas
-
-### Lo que el bot helper local NO sabe
-- `DockerPanel/` (ver CLAUDE.md sección "Arquitectura híbrida local ↔ Render").
-  Si tocamos algo que afecte sync local/Render, verificar que el helper
-  HTTP sigue funcionando.
-
-### AppLabo (las 17 tablas extra en Badia DB)
-- Existe `c:\appLabo`, comparte tablas (productos/medicos/clientes) con
-  AppFarmWeb. Lee, no escribe. Si algún refactor toca esos modelos,
-  verificar AppLabo en paralelo.
-
-### Render — gotchas
-- Healthcheck en `/ping` (sin DB) no `/health` (con SELECT 1).
-- Plan free: 512MB. Cuidado con `Producto.all()` en pantallas grandes.
-- NUNCA `--preload` al gunicorn (cuelga el master).
-- Ver `docs/lecciones_deploy_render.md`.
-
----
-
-*Doc generado 2026-06-10 al cierre de la sesión. Cuando vuelvas, abrí
-este archivo y arrancás por la sección 🔴 Inmediato.*
+- **Coordinación Cline**: para que YO pueda revisar, su trabajo tiene que estar en
+  `C:\AppFarmWeb` (commiteado y, mejor, pusheado). Lo que no esté en el repo, no existe
+  para la revisión. Regla: Cline termina → pushea → reviso.
+- **Merge limpio**: no mergear una rama mientras se le sigue agregando; después de
+  mergear, la rama queda congelada (fix posterior → rama nueva). Tras cada merge:
+  `git log --graph --oneline --all` y verificar que no quede nada colgando.
+- **DockerPanel**: app local tkinter (agente push + HTTP helper :5055) puente con Render.
+- **AppLabo**: apunta a `farmacia-db.applabo` (schema separado, DB compartida).
+- **Render gotchas**: nunca `--preload` en gunicorn; health check `/ping` (sin DB);
+  plan free 512MB (cuidado con `Producto.all()` en pantallas que iteran ~30k filas).
+- **ObServer manda**: la venta (productos + caja fiscal) es de ObServer; AppFarmWeb no
+  duplica el carrito (ver `flujo_reparto.md §0`).

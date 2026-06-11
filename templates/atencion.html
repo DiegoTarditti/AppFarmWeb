@@ -167,6 +167,7 @@
         <div id="chatHeadInner" class="muted" style="font-size:13px;">Elegí una conversación 👈</div>
         <div id="chatAcciones" style="display:none; align-items:center; gap:7px; flex-shrink:0;">
           <button onclick="toggleFicha()" class="hbtn" style="font-size:12px; padding:5px 9px; border-radius:8px;" title="Datos del cliente">👤</button>
+          <button onclick="toggleCerrarTx()" class="hbtn hbtn-ok" style="font-size:12px; padding:5px 9px; border-radius:8px;" title="Cerrar transacción / cobrar">💳</button>
           <button id="btnTomar" onclick="tomar()" class="hbtn hbtn-ok" style="display:none; font-size:12px; padding:5px 11px; border-radius:8px;">Tomar</button>
           <button onclick="toggleTransfer()" class="hbtn hbtn-info" style="font-size:12px; padding:5px 11px; border-radius:8px;">Transferir</button>
           <button onclick="devolverCola()" class="hbtn" style="font-size:12px; padding:5px 11px; border-radius:8px;">A la cola</button>
@@ -208,6 +209,86 @@
           <div style="display:flex; gap:6px; margin-top:6px;">
             <button onclick="enviarPedido()" class="hbtn" style="flex:1; border-radius:9px; padding:7px; font-size:12px;">Enviar al cliente</button>
             <button onclick="confirmarPedidoCaja()" class="hbtn hbtn-ok" style="flex:1; border-radius:9px; padding:7px; font-size:12px;">Confirmar a caja ▸</button>
+          </div>
+        </div>
+
+        <!-- Cerrar transacción (Fase A — prototipo, sin persistencia aún) -->
+        <div id="cerrarTxCard" style="display:none; margin:10px 14px 0;">
+          <div class="card" style="border:1px solid; border-radius:14px; overflow:hidden;">
+            <div class="card-head" style="padding:8px 13px; display:flex; align-items:center; gap:9px; border-bottom:0.5px solid;">
+              <div class="card-ic" style="width:24px; height:24px; border-radius:7px; display:flex; align-items:center; justify-content:center;">💳</div>
+              <span class="txt" style="font-size:11px;">Cerrar transacción</span>
+              <span class="muted" style="font-size:9px; margin-left:auto;">prototipo · la venta se carga en ObServer</span>
+            </div>
+            <div style="padding:11px 13px; display:flex; flex-direction:column; gap:10px; font-size:12px;">
+              <div>
+                <label class="muted2" style="font-size:10px;">Total (de ObServer)</label>
+                <input id="txTotal" type="number" min="0" oninput="txCalc()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:13px;">
+              </div>
+              <div>
+                <label class="muted2" style="font-size:10px;">Forma de pago</label>
+                <select id="txForma" onchange="txFormaChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                  <option value="">— elegir —</option>
+                  <option value="link_mp">Link Mercado Pago</option>
+                  <option value="transferencia">Transferencia</option>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="tarjeta">Tarjeta de crédito</option>
+                </select>
+                <div id="txFormaExtra" style="margin-top:7px; display:flex; flex-direction:column; gap:6px;"></div>
+              </div>
+              <div style="display:flex; gap:8px;">
+                <div style="flex:1;">
+                  <label class="muted2" style="font-size:10px;">Obra social (opcional)</label>
+                  <input id="txOS" placeholder="ej: PAMI" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                </div>
+                <div style="flex:1;">
+                  <label class="muted2" style="font-size:10px;">Receta</label>
+                  <select id="txReceta" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                    <option value="no">No requiere</option>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="recibida">Recibida</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display:flex; gap:8px;">
+                <div style="flex:1;">
+                  <label class="muted2" style="font-size:10px;">¿Stock?</label>
+                  <select id="txStock" onchange="txStockChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                    <option value="hay">Sí, hay</option>
+                    <option value="esperar">Esperar droguería</option>
+                  </select>
+                  <input id="txDrogueria" placeholder="¿qué droguería?" style="display:none; width:100%; margin-top:5px; border-radius:8px; padding:6px 9px; font-size:12px;" class="input">
+                </div>
+                <div style="flex:1;">
+                  <label class="muted2" style="font-size:10px;">¿Sale por?</label>
+                  <select id="txSalida" onchange="txSalidaChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                    <option value="reparto">Reparto</option>
+                    <option value="retiro">Retiro</option>
+                  </select>
+                </div>
+              </div>
+              <div id="txEnvioWrap">
+                <label class="muted2" style="font-size:10px;">Envío</label>
+                <div style="display:flex; gap:6px; align-items:center;">
+                  <input id="txEnvio" type="number" min="0" oninput="txCalc()" placeholder="$" class="input" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">
+                  <button onclick="txCotizarEnvio()" class="hbtn" style="font-size:11px; padding:6px 10px; border-radius:8px;">Cotizar</button>
+                </div>
+              </div>
+              <div>
+                <label class="muted2" style="font-size:10px;">Prioridad</label>
+                <select id="txPrioridad" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                  <option value="normal">Normal</option>
+                  <option value="alta">Alta</option>
+                  <option value="urgente">🚨 Urgente</option>
+                </select>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; border-top:0.5px solid; padding-top:8px;">
+                <span class="muted2" style="font-size:11px;">A cobrar</span>
+                <span id="txACobrar" class="total-amt" style="font-size:16px; font-weight:600;">$0</span>
+              </div>
+              <div id="txVuelto" class="muted" style="font-size:11px; display:none;"></div>
+              <button onclick="txCerrar()" class="hbtn hbtn-ok" style="border-radius:9px; padding:8px; font-size:12px;">Cerrar y mandar a caja ▸</button>
+            </div>
           </div>
         </div>
 
@@ -444,7 +525,7 @@ function renderBandeja() {
 
 /* ── Chat ── */
 async function abrirConv(id) {
-  convAbierta = id; ultimoMsgId = 0;
+  convAbierta = id; ultimoMsgId = 0; encargoNotas = [];
   document.getElementById('panelTransfer').style.display = 'none';
   document.getElementById('searchPop').style.display = 'none';
   vaciarPedido();
@@ -462,10 +543,67 @@ async function refrescarChat(reset) {
   const d = await r.json();
   convData = d.conversacion;
   const chat = document.getElementById('chat');
-  if (reset) chat.innerHTML = '';
+  if (reset) { chat.innerHTML = ''; encargoNotas = []; }
   pintarHeader();
-  for (const m of (d.mensajes || [])) { chat.appendChild(burbuja(m)); ultimoMsgId = Math.max(ultimoMsgId, m.id); }
+  for (const m of (d.mensajes || [])) {
+    chat.appendChild(burbuja(m)); ultimoMsgId = Math.max(ultimoMsgId, m.id);
+    if (m.origen === 'sistema' && _ENCARGO_RE.test(m.texto || '')) encargoNotas.push(m.texto);
+  }
+  pintarResumenEncargo();
   if (d.mensajes && d.mensajes.length) chat.scrollTop = chat.scrollHeight;
+}
+
+// Resumen del encargo: junta las notas del bot (🛒 Compra / 🧪 Magistral / 🏥 OS /
+// 📋 receta) y las FIJA arriba del chat, para que el operador vea al toque lo que
+// el cliente pidió por el bot (en vez de cazarlas sueltas en el historial).
+let encargoNotas = [];
+const _ENCARGO_RE = /^(🛒|🧪|🏥|📋|💊)/;
+function pintarResumenEncargo() {
+  const chat = document.getElementById('chat');
+  let card = document.getElementById('resumenEncargo');
+  if (!encargoNotas.length) { if (card) card.remove(); return; }
+  // Parsear las notas del bot en campos estructurados (más legible que listarlas crudas).
+  const enc = { producto: '', stock: '', os: '', receta: '', magistral: '' };
+  for (const t of encargoNotas) {
+    if (t.startsWith('🛒')) {
+      const m = t.match(/quiere:\s*([^|]+)/);
+      if (m) enc.producto = m[1].trim();
+      if (/ENCARGAR/i.test(t)) enc.stock = 'a encargar';
+      else if (/SIN STOCK/i.test(t)) enc.stock = 'sin stock';
+      else if (/EN STOCK/i.test(t)) enc.stock = 'en stock';
+    } else if (t.startsWith('🏥')) {
+      enc.os = t.replace(/^🏥\s*Obra social:\s*/, '').trim();
+    } else if (t.startsWith('📋')) {
+      enc.receta = t.replace(/^📋\s*Receta:\s*/, '').trim();
+    } else if (t.startsWith('🧪')) {
+      enc.magistral = t.replace(/^🧪\s*MAGISTRAL\s*—\s*/, '').trim();
+    }
+  }
+  const linea = (ic, lab, val, badge) => val ?
+    `<div style="display:flex;gap:6px;align-items:baseline;margin-top:2px;">
+       <span style="width:15px;flex-shrink:0;">${ic}</span>
+       <span class="muted2" style="font-size:10px;width:52px;flex-shrink:0;">${lab}</span>
+       <span style="font-size:12px;">${esc(val)}${badge || ''}</span>
+     </div>` : '';
+  const enStock = enc.stock === 'en stock';
+  const badge = enc.stock ?
+    ` <span style="font-size:9px;padding:1px 6px;border-radius:6px;background:${enStock ? 'var(--ok-bg,#0f3d2e)' : 'var(--warn-bg)'};color:${enStock ? 'var(--ok-tx,#4ade80)' : 'var(--warn-tx)'};">${enc.stock}</span>` : '';
+  let body;
+  if (enc.magistral) {
+    body = linea('🧪', 'Magistral', enc.magistral);
+  } else {
+    body = linea('🛒', 'Producto', enc.producto || '(sin especificar)', badge)
+         + linea('🏥', 'OS', enc.os === 'NO usa.' ? 'no usa' : enc.os)
+         + linea('📋', 'Receta', enc.receta);
+  }
+  if (!body) body = encargoNotas.map(t => `<div style="font-size:12px;line-height:1.5;">${esc(t)}</div>`).join('');
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'resumenEncargo';
+    card.style.cssText = 'position:sticky; top:0; z-index:5; align-self:stretch; margin:-16px -16px 8px; padding:10px 14px; background:var(--tagg-bg); border-bottom:2px solid var(--accent);';
+    chat.insertBefore(card, chat.firstChild);
+  }
+  card.innerHTML = '<div class="title" style="font-size:11px; margin-bottom:4px;">📋 Encargo del cliente (por el bot)</div>' + body;
 }
 function pintarHeader() {
   const c = convData; if (!c) return;
@@ -1089,6 +1227,104 @@ async function confirmarPedidoCaja() {
   if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo confirmar')); return; }
   vaciarPedido();
   alert('✅ Pedido enviado a caja (#' + d.id + ' · ' + fmtPrecio(d.total) + ').');
+}
+
+/* ── Cerrar transacción (Fase A — prototipo, sin persistencia: las columnas del
+      pedido las agrega Cline; acá solo la UI + lógica client-side) ── */
+function toggleCerrarTx() {
+  if (!convAbierta) return;
+  const c = document.getElementById('cerrarTxCard');
+  c.style.display = c.style.display === 'none' ? 'block' : 'none';
+}
+function txFormaChange() {
+  const f = document.getElementById('txForma').value;
+  let h = '';
+  if (f === 'link_mp') h =
+    `<input id="txLink" placeholder="pegá el link MP" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">
+     <button onclick="txPegarChat(document.getElementById('txLink').value)" class="hbtn" style="font-size:11px;padding:5px 9px;border-radius:8px;">Pegar link al chat</button>
+     <input id="txNroOp" placeholder="nro de operación MP" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
+  else if (f === 'transferencia') h =
+    `<button onclick="txPegarChat(ALIAS_FARMACIA)" class="hbtn" style="font-size:11px;padding:5px 9px;border-radius:8px;">Mandar alias al chat</button>
+     <input id="txNroOp" placeholder="nro / comprobante" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
+  else if (f === 'efectivo') h =
+    `<input id="txPagaCon" type="number" min="0" oninput="txCalc()" placeholder="¿con cuánto paga? $" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
+  else if (f === 'tarjeta') h =
+    `<div style="display:flex;gap:6px;">
+       <input id="txUlt4" maxlength="4" placeholder="últ. 4" class="input" style="width:70px;border-radius:8px;padding:6px 9px;font-size:12px;">
+       <input id="txTarjNombre" placeholder="titular" class="input" style="flex:1;border-radius:8px;padding:6px 9px;font-size:12px;">
+       <select id="txMarca" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;"><option>Visa</option><option>Master</option><option>Amex</option></select>
+     </div>`;
+  document.getElementById('txFormaExtra').innerHTML = h;
+  txCalc();
+}
+const ALIAS_FARMACIA = 'farmacia.badia.mp';  // TODO: traer de config
+function txStockChange() {
+  document.getElementById('txDrogueria').style.display =
+    document.getElementById('txStock').value === 'esperar' ? 'block' : 'none';
+}
+function txSalidaChange() {
+  document.getElementById('txEnvioWrap').style.display =
+    document.getElementById('txSalida').value === 'reparto' ? 'block' : 'none';
+  txCalc();
+}
+function _txVal(id) { const e = document.getElementById(id); return e ? e.value : ''; }
+function txCalc() {
+  const total = parseFloat(_txVal('txTotal')) || 0;
+  const reparto = _txVal('txSalida') === 'reparto';
+  const envio = reparto ? (parseFloat(_txVal('txEnvio')) || 0) : 0;
+  const aCobrar = total + envio;
+  document.getElementById('txACobrar').textContent = fmtPrecio(aCobrar);
+  const vDiv = document.getElementById('txVuelto');
+  if (_txVal('txForma') === 'efectivo') {
+    const pagaCon = parseFloat(_txVal('txPagaCon')) || 0;
+    const vuelto = pagaCon - aCobrar;
+    vDiv.style.display = 'block';
+    vDiv.textContent = pagaCon ? `Paga con ${fmtPrecio(pagaCon)} → vuelto ${fmtPrecio(vuelto)}` : '';
+    vDiv.style.color = vuelto < 0 ? '#ef4444' : '';
+  } else { vDiv.style.display = 'none'; }
+}
+async function txPegarChat(t) {
+  if (!t || !convAbierta) return;
+  await fetch(`/atencion/${convAbierta}/responder`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto: t})
+  });
+  await refrescarChat(false);
+}
+async function txCotizarEnvio() {
+  try {
+    const doms = (await (await fetch(`/atencion/api/${convAbierta}/domicilios`)).json()).domicilios || [];
+    if (!doms.length) { alert('El cliente no tiene domicilio cargado todavía.'); return; }
+  } catch(e) {}
+  // TODO: enganchar con la cotización de /config/envio (Cline namespacing). Por
+  // ahora se carga el envío a mano.
+  alert('Cotización automática: pendiente de enganchar con /config/envio. Cargá el envío a mano por ahora.');
+}
+function txCerrar() {
+  const total = parseFloat(_txVal('txTotal')) || 0;
+  if (!total) { alert('Cargá el total de ObServer.'); return; }
+  if (!_txVal('txForma')) { alert('Elegí la forma de pago.'); return; }
+  const reparto = _txVal('txSalida') === 'reparto';
+  const payload = {
+    total,
+    forma_pago: _txVal('txForma'),
+    paga_con: _txVal('txPagaCon') || null,
+    vuelto: _txVal('txForma') === 'efectivo' ? ((parseFloat(_txVal('txPagaCon'))||0) - (total + (reparto ? (parseFloat(_txVal('txEnvio'))||0) : 0))) : null,
+    link_mp: _txVal('txLink') || null,
+    dato_pago_mp: _txVal('txNroOp') || null,
+    tarjeta_ult4: _txVal('txUlt4') || null,
+    obra_social: _txVal('txOS') || null,
+    requiere_receta: _txVal('txReceta'),
+    stock: _txVal('txStock'),
+    drogueria: _txVal('txDrogueria') || null,
+    destino: _txVal('txSalida'),
+    envio_costo: reparto ? (parseFloat(_txVal('txEnvio')) || 0) : 0,
+    prioridad: _txVal('txPrioridad'),
+  };
+  console.log('TX payload (prototipo):', payload);
+  // TODO: cuando Cline agregue las columnas a PedidoReparto, POST a
+  // /atencion/<id>/cerrar-transaccion para persistir el pedido + mandar a caja.
+  alert('✅ Prototipo — transacción capturada:\n\n' + JSON.stringify(payload, null, 2) +
+        '\n\n(Pendiente: persistir cuando estén las columnas de Cline.)');
 }
 
 function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }

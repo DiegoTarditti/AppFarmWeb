@@ -296,7 +296,13 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
                         nodo_actual, busqueda.get('esperando'), False)
             ia = ACCIONES.get('consulta_ia')
             if ia:
-                return ({'texto': ia(texto, historial), 'opciones': [],
+                out = ia(texto, historial)
+                # La IA puede pedir derivar (tool derivar_a_humano) → dict con flag.
+                if isinstance(out, dict):
+                    return ({'texto': out.get('texto', ''), 'opciones': [],
+                             'meta': out.get('meta', {'camino': 'consulta_ia', 'resuelto': True})},
+                            nodo_actual, None, out.get('derivar', False))
+                return ({'texto': out, 'opciones': [],
                          'meta': {'camino': 'consulta_ia', 'resuelto': True}},
                         nodo_actual, None, False)
         return ({'texto': 'No te entendí 🤔 Escribí "menú" para ver las opciones.',
