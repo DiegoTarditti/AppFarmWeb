@@ -144,6 +144,43 @@ def test_magistral_sin_receta_pide_preparar_y_deriva():
     assert store.get_conversacion('telegram', 'magsinreceta')['estado_atencion'] == 'cola'
 
 
+# ── IA con tool de derivar (sin pegarle a la API: client mockeado) ───────────
+
+def test_ia_conversar_con_tool_deriva():
+    from bot import ia
+
+    class _B:
+        def __init__(self, **k): self.__dict__.update(k)
+
+    class _Resp:
+        stop_reason = 'tool_use'
+        content = [_B(type='text', text='Te paso con alguien del equipo 🙂'),
+                   _B(type='tool_use', name='derivar_a_humano', id='t1', input={'motivo': 'reclamo'})]
+
+    class _Msgs:
+        def create(self, **kw): return _Resp()
+
+    class _Client:
+        def __init__(self): self.messages = _Msgs()
+
+    out = ia._conversar_con_tool(_Client(), 'sys', [{'role': 'user', 'content': 'tengo un reclamo'}],
+                                 tools=ia.TOOLS + [ia.DERIVAR_TOOL])
+    assert isinstance(out, dict) and out.get('derivar') is True
+    assert 'alguien' in out['texto'].lower() and out['motivo'] == 'reclamo'
+
+
+def test_cerebro_deriva_cuando_la_ia_lo_pide(monkeypatch):
+    # "esto es un reclamo grave" no dispara las keywords de _quiere_humano; si la
+    # IA decide derivar (dict con derivar:True), el cerebro hace el handoff igual.
+    from bot.cerebro import _quiere_humano
+    assert not _quiere_humano('esto es un reclamo grave')   # keywords no lo captan
+    monkeypatch.setitem(bot.acciones.ACCIONES, 'consulta_ia',
+                        lambda *a, **k: {'texto': 'Te paso con alguien 🙂', 'derivar': True,
+                                         'meta': {'camino': 'consulta_ia', 'resuelto': False}})
+    resp, nodo, esp, deriv = _resolver('consulta_ia', 'consulta_ia', 'esto es un reclamo grave', None, IMG)
+    assert deriv is True and 'alguien' in resp['texto'].lower()
+
+
 def test_encargar_captura_y_deriva(monkeypatch):
     monkeypatch.setattr(bot.acciones, 'buscar_productos', lambda *a, **k: [])
     resp, nodo, esp, deriv = _resolver('encargar', 'encargar', '2 cajas de amoxidal', None, IMG)
