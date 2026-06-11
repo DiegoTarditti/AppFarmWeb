@@ -267,10 +267,14 @@ volumen, sin fallidos).
 
 ---
 
-## 15. Decisiones abiertas
+## 15. Decisiones
 
-- ¿La venta de ObServer se **re-registra a mano** en /atencion, o hay/habrá
-  **lectura/integración** que la trae? (define si el reparto arranca de cero o hereda).
+- ✅ **RESUELTO — La venta de ObServer se re-registra A MANO en /atencion.** El
+  operador tipea los datos (total de ObServer, pago, destino, OS/receta); el pedido
+  de AppFarmWeb arranca **de cero**, no hereda de ObServer. Una lectura/integración
+  queda como **mejora futura** (no ahora).
+
+### Abiertas
 - Cambio de destino que agrega envío: ¿se le pide la **diferencia** al cliente o la
   farmacia **absorbe** (tolerancia)?
 - Ticket térmico: ¿cuándo imprime (al cobrar / al cerrar planilla / botón manual)?
