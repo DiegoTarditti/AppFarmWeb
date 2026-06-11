@@ -102,10 +102,12 @@ PERFILES_PATHS_COMUNES = ('/home', '/login', '/logout', '/cambiar-password',
                           '/api/sync-status', '/api/presencia')
 
 # Migración de roles viejos (uno por usuario) → lista de perfiles equivalente.
+# IMPORTANTE: NO incluir 'operador' acá. 'operador' es el rol canónico actual
+# de todos los operadores; si entra en este dict, migrar_roles_a_perfiles() lo
+# pisa en cada restart con ["chat_clientes"] y borra los perfiles reales.
 ROL_LEGACY_A_PERFILES = {
     'rendicion': ['rendicion'],
     'auditor': ['audit_recetas'],
-    'operador': ['chat_clientes'],
     'cajero': ['chat_clientes'],   # caja se hereda desde chat_clientes
     'pedidos': ['pedidos_drog'],
 }
@@ -139,12 +141,38 @@ def prefijos_permitidos(user):
     return pref
 
 
+def _filtro_drogueria_url():
+    """URL del botón 'Filtro Droguería' según la sucursal local.
+
+    Badia (y cualquier farmacia sin las vistas DW.Pedidos expuestas) usa
+    el filtro por archivo subido; Pieri y similares usan el filtro por SQL.
+    Resuelve via services.transferencias._local_slug (tabla `sucursales`).
+    Si no se puede determinar, default al filtro por archivo (más conservador:
+    siempre funciona, no depende del DW).
+    """
+    try:
+        from services.transferencias import _local_slug, listar_sucursales
+        slug = _local_slug(listar_sucursales())
+    except Exception:
+        slug = None
+    # Sucursales con SQL Pedidos funcional → SQL. Resto → archivo.
+    return '/filtro-drogueria' if slug == 'pieri' else '/filtro-drogueria/archivo'
+
+
 def botones_home(user):
     """Botones del home para el usuario: [{slug, label, icono, url}] en el orden
     del registro PERFILES."""
     mis = set(perfiles_de_usuario(user))
-    return [{'slug': s, **{k: PERFILES[s][k] for k in ('label', 'icono', 'url')}}
-            for s in PERFILES if s in mis]
+    out = []
+    for s in PERFILES:
+        if s not in mis:
+            continue
+        url = PERFILES[s]['url']
+        if s == 'filtro_drogueria':
+            url = _filtro_drogueria_url()
+        out.append({'slug': s, 'label': PERFILES[s]['label'],
+                    'icono': PERFILES[s]['icono'], 'url': url})
+    return out
 
 
 def migrar_roles_a_perfiles():
