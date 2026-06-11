@@ -95,6 +95,55 @@ def test_compra_flujo_os_receta_deriva():
     assert store.get_conversacion('telegram', 'compratest')['estado_atencion'] == 'cola'
 
 
+def test_compra_con_stock_pregunta_os(monkeypatch):
+    # Producto en stock → muestra precio + pasa a preguntar obra social.
+    monkeypatch.setattr(cerebro, 'buscar_productos',
+                        lambda *a, **k: [{'producto': 'IBUPROFENO 600', 'precio': 3000,
+                                          'stock': 50, 'observer_id': 1}])
+    conv = store.get_conversacion('telegram', 'comprastock', nombre='A')
+    r = cerebro._flujo_compra(conv['id'], 'compra_producto', None, 'ibuprofeno', None)
+    assert 'IBUPROFENO 600' in r['texto'] and 'obra social' in r['texto'].lower()
+
+
+def test_compra_sin_stock_ofrece_encargo(monkeypatch):
+    # Sin stock → ofrece encargo; "Sí, encargámelo" → sigue a obra social.
+    monkeypatch.setattr(cerebro, 'buscar_productos',
+                        lambda *a, **k: [{'producto': 'RARO', 'precio': 100,
+                                          'stock': 0, 'observer_id': 1}])
+    conv = store.get_conversacion('telegram', 'compranostock', nombre='A')
+    cid = conv['id']
+    r = cerebro._flujo_compra(cid, 'compra_producto', None, 'algo raro', None)
+    assert 'encarg' in r['texto'].lower()
+    r2 = cerebro._flujo_compra(cid, 'compra_encargo', None, 'Sí, encargámelo', None)
+    assert 'obra social' in r2['texto'].lower()
+
+
+def test_compra_os_si_pide_cual():
+    # compra_os "Sí" → pregunta cuál es la obra social (omitible).
+    conv = store.get_conversacion('telegram', 'compraoscual', nombre='A')
+    r = cerebro._flujo_compra(conv['id'], 'compra_os', None, 'Sí', None)
+    assert 'obra social' in r['texto'].lower()
+
+
+def test_compra_escape_menu_y_humano_no_atrapan():
+    # "menú" o pedido de humano a mitad del flujo → _flujo_compra devuelve None
+    # (lo maneja el flujo normal / el handoff), no queda atrapado.
+    conv = store.get_conversacion('telegram', 'compraescape', nombre='A')
+    cid = conv['id']
+    assert cerebro._flujo_compra(cid, 'compra_os', None, 'menú', None) is None
+    assert cerebro._flujo_compra(cid, 'compra_receta', None, 'quiero hablar con una persona', None) is None
+
+
+def test_magistral_sin_receta_pide_preparar_y_deriva():
+    conv = store.get_conversacion('telegram', 'magsinreceta', nombre='A')
+    cid = conv['id']
+    r = cerebro._flujo_compra(cid, 'magistral_receta', None, 'No', None)
+    assert 'preparar' in r['texto'].lower()
+    r2 = cerebro._flujo_compra(cid, 'magistral_preparar', None, 'crema con clobetasol', None)
+    assert 'equipo' in r2['texto'].lower()
+    assert store.get_conversacion('telegram', 'magsinreceta')['estado_atencion'] == 'cola'
+
+
 def test_encargar_captura_y_deriva(monkeypatch):
     monkeypatch.setattr(bot.acciones, 'buscar_productos', lambda *a, **k: [])
     resp, nodo, esp, deriv = _resolver('encargar', 'encargar', '2 cajas de amoxidal', None, IMG)
