@@ -29,7 +29,11 @@ from flask_login import login_required
 
 import database
 from database import (
-    KellerhoffCatalogo, Laboratorio, LaboratorioDrogueria, Producto, Provider,
+    KellerhoffCatalogo,
+    Laboratorio,
+    LaboratorioDrogueria,
+    Producto,
+    Provider,
     get_db,
 )
 from helpers import drogueria_defaults, get_config
