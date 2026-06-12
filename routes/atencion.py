@@ -277,10 +277,16 @@ def init_app(app):
             if body.get('forma_pago') == 'efectivo' and paga_con is not None:
                 vuelto_str = str(int(round(paga_con - ((total or 0) + (envio or 0)))))
 
+            # Teléfono (se muestra en la planilla): si el pedido vino del chat, en
+            # WhatsApp el canal_user_id ES el teléfono; si no, de la ficha del cliente.
+            telefono = (ficha.get('telefono') if ficha else None) or \
+                (conv.canal_user_id if conv.canal == 'whatsapp' else None)
+
             p = database.PedidoReparto(
                 fecha=database.now_ar().date(),
                 cliente_id=conv.cliente_id,
                 cliente_nombre=(ficha['nombre'] if ficha else None) or conv.nombre_cliente,
+                telefono=telefono,
                 direccion=dom.get('direccion'),
                 piso=dom.get('piso'),
                 depto=dom.get('depto'),

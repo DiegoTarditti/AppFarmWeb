@@ -99,6 +99,7 @@
       <th style="width:30px;">#</th>
       <th style="min-width:130px;">Cliente</th>
       <th style="min-width:160px;">Dirección</th>
+      <th style="min-width:110px;">Teléfono</th>
       <th style="width:70px;">Envío $</th>
       <th style="width:100px;">Tomó</th>
       <th style="width:80px;">Importe</th>
@@ -147,6 +148,9 @@
           <a href="{{ _maps_url }}" target="_blank" rel="noopener" class="btn-maps"
              title="Abrir en Google Maps">📍</a>
         {% endif %}
+      </td>
+      <td style="font-size:11px; color:var(--muted);">
+        {% if p.telefono %}<a href="tel:{{ p.telefono }}" style="color:var(--accenttxt);">📞 {{ p.telefono }}</a>{% else %}—{% endif %}
       </td>
       <td class="celda-editable" data-campo="envio_costo" data-tipo="text">
         <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
@@ -224,7 +228,7 @@
     </tr>
     {% endfor %}
     {% if not pedidos %}
-    <tr><td colspan="17" class="sin-pedidos">Sin pedidos</td></tr>
+    <tr><td colspan="18" class="sin-pedidos">Sin pedidos</td></tr>
     {% endif %}
   </tbody>
 </table>
