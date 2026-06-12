@@ -240,10 +240,15 @@ def init_app(app):
                     if prov:
                         drogueria_id = prov.id
 
-        # Datos del cliente y del último domicilio elegido (libreta).
+        # Datos del cliente y el domicilio ELEGIDO en el modal (cuando el cliente
+        # tiene varias direcciones). Si no vino domicilio_id, cae al más reciente
+        # (cliente con una sola dirección).
         ficha = store.get_ficha_de_conversacion(conv_id)
-        doms = store.listar_domicilios(conv_id)
-        dom = doms[0] if doms else {}
+        dom = (store.get_domicilio(body['domicilio_id'])
+               if body.get('domicilio_id') else None) or {}
+        if not dom:
+            doms = store.listar_domicilios(conv_id)
+            dom = doms[0] if doms else {}
 
         # Operador que cierra (para el campo `tomo`).
         oper = (getattr(current_user, 'nombre_completo', None)
@@ -266,6 +271,12 @@ def init_app(app):
             except (TypeError, ValueError):
                 envio = None
 
+            # Vuelto recalculado server-side (no se confía del valor del cliente):
+            # solo aplica a efectivo. vuelto = pagaCon − (total + envío).
+            vuelto_str = None
+            if body.get('forma_pago') == 'efectivo' and paga_con is not None:
+                vuelto_str = str(int(round(paga_con - ((total or 0) + (envio or 0)))))
+
             p = database.PedidoReparto(
                 fecha=database.now_ar().date(),
                 cliente_id=conv.cliente_id,
@@ -281,7 +292,7 @@ def init_app(app):
                 total_paciente=total,         # cobrado al paciente (idem si no hay cobertura)
                 forma_pago=body.get('forma_pago') or None,
                 paga_con=paga_con,
-                vuelto=(str(body['vuelto']) if body.get('vuelto') is not None else None),
+                vuelto=vuelto_str,
                 link_mp=body.get('link_mp') or None,
                 dato_pago_mp=body.get('dato_pago_mp') or None,
                 tarjeta_ult4=body.get('tarjeta_ult4') or None,

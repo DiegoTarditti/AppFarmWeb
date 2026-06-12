@@ -270,6 +270,8 @@
                 </div>
               </div>
               <div id="txEnvioWrap">
+                <label class="muted2" style="font-size:10px;">Domicilio de entrega</label>
+                <select id="txDomicilio" class="input" style="width:100%; margin-bottom:8px; border-radius:8px; padding:6px 9px; font-size:12px;"></select>
                 <label class="muted2" style="font-size:10px;">Envío</label>
                 <div style="display:flex; gap:6px; align-items:center;">
                   <input id="txEnvio" type="number" min="0" oninput="txCalc()" placeholder="$" class="input" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">
@@ -1233,10 +1235,27 @@ async function confirmarPedidoCaja() {
 
 /* ── Cerrar transacción (Fase A — prototipo, sin persistencia: las columnas del
       pedido las agrega Cline; acá solo la UI + lógica client-side) ── */
-function toggleCerrarTx() {
+async function toggleCerrarTx() {
   if (!convAbierta) return;
   const c = document.getElementById('cerrarTxCard');
-  c.style.display = c.style.display === 'none' ? 'block' : 'none';
+  const abriendo = c.style.display === 'none';
+  c.style.display = abriendo ? 'block' : 'none';
+  if (abriendo) await txCargarDomicilios();
+}
+// Carga el dropdown de domicilios del cliente. Con varias direcciones, fuerza
+// elección explícita (no asume la primera) → el pedido sale a la dirección correcta.
+async function txCargarDomicilios() {
+  const sel = document.getElementById('txDomicilio');
+  if (!sel) return;
+  let ds = [];
+  try { ds = (await (await fetch(`/atencion/api/${convAbierta}/domicilios`)).json()).domicilios || []; } catch (e) {}
+  sel.dataset.n = ds.length;
+  if (!ds.length) {
+    sel.innerHTML = '<option value="">(sin domicilio cargado)</option>';
+    return;
+  }
+  const opts = ds.map(d => `<option value="${d.id}">${esc((d.etiqueta ? d.etiqueta + ' — ' : '') + (d.direccion || 'ubicación 📍'))}</option>`).join('');
+  sel.innerHTML = (ds.length > 1 ? '<option value="">— elegí el domicilio —</option>' : '') + opts;
 }
 function txFormaChange() {
   const f = document.getElementById('txForma').value;
@@ -1318,10 +1337,17 @@ async function txCerrar() {
   if (!total) { alert('Cargá el total de ObServer.'); return; }
   if (!_txVal('txForma')) { alert('Elegí la forma de pago.'); return; }
   const reparto = _txVal('txSalida') === 'reparto';
+  const domSel = document.getElementById('txDomicilio');
+  // Si va por reparto y el cliente tiene VARIAS direcciones, exigir elegir cuál.
+  if (reparto && domSel && Number(domSel.dataset.n || 0) > 1 && !domSel.value) {
+    alert('El cliente tiene varias direcciones — elegí a cuál va el envío.'); return;
+  }
   const payload = {
     total,
+    domicilio_id: (domSel && domSel.value) ? Number(domSel.value) : null,
     forma_pago: _txVal('txForma'),
     paga_con: _txVal('txPagaCon') || null,
+    // El vuelto lo recalcula el backend (no se confía del cliente). Se manda igual de referencia.
     vuelto: _txVal('txForma') === 'efectivo' ? ((parseFloat(_txVal('txPagaCon'))||0) - (total + (reparto ? (parseFloat(_txVal('txEnvio'))||0) : 0))) : null,
     link_mp: _txVal('txLink') || null,
     dato_pago_mp: _txVal('txNroOp') || null,
