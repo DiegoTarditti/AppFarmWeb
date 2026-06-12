@@ -697,6 +697,26 @@ class PedidoReparto(Base):
     publicado_en = Column(DateTime, nullable=True)
     tomado_por_wsap = Column(String(80), nullable=True)
     tomado_en = Column(DateTime, nullable=True)
+    # ── Cerrar transacción (Fase A, spec docs/fase_a_transaccion.md) ─────────
+    # Datos capturados por el operador en /atencion antes de mandar a caja.
+    # El `importe` viejo es el total bruto desde ObServer; `total_paciente` es lo
+    # que efectivamente se cobra al paciente (0 si PAMI cubre todo + retiro, etc.).
+    total_paciente = Column(DECIMAL(12, 2), nullable=True)
+    paga_con = Column(DECIMAL(12, 2), nullable=True)              # efectivo: "¿con cuánto paga?"
+    link_mp = Column(Text, nullable=True)                         # link de Mercado Pago
+    dato_pago_mp = Column(Text, nullable=True)                    # nro de op MP / transferencia
+    tarjeta_ult4 = Column(String(4), nullable=True)               # SOLO últimos 4 — nunca PAN completo
+    tarjeta_nombre = Column(String(80), nullable=True)
+    tarjeta_marca = Column(String(20), nullable=True)             # Visa / Master / Amex
+    obra_social = Column(String(40), nullable=True)               # PAMI, IOMA, ... (opcional)
+    requiere_firma = Column(Boolean, nullable=False, default=False, server_default='false')
+    # `receta_estado` reemplaza al booleano `requiere_receta` con 3 valores
+    # ('no'|'pendiente'|'recibida'). Mantenemos el bool por retrocompat con planilla vieja.
+    receta_estado = Column(String(15), nullable=True)
+    stock_status = Column(String(20), nullable=True)              # 'hay' | 'esperar'
+    drogueria_id = Column(Integer, ForeignKey('proveedores.id', ondelete='SET NULL'),
+                          nullable=True, index=True)              # si stock_status='esperar'
+    destino = Column(String(10), nullable=True)                   # 'reparto' | 'retiro' (mutable)
 
 
 class ObsSyncLog(Base):
@@ -4588,6 +4608,24 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS piso VARCHAR(20)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS depto VARCHAR(20)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS referencia VARCHAR(200)",
+        # ── Cerrar transacción (Fase A — docs/fase_a_transaccion.md) ─────────
+        # Captura pago + cobertura + destino + stock desde /atencion antes de
+        # mandar a caja. Solo agregar columnas (no romper datos existentes).
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS total_paciente DECIMAL(12,2)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS paga_con DECIMAL(12,2)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS link_mp TEXT",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS dato_pago_mp TEXT",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tarjeta_ult4 VARCHAR(4)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tarjeta_nombre VARCHAR(80)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tarjeta_marca VARCHAR(20)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS obra_social VARCHAR(40)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS requiere_firma BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS receta_estado VARCHAR(15)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS stock_status VARCHAR(20)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS drogueria_id INTEGER REFERENCES proveedores(id) ON DELETE SET NULL",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS destino VARCHAR(10)",
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_drogueria ON pedidos_reparto(drogueria_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_destino ON pedidos_reparto(destino)",
     ]:
         conn.execute(text(stmt))
     # Token para link móvil del cadete (vista de reparto sin login)
