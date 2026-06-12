@@ -80,9 +80,11 @@ PERFILES = {
     'planilla_envios': {
         'label': 'Planilla Envíos', 'icono': '🛵',
         'url': '/reparto/planilla',
+        # '/rutas' y '/cadetes' = definir zonas/cadetes desde el panel de reparto.
         # '/api/clientes' y '/config/envio' los usa el cliente_picker si edita
         # un pedido desde la planilla; el cotizador también.
-        'prefijos': ['/reparto', '/api/reparto', '/api/clientes', '/config/envio'],
+        'prefijos': ['/reparto', '/api/reparto', '/rutas', '/cadetes',
+                     '/api/clientes', '/config/envio'],
     },
     'filtro_drogueria': {
         'label': 'Filtro Droguería', 'icono': '⊞',
