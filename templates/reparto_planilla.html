@@ -27,6 +27,11 @@
   .nav-fecha button:hover { background:var(--surface); }
 
   /* Tabla */
+  /* Botón Maps al lado de la dirección. Píldora chiquita con pin. */
+  .btn-maps { display:inline-block; margin-left:5px; padding:1px 6px; font-size:11px;
+              text-decoration:none; border-radius:999px; background:rgba(29,158,117,.18);
+              color:var(--accent); border:1px solid rgba(29,158,117,.35); cursor:pointer; }
+  .btn-maps:hover { background:var(--accent); color:var(--accent-ink); }
   .planilla-table { width:100%; border-collapse:collapse; font-size:12px; }
   .planilla-table th { background:var(--surface); color:var(--title); font-weight:600; padding:8px 6px;
                        text-align:left; border-bottom:1px solid var(--border); white-space:nowrap;
@@ -113,7 +118,19 @@
     <tr class="{{ row_class }}" data-pid="{{ p.id }}">
       <td style="font-weight:700; color:var(--muted2);">{{ inicio_num + loop.index0 + 1 }}</td>
       <td><b style="color:var(--title);">{{ p.cliente_nombre or 's/cliente' }}</b></td>
-      <td style="font-size:11px; color:var(--muted);">{{ p.direccion or '' }}</td>
+      <td style="font-size:11px; color:var(--muted);">
+        {{ p.direccion or '' }}
+        {% if p.direccion %}
+          {# Link a Google Maps: si hay coords usa lat,lng (preciso); si no, busca por dirección. #}
+          {% if p.lat is not none and p.lng is not none %}
+            {% set _maps_url = 'https://www.google.com/maps?q=' ~ p.lat ~ ',' ~ p.lng %}
+          {% else %}
+            {% set _maps_url = 'https://www.google.com/maps/search/?api=1&query=' ~ (p.direccion ~ ' Rosario')|urlencode %}
+          {% endif %}
+          <a href="{{ _maps_url }}" target="_blank" rel="noopener" class="btn-maps"
+             title="Abrir en Google Maps">📍</a>
+        {% endif %}
+      </td>
       <td class="celda-editable" data-campo="envio_costo" data-tipo="text">
         <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
       </td>
