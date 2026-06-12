@@ -436,3 +436,37 @@ def test_reparto_editar_cliente(client):
         assert c.telefono == '341-999'
         assert c.ciudad == 'Rosario'
         assert c.nombre == 'Ana'  # no se pisó
+
+
+def test_ticket_data(client):
+    """GET /reparto/pedido/<id>/ticket arma el payload del ticket del cadete."""
+    import database
+    with database.get_db() as s:
+        p = database.PedidoReparto(
+            cliente_nombre='María González', telefono='341-555-1234',
+            direccion='Av. Córdoba 3400', piso='3', depto='B',
+            observacion='recetas 3, TRAER PANTUS', receta_estado='pendiente',
+            total_paciente=12500, envio_costo=500, pagado=False,
+            forma_pago='efectivo', paga_con=15000, vuelto='2000')
+        s.add(p)
+        s.commit()
+        pid = p.id
+    d = client.get(f'/reparto/pedido/{pid}/ticket').get_json()
+    assert d['cliente'] == 'María González'
+    assert d['telefono'] == '341-555-1234'
+    assert d['receta_pendiente'] is True
+    assert d['cobrar'] == 13000      # producto 12500 + envío 500
+    assert d['vuelto'] == '2000'
+
+
+def test_ticket_data_pagado_no_cobra(client):
+    """Si el pedido está pagado, cobrar=None (el cadete no cobra)."""
+    import database
+    with database.get_db() as s:
+        p = database.PedidoReparto(cliente_nombre='X', direccion='Y',
+                                   total_paciente=9000, envio_costo=500, pagado=True)
+        s.add(p)
+        s.commit()
+        pid = p.id
+    d = client.get(f'/reparto/pedido/{pid}/ticket').get_json()
+    assert d['pagado'] is True and d['cobrar'] is None

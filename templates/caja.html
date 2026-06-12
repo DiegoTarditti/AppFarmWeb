@@ -284,6 +284,10 @@ function pedidoCard(p) {
   const accion = (tabActiva === 'por_cobrar')
     ? `<div style="margin-top:8px;"><button onclick="cobrarPedido(${p.id})" class="hbtn hbtn-ok" style="width:100%;">${txtAccion}</button></div>`
     : '';
+  // Despachado (bandeja cadetes): imprimir el ticket que se lleva el cadete (térmica 80mm).
+  const accionCadete = (tabActiva === 'cadetes')
+    ? `<div style="margin-top:8px;"><button onclick="imprimirTicket(${p.id})" class="hbtn" style="width:100%;">🖨️ Ticket cadete</button></div>`
+    : '';
   return `<div class="card">
     <div class="card-head">
       <span class="title" style="font-weight:600; font-size:13px;">${prio} ${esc(p.cliente || 'Sin nombre')}</span>
@@ -300,8 +304,33 @@ function pedidoCard(p) {
         <span class="total">${fmt(p.total)}</span>
       </div>
       ${accion}
+      ${accionCadete}
     </div>
   </div>`;
+}
+
+// ── Ticket del cadete (térmica 80mm vía DockerPanel local) ──────────────────
+// El browser de la farmacia: 1) pide los datos a Render, 2) los postea al helper
+// HTTP local (localhost:5055) que imprime con ESC/POS. Si el panel está cerrado
+// o la impresora falla, avisa sin romper.
+async function imprimirTicket(id) {
+  let data;
+  try {
+    data = await (await fetch(`/reparto/pedido/${id}/ticket`)).json();
+    if (data.error) { alert('⚠️ ' + data.error); return; }
+  } catch (e) { alert('No se pudo obtener el pedido desde el servidor.'); return; }
+  try {
+    const r = await fetch('http://localhost:5055/print-ticket', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const d = await r.json();
+    if (d.ok) alert('🖨️ Ticket enviado a la impresora.');
+    else alert('⚠️ Impresora: ' + (d.error || 'no se pudo imprimir'));
+  } catch (e) {
+    alert('No hay conexión con el panel local (DockerPanel). Abrilo en la PC de la '
+        + 'farmacia y revisá que la térmica esté encendida.');
+  }
 }
 
 async function cobrarPedido(id) {
