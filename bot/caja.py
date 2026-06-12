@@ -118,6 +118,94 @@ def listar_tickets(incluir_cerrados=False):
         return [_ticket_dict(s, t) for t in ts]
 
 
+# ── Bandejas de la nueva caja (sobre PedidoReparto / flujo Cerrar transacción) ──
+# 3 vistas para el cajero según en qué etapa está el pedido:
+#   - por_cobrar : llegan de /atencion al cerrar la TX (estado=en_caja).
+#   - cadetes    : ya cobrados, esperando publicación al grupo o cadete que retire.
+#   - drogueria  : sin stock, esperando que llegue la factura de la droguería.
+
+def _pedido_dict(p):
+    """Resumen del pedido para las bandejas de caja (cero datos sensibles
+    como vuelto/notas internas, el cajero no los necesita acá)."""
+    return {
+        'id': p.id,
+        'cliente': p.cliente_nombre,
+        'direccion': p.direccion,
+        'piso': p.piso, 'depto': p.depto, 'referencia': p.referencia,
+        'total': float(p.total_paciente) if p.total_paciente is not None else None,
+        'forma_pago': p.forma_pago,
+        'dato_pago_mp': p.dato_pago_mp,    # para que el cajero pegue el TXT en ObServer
+        'destino': p.destino,
+        'stock': p.stock_status,
+        'drogueria_id': p.drogueria_id,
+        'obra_social': p.obra_social,
+        'receta': p.receta_estado,
+        'firma': bool(p.requiere_firma),
+        'envio': float(p.envio_costo) if p.envio_costo is not None else None,
+        'estado': p.estado,
+        'canal': p.canal,
+        'prioridad': p.prioridad,
+        'tomo': p.tomo,
+        'creado_en': p.creado_en.isoformat() if p.creado_en else None,
+    }
+
+
+def cobrar_pedido(pedido_id, cajero_nombre=None):
+    """Marca el pedido como pagado y lo mueve al siguiente estado según destino.
+
+    Siempre se cobra por adelantado (incluso si está esperando droguería):
+      - stock='esperar' → estado='esperando_drog' (cobrado, queda en standby).
+      - destino='reparto' → estado='en_planilla' (sale por reparto).
+      - destino='retiro'  → estado='para_retiro'  (queda guardado para que venga).
+      - destino vacío     → default 'para_retiro' (conservador, lo retomamos a mano).
+    """
+    P = database.PedidoReparto
+    with database.get_db() as s:
+        p = s.get(P, pedido_id)
+        if not p:
+            return {'ok': False, 'error': 'pedido no existe'}
+        if p.pagado:
+            return {'ok': False, 'error': 'ya está cobrado'}
+        p.pagado = True
+        if p.stock_status == 'esperar':
+            p.estado = 'esperando_drog'
+        elif p.destino == 'reparto':
+            p.estado = 'en_planilla'
+        elif p.destino == 'retiro':
+            p.estado = 'para_retiro'
+        else:
+            p.estado = 'para_retiro'
+        # `entregado_por` / `recibio` no aplican acá (son del cadete); el cajero
+        # queda implícito por el timestamp. Si más adelante hace falta auditar
+        # quién cobró, agregamos columna `cobrado_por` + `cobrado_en`.
+        s.commit()
+        return {'ok': True, 'pedido_id': p.id, 'estado': p.estado, 'pagado': True}
+
+
+def listar_bandeja(name, limit=100):
+    """Lista pedidos para una de las 3 bandejas de caja.
+
+    `name`: 'por_cobrar' | 'cadetes' | 'drogueria'.
+    Devuelve [] si name desconocido (el frontend muestra empty state).
+    """
+    P = database.PedidoReparto
+    with database.get_db() as s:
+        q = s.query(P)
+        if name == 'por_cobrar':
+            q = q.filter(P.estado == 'en_caja')
+        elif name == 'cadetes':
+            # Cobrado y esperando ser publicado al grupo, o ya publicado.
+            q = q.filter(P.estado.in_(('en_planilla', 'publicado')))
+        elif name == 'drogueria':
+            # Esperando ingreso de droguería (cualquier estado activo).
+            q = q.filter(P.stock_status == 'esperar',
+                         P.estado.notin_(('entregado', 'anulado')))
+        else:
+            return []
+        rows = q.order_by(P.creado_en.desc()).limit(limit).all()
+        return [_pedido_dict(p) for p in rows]
+
+
 def cobrar_ticket(ticket_id, forma_pago, cajero_id):
     with database.get_db() as s:
         t = s.get(database.TicketCaja, ticket_id)

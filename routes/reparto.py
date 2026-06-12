@@ -494,37 +494,20 @@ def init_app(app):
             p = s.get(database.PedidoReparto, pid)
             if not p:
                 return jsonify({'ok': False, 'error': 'no existe'}), 404
-            # Armar texto del mensaje
+            # Armar texto del mensaje. ⚠️ PRIVACIDAD: el grupo de cadetes solo
+            # necesita ubicación para decidir si lo toma. NO mandar nombre, teléfono,
+            # producto, total, forma de pago, vuelto, observación ni receta — todo
+            # ese detalle se le pasa al cadete por chat 1:1 cuando lo tome.
             partes = [f'🚚 *Pedido #{p.id}*']
-            if p.cliente_nombre:
-                partes.append(f'👤 {p.cliente_nombre}')
             if p.direccion:
                 partes.append(f'📍 {p.direccion}')
             if p.lat is not None and p.lng is not None:
                 partes.append(f'🗺️ https://www.google.com/maps?q={p.lat},{p.lng}')
-            partes.append('')  # blank
-            if p.producto:
-                partes.append(f'💊 {p.producto}')
-            if p.observacion:
-                partes.append(f'📝 {p.observacion}')
-            linea_pago = []
-            if p.importe is not None:
-                linea_pago.append(f'$ {float(p.importe):,.0f}'.replace(',', '.'))
-            if p.forma_pago:
-                linea_pago.append(p.forma_pago)
-            if p.vuelto:
-                linea_pago.append(f'({p.vuelto})')
-            if linea_pago:
-                partes.append('💰 ' + ' '.join(linea_pago))
-            if p.envio_costo is not None:
-                partes.append(f'🛵 Envío: $ {float(p.envio_costo):,.0f}'.replace(',', '.'))
             meta = []
             if p.turno:
-                meta.append(p.turno)
-            if p.prioridad and p.prioridad != 'normal':
-                meta.append({'urgente': '🔴 URGENTE', 'programado': '🕐 prog.'}.get(p.prioridad, p.prioridad))
-            if p.requiere_receta:
-                meta.append('📋 con receta')
+                meta.append({'mañana': '🌅 Mañana', 'tarde': '🌆 Tarde'}.get(p.turno, p.turno))
+            if p.prioridad == 'urgente':
+                meta.append('🚨 URGENTE')
             if meta:
                 partes.append(' · '.join(meta))
             partes.append('')
@@ -713,6 +696,7 @@ def init_app(app):
         tarde = [p for p in ps if p.turno == 'tarde']
         return render_template('reparto_planilla.html',
                                fecha=fecha, hoy=database.now_ar().date(),
+                               ahora=database.now_ar(),     # para timers visuales (publicado→tomado)
                                pedidos_manana=manana,
                                pedidos_tarde=tarde,
                                cadetes=cadetes,

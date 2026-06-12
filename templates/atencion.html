@@ -1299,7 +1299,7 @@ async function txCotizarEnvio() {
   // ahora se carga el envío a mano.
   alert('Cotización automática: pendiente de enganchar con /config/envio. Cargá el envío a mano por ahora.');
 }
-function txCerrar() {
+async function txCerrar() {
   const total = parseFloat(_txVal('txTotal')) || 0;
   if (!total) { alert('Cargá el total de ObServer.'); return; }
   if (!_txVal('txForma')) { alert('Elegí la forma de pago.'); return; }
@@ -1320,11 +1320,22 @@ function txCerrar() {
     envio_costo: reparto ? (parseFloat(_txVal('txEnvio')) || 0) : 0,
     prioridad: _txVal('txPrioridad'),
   };
-  console.log('TX payload (prototipo):', payload);
-  // TODO: cuando Cline agregue las columnas a PedidoReparto, POST a
-  // /atencion/<id>/cerrar-transaccion para persistir el pedido + mandar a caja.
-  alert('✅ Prototipo — transacción capturada:\n\n' + JSON.stringify(payload, null, 2) +
-        '\n\n(Pendiente: persistir cuando estén las columnas de Cline.)');
+  try {
+    const r = await fetch(`/atencion/${convAbierta}/cerrar-transaccion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('Error al cerrar: ' + (d.error || 'desconocido')); return; }
+    alert(`✅ Transacción cerrada · Pedido #${d.pedido_id} → ${d.estado}`);
+    // Cerrar el modal y volver a la bandeja.
+    const modal = document.getElementById('txModal');
+    if (modal) modal.style.display = 'none';
+    if (typeof refrescarBandeja === 'function') refrescarBandeja();
+  } catch (e) {
+    alert('Error de red: ' + e.message);
+  }
 }
 
 function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
