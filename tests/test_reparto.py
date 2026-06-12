@@ -89,8 +89,19 @@ def test_export_arma_link(client):
 
 
 def test_paneles_renderizan(client):
-    assert b'Armar reparto' in client.get('/reparto').data
+    # /reparto ahora es el control de envíos por cadete (header + detalle).
+    assert b'Control de env' in client.get('/reparto').data
     assert client.get('/rutas').status_code == 200
+
+
+def test_armado_gateado_por_flag(client, monkeypatch):
+    """El armado por ruta (optimización + mapa) está detrás de REPARTO_OPTIMIZACION."""
+    # Sin el flag → /reparto/armado redirige al control.
+    monkeypatch.delenv('REPARTO_OPTIMIZACION', raising=False)
+    assert client.get('/reparto/armado').status_code in (301, 302)
+    # Con el flag → renderiza el armado por ruta.
+    monkeypatch.setenv('REPARTO_OPTIMIZACION', '1')
+    assert b'Armar reparto' in client.get('/reparto/armado').data
 
 
 # ── Fase 2: secuenciación + mapa ─────────────────────────────────────────────

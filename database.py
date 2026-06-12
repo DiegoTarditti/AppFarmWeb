@@ -718,6 +718,12 @@ class PedidoReparto(Base):
     drogueria_id = Column(Integer, ForeignKey('proveedores.id', ondelete='SET NULL'),
                           nullable=True, index=True)              # si stock_status='esperar'
     destino = Column(String(10), nullable=True)                   # 'reparto' | 'retiro' (mutable)
+    # ── Liquidación al cadete ────────────────────────────────────────────────
+    # El costo de envío (envio_costo) es plata que la farmacia le debe al cadete.
+    # Se acumula por cadete mientras el pedido está entregado y sin liquidar; el
+    # botón "Liquidar" del control por cadete los marca pagados (saldo → 0).
+    envio_liquidado = Column(Boolean, nullable=False, default=False, server_default='false')
+    envio_liquidado_en = Column(DateTime, nullable=True)
 
 
 class ObsSyncLog(Base):
@@ -4639,6 +4645,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS stock_status VARCHAR(20)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS drogueria_id INTEGER REFERENCES proveedores(id) ON DELETE SET NULL",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS destino VARCHAR(10)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS envio_liquidado BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS envio_liquidado_en TIMESTAMP",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_drogueria ON pedidos_reparto(drogueria_id)",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_destino ON pedidos_reparto(destino)",
     ]:

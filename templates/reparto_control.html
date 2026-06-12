@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control de envíos · Badia</title>
+<style>
+  :root {
+    --bg:#22222d; --surface:#2c2c39; --card:#272732; --txt:#ececf0; --title:#fafafc;
+    --muted:#9c9ca4; --muted2:#7a7a82; --border:rgba(255,255,255,0.14); --accent:#1D9E75;
+    --accent-ink:#06241a; --row-bd:rgba(255,255,255,0.10); --hov:#3a3a47; --warn:#EF9F27;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--txt); font-family:var(--font); }
+  .topbar { height:54px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:12px; padding:0 18px; flex-wrap:wrap; }
+  .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .logo .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border); background:var(--hov); color:var(--txt); cursor:pointer; text-decoration:none; }
+  .hbtn-ok { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700; }
+  .input { background:var(--hov); color:var(--txt); border:1px solid var(--border); border-radius:8px; padding:7px 9px; font-size:13px; }
+  .wrap { padding:16px; max-width:1100px; margin:0 auto; }
+  .muted { color:var(--muted); } .muted2 { color:var(--muted2); }
+  /* Card por cadete */
+  .cad { background:var(--card); border:1px solid var(--border); border-radius:14px; margin-bottom:16px; overflow:hidden; }
+  .cad-head { display:flex; align-items:center; gap:10px; padding:11px 14px; background:var(--surface);
+              border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .cad-name { font-weight:800; font-size:14px; }
+  .stat { font-size:12px; }
+  .stat b { color:var(--title); }
+  .stat.cobrar b { color:var(--warn); }
+  .stat.debe b { color:#7fb0e0; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th { text-align:left; font-weight:600; color:var(--muted); font-size:11px; padding:7px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  td { padding:8px 10px; border-bottom:1px solid var(--row-bd); vertical-align:middle; }
+  tr.entregado td { opacity:.55; }
+  tr:last-child td { border-bottom:none; }
+  .pill { font-size:10px; padding:2px 9px; border-radius:999px; font-weight:700; white-space:nowrap; }
+  .pill.ruta { background:#3a3417; color:var(--warn); }
+  .pill.ok { background:#16351f; color:#4ade80; }
+  .mini { font-size:10px; padding:2px 8px; border-radius:7px; border:1px solid var(--border); background:var(--hov); color:var(--txt); cursor:pointer; }
+  .mini.ok { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700; }
+  .mini.warn { background:#3a2417; color:var(--warn); border-color:#5a3a1a; font-weight:700; }
+  .vacio { color:var(--muted2); text-align:center; padding:30px; font-size:13px; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo"><span class="dot"></span>🛵 Control de envíos · Badia</div>
+    <div style="flex:1"></div>
+    <label class="muted" style="font-size:12px;">Día <input type="date" id="fecha" class="input" onchange="cargar()"></label>
+    {% if armado_enabled %}<a href="/reparto/armado" class="hbtn">🗺️ Armado por ruta</a>{% endif %}
+    <a href="/reparto/planilla" class="hbtn">📋 Planilla</a>
+    <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
+  </div>
+
+  <div class="wrap" id="cont"><div class="vacio">Cargando…</div></div>
+
+<script>
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function hoyISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fechaVal(){ return document.getElementById('fecha').value || hoyISO(); }
+function money(n){ return '$'+Number(n||0).toLocaleString('es-AR'); }
+async function jpost(u,b){ return (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json(); }
+
+// Pendiente de cobro por el cadete: efectivo todavía no cobrado.
+function pendienteCobro(p){ return p.forma_pago==='efectivo' && !p.pagado; }
+function montoCobro(p){ return p.total_paciente!=null ? p.total_paciente : (p.importe||0); }
+
+function recetaCell(p){
+  const e = p.receta_estado || (p.requiere_receta ? 'pendiente' : '');
+  if(e==='recibida') return '<span title="receta recibida">📄✓</span>';
+  if(e==='pendiente') return '<span class="muted" title="receta pendiente">📄⏳</span>';
+  return '<span class="muted2">—</span>';
+}
+function estadoCell(p){
+  const ent = p.estado==='entregado';
+  const pill = ent ? '<span class="pill ok">entregado</span>'
+                   : `<span class="pill ruta">${esc(p.estado==='en_ruta'?'en ruta':p.estado)}</span>`;
+  const btn = ent ? `<button class="mini" onclick="estado(${p.id},'en_ruta')" title="Volver a en ruta">↩</button>`
+                  : `<button class="mini ok" onclick="estado(${p.id},'entregado')">✓ entregado</button>`;
+  return `<div style="display:flex; gap:6px; align-items:center;">${pill} ${btn}</div>`;
+}
+function cobroCell(p){
+  if(p.forma_pago!=='efectivo'){
+    return p.forma_pago ? `<span class="muted2" style="font-size:11px;">${esc(p.forma_pago)}</span>` : '<span class="muted2">—</span>';
+  }
+  if(p.pagado) return '<span class="pill ok">💵 cobrado</span>';
+  return `<button class="mini warn" onclick="cobrar(${p.id})" title="${money(montoCobro(p))}">💵 cobrar ${money(montoCobro(p))}</button>`;
+}
+
+async function cargar(){
+  const d = await (await fetch('/reparto/api?fecha='+fechaVal())).json();
+  const peds = (d.pedidos||[]).filter(p=>p.estado!=='anulado');
+  // Agrupar por cadete EFECTIVO (override del pedido o el de su ruta).
+  const grupos = new Map();   // cid -> {nombre, items:[]}
+  for(const p of peds){
+    const cid = p.cadete_efectivo_id || 0;
+    const nom = p.cadete_efectivo_nombre || 'Sin cadete asignado';
+    if(!grupos.has(cid)) grupos.set(cid, {cid, nombre:nom, items:[]});
+    grupos.get(cid).items.push(p);
+  }
+  // Sin cadete (0) al final.
+  const orden = [...grupos.values()].sort((a,b)=> (a.cid===0)-(b.cid===0) || a.nombre.localeCompare(b.nombre));
+  const cont = document.getElementById('cont');
+  if(!orden.length){ cont.innerHTML = '<div class="vacio">No hay envíos para esta fecha.</div>'; return; }
+
+  cont.innerHTML = orden.map(g=>{
+    const aCobrar = g.items.filter(pendienteCobro).reduce((a,p)=>a+montoCobro(p),0);
+    const seLeDebe = g.items.filter(p=>p.estado==='entregado' && !p.envio_liquidado)
+                            .reduce((a,p)=>a+(p.envio_costo||0),0);
+    const filas = g.items
+      .sort((a,b)=> (a.estado==='entregado')-(b.estado==='entregado') || (a.cliente_nombre||'').localeCompare(b.cliente_nombre||''))
+      .map(p=>`<tr class="${p.estado==='entregado'?'entregado':''}">
+        <td><b>${esc(p.cliente_nombre)}</b></td>
+        <td>${esc(p.direccion)||'<span class="muted2">—</span>'}</td>
+        <td>${p.envio_costo!=null?money(p.envio_costo):'<span class="muted2">—</span>'}</td>
+        <td class="muted">${esc(p.observacion)||''}</td>
+        <td style="text-align:center;">${recetaCell(p)}</td>
+        <td>${estadoCell(p)}</td>
+        <td>${cobroCell(p)}</td>
+      </tr>`).join('');
+    const liq = g.cid ? `<button class="hbtn hbtn-ok" onclick="liquidar(${g.cid}, '${esc(g.nombre)}', ${seLeDebe})" ${seLeDebe?'':'disabled style=\"opacity:.45;cursor:default;\"'}>Liquidar</button>` : '';
+    return `<div class="cad">
+      <div class="cad-head">
+        <span class="cad-name">🛵 ${esc(g.nombre)}</span>
+        <span class="muted2" style="font-size:11px;">${g.items.length} envío(s)</span>
+        <div style="flex:1"></div>
+        <span class="stat cobrar">a cobrar <b>${money(aCobrar)}</b></span>
+        <span class="stat debe">se le debe <b>${money(seLeDebe)}</b></span>
+        ${liq}
+      </div>
+      <table>
+        <thead><tr>
+          <th>Cliente</th><th>Dirección</th><th>Envío</th><th>Observación</th>
+          <th>Rx</th><th>Estado</th><th>Cobro</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+}
+
+async function estado(pid, e){ await jpost(`/reparto/pedido/${pid}/estado`, {estado:e}); cargar(); }
+async function cobrar(pid){ await jpost(`/reparto/pedido/${pid}/cobrar`, {pagado:true}); cargar(); }
+async function liquidar(cid, nombre, total){
+  if(!total){ return; }
+  if(!confirm(`¿Liquidar ${money(total)} de envíos a ${nombre}? Se marcan como pagados sus entregados de hoy.`)) return;
+  const d = await jpost(`/reparto/cadete/${cid}/liquidar`, {fecha: fechaVal()});
+  if(d.ok){ alert(`Liquidado: ${d.liquidados} envío(s) · ${money(d.total)}`); cargar(); }
+  else { alert('⚠️ '+(d.error||'no se pudo')); }
+}
+
+document.getElementById('fecha').value = hoyISO();
+cargar();
+</script>
+</body>
+</html>
