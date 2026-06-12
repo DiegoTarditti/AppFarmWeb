@@ -166,7 +166,13 @@
             ✓ {{ p.tomado_por_wsap }}{% if p.tomado_en %} · {{ p.tomado_en.strftime('%H:%M') }}{% endif %}
           </span>
         {% elif p.publicado_en %}
-          <span title="Publicado {{ p.publicado_en.strftime('%H:%M') }}" style="font-size:10px; color:#7fb0e0;">📤 {{ p.publicado_en.strftime('%H:%M') }}</span>
+          {# Timer SLA: 20 min warning, 40 min crítico (sin que ningún cadete lo tome). #}
+          {% set _min = ((ahora - p.publicado_en).total_seconds() / 60) | int %}
+          {% set _col = '#1D9E75' if _min < 20 else ('#EF9F27' if _min < 40 else '#EF4444') %}
+          {% set _icon = '🟢' if _min < 20 else ('🟡' if _min < 40 else '🔴') %}
+          <span title="Publicado {{ p.publicado_en.strftime('%H:%M') }} — {{ _min }} min sin tomar" style="font-size:10px; color:{{ _col }}; font-weight:600;">
+            {{ _icon }} {{ _min }}m
+          </span>
           <button onclick="publicarPedido({{ p.id }}, this)" class="hbtn" style="font-size:9px; padding:1px 4px; margin-left:3px;" title="Republicar">↻</button>
         {% else %}
           <button onclick="publicarPedido({{ p.id }}, this)" class="hbtn" style="font-size:10px; padding:2px 6px;" title="Publicar en grupo de WhatsApp">📤 Publicar</button>
