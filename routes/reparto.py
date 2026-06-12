@@ -12,14 +12,21 @@ from flask import jsonify, render_template, request
 from flask_login import current_user, login_required
 
 import database
+from auth import tiene_perfil
 from bot import store
 from services import reparto
 
 _ROLES_OK = ('admin', 'dev', 'farmacia')
+# Perfiles que tocan rutas de /reparto/* (incluye las APIs internas que usa
+# /pedido/nuevo y la planilla del día).
+_PERFILES_OK = ('pedido_manual', 'planilla_envios')
 
 
 def _ok():
-    return getattr(current_user, 'rol', None) in _ROLES_OK
+    # Roles legacy entran directo; operadores entran si tienen alguno de los perfiles.
+    if getattr(current_user, 'rol', None) in _ROLES_OK:
+        return True
+    return any(tiene_perfil(current_user, p) for p in _PERFILES_OK)
 
 
 def _fecha(arg):

@@ -13,11 +13,15 @@ paso: mover esas APIs a `/api/clientes/*` junto con el componente reusable
 from flask import render_template
 from flask_login import current_user, login_required
 
+from auth import tiene_perfil
+
 _ROLES_OK = ('admin', 'dev', 'farmacia')
 
 
 def _ok():
-    return getattr(current_user, 'rol', None) in _ROLES_OK
+    # Roles legacy entran directo; operadores entran si tienen el perfil correspondiente.
+    return (getattr(current_user, 'rol', None) in _ROLES_OK
+            or tiene_perfil(current_user, 'pedido_manual'))
 
 
 def init_app(app):
