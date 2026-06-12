@@ -15,13 +15,19 @@ Rutas:
 from flask import jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
+from auth import tiene_perfil
 from bot import envio
 
 _ROLES_OK = ('admin', 'dev', 'farmacia')
+# Perfiles que usan /config/envio (sobre todo el cotizador del cliente_picker).
+# Las POST de edición de tarifas no se exponen en el sidebar a estos perfiles.
+_PERFILES_OK = ('pedido_manual', 'chat_clientes', 'planilla_envios')
 
 
 def _ok():
-    return getattr(current_user, 'rol', None) in _ROLES_OK
+    if getattr(current_user, 'rol', None) in _ROLES_OK:
+        return True
+    return any(tiene_perfil(current_user, p) for p in _PERFILES_OK)
 
 
 def init_app(app):
