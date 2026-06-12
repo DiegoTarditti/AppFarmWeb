@@ -143,6 +143,7 @@ def _pedido_dict(p):
         'firma': bool(p.requiere_firma),
         'envio': float(p.envio_costo) if p.envio_costo is not None else None,
         'estado': p.estado,
+        'pagado': bool(p.pagado),    # el operador puede haber cobrado ya; falta el ticket fiscal
         'canal': p.canal,
         'prioridad': p.prioridad,
         'tomo': p.tomo,
@@ -170,8 +171,13 @@ def proximo_estado_cobrado(destino, stock_status):
 
 
 def cobrar_pedido(pedido_id, cajero_nombre=None):
-    """Marca el pedido como pagado y lo mueve al siguiente estado según destino.
+    """El cajero procesa el pedido en caja: emite el ticket fiscal (en ObServer)
+    y lo despacha al siguiente estado según destino. Marca `pagado=True`.
 
+    TODO pedido pasa por acá aunque el operador ya lo haya cobrado: la caja es la
+    instancia que emite el ticket fiscal. Por eso el guard es por ESTADO (estar
+    en 'en_caja' = ticket pendiente), no por `pagado` — un pedido pre-cobrado por
+    el operador llega con pagado=True y acá solo se le emite el ticket y avanza.
     Siempre se cobra por adelantado (incluso si está esperando droguería).
     Ver `proximo_estado_cobrado` para la matriz de estados.
     """
@@ -180,8 +186,8 @@ def cobrar_pedido(pedido_id, cajero_nombre=None):
         p = s.get(P, pedido_id)
         if not p:
             return {'ok': False, 'error': 'pedido no existe'}
-        if p.pagado:
-            return {'ok': False, 'error': 'ya está cobrado'}
+        if p.estado != 'en_caja':
+            return {'ok': False, 'error': 'el pedido no está en caja'}
         p.pagado = True
         p.estado = proximo_estado_cobrado(p.destino, p.stock_status)
         # `entregado_por` / `recibio` no aplican acá (son del cadete); el cajero
