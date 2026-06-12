@@ -57,9 +57,26 @@
   </div>
 
   <div class="wrap">
-    <div id="filtroOps" style="display:none; gap:6px; flex-wrap:wrap; margin-bottom:12px;"></div>
-    <div id="tickets" class="grid">
-      <div class="muted">Cargando…</div>
+    <!-- Pestañas de bandejas. Las 3 primeras son la nueva caja sobre PedidoReparto
+         (flujo Cerrar transacción). "Tickets sueltos" mantiene la caja vieja (TicketCaja). -->
+    <div id="tabs" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
+      <button class="op-pill active" data-tab="por_cobrar" onclick="setTab('por_cobrar')">💰 Por cobrar <span id="cnt-por_cobrar" class="muted2">·</span></button>
+      <button class="op-pill" data-tab="cadetes"        onclick="setTab('cadetes')">🛵 Cadetes <span id="cnt-cadetes" class="muted2">·</span></button>
+      <button class="op-pill" data-tab="drogueria"      onclick="setTab('drogueria')">📦 Droguería <span id="cnt-drogueria" class="muted2">·</span></button>
+      <button class="op-pill" data-tab="legacy"         onclick="setTab('legacy')">📜 Tickets sueltos</button>
+    </div>
+
+    <!-- 3 bandejas nuevas (PedidoReparto). Render en grid con cards. -->
+    <div id="bandeja-por_cobrar" class="grid bandeja"></div>
+    <div id="bandeja-cadetes"    class="grid bandeja" style="display:none;"></div>
+    <div id="bandeja-drogueria"  class="grid bandeja" style="display:none;"></div>
+
+    <!-- Bandeja legacy (TicketCaja) — mantiene el comportamiento viejo. -->
+    <div id="bandeja-legacy" style="display:none;">
+      <div id="filtroOps" style="display:none; gap:6px; flex-wrap:wrap; margin-bottom:12px;"></div>
+      <div id="tickets" class="grid">
+        <div class="muted">Cargando…</div>
+      </div>
     </div>
   </div>
 
@@ -205,9 +222,80 @@ function exportarCsv(){
   if(fecha) window.location = `/caja/export?fecha=${fecha}`;
 }
 
+/* ── Bandejas nuevas (PedidoReparto / flujo Cerrar transacción) ── */
+let tabActiva = localStorage.getItem('cajaTab') || 'por_cobrar';
+const BANDEJAS = ['por_cobrar', 'cadetes', 'drogueria'];
+
+function setTab(name) {
+  tabActiva = name;
+  localStorage.setItem('cajaTab', name);
+  document.querySelectorAll('#tabs .op-pill').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === name));
+  document.getElementById('bandeja-por_cobrar').style.display = name === 'por_cobrar' ? 'grid' : 'none';
+  document.getElementById('bandeja-cadetes').style.display    = name === 'cadetes'    ? 'grid' : 'none';
+  document.getElementById('bandeja-drogueria').style.display  = name === 'drogueria'  ? 'grid' : 'none';
+  document.getElementById('bandeja-legacy').style.display     = name === 'legacy'     ? 'block': 'none';
+  if (BANDEJAS.includes(name)) cargarBandeja(name);
+  else cargar();   // legacy
+}
+
+async function cargarBandeja(name) {
+  const box = document.getElementById('bandeja-' + name);
+  try {
+    const d = await (await fetch(`/caja/api/bandeja/${name}`)).json();
+    const pedidos = d.pedidos || [];
+    const cnt = document.getElementById('cnt-' + name);
+    if (cnt) cnt.textContent = pedidos.length ? `(${pedidos.length})` : '·';
+    if (!pedidos.length) {
+      box.innerHTML = `<div class="muted">${empty_msg(name)}</div>`;
+      return;
+    }
+    box.innerHTML = pedidos.map(pedidoCard).join('');
+  } catch (e) {
+    box.innerHTML = '<div class="muted">Error: ' + esc(e.message) + '</div>';
+  }
+}
+
+function empty_msg(name) {
+  return name === 'por_cobrar' ? 'No hay nada por cobrar ✨'
+       : name === 'cadetes'    ? 'No hay pedidos esperando cadete.'
+       : name === 'drogueria'  ? 'Sin pedidos a la espera de droguería.'
+       : 'Sin pedidos.';
+}
+
+function pedidoCard(p) {
+  const prio = p.prioridad === 'urgente' ? '🚨' : p.prioridad === 'alta' ? '⭐' : '';
+  const flags = [
+    p.obra_social ? `<span class="badge" style="background:#7c4dff; color:#fff;">${esc(p.obra_social)}</span>` : '',
+    p.receta === 'pendiente' ? '<span class="badge" style="background:var(--warn); color:#1a1206;">📋 receta</span>' : '',
+    p.firma ? '<span class="badge" style="background:#0ea5e9; color:#06283d;">📝 firma</span>' : '',
+    p.stock === 'esperar' ? '<span class="badge" style="background:#a78bfa; color:#1e1238;">📦 esperar drog.</span>' : '',
+  ].filter(Boolean).join(' ');
+  const direccion = [p.direccion, p.piso && 'P.'+p.piso, p.depto && 'D.'+p.depto].filter(Boolean).join(' · ');
+  const datoMp = p.dato_pago_mp ? `<div class="row"><span class="muted">📋 Dato pago MP</span><span style="font-family:monospace;">${esc(p.dato_pago_mp)}</span></div>` : '';
+  const envio = p.envio !== null && p.envio !== undefined ? `<div class="row"><span class="muted">Envío</span><span>${fmt(p.envio)}</span></div>` : '';
+  return `<div class="card">
+    <div class="card-head">
+      <span class="title" style="font-weight:600; font-size:13px;">${prio} ${esc(p.cliente || 'Sin nombre')}</span>
+      <span class="badge b-conf">#${p.id}</span>
+    </div>
+    <div style="padding:8px 13px;">
+      ${direccion ? `<div class="row"><span class="muted">📍</span><span style="text-align:right;">${esc(direccion)}</span></div>` : ''}
+      <div class="row"><span class="muted">Forma pago</span><span>${esc(p.forma_pago || '—')}</span></div>
+      ${datoMp}
+      ${envio}
+      ${flags ? `<div style="display:flex; gap:5px; flex-wrap:wrap; padding:6px 0;">${flags}</div>` : ''}
+      <div style="display:flex; justify-content:space-between; align-items:center; padding-top:6px;">
+        <span class="muted2" style="font-size:11px;">${esc(p.tomo || '')} · ${esc((p.creado_en||'').slice(0,16).replace('T',' '))}</span>
+        <span class="total">${fmt(p.total)}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
 cargarFormas();
-cargar();
-setInterval(cargar, 5000);
+setTab(tabActiva);
+setInterval(() => { if (BANDEJAS.includes(tabActiva)) cargarBandeja(tabActiva); else cargar(); }, 5000);
 </script>
 </body>
 </html>

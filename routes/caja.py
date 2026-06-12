@@ -28,6 +28,13 @@ def init_app(app):
         cerrados = request.args.get('cerrados') == '1'
         return jsonify({'tickets': caja.listar_tickets(incluir_cerrados=cerrados)})
 
+    @app.route('/caja/api/bandeja/<name>')
+    @login_required
+    def caja_bandeja(name):
+        """3 bandejas de la nueva caja (sobre PedidoReparto):
+        por_cobrar | cadetes | drogueria."""
+        return jsonify({'pedidos': caja.listar_bandeja(name)})
+
     @app.route('/caja/api/formas-pago')
     @login_required
     def caja_formas_pago():
