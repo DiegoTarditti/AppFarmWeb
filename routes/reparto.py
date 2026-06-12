@@ -361,9 +361,11 @@ def init_app(app):
                 # Efectivo: con cuánto paga (sirve para conciliar y para calcular el
                 # vuelto en la planilla/ticket del cadete).
                 paga_con=(float(b['paga_con']) if (b.get('paga_con') not in (None, '')) else None),
-                # Nro de comprobante MP/transferencia. Si está cargado, el frontend
-                # ya seteó pagado=true (verificación manual del operador en MP).
+                # Nro de comprobante MP/transferencia, o cupón de tarjeta. Si está
+                # cargado, el frontend ya seteó pagado=true (verificación manual).
                 dato_pago_mp=(b.get('dato_pago_mp') or '').strip() or None,
+                # Marca de la tarjeta (Visa/Master/...) si forma=debito/credito.
+                tarjeta_marca=(b.get('tarjeta_marca') or '').strip() or None,
                 requiere_receta=bool(b.get('requiere_receta')),
                 pagado=bool(b.get('pagado')),
                 turno=(b.get('turno') or '').strip() or None,

@@ -142,6 +142,22 @@
             <label>Con cuánto paga $</label>
             <input id="pPagaCon" class="input" type="number" min="0" step="0.01" placeholder="ej: 10000" oninput="onPagaConInput()">
           </div>
+          <div class="field" id="fldTarjeta" style="display:none;">
+            <label>¿Qué tarjeta?</label>
+            <select id="pTarjeta" class="input">
+              <option value="">— elegir —</option>
+              <option value="Visa">Visa</option>
+              <option value="Master">Master</option>
+              <option value="Amex">Amex</option>
+              <option value="Naranja">Naranja</option>
+              <option value="Cabal">Cabal</option>
+              <option value="Otros">Otros</option>
+            </select>
+          </div>
+          <div class="field" id="fldComprobanteTarj" style="display:none;">
+            <label>Nro de cupón / comprobante</label>
+            <input id="pComprobanteTarj" class="input" placeholder="ej: 001234 / nro de operación" title="Requerido para tarjeta">
+          </div>
           <div class="field">
             <label>Vuelto / obs. pago</label>
             <input id="pVuelto" class="input" placeholder="NO HAY PLATA / $">
@@ -259,7 +275,8 @@ function _pintarRecetaBadge(on){
 function onFormaPagoChange(){
   const f = document.getElementById('pFormaPago').value;
   const necesitaComprobante = (f === 'link' || f === 'transfer');
-  const presencial = (f === 'debito' || f === 'credito' || f === 'sc');
+  const esTarjeta = (f === 'debito' || f === 'credito');
+  const esSc = (f === 'sc');
   const esEfectivo = (f === 'efectivo');
 
   // Mostrar/ocultar campo "Nro comprobante MP".
@@ -270,11 +287,20 @@ function onFormaPagoChange(){
   document.getElementById('fldPagaCon').style.display = esEfectivo ? '' : 'none';
   if (!esEfectivo) document.getElementById('pPagaCon').value = '';
 
-  // Pagado.
-  if (presencial) {
+  // Mostrar/ocultar tarjeta + cupón (solo en débito/crédito).
+  document.getElementById('fldTarjeta').style.display = esTarjeta ? '' : 'none';
+  document.getElementById('fldComprobanteTarj').style.display = esTarjeta ? '' : 'none';
+  if (!esTarjeta) {
+    document.getElementById('pTarjeta').value = '';
+    document.getElementById('pComprobanteTarj').value = '';
+  }
+
+  // Pagado: SC y tarjeta presencial → siempre true. link/transfer → depende del
+  // comprobante MP. Efectivo → false (cobra el cadete).
+  if (esSc || esTarjeta) {
     document.getElementById('pPagado').value = 'true';
   } else if (necesitaComprobante) {
-    _refrescarPagadoDesdeMp();    // depende del comprobante
+    _refrescarPagadoDesdeMp();
   } else {
     document.getElementById('pPagado').value = '';
   }
@@ -283,7 +309,7 @@ function onFormaPagoChange(){
   const vu = document.getElementById('pVuelto');
   if (esEfectivo || f === '') {
     vu.disabled = false;
-    if (esEfectivo) _recalcularVuelto();   // pinta vuelto si ya hay paga_con cargado
+    if (esEfectivo) _recalcularVuelto();
   } else {
     vu.value = '';
     vu.disabled = true;
@@ -299,7 +325,11 @@ function _recalcularVuelto(){
   const imp  = parseFloat(document.getElementById('pImporte').value)  || 0;
   const env  = parseFloat(document.getElementById('pEnvio').value)    || 0;
   if (paga <= 0) { document.getElementById('pVuelto').value = ''; return; }
-  const vuelto = paga - (imp + env);
+  const exacto = paga - (imp + env);
+  // Redondeo a billetes de $100 (floor): si exacto=1450 → vuelto=1400. Si paga
+  // menos de lo que sale (exacto < 0), mantenemos el negativo para que el
+  // operador lo vea (caso 'falta plata').
+  const vuelto = exacto >= 0 ? Math.floor(exacto / 100) * 100 : exacto;
   document.getElementById('pVuelto').value = vuelto.toFixed(2);
 }
 
@@ -445,7 +475,12 @@ async function agregar(){
     forma_pago: document.getElementById('pFormaPago').value,
     vuelto: document.getElementById('pVuelto').value.trim(),
     paga_con: document.getElementById('pPagaCon').value || null,
-    dato_pago_mp: document.getElementById('pDatoPagoMp').value.trim() || null,
+    // dato_pago_mp también lleva el cupón de tarjeta (mismo campo en DB; lo
+    // distinguís por forma_pago).
+    dato_pago_mp: (document.getElementById('pDatoPagoMp').value.trim()
+                   || document.getElementById('pComprobanteTarj').value.trim()
+                   || null),
+    tarjeta_marca: document.getElementById('pTarjeta').value || null,
     requiere_receta: document.getElementById('pReceta').value === 'true',
     pagado: document.getElementById('pPagado').value === 'true',
     turno: document.getElementById('pTurno').value,
@@ -461,6 +496,19 @@ async function agregar(){
     document.getElementById('pDatoPagoMp').focus();
     return;
   }
+  // Validación bloqueante: débito/crédito exigen marca de tarjeta y cupón.
+  if (body.forma_pago === 'debito' || body.forma_pago === 'credito'){
+    if (!body.tarjeta_marca){
+      alert('Elegí qué tarjeta es antes de seguir.');
+      document.getElementById('pTarjeta').focus();
+      return;
+    }
+    if (!body.dato_pago_mp){
+      alert('Cargá el Nro de cupón / comprobante de la tarjeta antes de seguir.');
+      document.getElementById('pComprobanteTarj').focus();
+      return;
+    }
+  }
   const d = await jpost('/reparto/pedido', body);
   if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
   if(!d.asignado){ document.getElementById('avisoCfg').textContent = '⚠️ El último pedido quedó "sin asignar".'; }
@@ -468,7 +516,8 @@ async function agregar(){
   showToast(`✓ Pedido agregado <a href="/reparto/planilla">ver planilla →</a>`);
   // Reset campos del host (cliente_picker se limpia con ClientePicker.clear)
   ClientePicker.clear();
-  ['pNota','pImporte','pVuelto','pProducto','pObservacion','pEnvio','pCuadras','pDatoPagoMp','pPagaCon'].forEach(i=>{
+  ['pNota','pImporte','pVuelto','pProducto','pObservacion','pEnvio','pCuadras',
+   'pDatoPagoMp','pPagaCon','pComprobanteTarj','pTarjeta'].forEach(i=>{
     const el=document.getElementById(i); if(el) el.value='';
   });
   document.getElementById('pPrio').value='normal';
@@ -476,6 +525,8 @@ async function agregar(){
   document.getElementById('pFormaPago').value='';
   document.getElementById('fldDatoPagoMp').style.display='none';
   document.getElementById('fldPagaCon').style.display='none';
+  document.getElementById('fldTarjeta').style.display='none';
+  document.getElementById('fldComprobanteTarj').style.display='none';
   document.getElementById('pVuelto').disabled=false;
   // pTurno NO se resetea: queda el último elegido (también guardado en localStorage)
   document.getElementById('pReceta').value='';
