@@ -91,16 +91,18 @@ def test_envio_zona_pisa_tramos():
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 def test_panel_envio_renderiza(client):
-    r = client.get('/envio')
+    # El panel migró de /envio a /config/envio (refactor: pasó a sección "configuración").
+    # Queda un redirect 301 legacy desde /envio.
+    r = client.get('/config/envio')
     assert r.status_code == 200
     assert b'Cotizador de env' in r.data
 
 
 def test_api_cotizar_json(client):
     envio.seed_si_vacio()
-    r = client.get('/envio/api/cotizar?localidad=Roldán')
+    r = client.get('/config/envio/api/cotizar?localidad=Roldán')
     assert r.status_code == 200 and r.get_json()['monto'] == 15000
-    r2 = client.get('/envio/api/tarifas')
+    r2 = client.get('/config/envio/api/tarifas')
     assert r2.status_code == 200 and 'tramos' in r2.get_json()
 
 
