@@ -282,57 +282,6 @@ def seed_admin_si_falta():
             session.rollback()
 
 
-def seed_rendicion_si_falta():
-    """Crea usuario `rendicion` (pass `rendicion123`, debe cambiar) si no existe.
-    Rol acotado: solo /devoluciones/*. Para operadores que solo registran
-    devoluciones de rendiciones."""
-    from sqlalchemy.exc import IntegrityError
-    with database.get_db() as session:
-        ya = session.query(Usuario).filter_by(username='rendicion').first()
-        if ya:
-            return
-        u = Usuario(
-            username='rendicion',
-            email=None,
-            password_hash=hash_password('rendicion123'),
-            nombre_completo='Operador de rendiciones',
-            rol='rendicion',
-            permisos_json=json.dumps(permisos_default_rol('rendicion')),
-            activo=True,
-            debe_cambiar_password=True,
-        )
-        session.add(u)
-        try:
-            session.commit()
-        except IntegrityError:
-            session.rollback()
-
-
-def seed_pedidos_si_falta():
-    """Crea usuario `pedidos` (pass `pedidos123`, debe cambiar) si no existe.
-    Rol acotado: solo /compras/dia. Llamar después de seed_admin_si_falta."""
-    from sqlalchemy.exc import IntegrityError
-    with database.get_db() as session:
-        ya = session.query(Usuario).filter_by(username='pedidos').first()
-        if ya:
-            return
-        u = Usuario(
-            username='pedidos',
-            email=None,
-            password_hash=hash_password('pedidos123'),
-            nombre_completo='Operador de pedidos',
-            rol='pedidos',
-            permisos_json=json.dumps(permisos_default_rol('pedidos')),
-            activo=True,
-            debe_cambiar_password=True,
-        )
-        session.add(u)
-        try:
-            session.commit()
-        except IntegrityError:
-            session.rollback()
-
-
 def init_auth(app):
     login_manager.init_app(app)
     # Exponer helpers en templates

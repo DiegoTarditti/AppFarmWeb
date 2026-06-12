@@ -20,8 +20,6 @@ from auth import (
     prefijos_permitidos,
     requiere_permiso,
     seed_admin_si_falta,
-    seed_pedidos_si_falta,
-    seed_rendicion_si_falta,
     verificar_password,
 )
 from database import Usuario
@@ -29,10 +27,9 @@ from helpers import now_ar
 
 
 def init_app(app):
-    # Garantizar admin inicial + user 'pedidos' al arranque
+    # Garantizar el admin inicial al arranque. (Los usuarios operadores se crean
+    # a mano desde /usuarios con sus perfiles — ya no se pre-siembran pedidos/rendicion.)
     seed_admin_si_falta()
-    seed_pedidos_si_falta()
-    seed_rendicion_si_falta()
     from auth import migrar_roles_a_perfiles
     migrar_roles_a_perfiles()
 
