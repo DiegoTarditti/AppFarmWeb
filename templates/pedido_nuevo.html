@@ -45,6 +45,11 @@
                  transition: background .15s, color .15s, border-color .15s; }
   .toggle-pill:hover { filter:brightness(1.1); }
   .toggle-pill.on { background:var(--warn); color:#1a1206; border-color:var(--warn); }
+  /* Badge "Venta libre / Con receta" al lado del label Observación. */
+  .receta-badge { font-size:10px; padding:2px 7px; border-radius:999px; margin-left:6px;
+                   font-weight:700; letter-spacing:.3px; }
+  .receta-badge.libre      { background:rgba(29,158,117,.18); color:var(--accent); }
+  .receta-badge.con-receta { background:var(--warn); color:#1a1206; }
   .btn-agregar { background:var(--accent); color:var(--accent-ink); border:none; border-radius:10px; padding:11px 22px; font-weight:700; font-size:14px; cursor:pointer; }
   .btn-agregar:hover { filter:brightness(1.1); }
   @media (max-width:900px){ .grid-cliente,.grid-detalle,.grid-despacho{ grid-template-columns:1fr 1fr; } }
@@ -138,7 +143,9 @@
             <input id="pVuelto" class="input" placeholder="NO HAY PLATA / $">
           </div>
           <div class="field" style="grid-column:span 3;">
-            <label>Observación</label>
+            <label>Observación
+              <span id="recetaBadge" class="receta-badge libre">🟢 Venta libre</span>
+            </label>
             <input id="pObservacion" class="input" placeholder="recetas 3, TRAER PANTUS..." onkeydown="if(event.key==='Enter')agregar()">
           </div>
         </div>
@@ -216,12 +223,26 @@ function onCuadrasInput(){
 }
 
 // Toggle "Traer Receta" (botón pill que reemplaza al checkbox).
+// Sincroniza también el badge "Venta libre / Con receta" al lado de Observación.
 function toggleReceta(){
   const inp = document.getElementById('pReceta');
   const btn = document.getElementById('btnReceta');
   const on = inp.value !== 'true';
   inp.value = on ? 'true' : '';
   btn.classList.toggle('on', on);
+  _pintarRecetaBadge(on);
+}
+
+function _pintarRecetaBadge(on){
+  const badge = document.getElementById('recetaBadge');
+  if (!badge) return;
+  if (on) {
+    badge.textContent = '🟠 Con receta — TRAER RECETA';
+    badge.className = 'receta-badge con-receta';
+  } else {
+    badge.textContent = '🟢 Venta libre';
+    badge.className = 'receta-badge libre';
+  }
 }
 
 // Pagado derivado de la forma de pago. Reglas:
@@ -298,10 +319,14 @@ async function cotizarEnvio(){
       pill.textContent = d.fuente || '—';
       pill.style.background = d.fuente==='zona' ? '#185FA5' : 'var(--accent)';
       pill.style.color = d.fuente==='zona' ? '#fff' : 'var(--accent-ink)';
-      const parts = [];
-      if (d.detalle) parts.push(d.detalle);
-      if (d.cuadras != null && !d.detalle?.includes('cuadras')) parts.push(`~${d.cuadras} cuadras`);
-      info.textContent = parts.join(' · ');
+      // Línea 1: label del tramo o zona matcheada (descripción de la tabla).
+      // Línea 2: detalle/cuadras reales.
+      const linea2 = [];
+      if (d.detalle) linea2.push(d.detalle);
+      if (d.cuadras != null && !d.detalle?.includes('cuadras')) linea2.push(`~${d.cuadras} cuadras`);
+      info.innerHTML = (d.tramo_label
+        ? `<div style="font-weight:600; color:var(--txt);">${esc(d.tramo_label)}</div>` : '')
+        + `<div>${esc(linea2.join(' · '))}</div>`;
       // Auto-guardar geo si vino del geocoder y hay domicilio elegido sin geo.
       if (geocoded && d.lat != null && d.lng != null){
         const domSel = document.getElementById('pDom');
@@ -316,7 +341,7 @@ async function cotizarEnvio(){
             opt.dataset.lat = d.lat;
             opt.dataset.lng = d.lng;
             if (!opt.text.includes('📍')) opt.text = opt.text + ' 📍';
-            info.textContent += ` · 📍 guardado ${new Date().toLocaleDateString('es-AR')}`;
+            info.innerHTML += ` · 📍 guardado ${new Date().toLocaleDateString('es-AR')}`;
           }
         }
       }
@@ -424,6 +449,7 @@ async function agregar(){
   // pTurno NO se resetea: queda el último elegido (también guardado en localStorage)
   document.getElementById('pReceta').value='';
   document.getElementById('btnReceta').classList.remove('on');
+  _pintarRecetaBadge(false);
   document.getElementById('pPagado').value='';
   document.getElementById('envioInfo').textContent='';
   document.getElementById('envioPill').style.display='none';
