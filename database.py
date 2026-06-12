@@ -661,6 +661,7 @@ class PedidoReparto(Base):
     cliente_observer_id = Column(Integer, nullable=True)   # legacy (2a) — se dropea en 2b
     cliente_local_id = Column(Integer, nullable=True)      # legacy (2a) — se dropea en 2b
     cliente_nombre = Column(String(160))
+    telefono = Column(String(40), nullable=True)   # del chat (WhatsApp) o de la ficha
     direccion = Column(String(200))
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
@@ -4594,6 +4595,7 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomo VARCHAR(35)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS canal VARCHAR(15) NOT NULL DEFAULT 'manual'",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS importe DECIMAL(12,2)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS telefono VARCHAR(40)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS forma_pago VARCHAR(20)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS vuelto VARCHAR(80)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS requiere_receta BOOLEAN NOT NULL DEFAULT FALSE",

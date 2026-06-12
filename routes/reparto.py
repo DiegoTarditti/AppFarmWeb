@@ -74,6 +74,7 @@ def _pedido_dict(p, cadetes=None, rutas_cadete=None):
     efectivo_nombre = cadetes.get(efectivo_id, '') if (efectivo_id and cadetes) else ''
     return {
         'id': p.id, 'cliente_nombre': p.cliente_nombre or 's/cliente',
+        'telefono': p.telefono or '',
         'direccion': p.direccion or '', 'nota': p.nota or '',
         'cuadrante': p.cuadrante, 'ruta_id': p.ruta_id, 'estado': p.estado,
         'prioridad': p.prioridad or 'normal',
