@@ -358,6 +358,9 @@ def init_app(app):
                 importe=importe,
                 forma_pago=(b.get('forma_pago') or '').strip() or None,
                 vuelto=(b.get('vuelto') or '').strip() or None,
+                # Efectivo: con cuánto paga (sirve para conciliar y para calcular el
+                # vuelto en la planilla/ticket del cadete).
+                paga_con=(float(b['paga_con']) if (b.get('paga_con') not in (None, '')) else None),
                 # Nro de comprobante MP/transferencia. Si está cargado, el frontend
                 # ya seteó pagado=true (verificación manual del operador en MP).
                 dato_pago_mp=(b.get('dato_pago_mp') or '').strip() or None,

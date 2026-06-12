@@ -85,7 +85,7 @@
             <label>Envío $
               <span id="envioPill" style="display:none; font-size:9px; padding:1px 6px; border-radius:999px; margin-left:4px;"></span>
             </label>
-            <input id="pEnvio" class="input input-grande" placeholder="0.00" type="number" step="0.01" min="0">
+            <input id="pEnvio" class="input input-grande" placeholder="0.00" type="number" step="0.01" min="0" oninput="_recalcularVuelto()">
           </div>
           <div class="field" style="flex:0 0 90px;">
             <label>o Cuadras</label>
@@ -118,7 +118,7 @@
           </div>
           <div class="field">
             <label>Importe $</label>
-            <input id="pImporte" class="input input-grande" placeholder="0.00" type="number" step="0.01" min="0">
+            <input id="pImporte" class="input input-grande" placeholder="0.00" type="number" step="0.01" min="0" oninput="_recalcularVuelto()">
           </div>
           <div class="field">
             <label>Forma de pago</label>
@@ -137,6 +137,10 @@
           <div class="field" id="fldDatoPagoMp" style="display:none;">
             <label>Nro comprobante MP</label>
             <input id="pDatoPagoMp" class="input" placeholder="ej: 76543210" oninput="onDatoPagoMpInput()" title="Al pegar el comprobante de MP, el pedido queda PAGADO">
+          </div>
+          <div class="field" id="fldPagaCon" style="display:none;">
+            <label>Con cuánto paga $</label>
+            <input id="pPagaCon" class="input" type="number" min="0" step="0.01" placeholder="ej: 10000" oninput="onPagaConInput()">
           </div>
           <div class="field">
             <label>Vuelto / obs. pago</label>
@@ -256,10 +260,15 @@ function onFormaPagoChange(){
   const f = document.getElementById('pFormaPago').value;
   const necesitaComprobante = (f === 'link' || f === 'transfer');
   const presencial = (f === 'debito' || f === 'credito' || f === 'sc');
+  const esEfectivo = (f === 'efectivo');
 
   // Mostrar/ocultar campo "Nro comprobante MP".
   document.getElementById('fldDatoPagoMp').style.display = necesitaComprobante ? '' : 'none';
   if (!necesitaComprobante) document.getElementById('pDatoPagoMp').value = '';
+
+  // Mostrar/ocultar campo "Con cuánto paga" (solo en efectivo).
+  document.getElementById('fldPagaCon').style.display = esEfectivo ? '' : 'none';
+  if (!esEfectivo) document.getElementById('pPagaCon').value = '';
 
   // Pagado.
   if (presencial) {
@@ -270,14 +279,28 @@ function onFormaPagoChange(){
     document.getElementById('pPagado').value = '';
   }
 
-  // Vuelto solo en efectivo (o vacío).
+  // Vuelto solo en efectivo (o vacío). En el resto lo limpiamos y disabled.
   const vu = document.getElementById('pVuelto');
-  if (f === 'efectivo' || f === '') {
+  if (esEfectivo || f === '') {
     vu.disabled = false;
+    if (esEfectivo) _recalcularVuelto();   // pinta vuelto si ya hay paga_con cargado
   } else {
     vu.value = '';
     vu.disabled = true;
   }
+}
+
+// Vuelto = paga_con − (importe + envío). Solo se actualiza si forma=efectivo.
+// El operador igual puede editar el campo a mano (caso "no tengo cambio chico").
+function onPagaConInput(){ _recalcularVuelto(); }
+function _recalcularVuelto(){
+  if (document.getElementById('pFormaPago').value !== 'efectivo') return;
+  const paga = parseFloat(document.getElementById('pPagaCon').value) || 0;
+  const imp  = parseFloat(document.getElementById('pImporte').value)  || 0;
+  const env  = parseFloat(document.getElementById('pEnvio').value)    || 0;
+  if (paga <= 0) { document.getElementById('pVuelto').value = ''; return; }
+  const vuelto = paga - (imp + env);
+  document.getElementById('pVuelto').value = vuelto.toFixed(2);
 }
 
 // Cuando el operador escribe el nro de comprobante de MP/transferencia, marcamos
@@ -421,6 +444,7 @@ async function agregar(){
     importe: document.getElementById('pImporte').value || null,
     forma_pago: document.getElementById('pFormaPago').value,
     vuelto: document.getElementById('pVuelto').value.trim(),
+    paga_con: document.getElementById('pPagaCon').value || null,
     dato_pago_mp: document.getElementById('pDatoPagoMp').value.trim() || null,
     requiere_receta: document.getElementById('pReceta').value === 'true',
     pagado: document.getElementById('pPagado').value === 'true',
@@ -431,6 +455,12 @@ async function agregar(){
     envio: document.getElementById('pEnvio').value || null,
   };
   if(!body.cliente_nombre && !body.direccion && !body.domicilio_id){ alert('Poné cliente o dirección.'); return; }
+  // Validación bloqueante: link MP y transferencia exigen el nro de comprobante.
+  if ((body.forma_pago === 'link' || body.forma_pago === 'transfer') && !body.dato_pago_mp){
+    alert('Cargá el Nro de comprobante de MP/transferencia antes de seguir.');
+    document.getElementById('pDatoPagoMp').focus();
+    return;
+  }
   const d = await jpost('/reparto/pedido', body);
   if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
   if(!d.asignado){ document.getElementById('avisoCfg').textContent = '⚠️ El último pedido quedó "sin asignar".'; }
@@ -438,13 +468,14 @@ async function agregar(){
   showToast(`✓ Pedido agregado <a href="/reparto/planilla">ver planilla →</a>`);
   // Reset campos del host (cliente_picker se limpia con ClientePicker.clear)
   ClientePicker.clear();
-  ['pNota','pImporte','pVuelto','pProducto','pObservacion','pEnvio','pCuadras','pDatoPagoMp'].forEach(i=>{
+  ['pNota','pImporte','pVuelto','pProducto','pObservacion','pEnvio','pCuadras','pDatoPagoMp','pPagaCon'].forEach(i=>{
     const el=document.getElementById(i); if(el) el.value='';
   });
   document.getElementById('pPrio').value='normal';
   document.getElementById('pCanal').value='mostrador';
   document.getElementById('pFormaPago').value='';
   document.getElementById('fldDatoPagoMp').style.display='none';
+  document.getElementById('fldPagaCon').style.display='none';
   document.getElementById('pVuelto').disabled=false;
   // pTurno NO se resetea: queda el último elegido (también guardado en localStorage)
   document.getElementById('pReceta').value='';
