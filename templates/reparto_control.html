@@ -79,7 +79,7 @@ function estadoCell(p){
   const pill = ent ? '<span class="pill ok">entregado</span>'
                    : `<span class="pill ruta">${esc(p.estado==='en_ruta'?'en ruta':p.estado)}</span>`;
   const btn = ent ? `<button class="mini" onclick="estado(${p.id},'en_ruta')" title="Volver a en ruta">↩</button>`
-                  : `<button class="mini ok" onclick="estado(${p.id},'entregado')">✓ entregar</button>`;
+                  : `<button class="mini ok" onclick="estado(${p.id},'entregado')">✓ entregado</button>`;
   return `<div style="display:flex; gap:6px; align-items:center;">${pill} ${btn}</div>`;
 }
 function cobroCell(p){
