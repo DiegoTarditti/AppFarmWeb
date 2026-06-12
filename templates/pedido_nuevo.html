@@ -129,6 +129,10 @@
           </div>
         </div>
         <div class="grid grid-detalle" style="margin-top:10px;">
+          <div class="field" id="fldDatoPagoMp" style="display:none;">
+            <label>Nro comprobante MP</label>
+            <input id="pDatoPagoMp" class="input" placeholder="ej: 76543210" oninput="onDatoPagoMpInput()" title="Al pegar el comprobante de MP, el pedido queda PAGADO">
+          </div>
           <div class="field">
             <label>Vuelto / obs. pago</label>
             <input id="pVuelto" class="input" placeholder="NO HAY PLATA / $">
@@ -220,15 +224,32 @@ function toggleReceta(){
   btn.classList.toggle('on', on);
 }
 
-// Pagado derivado de la forma de pago. Efectivo (o vacío) → NO pagado todavía
-// (el cadete cobra al entregar). Cualquier otra forma → pagado=true (ya cobrado
-// online o presencial). SC también → pagado (cobertura de OS).
-const _FORMAS_PAGADO = new Set(['transfer','link','sc','debito','credito']);
+// Pagado derivado de la forma de pago. Reglas:
+//   efectivo / vacío  → pagado=false (cobra el cadete al entregar).
+//   link / transfer   → pagado=false hasta que el operador pegue el nro de
+//                       comprobante MP (verificó que entró el pago en MP).
+//   débito / crédito  → pagado=true (POS presencial, ya cobrado).
+//   sc                → pagado=true (cubre obra social).
+// Y bonus: el campo Vuelto solo aplica con efectivo (en el resto se limpia/disabled).
 function onFormaPagoChange(){
   const f = document.getElementById('pFormaPago').value;
-  document.getElementById('pPagado').value = _FORMAS_PAGADO.has(f) ? 'true' : '';
-  // Y de paso: el campo Vuelto solo tiene sentido con efectivo. Lo dejamos
-  // editable si está en efectivo y lo limpiamos+deshabilitamos en el resto.
+  const necesitaComprobante = (f === 'link' || f === 'transfer');
+  const presencial = (f === 'debito' || f === 'credito' || f === 'sc');
+
+  // Mostrar/ocultar campo "Nro comprobante MP".
+  document.getElementById('fldDatoPagoMp').style.display = necesitaComprobante ? '' : 'none';
+  if (!necesitaComprobante) document.getElementById('pDatoPagoMp').value = '';
+
+  // Pagado.
+  if (presencial) {
+    document.getElementById('pPagado').value = 'true';
+  } else if (necesitaComprobante) {
+    _refrescarPagadoDesdeMp();    // depende del comprobante
+  } else {
+    document.getElementById('pPagado').value = '';
+  }
+
+  // Vuelto solo en efectivo (o vacío).
   const vu = document.getElementById('pVuelto');
   if (f === 'efectivo' || f === '') {
     vu.disabled = false;
@@ -236,6 +257,14 @@ function onFormaPagoChange(){
     vu.value = '';
     vu.disabled = true;
   }
+}
+
+// Cuando el operador escribe el nro de comprobante de MP/transferencia, marcamos
+// pagado=true automáticamente. Si lo borra, vuelve a pagado=false.
+function onDatoPagoMpInput(){ _refrescarPagadoDesdeMp(); }
+function _refrescarPagadoDesdeMp(){
+  const v = (document.getElementById('pDatoPagoMp').value || '').trim();
+  document.getElementById('pPagado').value = v ? 'true' : '';
 }
 
 async function cotizarEnvio(){
@@ -367,6 +396,7 @@ async function agregar(){
     importe: document.getElementById('pImporte').value || null,
     forma_pago: document.getElementById('pFormaPago').value,
     vuelto: document.getElementById('pVuelto').value.trim(),
+    dato_pago_mp: document.getElementById('pDatoPagoMp').value.trim() || null,
     requiere_receta: document.getElementById('pReceta').value === 'true',
     pagado: document.getElementById('pPagado').value === 'true',
     turno: document.getElementById('pTurno').value,
@@ -383,12 +413,14 @@ async function agregar(){
   showToast(`✓ Pedido agregado <a href="/reparto/planilla">ver planilla →</a>`);
   // Reset campos del host (cliente_picker se limpia con ClientePicker.clear)
   ClientePicker.clear();
-  ['pNota','pImporte','pVuelto','pProducto','pObservacion','pEnvio','pCuadras'].forEach(i=>{
+  ['pNota','pImporte','pVuelto','pProducto','pObservacion','pEnvio','pCuadras','pDatoPagoMp'].forEach(i=>{
     const el=document.getElementById(i); if(el) el.value='';
   });
   document.getElementById('pPrio').value='normal';
   document.getElementById('pCanal').value='mostrador';
   document.getElementById('pFormaPago').value='';
+  document.getElementById('fldDatoPagoMp').style.display='none';
+  document.getElementById('pVuelto').disabled=false;
   // pTurno NO se resetea: queda el último elegido (también guardado en localStorage)
   document.getElementById('pReceta').value='';
   document.getElementById('btnReceta').classList.remove('on');

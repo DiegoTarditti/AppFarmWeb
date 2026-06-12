@@ -358,6 +358,9 @@ def init_app(app):
                 importe=importe,
                 forma_pago=(b.get('forma_pago') or '').strip() or None,
                 vuelto=(b.get('vuelto') or '').strip() or None,
+                # Nro de comprobante MP/transferencia. Si está cargado, el frontend
+                # ya seteó pagado=true (verificación manual del operador en MP).
+                dato_pago_mp=(b.get('dato_pago_mp') or '').strip() or None,
                 requiere_receta=bool(b.get('requiere_receta')),
                 pagado=bool(b.get('pagado')),
                 turno=(b.get('turno') or '').strip() or None,
