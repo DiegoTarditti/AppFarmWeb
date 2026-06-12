@@ -301,11 +301,11 @@ def init_app(app):
                 # tarjeta presencial), saltamos 'en_caja' y vamos directo al estado
                 # destino (mismo cálculo que usa /caja/pedido/<id>/cobrar).
                 pagado=bool(body.get('pagado') or False),
-                estado=(
-                    caja.proximo_estado_cobrado(body.get('destino') or None,
-                                                body.get('stock') or None)
-                    if body.get('pagado') else 'en_caja'
-                ),
+                # SIEMPRE pasa por caja: aunque el operador ya haya cobrado, el
+                # cajero tiene que emitir el ticket fiscal en ObServer y despachar.
+                # `pagado` solo registra que la plata ya entró (badge "cobrado" +
+                # "ticket fiscal pendiente" en la bandeja de caja).
+                estado='en_caja',
                 canal='atencion',
                 tomo=oper,
                 # turno: lo asigna el operador de planilla (entra NULL).
