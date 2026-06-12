@@ -56,151 +56,7 @@
   </div>
 
   <div class="wrap">
-    <div class="card">
-      <h2 style="margin:0 0 10px; font-size:14px; color:var(--title);">Agregar pedido</h2>
-      <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
-        <label class="muted" style="font-size:11px; flex:2; min-width:200px; display:flex; flex-direction:column; gap:3px;">
-          Cliente
-          <div style="display:flex; gap:5px;">
-            <input id="pCliente" class="input" placeholder="Nombre del cliente" style="flex:1;" autocomplete="off" oninput="ClientePicker.onClienteInput()" onkeydown="if(event.key==='Escape')document.getElementById('resCli').style.display='none'">
-            <button onclick="ClientePicker.buscarCli()" class="hbtn" style="flex-shrink:0;">🔎</button>
-            <button onclick="ClientePicker.abrirNuevoCliente()" class="hbtn" title="＋ Nuevo cliente" style="flex-shrink:0; font-size:14px; padding:5px 9px;">＋</button>
-            <button id="btnEditarCli" class="hbtn" title="Editar datos" style="display:none; flex-shrink:0; font-size:14px; padding:5px 9px;" onclick="ClientePicker.abrirEditarCliente(window._cid, window._oid)">✏️</button>
-          </div>
-        </label>
-        <label class="muted" style="font-size:11px; flex:3; min-width:240px; display:flex; flex-direction:column; gap:3px;">
-          Dirección
-          <input id="pDir" class="input" placeholder="ej: Av. Córdoba 3400, Rosario" style="width:100%;">
-        </label>
-      </div>
-      <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end;">
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          Domicilio guardado
-          <select id="pDom" class="input" style="width:170px;"><option value="">— escribir dirección —</option></select>
-        </label>
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          Ciudad
-          <select id="pCiudad" class="input" style="width:130px;"></select>
-        </label>
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          Prioridad
-          <select id="pPrio" class="input" style="width:130px;">
-            <option value="normal">🟢 Normal</option>
-            <option value="urgente">🔴 Urgente</option>
-            <option value="programado">🕐 Programado</option>
-          </select>
-        </label>
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          Nota
-          <input id="pNota" class="input" placeholder="ítems / referencia" style="width:150px;">
-        </label>
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          Canal
-          <select id="pCanal" class="input" style="width:120px;">
-            <option value="manual">Manual</option>
-            <option value="telefono">Teléfono</option>
-            <option value="chat">Chat</option>
-            <option value="whatsapp">WhatsApp</option>
-            <option value="mostrador">Mostrador</option>
-          </select>
-        </label>
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          Turno
-          <select id="pTurno" class="input" style="width:100px;">
-            <option value="">—</option>
-            <option value="mañana">Mañana</option>
-            <option value="tarde">Tarde</option>
-          </select>
-        </label>
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          TOMO
-          <select id="pTomo" class="input" style="width:140px;">
-            <option value="">— Tomó —</option>
-          </select>
-        </label>
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          Importe $
-          <input id="pImporte" class="input" placeholder="0.00" style="width:90px;" type="number" step="0.01" min="0">
-        </label>
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          Forma de pago
-          <select id="pFormaPago" class="input" style="width:115px;">
-            <option value="">—</option>
-            <option value="efectivo">Efectivo</option>
-            <option value="transfer">Transfer</option>
-            <option value="link">Link</option>
-            <option value="sc">SC</option>
-            <option value="debito">Débito</option>
-            <option value="credito">Crédito</option>
-          </select>
-        </label>
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          Vuelto
-          <input id="pVuelto" class="input" placeholder="NO HAY PLATA / $" style="width:130px;">
-        </label>
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          Producto
-          <input id="pProducto" class="input" placeholder="lo que lleva" style="width:130px;">
-        </label>
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          Cadete
-          <select id="pCadete" class="input" style="width:140px;">
-            <option value="">(heredar de ruta)</option>
-          </select>
-        </label>
-        <label class="muted" style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
-          Observación
-          <input id="pObservacion" class="input" placeholder="recetas 3, TRAER PANTUS..." style="width:200px;" onkeydown="if(event.key==='Enter')agregar()">
-        </label>
-        <label style="font-size:11px; display:flex; align-items:center; gap:4px; height:35px;">
-          <input type="checkbox" id="pReceta"> Receta
-        </label>
-        <label style="font-size:11px; display:flex; align-items:center; gap:4px; height:35px;">
-          <input type="checkbox" id="pPagado"> Pagado
-        </label>
-        <button onclick="agregar()" class="hbtn hbtn-ok" style="padding:9px 16px; height:35px;">Agregar</button>
-      </div>
-      <div id="resCli" class="res" style="display:none;"></div>
-      <div class="muted" id="avisoCfg" style="font-size:11px; margin-top:8px;"></div>
-    </div>
     <div id="bannerUrg" style="display:none; background:#3a1414; border:1px solid #5a2a2a; color:#F09595; border-radius:10px; padding:8px 12px; margin-bottom:14px; font-size:13px;"></div>
-
-    <div id="modalNuevo" class="modal-overlay">
-      <div class="card" style="width:360px; max-width:90vw; max-height:90vh; overflow:auto;">
-        <h3 style="margin:0 0 10px; font-size:14px; color:var(--title);">＋ Nuevo cliente</h3>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <input id="ncNombre" class="input" placeholder="Nombre">
-          <input id="ncApellido" class="input" placeholder="Apellido">
-          <input id="ncDni" class="input" placeholder="DNI">
-          <input id="ncTel" class="input" placeholder="Teléfono">
-          <input id="ncDom" class="input" placeholder="Domicilio">
-          <select id="ncCiudad" class="input"></select>
-        </div>
-        <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end;">
-          <button class="hbtn" onclick="ClientePicker.cerrarModal('modalNuevo')">Cancelar</button>
-          <button class="hbtn hbtn-ok" onclick="ClientePicker.guardarNuevoCliente()">Guardar</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="modalEditar" class="modal-overlay">
-      <div class="card" style="width:400px; max-width:90vw; max-height:90vh; overflow:auto;">
-        <h3 style="margin:0 0 10px; font-size:14px; color:var(--title);">✏️ Editar datos del cliente</h3>
-        <div id="edObsRef" class="muted2" style="font-size:11px; margin-bottom:8px;"></div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <input id="edNombre" class="input" placeholder="Nombre">
-          <input id="edApellido" class="input" placeholder="Apellido">
-          <input id="edDni" class="input" placeholder="DNI">
-          <input id="edTel" class="input" placeholder="Teléfono">
-          <input id="edDom" class="input" placeholder="Domicilio">
-          <input id="edCiudad" class="input" placeholder="Ciudad">
-        </div>
-        <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end;">
-          <button class="hbtn" onclick="ClientePicker.cerrarModal('modalEditar')">Cancelar</button>
-          <button class="hbtn hbtn-ok" onclick="ClientePicker.guardarEditarCliente()">Guardar</button>
-        </div>
-      </div>
-    </div>
 
     <div id="mapwrap" style="display:none;"><div id="map"></div></div>
     <div class="cols" id="cols"><div class="muted">Cargando…</div></div>
@@ -225,24 +81,6 @@ async function cargar(){
   const banner = document.getElementById('bannerUrg');
   banner.style.display = urgSin?'block':'none';
   banner.textContent = urgSin?`⚠️ ${urgSin} pedido(s) URGENTE(s) sin asignar a una ruta.`:'';
-  const selC = document.getElementById('pCiudad');
-  if(selC && !selC._filled){
-    const opts = (d.ciudades||['Rosario']).map(c=>`<option ${c==='Rosario'?'selected':''}>${esc(c)}</option>`).join('');
-    selC.innerHTML = opts;
-    selC._filled = true;
-    // Poblar también ncCiudad (modal nuevo cliente) — antes lo hacía abrirNuevoCliente
-    // on-demand, ahora se hace acá porque la función vive en cliente_picker.js.
-    const selNc = document.getElementById('ncCiudad');
-    if (selNc && !selNc._filled){ selNc.innerHTML = opts; selNc._filled = true; }
-  }
-  if(d.cadetes){
-    const selCad = document.getElementById('pCadete');
-    selCad.innerHTML = '<option value="">(heredar de ruta)</option>' + d.cadetes.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
-  }
-  if(d.usuarios){
-    const selTomo = document.getElementById('pTomo');
-    selTomo.innerHTML = '<option value="">— Tomó —</option>' + d.usuarios.map(u=>`<option value="${esc(u.nombre)}">${esc(u.nombre)}</option>`).join('');
-  }
   const optRutas = '<option value="">(sin asignar)</option>' + window._rutas.map(r=>`<option value="${r.id}">${esc(r.nombre)}</option>`).join('');
   const grupos = [{id:null, nombre:'Sin asignar', color:'#6a6a72'}].concat(window._rutas);
   document.getElementById('cols').innerHTML = grupos.map(g=>{
@@ -344,55 +182,6 @@ function pedCard(p, optRutas){
   </div>`;
 }
 
-// Cliente: buscarCli / pickCli / abrirNuevoCliente / cerrarModal /
-// guardarNuevoCliente / abrirEditarCliente / guardarEditarCliente viven
-// en /static/js/cliente_picker.js y se invocan via ClientePicker.X().
-
-async function agregar(){
-  const body = {
-    cliente_nombre: document.getElementById('pCliente').value.trim(),
-    cliente_id: window._cid || null,
-    observer_id: window._oid || null,
-    domicilio_id: document.getElementById('pDom').value || null,
-    direccion: document.getElementById('pDir').value.trim(),
-    localidad: document.getElementById('pCiudad').value,
-    nota: document.getElementById('pNota').value.trim(),
-    prioridad: document.getElementById('pPrio').value,
-    tomo: document.getElementById('pTomo').value.trim(),
-    canal: document.getElementById('pCanal').value,
-    importe: document.getElementById('pImporte').value || null,
-    forma_pago: document.getElementById('pFormaPago').value,
-    vuelto: document.getElementById('pVuelto').value.trim(),
-    requiere_receta: document.getElementById('pReceta').checked,
-    pagado: document.getElementById('pPagado').checked,
-    turno: document.getElementById('pTurno').value,
-    cadete_id: document.getElementById('pCadete').value || null,
-    observacion: document.getElementById('pObservacion').value.trim(),
-    producto: document.getElementById('pProducto').value.trim(),
-  };
-  if(!body.cliente_nombre && !body.direccion && !body.domicilio_id){ alert('Poné cliente o dirección.'); return; }
-  const d = await jpost('/reparto/pedido', body);
-  if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
-  if(!d.asignado){ document.getElementById('avisoCfg').textContent = '⚠️ El último pedido quedó "sin asignar".'; }
-  else { document.getElementById('avisoCfg').textContent=''; }
-  ['pCliente','pDir','pNota','pImporte','pVuelto','pProducto','pObservacion'].forEach(i=>{
-    const el=document.getElementById(i); if(el) el.value='';
-  });
-  const selTomo = document.getElementById('pTomo');
-  if(selTomo) selTomo.selectedIndex = 0;
-  document.getElementById('pPrio').value='normal';
-  document.getElementById('pDom').innerHTML='<option value="">— escribir dirección —</option>';
-  document.getElementById('pCanal').value='manual';
-  document.getElementById('pFormaPago').value='';
-  document.getElementById('pTurno').value='';
-  document.getElementById('pCadete').value='';
-  document.getElementById('pReceta').checked=false;
-  document.getElementById('pPagado').checked=false;
-  document.getElementById('btnEditarCli').style.display='none';
-  window._oid=null;
-  window._cid=null;
-  cargar();
-}
 async function reasignar(pid, ruta_id){ await jpost(`/reparto/pedido/${pid}/asignar`, {ruta_id: ruta_id||null}); cargar(); }
 async function estado(pid, e){ await jpost(`/reparto/pedido/${pid}/estado`, {estado:e}); cargar(); }
 async function delPed(pid){ if(confirm('¿Quitar pedido?')){ await jpost(`/reparto/pedido/${pid}/delete`); cargar(); } }
@@ -404,11 +193,6 @@ async function exportar(rid){
 
 document.getElementById('fecha').value = hoyISO();
 cargar();
-</script>
-
-<script src="/static/js/cliente_picker.js"></script>
-<script>
-ClientePicker.init({});
 </script>
 </body>
 </html>
