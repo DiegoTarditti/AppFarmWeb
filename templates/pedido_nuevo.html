@@ -444,6 +444,13 @@ function pickProducto(p){
   window._prodOid = p.observer_id;
   document.getElementById('pProductoLink').textContent = `· obs:${p.observer_id} · stock ${p.stock}`;
   document.getElementById('resProd').style.display='none';
+  // Auto-activar el toggle "Traer Receta" si el producto NO es venta libre.
+  // (Backend devuelve p.receta=true cuando ObsProducto.id_tipo_venta_control != 'L'.)
+  // Solo ENCIENDE: si ya estaba prendido o el operador prefiere dejarlo así, no
+  // pisamos su decisión cuando el producto siguiente sea venta libre.
+  if (p.receta && document.getElementById('pReceta').value !== 'true'){
+    toggleReceta();
+  }
 }
 
 async function cargarSelects(){
