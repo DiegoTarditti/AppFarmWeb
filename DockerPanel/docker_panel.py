@@ -2906,6 +2906,24 @@ def _path_allowed(target_path, whitelist):
     return False
 
 
+def _is_lan_origin(origin):
+    """¿El origin es de la red local? (localhost, IPs privadas LAN, *.local).
+    El helper solo bindea a 127.0.0.1, así que solo lo alcanza el navegador de
+    esta misma PC — permitir orígenes LAN es seguro y evita configurar el CORS a
+    mano cuando la caja se abre desde una IP de la LAN (no por Render)."""
+    import ipaddress
+    try:
+        host = (urllib.parse.urlparse(origin).hostname or "").lower()
+    except ValueError:
+        return False
+    if host in ("localhost", "127.0.0.1", "::1") or host.endswith(".local"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
 def _config_render_origins():
     """Orígenes (scheme://host) de las URLs de Render configuradas en
     agente_config.txt. Permite que el helper acepte CORS desde la instancia
@@ -3102,7 +3120,8 @@ class _HelperHandler(http.server.BaseHTTPRequestHandler):
     def _cors(self):
         origin = self.headers.get("Origin", "")
         if origin and (origin in HELPER_ALLOWED_ORIGINS
-                       or origin in _config_render_origins()):
+                       or origin in _config_render_origins()
+                       or _is_lan_origin(origin)):
             self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
