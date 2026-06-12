@@ -646,6 +646,52 @@ def init_app(app):
                 s.commit()
         return jsonify({'ok': True})
 
+    @app.route('/reparto/pedido/<int:pid>/ticket')
+    @login_required
+    def reparto_ticket_data(pid):
+        """Datos del ticket que se lleva el cadete (lo imprime el DockerPanel local
+        en la térmica 80mm vía ESC/POS). El browser de la farmacia hace fetch acá y
+        postea el JSON a http://localhost:5055/print-ticket. Acá NO se imprime: solo
+        se arma el payload con TODO lo que el cadete necesita (incl. vuelto/teléfono,
+        que la bandeja de caja oculta)."""
+        if not _ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pid)
+            if not p:
+                return jsonify({'error': 'no existe'}), 404
+            cad = _mapa_cadetes(s)
+            rutas_cad = {r.id: r.cadete_id for r in s.query(database.RutaReparto)
+                         .filter(database.RutaReparto.cadete_id.isnot(None)).all()}
+            ef_id = reparto.cadete_efectivo_id(p, rutas_cad)
+            producto_monto = float(p.total_paciente) if p.total_paciente is not None else None
+            envio = float(p.envio_costo) if p.envio_costo is not None else None
+            # Cobrar = producto + envío (mismo criterio que el vuelto de atención).
+            # Si ya está pagado, el cadete no cobra nada.
+            cobrar = None if p.pagado else round((producto_monto or 0) + (envio or 0), 2)
+            return jsonify({
+                'id': p.id,
+                'fecha': p.creado_en.strftime('%d/%m %H:%M') if p.creado_en else '',
+                'farmacia': 'Badia',
+                'cliente': p.cliente_nombre or '',
+                'telefono': p.telefono or '',
+                'direccion': p.direccion or '',
+                'piso': p.piso or '', 'depto': p.depto or '', 'referencia': p.referencia or '',
+                'observacion': p.observacion or '',
+                'producto': p.producto or '',
+                'receta_pendiente': (p.receta_estado == 'pendiente')
+                                    or (p.receta_estado is None and bool(p.requiere_receta)),
+                'pagado': bool(p.pagado),
+                'forma_pago': p.forma_pago or '',
+                'producto_monto': producto_monto,
+                'envio': envio,
+                'cobrar': cobrar,
+                'paga_con': float(p.paga_con) if p.paga_con is not None else None,
+                'vuelto': p.vuelto or '',
+                'obra_social': p.obra_social or '',
+                'cadete': cad.get(ef_id, '') if ef_id else '',
+            })
+
     @app.route('/reparto/ruta/<int:rid>/optimizar', methods=['POST'])
     @login_required
     def reparto_optimizar(rid):

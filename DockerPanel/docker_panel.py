@@ -17,6 +17,7 @@ import queue
 import socket
 import subprocess
 import sys
+import textwrap
 import threading
 import time
 import tkinter as tk
@@ -2928,6 +2929,169 @@ def _config_render_origins():
     return origins
 
 
+# ── Impresión térmica 80mm (ticket del cadete) ─────────────────────────────
+# El frontend de Render postea el JSON del pedido a POST /print-ticket; acá lo
+# convertimos a ESC/POS y lo mandamos a la impresora. Pensado para impresoras de
+# 80mm (48 columnas en fuente A). La impresora se toma de `printer_name=` en
+# agente_config.txt; si no está, se usa la impresora default de Windows.
+_TICKET_COLS = 48
+_ESC = b"\x1b"
+_GS = b"\x1d"
+
+
+def _load_printer_name():
+    """Nombre de la impresora térmica (clave ``printer_name=`` en agente_config.txt).
+    Vacío → se usa la default de Windows."""
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente_config.txt")
+    if os.path.isfile(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("printer_name="):
+                        return line.split("=", 1)[1].strip()
+        except OSError:
+            pass
+    return ""
+
+
+def _money(v):
+    """Formatea a pesos sin decimales con separador de miles (12500 -> '$ 12.500')."""
+    try:
+        n = int(round(float(v)))
+    except (TypeError, ValueError):
+        return ""
+    return "$ " + format(n, ",d").replace(",", ".")
+
+
+def _ticket_escpos_bytes(d):
+    """Convierte el dict del pedido en una secuencia ESC/POS para 80mm.
+    Sin emojis (la térmica no los renderiza); texto en cp850 (acentos AR)."""
+    def enc(txt):
+        return str(txt or "").encode("cp850", "replace")
+
+    out = bytearray()
+    out += _ESC + b"@"            # init
+    out += _ESC + b"t\x02"       # codepage PC850 (acentos)
+
+    def w(txt=""):               # línea izquierda
+        out.extend(enc(txt) + b"\n")
+
+    def center(txt):
+        out.extend(_ESC + b"a\x01" + enc(txt) + b"\n" + _ESC + b"a\x00")
+
+    def bold(txt):
+        out.extend(_ESC + b"E\x01" + enc(txt) + b"\n" + _ESC + b"E\x00")
+
+    def sep():
+        w("-" * _TICKET_COLS)
+
+    def row(label, value):       # label a la izq, value a la der (48 col)
+        value = str(value or "")
+        pad = max(1, _TICKET_COLS - len(label) - len(value))
+        w(label + " " * pad + value)
+
+    def wrap(txt, indent="  "):
+        for ln in textwrap.wrap(str(txt or ""), _TICKET_COLS - len(indent)) or [""]:
+            w(indent + ln)
+
+    # Encabezado
+    out += _GS + b"!\x11"        # doble alto/ancho
+    center((d.get("farmacia") or "FARMACIA").upper())
+    out += _GS + b"!\x00"        # normal
+    enc_id = d.get("id")
+    center(f"Pedido #{enc_id} - {d.get('fecha') or ''}".strip(" -"))
+    sep()
+
+    # Cliente
+    bold("CLIENTE")
+    wrap(d.get("cliente") or "s/nombre")
+    if d.get("telefono"):
+        w("  Tel: " + str(d["telefono"]))
+    sep()
+
+    # Domicilio
+    bold("ENTREGAR EN")
+    wrap(d.get("direccion") or "s/direccion")
+    pd = []
+    if d.get("piso"):
+        pd.append("Piso " + str(d["piso"]))
+    if d.get("depto"):
+        pd.append("Depto " + str(d["depto"]))
+    if pd:
+        w("  " + " - ".join(pd))
+    if d.get("referencia"):
+        wrap("(" + str(d["referencia"]) + ")")
+    sep()
+
+    # Receta
+    if d.get("receta_pendiente"):
+        out += _GS + b"!\x11"
+        center("** TRAER RECETA **")
+        out += _GS + b"!\x00"
+        sep()
+
+    # Observación
+    if d.get("observacion"):
+        bold("OBSERVACION")
+        wrap(d["observacion"])
+        sep()
+
+    # Producto (lo que lleva)
+    if d.get("producto"):
+        bold("LLEVA")
+        wrap(d["producto"])
+        sep()
+
+    # Cobro
+    if d.get("pagado"):
+        bold("PAGADO - NO COBRAR")
+    else:
+        out += _GS + b"!\x01"        # doble alto
+        bold("COBRAR " + (_money(d.get("cobrar")) if d.get("cobrar") is not None else ""))
+        out += _GS + b"!\x00"
+        if d.get("producto_monto") is not None:
+            row("  Producto", _money(d["producto_monto"]))
+        if d.get("envio") is not None:
+            row("  Envio", _money(d["envio"]))
+        if d.get("forma_pago"):
+            row("Forma pago", str(d["forma_pago"]))
+        if d.get("paga_con") is not None:
+            row("Paga con", _money(d["paga_con"]))
+        if d.get("vuelto"):
+            v = str(d["vuelto"])
+            bold("VUELTO  " + (_money(v) if v.replace(".", "").replace("$", "").strip().isdigit() else v))
+    sep()
+
+    if d.get("cadete"):
+        w("Cadete: " + str(d["cadete"]))
+
+    out += b"\n\n\n\n" + _GS + b"V\x00"   # feed + corte total
+    return bytes(out)
+
+
+def _imprimir_ticket_cadete(d):
+    """Manda el ticket a la térmica vía el spooler de Windows (raw ESC/POS).
+    Requiere pywin32. Lanza excepción con mensaje claro si falta o falla."""
+    payload = _ticket_escpos_bytes(d)
+    try:
+        import win32print
+    except ImportError as e:
+        raise RuntimeError("Falta pywin32 en la PC del panel (pip install pywin32).") from e
+    name = _load_printer_name() or win32print.GetDefaultPrinter()
+    if not name:
+        raise RuntimeError("No hay impresora configurada (printer_name= en agente_config.txt).")
+    h = win32print.OpenPrinter(name)
+    try:
+        win32print.StartDocPrinter(h, 1, ("Ticket cadete", None, "RAW"))
+        win32print.StartPagePrinter(h)
+        win32print.WritePrinter(h, payload)
+        win32print.EndPagePrinter(h)
+        win32print.EndDocPrinter(h)
+    finally:
+        win32print.ClosePrinter(h)
+
+
 class _HelperHandler(http.server.BaseHTTPRequestHandler):
     """Endpoints locales: /ping, /folder-files?path=…, /read-pdf?path=…
 
@@ -2940,7 +3104,7 @@ class _HelperHandler(http.server.BaseHTTPRequestHandler):
         if origin and (origin in HELPER_ALLOWED_ORIGINS
                        or origin in _config_render_origins()):
             self.send_header("Access-Control-Allow-Origin", origin)
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def _json(self, status, payload):
@@ -2956,6 +3120,25 @@ class _HelperHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(204)
         self._cors()
         self.end_headers()
+
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/print-ticket":
+            try:
+                length = int(self.headers.get("Content-Length", 0) or 0)
+            except ValueError:
+                length = 0
+            raw = self.rfile.read(length) if length else b""
+            try:
+                data = json.loads(raw.decode("utf-8")) if raw else {}
+            except (ValueError, UnicodeDecodeError):
+                return self._json(400, {"ok": False, "error": "JSON inválido"})
+            try:
+                _imprimir_ticket_cadete(data)
+                return self._json(200, {"ok": True})
+            except Exception as e:   # noqa: BLE001 — devolvemos el error al browser
+                return self._json(500, {"ok": False, "error": str(e)})
+        return self._json(404, {"ok": False, "error": "not found"})
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
