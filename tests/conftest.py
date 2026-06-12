@@ -90,6 +90,7 @@ def flask_app(init_test_db, tmp_path_factory):
     import routes.envio as _envio
     import routes.memoria_no_resueltos as _memnr
     import routes.reparto as _reparto
+    import routes.clientes as _clientes
     _inv.init_app(app)
     _claims.init_app(app)
     _plant.init_app(app)
@@ -98,6 +99,7 @@ def flask_app(init_test_db, tmp_path_factory):
     _envio.init_app(app)
     _memnr.init_app(app)
     _reparto.init_app(app)
+    _clientes.init_app(app)
 
     # Endpoint dummy 'index' — varias rutas hacen `redirect(url_for('index'))`
     # ante errores (ej. claims.create_claim_route con invoice_id inválido).

@@ -6,6 +6,122 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ✅ Componente reusable `cliente_picker` (2026-05-28 → 2026-06-10)
+
+**Origen**: la sección "👤 Cliente + Dirección" de `/pedido/nuevo` está
+bien armada y ya funciona (buscador multi-palabra, dropdown de domicilios
+guardados, geocoder de dirección nueva, modales de alta/edición). Diego
+propuso extraerla como **componente reusable** para usarla desde varias
+pantallas en vez de duplicar HTML/JS.
+
+**Casos de uso identificados**:
+- `/atencion` — al atender un chat, botón "→ Crear pedido" que abre el
+  picker con teléfono del cliente precargado.
+- `/caja` — buscar cliente para refacturar / vincular ticket.
+- Futuras pantallas — anulación por DNI, histórico por cliente, etc.
+
+**Implementado (2026-06-10)** — commits `53bf194`, `f0eca4e`, `ed7c0fb`, `f94d915`:
+
+1. ✅ **Macro Jinja** en `templates/_cliente_picker.html` (`cliente_picker()`
+   y `cliente_picker_modales()`).
+2. ✅ **Módulo JS** en `static/js/cliente_picker.js`. API pública:
+   `ClientePicker.init({onAddressChange, onClienteSelected, onClear})`,
+   `.getValues()`, `.clear()`, `.loadCliente({cliente_id, observer_id})`,
+   `.pickCli()`, etc.
+   - **Limitación actual**: una sola instancia por página (IDs fijos
+     `pCliente`, `pDir`, etc.). Multi-instancia requiere namespacing —
+     ver entry "Namespacing multi-instancia" más abajo.
+3. ✅ **Endpoints `/api/clientes/*`** en `routes/clientes.py` (8 endpoints):
+   `/buscar`, `/ficha`, `POST /` (crear), `POST /<cid>` (editar),
+   `/observer/<oid>/domicilios`, `/geocodificar`, `/separar-direccion`,
+   `POST /domicilios/<dom_id>/geo`. Los viejos `/reparto/api/*` y
+   `/reparto/cliente*` se borraron una sesión después de la migración
+   completa de callers (commit `ed7c0fb`).
+4. ✅ **Migración de pantallas**:
+   - `/pedido/nuevo` — usa el macro. Bajó de 787 → 366 líneas.
+   - `/atencion` — botón "📝 Pedido" en toolbar de conversación que abre
+     `/pedido/nuevo?observer_id=X`. Receiver: `pedido_nuevo.html` detecta
+     query param y llama `ClientePicker.loadCliente()`.
+   - `/reparto` — sigue con su buscador embebido propio (layout muy
+     distinto al picker, no es swap directo, ver entry "Aplicar a /reparto"
+     abajo).
+
+**Lecciones de la implementación**:
+- El "modo modal" del plan original NO se hizo. Hoy solo hay modo
+  embedded (`{{ cliente_picker() }}` se incrusta en un `<div>`). Si
+  aparece caso de uso del modal, se agrega.
+- El "namespacing por prefix" se simplificó a IDs fijos. Una sola
+  instancia por página alcanza para todo lo que tenemos hoy.
+
+---
+
+## ✅ Aplicar `cliente_picker` a `/reparto` — opción 3 (2026-06-10)
+
+Migrado el JS sin tocar el HTML del layout. Se borraron las 7 funciones
+duplicadas (`buscarCli`, `pickCli`, `abrirNuevoCliente`, `cerrarModal`,
+`guardarNuevoCliente`, `abrirEditarCliente`, `guardarEditarCliente`) y
+los onclicks ahora apuntan a `ClientePicker.X()`. El módulo se hizo
+defensivo (chequea `if(!el)` antes de tocar `pPiso`, `pDepto`, `pRef`,
+`pDomWrap`, `pDomSingle`, `pDomCount`) y se le sumó soporte para los
+campos extra del modal de `/reparto` (`ncDom`, `ncCiudad`) — son
+opcionales: si están, se mandan al POST de crear cliente.
+
+Resultado: `reparto.html` baja de 509 → 413 líneas. Tests siguen
+verdes (20/20 en test_clientes_api.py).
+
+**Pendientes opciones 1 y 2** (unificar layout o parametrizar macro):
+no urgentes, se hace cuando vos quieras unificar visual entre las dos
+pantallas.
+
+---
+
+## ⏳ Pendiente — Namespacing multi-instancia del `cliente_picker` (2026-06-10)
+
+**Caso de uso**: si en alguna pantalla quisieras 2 buscadores de cliente
+(ej. cliente comprador + cliente destinatario en envíos a terceros), el
+módulo actual no lo soporta porque usa IDs fijos.
+
+**Plan**:
+- `cliente_picker(prefix='pedido')` macro recibe prefix para IDs.
+- `ClientePicker(prefix, opts)` factory devuelve instancia con
+  `.getValues()`, `.clear()`, etc.
+- Document-click listener acepta múltiples prefijos.
+
+**Cuándo**: cuando aparezca el primer caso real de 2 instancias.
+No anticipar.
+
+---
+
+### Justificación histórica del `cliente_picker` (mayo 2026)
+
+**Por qué SÍ valía la pena**:
+- Reuso real concreto (2-3 lugares ya identificados, más a futuro).
+- Mejoras al picker (mostrar último pedido, marcar VIP, etc.) propagan
+  a todas las pantallas que lo usen.
+- Riesgo bajo: componente acotado, si falla solo rompe donde se usa.
+- Replaza el 80% del valor que tendría una "abstracción de Flow" con 20%
+  del riesgo (ver descarte abajo).
+
+**Lo que NO vamos a hacer** (descartado 2026-05-28): construir una
+abstracción genérica de **Flow/state-machine** que reúna las 6 pantallas
+(`/atencion`, `/pedido/nuevo`, `/caja`, `/reparto`, `/reparto/planilla`,
+`/envio`) bajo un mismo motor de transiciones. Razones del descarte:
+- Las rutas actuales son simples; la abstracción las haría más complejas.
+- Regla del 3: hoy hay 1 flujo claro (pedido), no 3 repetidos. El shape
+  del Flow se diseña SOLO con info real de producción.
+- Flow engines genéricos tienen tasa de fracaso alta — son
+  desproporcionados para 1 farmacia con 4-state machine.
+
+**Camino intermedio adoptado** (en su lugar):
+- Botones de transición explícitos pantalla-a-pantalla cuando se necesite
+  ("→ Crear pedido", "→ Enviar a caja", "→ Marcar para reparto").
+- Componentes reusables como `cliente_picker` para puntos de fricción
+  concretos.
+- Si dentro de 1-2 meses operando aparecen 3 flujos genuinos repetidos,
+  recién ahí evaluar un Flow engine.
+
+---
+
 ## 🤖 Bot asistente / Atención / Caja — pendientes (2026-06-05)
 
 Hecho: bot Telegram, handoff/panel `/atencion`, ficha cliente, alta lead, UI
@@ -859,10 +975,9 @@ una tarea aparte.
 ### ~~Branch protection en `main`~~ ✅ HECHO 2026-05-01
 - Repo hecho público + ruleset via API (id=15842390): require `Syntax check` + `Pytest`, no force-push, no delete. Rama `dev` para trabajo diario, `main` solo para bloques listos.
 
-### Migrar a Alembic
-- **Trigger**: pasamos las ~30 tablas en `database.py` o aparece una migración compleja (renombre, mover datos).
-- **Esfuerzo**: 1-2 días.
-- **Cómo**: instalar Alembic, generar baseline desde la DB actual. Convertir cada `ALTER TABLE IF NOT EXISTS` inline en una migración versionada.
+### ~~Migrar a Alembic~~ ✅ HECHO 2026-06-02 (PRs #145-147)
+- Baseline en `alembic/versions/ae43763059ec_baseline_schema.py`. Ver
+  entrada "HECHO — Adoptar Alembic" arriba en este mismo doc para detalle.
 
 ### Docstrings consistentes
 - **Trigger**: cuando un nuevo dev se sume al proyecto.

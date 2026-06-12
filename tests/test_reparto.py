@@ -409,13 +409,13 @@ def test_reparto_crear_pedido_con_cliente(client):
 
 
 def test_reparto_editar_cliente(client):
-    """POST /reparto/cliente/<id> actualiza la fila clientes y NO toca obs_clientes."""
+    """POST /api/clientes/<id> actualiza la fila clientes y NO toca obs_clientes."""
     import database
     with database.get_db() as s:
         cid = database.get_or_create_cliente(
             s, lead={'nombre': 'Ana', 'apellido': 'Martínez', 'telefono': '341-000'})
         s.commit()
-    r = client.post(f'/reparto/cliente/{cid}', json={
+    r = client.post(f'/api/clientes/{cid}', json={
         'telefono': '341-999',
         'ciudad': 'Rosario',
     })

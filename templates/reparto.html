@@ -62,10 +62,10 @@
         <label class="muted" style="font-size:11px; flex:2; min-width:200px; display:flex; flex-direction:column; gap:3px;">
           Cliente
           <div style="display:flex; gap:5px;">
-            <input id="pCliente" class="input" placeholder="Nombre del cliente" style="flex:1;" oninput="window._oid=null;window._cid=null">
-            <button onclick="buscarCli()" class="hbtn" style="flex-shrink:0;">🔎</button>
-            <button onclick="abrirNuevoCliente()" class="hbtn" title="＋ Nuevo cliente" style="flex-shrink:0; font-size:14px; padding:5px 9px;">＋</button>
-            <button id="btnEditarCli" class="hbtn" title="Editar datos" style="display:none; flex-shrink:0; font-size:14px; padding:5px 9px;" onclick="abrirEditarCliente(window._cid, window._oid)">✏️</button>
+            <input id="pCliente" class="input" placeholder="Nombre del cliente" style="flex:1;" autocomplete="off" oninput="ClientePicker.onClienteInput()" onkeydown="if(event.key==='Escape')document.getElementById('resCli').style.display='none'">
+            <button onclick="ClientePicker.buscarCli()" class="hbtn" style="flex-shrink:0;">🔎</button>
+            <button onclick="ClientePicker.abrirNuevoCliente()" class="hbtn" title="＋ Nuevo cliente" style="flex-shrink:0; font-size:14px; padding:5px 9px;">＋</button>
+            <button id="btnEditarCli" class="hbtn" title="Editar datos" style="display:none; flex-shrink:0; font-size:14px; padding:5px 9px;" onclick="ClientePicker.abrirEditarCliente(window._cid, window._oid)">✏️</button>
           </div>
         </label>
         <label class="muted" style="font-size:11px; flex:3; min-width:240px; display:flex; flex-direction:column; gap:3px;">
@@ -177,8 +177,8 @@
           <select id="ncCiudad" class="input"></select>
         </div>
         <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end;">
-          <button class="hbtn" onclick="cerrarModal('modalNuevo')">Cancelar</button>
-          <button class="hbtn hbtn-ok" onclick="guardarNuevoCliente()">Guardar</button>
+          <button class="hbtn" onclick="ClientePicker.cerrarModal('modalNuevo')">Cancelar</button>
+          <button class="hbtn hbtn-ok" onclick="ClientePicker.guardarNuevoCliente()">Guardar</button>
         </div>
       </div>
     </div>
@@ -196,8 +196,8 @@
           <input id="edCiudad" class="input" placeholder="Ciudad">
         </div>
         <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end;">
-          <button class="hbtn" onclick="cerrarModal('modalEditar')">Cancelar</button>
-          <button class="hbtn hbtn-ok" onclick="guardarEditarCliente()">Guardar</button>
+          <button class="hbtn" onclick="ClientePicker.cerrarModal('modalEditar')">Cancelar</button>
+          <button class="hbtn hbtn-ok" onclick="ClientePicker.guardarEditarCliente()">Guardar</button>
         </div>
       </div>
     </div>
@@ -227,8 +227,13 @@ async function cargar(){
   banner.textContent = urgSin?`⚠️ ${urgSin} pedido(s) URGENTE(s) sin asignar a una ruta.`:'';
   const selC = document.getElementById('pCiudad');
   if(selC && !selC._filled){
-    selC.innerHTML = (d.ciudades||['Rosario']).map(c=>`<option ${c==='Rosario'?'selected':''}>${esc(c)}</option>`).join('');
+    const opts = (d.ciudades||['Rosario']).map(c=>`<option ${c==='Rosario'?'selected':''}>${esc(c)}</option>`).join('');
+    selC.innerHTML = opts;
     selC._filled = true;
+    // Poblar también ncCiudad (modal nuevo cliente) — antes lo hacía abrirNuevoCliente
+    // on-demand, ahora se hace acá porque la función vive en cliente_picker.js.
+    const selNc = document.getElementById('ncCiudad');
+    if (selNc && !selNc._filled){ selNc.innerHTML = opts; selNc._filled = true; }
   }
   if(d.cadetes){
     const selCad = document.getElementById('pCadete');
@@ -339,115 +344,9 @@ function pedCard(p, optRutas){
   </div>`;
 }
 
-async function buscarCli(){
-  const q = document.getElementById('pCliente').value.trim(); if(q.length<2) return;
-  const d = await (await fetch('/reparto/api/buscar-cliente?q='+encodeURIComponent(q))).json();
-  const box = document.getElementById('resCli');
-  const cs = d.clientes||[];
-  box.style.display = cs.length?'block':'none';
-  box.innerHTML = cs.map(c=>{
-    const ref = c.cliente_id ? `loc:${c.cliente_id}` : `obs:${c.observer_id}`;
-    const doc = c.documento ? ` <span class="muted2">${esc(String(c.documento))}</span>` : '';
-    const ciu = c.ciudad ? ` <span class="muted2" style="font-size:10px;">📍${esc(c.ciudad)}</span>` : '';
-    const tel = c.telefono ? ` <span class="muted2" style="font-size:10px;">📞${esc(c.telefono)}</span>` : '';
-    return `<div class="it" onclick='pickCli(${JSON.stringify(ref)}, ${JSON.stringify(c.nombre)}, ${c.cliente_id||'null'}, ${c.observer_id||'null'})'>${esc(c.nombre)}${doc}${ciu}${tel}</div>`;
-  }).join('');
-}
-
-async function pickCli(ref, nombre, cid, oid){
-  window._oid = oid;
-  window._cid = cid;
-  document.getElementById('pCliente').value = nombre;
-  document.getElementById('resCli').style.display='none';
-  const params = cid ? `cliente_id=${cid}` : `observer_id=${oid}`;
-  const ficha = await (await fetch(`/reparto/api/cliente?${params}`)).json();
-  if(ficha && !ficha.error){
-    if(ficha.domicilio) document.getElementById('pDir').value = ficha.domicilio;
-    if(ficha.ciudad){
-      const sel = document.getElementById('pCiudad');
-      for(let i=0;i<sel.options.length;i++){
-        if(sel.options[i].value===ficha.ciudad){ sel.selectedIndex=i; break; }
-      }
-    }
-    const doms = ficha.domicilios||[];
-    const sel = document.getElementById('pDom');
-    sel.innerHTML = '<option value="">— escribir dirección —</option>' +
-      doms.map(x=>`<option value="${x.id}">${esc(x.etiqueta)} — ${esc(x.direccion||'ubicación 📍')}</option>`).join('');
-    document.getElementById('btnEditarCli').style.display = cid ? 'inline-block' : 'none';
-  }
-}
-
-function abrirNuevoCliente(){
-  document.getElementById('modalNuevo').style.display='flex';
-  const sel = document.getElementById('ncCiudad');
-  if(!sel._filled){
-    fetch('/reparto/api?fecha='+fechaVal()).then(r=>r.json()).then(d=>{
-      sel.innerHTML = (d.ciudades||['Rosario']).map(c=>`<option ${c==='Rosario'?'selected':''}>${esc(c)}</option>`).join('');
-      sel._filled = true;
-    });
-  }
-}
-function cerrarModal(id){ document.getElementById(id).style.display='none'; }
-
-async function guardarNuevoCliente(){
-  const body = {
-    nombre: document.getElementById('ncNombre').value.trim(),
-    apellido: document.getElementById('ncApellido').value.trim(),
-    dni: document.getElementById('ncDni').value.trim(),
-    telefono: document.getElementById('ncTel').value.trim(),
-    domicilio: document.getElementById('ncDom').value.trim(),
-    ciudad: document.getElementById('ncCiudad').value || '',
-  };
-  if(!body.nombre && !body.apellido && !body.dni){ alert('Completá al menos nombre, apellido o DNI.'); return; }
-  const d = await jpost('/reparto/cliente', body);
-  if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
-  window._cid = d.cliente_id;
-  document.getElementById('pCliente').value = [body.apellido, body.nombre].filter(Boolean).join(', ') || body.dni;
-  if(body.domicilio) document.getElementById('pDir').value = body.domicilio;
-  if(body.ciudad){
-    const sel = document.getElementById('pCiudad');
-    for(let i=0;i<sel.options.length;i++){
-      if(sel.options[i].value===body.ciudad){ sel.selectedIndex=i; break; }
-    }
-  }
-  document.getElementById('btnEditarCli').style.display = 'inline-block';
-  document.getElementById('pDom').innerHTML = '<option value="">— escribir dirección —</option>';
-  cerrarModal('modalNuevo');
-}
-
-function abrirEditarCliente(cid, oid){
-  window._editCid = cid;
-  document.getElementById('modalEditar').style.display='flex';
-  const params = cid ? `cliente_id=${cid}` : `observer_id=${oid}`;
-  fetch(`/reparto/api/cliente?${params}`).then(r=>r.json()).then(f=>{
-    document.getElementById('edObsRef').textContent = f.fuente==='observer' ? `Fuente ObServer (ref: ${f.nombre})` : 'Cliente local';
-    const r = f.raw || {};
-    document.getElementById('edNombre').value = r.nombre || '';
-    document.getElementById('edApellido').value = r.apellido || '';
-    document.getElementById('edDni').value = r.dni || '';
-    document.getElementById('edTel').value = r.telefono || '';
-    document.getElementById('edDom').value = r.domicilio || '';
-    document.getElementById('edCiudad').value = r.ciudad || '';
-  });
-}
-
-async function guardarEditarCliente(){
-  const cid = window._editCid;
-  if(!cid) return;
-  const body = {
-    nombre: document.getElementById('edNombre').value.trim(),
-    apellido: document.getElementById('edApellido').value.trim(),
-    dni: document.getElementById('edDni').value.trim(),
-    telefono: document.getElementById('edTel').value.trim(),
-    domicilio: document.getElementById('edDom').value.trim(),
-    ciudad: document.getElementById('edCiudad').value.trim(),
-  };
-  const d = await jpost(`/reparto/cliente/${cid}`, body);
-  if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
-  const nombre = [body.apellido, body.nombre].filter(Boolean).join(', ') || body.dni;
-  if(nombre) document.getElementById('pCliente').value = nombre;
-  cerrarModal('modalEditar');
-}
+// Cliente: buscarCli / pickCli / abrirNuevoCliente / cerrarModal /
+// guardarNuevoCliente / abrirEditarCliente / guardarEditarCliente viven
+// en /static/js/cliente_picker.js y se invocan via ClientePicker.X().
 
 async function agregar(){
   const body = {
@@ -505,6 +404,11 @@ async function exportar(rid){
 
 document.getElementById('fecha').value = hoyISO();
 cargar();
+</script>
+
+<script src="/static/js/cliente_picker.js"></script>
+<script>
+ClientePicker.init({});
 </script>
 </body>
 </html>

@@ -1,3 +1,4 @@
+{% from "_cliente_picker.html" import cliente_picker, cliente_picker_modales %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -62,53 +63,11 @@
   <div class="wrap">
     <div class="card-pedido">
 
-      <!-- ENCABEZADO: datos del cliente -->
+      <!-- ENCABEZADO: datos del cliente (componente reusable: _cliente_picker.html) -->
       <div class="seccion">
         <div class="seccion-titulo">👤 Cliente</div>
-        <div class="grid grid-cliente">
-          <div class="field">
-            <label>Cliente</label>
-            <div style="display:flex; gap:5px;">
-              <input id="pCliente" class="input" placeholder="Buscar (multi-palabra)" style="flex:1;" autocomplete="off" oninput="onClienteInput()" onkeydown="if(event.key==='Escape')document.getElementById('resCli').style.display='none'">
-              <button onclick="buscarCli()" class="hbtn" title="Forzar búsqueda">🔎</button>
-              <button onclick="abrirNuevoCliente()" class="hbtn" title="Nuevo cliente">＋</button>
-              <button id="btnEditarCli" class="hbtn" title="Editar datos" style="display:none;" onclick="abrirEditarCliente(window._cid, window._oid)">✏️</button>
-            </div>
-          </div>
-          <div class="field" style="position:relative;">
-            <label>Dirección (calle y número)</label>
-            <div style="display:flex; gap:5px;">
-              <input id="pDir" class="input" placeholder="ej: Av. Córdoba 3400" style="flex:1;" autocomplete="off" oninput="onDirInput()" onkeydown="if(event.key==='Escape')document.getElementById('resGeo').style.display='none'">
-              <button type="button" onclick="buscarGeoSugerencias()" class="hbtn" title="Buscar dirección en mapa">📍</button>
-            </div>
-            <div id="resGeo" class="res" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:5;"></div>
-          </div>
-          <div class="field" style="flex:0 0 70px;">
-            <label>Piso</label>
-            <input id="pPiso" class="input" placeholder="ej: 1 / PB" style="width:100%;">
-          </div>
-          <div class="field" style="flex:0 0 70px;">
-            <label>Depto</label>
-            <input id="pDepto" class="input" placeholder="ej: B" style="width:100%;">
-          </div>
-          <div class="field" style="flex:1 1 200px;">
-            <label>Referencia</label>
-            <input id="pRef" class="input" placeholder="monoblock 4, torre B, entre calles..." style="width:100%;">
-          </div>
-          <div class="field" style="flex:0 0 130px;">
-            <label>Ciudad</label>
-            <select id="pCiudad" class="input"></select>
-          </div>
-        </div>
-        <div class="grid grid-cliente" style="margin-top:10px;">
-          <div class="field" id="pDomWrap" style="display:none; grid-column: 1 / -1;">
-            <label>Domicilio <span id="pDomCount" class="muted2" style="font-size:10px;"></span></label>
-            <select id="pDom" class="input" onchange="onDomChange()" style="display:none; max-width:380px;"><option value="">— escribir dirección —</option></select>
-            <div id="pDomSingle" class="muted" style="font-size:11px; padding:2px 0;"></div>
-            <div id="pDomCoords" style="font-family:monospace; padding:2px 0; min-height:14px;"></div>
-          </div>
-        </div>
-        <!-- Envío + Canal (movidos al encabezado) -->
+        {{ cliente_picker() }}
+        <!-- Envío + Canal (específicos de esta pantalla) -->
         <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-top:10px; padding-top:10px; border-top:1px dashed var(--border);">
           <div class="field" style="flex:0 0 120px;">
             <label>Envío $
@@ -131,7 +90,6 @@
             </select>
           </div>
         </div>
-        <div id="resCli" class="res" style="display:none;"></div>
       </div>
 
       <!-- DETALLE: producto + pago -->
@@ -212,45 +170,11 @@
     </div>
   </div>
 
-  <div id="modalNuevo" class="modal-overlay">
-    <div class="card" style="width:360px; max-width:90vw; max-height:90vh; overflow:auto;">
-      <h3 style="margin:0 0 6px; font-size:14px; color:var(--title);">＋ Nuevo cliente</h3>
-      <div class="muted2" style="font-size:10px; margin-bottom:10px;">
-        Datos básicos. El domicilio lo cargás abajo con el buscador 📍 (queda con geolocalización).
-      </div>
-      <div style="display:flex; flex-direction:column; gap:6px;">
-        <input id="ncNombre" class="input" placeholder="Nombre">
-        <input id="ncApellido" class="input" placeholder="Apellido">
-        <input id="ncDni" class="input" placeholder="DNI">
-        <input id="ncTel" class="input" placeholder="Teléfono">
-      </div>
-      <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end;">
-        <button class="hbtn" onclick="cerrarModal('modalNuevo')">Cancelar</button>
-        <button class="hbtn hbtn-ok" onclick="guardarNuevoCliente()">Guardar</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="modalEditar" class="modal-overlay">
-    <div class="card" style="width:400px; max-width:90vw; max-height:90vh; overflow:auto;">
-      <h3 style="margin:0 0 10px; font-size:14px; color:var(--title);">✏️ Editar datos del cliente</h3>
-      <div id="edObsRef" class="muted2" style="font-size:11px; margin-bottom:8px;"></div>
-      <div style="display:flex; flex-direction:column; gap:6px;">
-        <input id="edNombre" class="input" placeholder="Nombre">
-        <input id="edApellido" class="input" placeholder="Apellido">
-        <input id="edDni" class="input" placeholder="DNI">
-        <input id="edTel" class="input" placeholder="Teléfono">
-        <input id="edDom" class="input" placeholder="Domicilio">
-        <input id="edCiudad" class="input" placeholder="Ciudad">
-      </div>
-      <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end;">
-        <button class="hbtn" onclick="cerrarModal('modalEditar')">Cancelar</button>
-        <button class="hbtn hbtn-ok" onclick="guardarEditarCliente()">Guardar</button>
-      </div>
-    </div>
-  </div>
+  {{ cliente_picker_modales() }}
 
   <div id="toast" class="toast"></div>
+
+<script src="/static/js/cliente_picker.js"></script>
 
 <script>
 window._oid = null;
@@ -278,11 +202,11 @@ async function cotizarEnvio(){
   const inp  = document.getElementById('pEnvio');
   let url, geocoded = false;
   if (cua) {
-    url = `/envio/api/cotizar?cuadras=${encodeURIComponent(cua)}&localidad=${encodeURIComponent(ciu||'')}`;
+    url = `/config/envio/api/cotizar?cuadras=${encodeURIComponent(cua)}&localidad=${encodeURIComponent(ciu||'')}`;
   } else if (window._domLat != null && window._domLng != null){
-    url = `/envio/api/cotizar?lat=${window._domLat}&lng=${window._domLng}`;
+    url = `/config/envio/api/cotizar?lat=${window._domLat}&lng=${window._domLng}`;
   } else if (dir) {
-    url = `/envio/api/cotizar?direccion=${encodeURIComponent(dir)}&localidad=${encodeURIComponent(ciu||'')}`;
+    url = `/config/envio/api/cotizar?direccion=${encodeURIComponent(dir)}&localidad=${encodeURIComponent(ciu||'')}`;
     geocoded = true;
   } else {
     info.textContent = 'Cargá dirección, domicilio o cuadras para cotizar.';
@@ -307,7 +231,7 @@ async function cotizarEnvio(){
       if (geocoded && d.lat != null && d.lng != null){
         const domSel = document.getElementById('pDom');
         if (domSel.value){
-          const r = await jpost(`/reparto/api/domicilio/${domSel.value}/geo`, {lat: d.lat, lng: d.lng});
+          const r = await jpost(`/api/clientes/domicilios/${domSel.value}/geo`, {lat: d.lat, lng: d.lng});
           if (r.ok){
             window._domLat = d.lat;
             window._domLng = d.lng;
@@ -329,71 +253,9 @@ async function cotizarEnvio(){
   }
 }
 
-let _geoTmr = null;
-function onDirInput(){
-  // Al editar manualmente, romper el link a coordenadas previas.
-  window._domLat = null;
-  window._domLng = null;
-  window._domGeoAt = null;
-  renderDomCoords();
-  clearTimeout(_geoTmr);
-  const q = document.getElementById('pDir').value.trim();
-  if (q.length < 3){ document.getElementById('resGeo').style.display='none'; return; }
-  _geoTmr = setTimeout(buscarGeoSugerencias, 350);
-}
-
-async function buscarGeoSugerencias(){
-  const q = document.getElementById('pDir').value.trim();
-  const loc = document.getElementById('pCiudad').value;
-  const box = document.getElementById('resGeo');
-  if (q.length < 3) return;
-  try {
-    const r = await (await fetch(`/reparto/api/geocodificar?q=${encodeURIComponent(q)}&loc=${encodeURIComponent(loc||'')}`)).json();
-    const sug = r.sugerencias || [];
-    if (!sug.length){ box.style.display='none'; return; }
-    box.style.display='block';
-    box.innerHTML = sug.map(s=>{
-      return `<div class="it" onclick='pickGeo(${JSON.stringify(s)})'>
-        <b>${esc(s.direccion||s.nomenclatura)}</b>
-        <span class="muted2" style="font-size:10px;"> · ${esc(s.localidad||'')}</span>
-        <span class="muted2" style="float:right; font-size:10px;">📍 ${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}</span>
-      </div>`;
-    }).join('');
-  } catch(e){ box.style.display='none'; }
-}
-
-function pickGeo(s){
-  document.getElementById('pDir').value = s.direccion || s.nomenclatura;
-  if (s.localidad){
-    const selC = document.getElementById('pCiudad');
-    let found = false;
-    for(let i=0;i<selC.options.length;i++){
-      if(selC.options[i].value===s.localidad){ selC.selectedIndex=i; found=true; break; }
-    }
-    if (!found){
-      const opt = document.createElement('option');
-      opt.value = s.localidad; opt.text = s.localidad; opt.selected = true;
-      selC.appendChild(opt);
-    }
-  }
-  window._domLat = s.lat;
-  window._domLng = s.lng;
-  window._domGeoAt = new Date().toISOString();  // recién geolocalizado
-  renderDomCoords();
-  document.getElementById('resGeo').style.display='none';
-  const domSel = document.getElementById('pDom');
-  if (domSel.value){
-    jpost(`/reparto/api/domicilio/${domSel.value}/geo`, {lat: s.lat, lng: s.lng}).then(r=>{
-      if (r.ok){
-        const opt = domSel.options[domSel.selectedIndex];
-        opt.dataset.lat = s.lat;
-        opt.dataset.lng = s.lng;
-        if (!opt.text.includes('📍')) opt.text = opt.text + ' 📍';
-      }
-    });
-  }
-  cotizarEnvio();
-}
+// ── Búsqueda de cliente, dirección, geocodificación y modales:
+//    todo lo de cliente_picker vive en /static/js/cliente_picker.js
+//    (inicializado más abajo con ClientePicker.init({...})).
 
 window._prodOid = null;
 let _prodTmr = null;
@@ -431,86 +293,6 @@ function pickProducto(p){
   document.getElementById('resProd').style.display='none';
 }
 
-function fmtFechaGeo(iso){
-  if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'2-digit'});
-}
-
-function semaforoGeo(iso){
-  // verde <3m | amarillo 3-12m | naranja >12m | gris sin fecha
-  if (!iso) return {bg:'transparent', label:'(sin fecha)'};
-  const ahora = new Date();
-  const ts = new Date(iso);
-  const meses = (ahora - ts) / (1000*60*60*24*30.4);
-  if (meses < 3)  return {bg:'rgba(29,158,117,0.22)',  label:'reciente'};
-  if (meses < 12) return {bg:'rgba(239,159,39,0.22)',  label:'>3 meses'};
-  return                  {bg:'rgba(220,90,40,0.28)',  label:'>1 año'};
-}
-
-function renderDomCoords(){
-  const el = document.getElementById('pDomCoords');
-  if (!el) return;
-  if (window._domLat != null && window._domLng != null){
-    const lat = Number(window._domLat).toFixed(6);
-    const lng = Number(window._domLng).toFixed(6);
-    const sem = semaforoGeo(window._domGeoAt);
-    const fecha = window._domGeoAt ? `cargada ${fmtFechaGeo(window._domGeoAt)} · ${sem.label}` : sem.label;
-    el.innerHTML = `
-      <div style="display:flex; align-items:center; gap:14px; flex-wrap:nowrap; white-space:nowrap;">
-        <span style="font-size:18px; font-weight:700; color:var(--accent); font-family:monospace;">📍 ${lat}, ${lng}</span>
-        <span style="font-size:18px; font-weight:600; color:var(--title);">${sem.label}${window._domGeoAt ? ' · '+fmtFechaGeo(window._domGeoAt) : ''}</span>
-        <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" rel="noopener"
-           style="font-size:14px; font-weight:700; color:#fff; background:#185FA5;
-                  padding:6px 14px; border-radius:8px; text-decoration:none;"
-           title="Abrir en Google Maps">🗺️ Ver en mapa</a>
-      </div>`;
-    el.style.background = sem.bg;
-    el.style.padding = '8px 10px';
-    el.style.borderRadius = '8px';
-    el.style.marginTop = '4px';
-  } else {
-    el.innerHTML = `<span class="muted2" style="font-size:11px;">sin geolocalización</span>`;
-    el.style.background = 'transparent';
-    el.style.padding = '2px 0';
-    el.style.marginTop = '0';
-  }
-  refreshDomWrapVisibility();
-}
-
-function refreshDomWrapVisibility(){
-  // Mostrar el bloque "Domicilio" si hay coords o si hay domicilios guardados.
-  const wrap = document.getElementById('pDomWrap');
-  const n = (window._doms||[]).length;
-  const hayCoords = window._domLat != null && window._domLng != null;
-  wrap.style.display = (n>0 || hayCoords) ? '' : 'none';
-}
-
-function actualizarDomDropdown(doms){
-  // 0 doms → ocultar select y resumen. 1 dom → mostrar resumen. 2+ → mostrar select.
-  const sel = document.getElementById('pDom');
-  const single = document.getElementById('pDomSingle');
-  const count = document.getElementById('pDomCount');
-  const n = (doms || []).length;
-  if (n >= 2){
-    sel.style.display = '';
-    single.style.display = 'none';
-    count.textContent = `(${n} guardados)`;
-  } else if (n === 1){
-    sel.style.display = 'none';
-    const d = doms[0];
-    const loc = d.localidad ? ` · ${esc(d.localidad)}` : '';
-    single.innerHTML = `<b>${esc(d.etiqueta||'Casa')}</b> — ${esc(d.direccion||'')}${loc}`;
-    single.style.display = '';
-    count.textContent = '';
-  } else {
-    sel.style.display = 'none';
-    single.style.display = 'none';
-    count.textContent = '';
-  }
-  refreshDomWrapVisibility();
-}
-
 async function cargarSelects(){
   const d = await (await fetch('/reparto/api?fecha='+fechaVal())).json();
   const selC = document.getElementById('pCiudad');
@@ -520,207 +302,19 @@ async function cargarSelects(){
   document.getElementById('pTurno').value = turnoPrev;
 }
 
-let _cliTmr = null;
-function onClienteInput(){
-  // Al editar se rompe el link a cliente seleccionado.
-  window._oid = null;
-  window._cid = null;
-  document.getElementById('btnEditarCli').style.display = 'none';
-  clearTimeout(_cliTmr);
-  const q = document.getElementById('pCliente').value.trim();
-  const box = document.getElementById('resCli');
-  if (q.length < 2){ box.style.display='none'; return; }
-  _cliTmr = setTimeout(buscarCli, 250);
-}
-
-async function buscarCli(){
-  const q = document.getElementById('pCliente').value.trim(); if(q.length<2) return;
-  const d = await (await fetch('/reparto/api/buscar-cliente?q='+encodeURIComponent(q))).json();
-  const box = document.getElementById('resCli');
-  const cs = d.clientes||[];
-  box.style.display = cs.length?'block':'none';
-  box.innerHTML = cs.map(c=>{
-    const ref = c.cliente_id ? `loc:${c.cliente_id}` : `obs:${c.observer_id}`;
-    const doc = c.documento ? ` <span class="muted2">${esc(String(c.documento))}</span>` : '';
-    const tel = c.telefono ? ` <span class="muted2" style="font-size:10px;">📞${esc(c.telefono)}</span>` : '';
-    const dirCiu = [c.direccion, c.ciudad].filter(Boolean).join(', ');
-    const dom = dirCiu ? `<div class="muted2" style="font-size:10px; margin-top:1px;">🏠 ${esc(dirCiu)}</div>` : '';
-    return `<div class="it" onclick='pickCli(${JSON.stringify(ref)}, ${JSON.stringify(c.nombre)}, ${c.cliente_id||'null'}, ${c.observer_id||'null'})'>
-      <b>${esc(c.nombre)}</b>${doc}${tel}
-      ${dom}
-    </div>`;
-  }).join('');
-}
-
-async function pickCli(ref, nombre, cid, oid){
-  window._oid = oid;
-  window._cid = cid;
-  document.getElementById('pCliente').value = nombre;
-  document.getElementById('resCli').style.display='none';
-  const params = cid ? `cliente_id=${cid}` : `observer_id=${oid}`;
-  const ficha = await (await fetch(`/reparto/api/cliente?${params}`)).json();
-  if(ficha && !ficha.error){
-    // Preferimos direccion + localidad separados (nuevo). Fallback al domicilio concatenado.
-    const dir = ficha.direccion || ficha.domicilio || '';
-    const loc = ficha.localidad || ficha.ciudad || '';
-    if (dir) document.getElementById('pDir').value = dir;
-    if (loc){
-      const selC = document.getElementById('pCiudad');
-      let found = false;
-      for(let i=0;i<selC.options.length;i++){
-        if(selC.options[i].value===loc){ selC.selectedIndex=i; found=true; break; }
-      }
-      if (!found){
-        // La localidad del cliente no estaba en el dropdown: la agregamos y seleccionamos.
-        const opt = document.createElement('option');
-        opt.value = loc; opt.text = loc; opt.selected = true;
-        selC.appendChild(opt);
-      }
-    }
-    // Si la dirección viene concatenada (legacy 'calle 1234 dto 2'), parsear
-    // server-side para no perder piso/depto. Reaprovecha el parser
-    // de bot/direcciones.py vía /reparto/api/separar-direccion.
-    const _dirEl = document.getElementById('pDir');
-    if (_dirEl.value && (_dirEl.value.match(/(dto|dpto|depto|dep|departamento|uf|piso|pb|planta baja|monoblock|torre|entre|°|°)/i) || ficha.direccion != null)){
-      try {
-        const r = await jpost('/reparto/api/separar-direccion', {texto: _dirEl.value});
-        if (r && r.direccion){
-          _dirEl.value = r.direccion;
-          document.getElementById('pPiso').value = r.piso || '';
-          document.getElementById('pDepto').value = r.depto || '';
-          document.getElementById('pRef').value = r.referencia || '';
-        }
-      } catch(e) { /* ok, dejamos como está */ }
-    }
-    const doms = ficha.domicilios||[];
-    window._doms = doms;
-    actualizarDomDropdown(doms);
-    // Si no hay ningún domicilio guardado con geo pero el cliente tiene dirección,
-    // disparamos cotización automática — el geocoder resuelve la ciudad real.
-    const algunoConGeo = doms.some(x => x.lat != null && x.lng != null);
-    if (!algunoConGeo && dir){
-      setTimeout(cotizarEnvio, 100);
-    }
-    const sel = document.getElementById('pDom');
-    sel.innerHTML = '<option value="">— escribir dirección —</option>' +
-      doms.map(x=>{
-        const loc = x.localidad ? ` · ${esc(x.localidad)}` : '';
-        const geoBadge = (x.lat!=null && x.lng!=null)
-          ? ` 📍${x.geo_actualizado_en ? ' '+fmtFechaGeo(x.geo_actualizado_en) : ''}`
-          : '';
-        return `<option value="${x.id}" data-lat="${x.lat||''}" data-lng="${x.lng||''}" data-loc="${esc(x.localidad||'')}" data-dir="${esc(x.direccion||'')}" data-piso="${esc(x.piso||'')}" data-depto="${esc(x.depto||'')}" data-ref="${esc(x.referencia||'')}">${esc(x.etiqueta)} — ${esc(x.direccion||'(sin dirección)')}${loc}${geoBadge}</option>`;
-      }).join('');
-    document.getElementById('btnEditarCli').style.display = cid ? 'inline-block' : 'none';
-    // Auto-cotizar si el cliente vino con dirección ya cargada
-    if (ficha.domicilio) cotizarEnvio();
-  }
-}
-
-function onDomChange(){
-  const sel = document.getElementById('pDom');
-  const opt = sel.options[sel.selectedIndex];
-  if (!opt || !sel.value){
-    window._domLat = null;
-    window._domLng = null;
-    window._domGeoAt = null;
-    renderDomCoords();
-    return;
-  }
-  // Fecha de carga del geocoding (del dom seleccionado)
-  const domObj = (window._doms||[]).find(x=>String(x.id)===sel.value);
-  window._domGeoAt = (domObj && domObj.geo_actualizado_en) || null;
-  // Copiar direccion + localidad al form (separados)
-  const dir = opt.dataset.dir || '';
-  const loc = opt.dataset.loc || '';
-  if (dir) document.getElementById('pDir').value = dir;
-  if (loc){
-    const selCiu = document.getElementById('pCiudad');
-    for(let i=0;i<selCiu.options.length;i++){
-      if(selCiu.options[i].value===loc){ selCiu.selectedIndex=i; break; }
-    }
-  }
-  if (opt.dataset.lat && opt.dataset.lng){
-    // Ya tiene geolocalización guardada
-    window._domLat = parseFloat(opt.dataset.lat);
-    window._domLng = parseFloat(opt.dataset.lng);
-    renderDomCoords();
-    cotizarEnvio();
-  } else {
-    // Sin lat/lng: limpiamos y dejamos que cotizarEnvio geocodifique por direccion+localidad
-    window._domLat = null;
-    window._domLng = null;
-    renderDomCoords();
-    cotizarEnvio();
-  }
-}
-
-function abrirNuevoCliente(){
-  document.getElementById('modalNuevo').style.display='flex';
-  setTimeout(()=>document.getElementById('ncNombre').focus(), 80);
-}
-function cerrarModal(id){ document.getElementById(id).style.display='none'; }
-
-async function guardarNuevoCliente(){
-  const body = {
-    nombre: document.getElementById('ncNombre').value.trim(),
-    apellido: document.getElementById('ncApellido').value.trim(),
-    dni: document.getElementById('ncDni').value.trim(),
-    telefono: document.getElementById('ncTel').value.trim(),
-  };
-  if(!body.nombre && !body.apellido && !body.dni){ alert('Completá al menos nombre, apellido o DNI.'); return; }
-  const d = await jpost('/reparto/cliente', body);
-  if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
-  window._cid = d.cliente_id;
-  document.getElementById('pCliente').value = [body.apellido, body.nombre].filter(Boolean).join(', ') || body.dni;
-  document.getElementById('btnEditarCli').style.display = 'inline-block';
-  document.getElementById('pDom').innerHTML = '<option value="">— escribir dirección —</option>';
-  cerrarModal('modalNuevo');
-  // Pasar el foco al buscador de dirección — siguiente paso del flujo.
-  setTimeout(()=>document.getElementById('pDir').focus(), 80);
-}
-
-function abrirEditarCliente(cid, oid){
-  window._editCid = cid;
-  document.getElementById('modalEditar').style.display='flex';
-  const params = cid ? `cliente_id=${cid}` : `observer_id=${oid}`;
-  fetch(`/reparto/api/cliente?${params}`).then(r=>r.json()).then(f=>{
-    document.getElementById('edObsRef').textContent = f.fuente==='observer' ? `Fuente ObServer (ref: ${f.nombre})` : 'Cliente local';
-    const r = f.raw || {};
-    document.getElementById('edNombre').value = r.nombre || '';
-    document.getElementById('edApellido').value = r.apellido || '';
-    document.getElementById('edDni').value = r.dni || '';
-    document.getElementById('edTel').value = r.telefono || '';
-    document.getElementById('edDom').value = r.domicilio || '';
-    document.getElementById('edCiudad').value = r.ciudad || '';
-  });
-}
-
-async function guardarEditarCliente(){
-  const cid = window._editCid;
-  if(!cid) return;
-  const body = {
-    nombre: document.getElementById('edNombre').value.trim(),
-    apellido: document.getElementById('edApellido').value.trim(),
-    dni: document.getElementById('edDni').value.trim(),
-    telefono: document.getElementById('edTel').value.trim(),
-    domicilio: document.getElementById('edDom').value.trim(),
-    ciudad: document.getElementById('edCiudad').value.trim(),
-  };
-  const d = await jpost(`/reparto/cliente/${cid}`, body);
-  if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
-  const nombre = [body.apellido, body.nombre].filter(Boolean).join(', ') || body.dni;
-  if(nombre) document.getElementById('pCliente').value = nombre;
-  cerrarModal('modalEditar');
-}
-
 async function agregar(){
+  const cli = ClientePicker.getValues();
   const body = {
-    cliente_nombre: document.getElementById('pCliente').value.trim(),
-    cliente_id: window._cid || null,
-    observer_id: window._oid || null,
-    domicilio_id: document.getElementById('pDom').value || null,
-    direccion: document.getElementById('pDir').value.trim(),
-    localidad: document.getElementById('pCiudad').value,
+    cliente_nombre: cli.clienteNombre,
+    cliente_id: cli.cid,
+    observer_id: cli.oid,
+    domicilio_id: cli.domicilioId,
+    direccion: cli.direccion,
+    localidad: cli.ciudad,
+    piso: cli.piso,
+    depto: cli.depto,
+    referencia: cli.referencia,
+    // Resto: campos propios de esta pantalla (no del cliente_picker)
     nota: document.getElementById('pNota').value.trim(),
     prioridad: document.getElementById('pPrio').value,
     canal: document.getElementById('pCanal').value,
@@ -734,10 +328,6 @@ async function agregar(){
     producto: document.getElementById('pProducto').value.trim(),
     producto_observer_id: window._prodOid || null,
     envio: document.getElementById('pEnvio').value || null,
-    // Domicilio estructurado (4 campos separados)
-    piso: document.getElementById('pPiso').value.trim(),
-    depto: document.getElementById('pDepto').value.trim(),
-    referencia: document.getElementById('pRef').value.trim(),
   };
   if(!body.cliente_nombre && !body.direccion && !body.domicilio_id){ alert('Poné cliente o dirección.'); return; }
   const d = await jpost('/reparto/pedido', body);
@@ -745,42 +335,46 @@ async function agregar(){
   if(!d.asignado){ document.getElementById('avisoCfg').textContent = '⚠️ El último pedido quedó "sin asignar".'; }
   else { document.getElementById('avisoCfg').textContent=''; }
   showToast(`✓ Pedido agregado <a href="/reparto/planilla">ver planilla →</a>`);
-  ['pCliente','pDir','pPiso','pDepto','pRef','pNota','pImporte','pVuelto','pProducto','pObservacion','pEnvio','pCuadras'].forEach(i=>{
+  // Reset campos del host (cliente_picker se limpia con ClientePicker.clear)
+  ClientePicker.clear();
+  ['pNota','pImporte','pVuelto','pProducto','pObservacion','pEnvio','pCuadras'].forEach(i=>{
     const el=document.getElementById(i); if(el) el.value='';
   });
   document.getElementById('pPrio').value='normal';
-  document.getElementById('pDom').innerHTML='<option value="">— escribir dirección —</option>';
   document.getElementById('pCanal').value='mostrador';
   document.getElementById('pFormaPago').value='';
   // pTurno NO se resetea: queda el último elegido (también guardado en localStorage)
   document.getElementById('pReceta').checked=false;
   document.getElementById('pPagado').checked=false;
-  document.getElementById('btnEditarCli').style.display='none';
   document.getElementById('envioInfo').textContent='';
   document.getElementById('envioPill').style.display='none';
   document.getElementById('pProductoLink').textContent='';
-  window._oid=null;
-  window._cid=null;
   window._prodOid=null;
-  window._domLat=null;
-  window._domLng=null;
-  window._domGeoAt=null;
-  window._doms = [];
-  actualizarDomDropdown([]);
-  renderDomCoords();
   document.getElementById('pCliente').focus();
 }
 
 cargarSelects();
+ClientePicker.init({onAddressChange: cotizarEnvio});
 
-// Cerrar dropdowns al clickear fuera
+// Deep-link: si vinimos con ?observer_id=X o ?cliente_id=Y (ej. botón "Tomar
+// pedido" desde /atencion), precargamos la ficha del cliente.
+(function precargarDesdeQuery(){
+  const qs = new URLSearchParams(location.search);
+  const oid = qs.get('observer_id');
+  const cid = qs.get('cliente_id');
+  if (!oid && !cid) return;
+  // Esperamos a que cargarSelects pueble el dropdown de ciudades, así
+  // si la ficha tiene localidad la podemos seleccionar correctamente.
+  setTimeout(() => ClientePicker.loadCliente({
+    observer_id: oid ? parseInt(oid, 10) : null,
+    cliente_id:  cid ? parseInt(cid, 10) : null,
+  }), 200);
+})();
+
+// Cerrar dropdown de producto al clickear fuera (resCli y resGeo los maneja ClientePicker)
 document.addEventListener('click', (e) => {
-  const boxCli = document.getElementById('resCli');
   const boxProd = document.getElementById('resProd');
-  const boxGeo = document.getElementById('resGeo');
-  if (boxCli && !e.target.closest('#pCliente') && !boxCli.contains(e.target)) boxCli.style.display='none';
   if (boxProd && !e.target.closest('#pProducto') && !boxProd.contains(e.target)) boxProd.style.display='none';
-  if (boxGeo && !e.target.closest('#pDir') && !boxGeo.contains(e.target)) boxGeo.style.display='none';
 });
 </script>
 </body>

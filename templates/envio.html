@@ -134,7 +134,7 @@ function fmt(n){ return n==null ? '—' : '$' + Math.round(n).toLocaleString('es
 async function jpost(url, body){ return (await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})).json(); }
 
 async function cargar(){
-  const d = await (await fetch('/envio/api/tarifas')).json();
+  const d = await (await fetch('/config/envio/api/tarifas')).json();
   // Config
   const c = d.config||{};
   document.getElementById('cfLat').value = c.farmacia_lat ?? '';
@@ -188,7 +188,7 @@ async function cotizar(){
   if(loc) p.set('localidad',loc);
   if(cua) p.set('cuadras',cua);
   document.getElementById('cMonto').textContent = '…';
-  const d = await (await fetch('/envio/api/cotizar?'+p.toString())).json();
+  const d = await (await fetch('/config/envio/api/cotizar?'+p.toString())).json();
   document.getElementById('cMonto').textContent = fmt(d.monto);
   const pill = d.fuente ? `<span class="pill ${d.fuente}">${d.fuente}</span> ` : '';
   const cu = d.cuadras!=null ? ` · ${d.cuadras} cuadras` : '';
@@ -196,7 +196,7 @@ async function cotizar(){
 }
 
 async function guardarConfig(){
-  await jpost('/envio/config', {
+  await jpost('/config/envio/save', {
     farmacia_lat: document.getElementById('cfLat').value,
     farmacia_lng: document.getElementById('cfLng').value,
     factor_cuadras: document.getElementById('cfFactor').value,
@@ -205,28 +205,28 @@ async function guardarConfig(){
 }
 async function geoFarmacia(){
   const dir = document.getElementById('cfDir').value.trim(); if(!dir) return;
-  const d = await jpost('/envio/config/geolocalizar', {direccion: dir});
+  const d = await jpost('/config/envio/geolocalizar', {direccion: dir});
   if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
   cargar();
 }
 async function geoZona(id){
-  const d = await jpost(`/envio/zona/${id}/geolocalizar`);
+  const d = await jpost(`/config/envio/zona/${id}/geolocalizar`);
   if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo geolocalizar')); return; }
   cargar();
 }
 
 async function saveTramo(id, hasta, monto){
   const t = window._tramos[id] || {};
-  await jpost('/envio/tramo', {id, hasta_cuadras: hasta!=null?hasta:t.hasta_cuadras, monto: monto!=null?monto:t.monto});
+  await jpost('/config/envio/tramo', {id, hasta_cuadras: hasta!=null?hasta:t.hasta_cuadras, monto: monto!=null?monto:t.monto});
   cargar();
 }
 async function addTramo(){
   const hasta = document.getElementById('nTramoHasta').value, monto = document.getElementById('nTramoMonto').value;
   if(!hasta) return;
-  await jpost('/envio/tramo', {hasta_cuadras: hasta, monto: monto||0});
+  await jpost('/config/envio/tramo', {hasta_cuadras: hasta, monto: monto||0});
   document.getElementById('nTramoHasta').value=''; document.getElementById('nTramoMonto').value=''; cargar();
 }
-async function delTramo(id){ if(confirm('¿Quitar tramo?')){ await jpost(`/envio/tramo/${id}/delete`); cargar(); } }
+async function delTramo(id){ if(confirm('¿Quitar tramo?')){ await jpost(`/config/envio/tramo/${id}/delete`); cargar(); } }
 
 function togglePoly(id){
   const ta = document.getElementById('poly_'+id);
@@ -239,22 +239,22 @@ function togglePoly(id){
 async function savePoly(id){
   const ta = document.getElementById('poly_'+id);
   if(!ta) return;
-  await jpost('/envio/zona', {id, poligono_texto: ta.value});
+  await jpost('/config/envio/zona', {id, poligono_texto: ta.value});
   cargar();
 }
 async function saveZona(id, nombre, monto, radio){
   const z = window._zonas[id] || {};
   const body = {id, nombre: nombre!=null?nombre:z.nombre, monto: monto!=null?monto:z.monto};
-  await jpost('/envio/zona', body);
+  await jpost('/config/envio/zona', body);
   cargar();
 }
 async function addZona(){
   const nombre = document.getElementById('nZonaNombre').value.trim(), monto = document.getElementById('nZonaMonto').value;
   if(!nombre) return;
-  await jpost('/envio/zona', {nombre, monto: monto||0});
+  await jpost('/config/envio/zona', {nombre, monto: monto||0});
   document.getElementById('nZonaNombre').value=''; document.getElementById('nZonaMonto').value=''; cargar();
 }
-async function delZona(id){ if(confirm('¿Quitar zona?')){ await jpost(`/envio/zona/${id}/delete`); cargar(); } }
+async function delZona(id){ if(confirm('¿Quitar zona?')){ await jpost(`/config/envio/zona/${id}/delete`); cargar(); } }
 
 cargar();
 </script>
