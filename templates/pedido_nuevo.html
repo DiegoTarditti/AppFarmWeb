@@ -77,9 +77,8 @@
           </div>
           <div class="field" style="flex:0 0 90px;">
             <label>o Cuadras</label>
-            <input id="pCuadras" class="input" placeholder="ej: 22" type="number" min="0" title="Override manual de cuadras" onkeydown="if(event.key==='Enter')cotizarEnvio()">
+            <input id="pCuadras" class="input" placeholder="ej: 22" type="number" min="0" title="Override manual de cuadras (cotiza solo)" oninput="onCuadrasInput()">
           </div>
-          <button type="button" onclick="cotizarEnvio()" class="hbtn hbtn-ok" style="padding:9px 18px; height:38px;">Cotizar</button>
           <div id="envioInfo" class="muted2" style="font-size:11px; flex:1; min-width:120px;"></div>
           <div class="field" style="flex:0 0 150px;">
             <label>Canal</label>
@@ -190,6 +189,14 @@ function showToast(msg, ms=3500){
   t.style.display='block';
   clearTimeout(window._toastT);
   window._toastT = setTimeout(()=>{ t.style.display='none'; }, ms);
+}
+
+// Debounce del campo cuadras: cotiza solo después de 400 ms sin tipear,
+// para no spamear el endpoint mientras el operador escribe el número.
+let _cuaTmr = null;
+function onCuadrasInput(){
+  clearTimeout(_cuaTmr);
+  _cuaTmr = setTimeout(cotizarEnvio, 400);
 }
 
 async function cotizarEnvio(){
