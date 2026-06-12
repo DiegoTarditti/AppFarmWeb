@@ -80,9 +80,11 @@ PERFILES = {
     'planilla_envios': {
         'label': 'Planilla Envíos', 'icono': '🛵',
         'url': '/reparto/planilla',
+        # '/rutas' y '/cadetes' = definir zonas/cadetes desde el panel de reparto.
         # '/api/clientes' y '/config/envio' los usa el cliente_picker si edita
         # un pedido desde la planilla; el cotizador también.
-        'prefijos': ['/reparto', '/api/reparto', '/api/clientes', '/config/envio'],
+        'prefijos': ['/reparto', '/api/reparto', '/rutas', '/cadetes',
+                     '/api/clientes', '/config/envio'],
     },
     'filtro_drogueria': {
         'label': 'Filtro Droguería', 'icono': '⊞',
@@ -279,57 +281,6 @@ def seed_admin_si_falta():
             session.commit()
         except IntegrityError:
             # Otro worker ganó la carrera — el admin ya existe.
-            session.rollback()
-
-
-def seed_rendicion_si_falta():
-    """Crea usuario `rendicion` (pass `rendicion123`, debe cambiar) si no existe.
-    Rol acotado: solo /devoluciones/*. Para operadores que solo registran
-    devoluciones de rendiciones."""
-    from sqlalchemy.exc import IntegrityError
-    with database.get_db() as session:
-        ya = session.query(Usuario).filter_by(username='rendicion').first()
-        if ya:
-            return
-        u = Usuario(
-            username='rendicion',
-            email=None,
-            password_hash=hash_password('rendicion123'),
-            nombre_completo='Operador de rendiciones',
-            rol='rendicion',
-            permisos_json=json.dumps(permisos_default_rol('rendicion')),
-            activo=True,
-            debe_cambiar_password=True,
-        )
-        session.add(u)
-        try:
-            session.commit()
-        except IntegrityError:
-            session.rollback()
-
-
-def seed_pedidos_si_falta():
-    """Crea usuario `pedidos` (pass `pedidos123`, debe cambiar) si no existe.
-    Rol acotado: solo /compras/dia. Llamar después de seed_admin_si_falta."""
-    from sqlalchemy.exc import IntegrityError
-    with database.get_db() as session:
-        ya = session.query(Usuario).filter_by(username='pedidos').first()
-        if ya:
-            return
-        u = Usuario(
-            username='pedidos',
-            email=None,
-            password_hash=hash_password('pedidos123'),
-            nombre_completo='Operador de pedidos',
-            rol='pedidos',
-            permisos_json=json.dumps(permisos_default_rol('pedidos')),
-            activo=True,
-            debe_cambiar_password=True,
-        )
-        session.add(u)
-        try:
-            session.commit()
-        except IntegrityError:
             session.rollback()
 
 
