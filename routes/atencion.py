@@ -249,11 +249,8 @@ def init_app(app):
         oper = (getattr(current_user, 'nombre_completo', None)
                 or getattr(current_user, 'username', None) or 'operador')
 
-        # Inferir turno por hora del día (la planilla separa mañana/tarde).
-        # Override manual queda para más adelante (no scope de esta fase).
-        hora_actual = database.now_ar().hour
-        turno_auto = 'mañana' if hora_actual < 14 else 'tarde'
-
+        # Turno: lo asigna el operador de planilla al organizar /reparto/planilla,
+        # no quien toma el pedido. Entra NULL y aparece en la sección 'Sin asignar'.
         with database.get_db() as s:
             conv = s.get(database.BotConversacion, conv_id)
             if not conv:
@@ -311,7 +308,7 @@ def init_app(app):
                 ),
                 canal='atencion',
                 tomo=oper,
-                turno=turno_auto,
+                # turno: lo asigna el operador de planilla (entra NULL).
                 prioridad=body.get('prioridad') or 'normal',
             )
             s.add(p)

@@ -183,14 +183,7 @@
               <option value="programado">🕐 Programado</option>
             </select>
           </div>
-          <div class="field">
-            <label>Turno</label>
-            <select id="pTurno" class="input" onchange="localStorage.setItem('pedido_nuevo_turno', this.value)">
-              <option value="">—</option>
-              <option value="mañana">Mañana</option>
-              <option value="tarde">Tarde</option>
-            </select>
-          </div>
+          {# Turno se asigna en la planilla por el operador de despacho, no acá. #}
           <div class="field check-line" style="justify-content:flex-start; padding-top:18px;">
             {# Botón toggle estilo pill. El hidden guarda el estado para el submit. #}
             <button type="button" id="btnReceta" class="toggle-pill" onclick="toggleReceta()" title="Marcar si tiene que traer la receta">
@@ -457,9 +450,6 @@ async function cargarSelects(){
   const d = await (await fetch('/reparto/api?fecha='+fechaVal())).json();
   const selC = document.getElementById('pCiudad');
   selC.innerHTML = (d.ciudades||['Rosario']).map(c=>`<option ${c==='Rosario'?'selected':''}>${esc(c)}</option>`).join('');
-  // Restaurar turno previo (recordado entre tomas)
-  const turnoPrev = localStorage.getItem('pedido_nuevo_turno') || '';
-  document.getElementById('pTurno').value = turnoPrev;
 }
 
 async function agregar(){
@@ -490,7 +480,7 @@ async function agregar(){
     tarjeta_marca: document.getElementById('pTarjeta').value || null,
     requiere_receta: document.getElementById('pReceta').value === 'true',
     pagado: document.getElementById('pPagado').value === 'true',
-    turno: document.getElementById('pTurno').value,
+    // turno → lo asigna el operador de planilla, no se manda desde acá.
     observacion: document.getElementById('pObservacion').value.trim(),
     producto: document.getElementById('pProducto').value.trim(),
     producto_observer_id: window._prodOid || null,

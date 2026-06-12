@@ -707,11 +707,13 @@ def init_app(app):
             usuarios_list = [{'id': u.id,
                               'nombre': u.nombre_completo or u.username}
                              for u in usuarios]
-        manana = [p for p in ps if (p.turno or 'mañana') == 'mañana']
+        sin_asignar = [p for p in ps if not p.turno]
+        manana = [p for p in ps if p.turno == 'mañana']
         tarde = [p for p in ps if p.turno == 'tarde']
         return render_template('reparto_planilla.html',
                                fecha=fecha, hoy=database.now_ar().date(),
                                ahora=database.now_ar(),     # para timers visuales (publicado→tomado)
+                               pedidos_sin_asignar=sin_asignar,
                                pedidos_manana=manana,
                                pedidos_tarde=tarde,
                                cadetes=cadetes,
@@ -727,7 +729,7 @@ def init_app(app):
         valor = b.get('valor')
         EDITABLES = {'tomo', 'importe', 'forma_pago', 'vuelto', 'producto',
                      'observacion', 'pagado', 'requiere_receta',
-                     'entregado_por', 'cadete_id', 'recibio', 'estado'}
+                     'entregado_por', 'cadete_id', 'recibio', 'estado', 'turno'}
         if campo not in EDITABLES:
             return jsonify({'ok': False, 'error': f'campo no editable: {campo}'}), 400
         with database.get_db() as s:
