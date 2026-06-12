@@ -65,17 +65,24 @@ PERFILES = {
     'chat_clientes': {
         'label': 'Chat Clientes', 'icono': '💬',
         'url': '/atencion',
-        'prefijos': ['/atencion', '/caja'],   # hereda caja
+        # hereda caja; '/api/clientes' y '/config/envio' los usa el cliente_picker
+        # embebido en /atencion (buscar cliente, ficha, cotizar envío).
+        'prefijos': ['/atencion', '/caja', '/api/clientes', '/config/envio'],
     },
     'pedido_manual': {
         'label': 'Pedido Manual', 'icono': '🛒',
         'url': '/pedido/nuevo',
-        'prefijos': ['/pedido/', '/reparto', '/api/reparto', '/caja'],   # hereda caja
+        # hereda caja; '/api/clientes' y '/config/envio' los usa el cliente_picker
+        # embebido en /pedido/nuevo (buscar cliente, ficha, cotizar envío).
+        'prefijos': ['/pedido/', '/reparto', '/api/reparto', '/caja',
+                     '/api/clientes', '/config/envio'],
     },
     'planilla_envios': {
         'label': 'Planilla Envíos', 'icono': '🛵',
         'url': '/reparto/planilla',
-        'prefijos': ['/reparto', '/api/reparto'],
+        # '/api/clientes' y '/config/envio' los usa el cliente_picker si edita
+        # un pedido desde la planilla; el cotizador también.
+        'prefijos': ['/reparto', '/api/reparto', '/api/clientes', '/config/envio'],
     },
     'filtro_drogueria': {
         'label': 'Filtro Droguería', 'icono': '⊞',

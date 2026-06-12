@@ -12,14 +12,21 @@ from flask import jsonify, render_template, request
 from flask_login import current_user, login_required
 
 import database
+from auth import tiene_perfil
 from bot import store
 from services import reparto
 
 _ROLES_OK = ('admin', 'dev', 'farmacia')
+# Perfiles que tocan rutas de /reparto/* (incluye las APIs internas que usa
+# /pedido/nuevo y la planilla del día).
+_PERFILES_OK = ('pedido_manual', 'planilla_envios')
 
 
 def _ok():
-    return getattr(current_user, 'rol', None) in _ROLES_OK
+    # Roles legacy entran directo; operadores entran si tienen alguno de los perfiles.
+    if getattr(current_user, 'rol', None) in _ROLES_OK:
+        return True
+    return any(tiene_perfil(current_user, p) for p in _PERFILES_OK)
 
 
 def _fecha(arg):
@@ -351,6 +358,14 @@ def init_app(app):
                 importe=importe,
                 forma_pago=(b.get('forma_pago') or '').strip() or None,
                 vuelto=(b.get('vuelto') or '').strip() or None,
+                # Efectivo: con cuánto paga (sirve para conciliar y para calcular el
+                # vuelto en la planilla/ticket del cadete).
+                paga_con=(float(b['paga_con']) if (b.get('paga_con') not in (None, '')) else None),
+                # Nro de comprobante MP/transferencia, o cupón de tarjeta. Si está
+                # cargado, el frontend ya seteó pagado=true (verificación manual).
+                dato_pago_mp=(b.get('dato_pago_mp') or '').strip() or None,
+                # Marca de la tarjeta (Visa/Master/...) si forma=debito/credito.
+                tarjeta_marca=(b.get('tarjeta_marca') or '').strip() or None,
                 requiere_receta=bool(b.get('requiere_receta')),
                 pagado=bool(b.get('pagado')),
                 turno=(b.get('turno') or '').strip() or None,
@@ -692,11 +707,27 @@ def init_app(app):
             usuarios_list = [{'id': u.id,
                               'nombre': u.nombre_completo or u.username}
                              for u in usuarios]
-        manana = [p for p in ps if (p.turno or 'mañana') == 'mañana']
+        sin_asignar = [p for p in ps if not p.turno]
+        manana = [p for p in ps if p.turno == 'mañana']
         tarde = [p for p in ps if p.turno == 'tarde']
+        # Pendientes del turno previo: pedidos de FECHAS ANTERIORES que quedaron
+        # sin entregar (cadete no volvió, se reprogramó, etc.). Los traemos solo
+        # cuando se mira la planilla de HOY (no para fechas pasadas, ahí ya están).
+        pendientes_previo = []
+        hoy_d = database.now_ar().date()
+        if fecha >= hoy_d:
+            estados_activos = ('pendiente', 'publicado', 'tomado', 'en_ruta',
+                                'en_caja', 'en_planilla', 'esperando_drog')
+            pendientes_previo = (s.query(database.PedidoReparto)
+                                  .filter(database.PedidoReparto.fecha < hoy_d,
+                                          database.PedidoReparto.estado.in_(estados_activos))
+                                  .order_by(database.PedidoReparto.fecha.desc(),
+                                            database.PedidoReparto.id).all())
         return render_template('reparto_planilla.html',
                                fecha=fecha, hoy=database.now_ar().date(),
                                ahora=database.now_ar(),     # para timers visuales (publicado→tomado)
+                               pedidos_pendientes_previo=pendientes_previo,
+                               pedidos_sin_asignar=sin_asignar,
                                pedidos_manana=manana,
                                pedidos_tarde=tarde,
                                cadetes=cadetes,
@@ -712,7 +743,7 @@ def init_app(app):
         valor = b.get('valor')
         EDITABLES = {'tomo', 'importe', 'forma_pago', 'vuelto', 'producto',
                      'observacion', 'pagado', 'requiere_receta',
-                     'entregado_por', 'cadete_id', 'recibio', 'estado'}
+                     'entregado_por', 'cadete_id', 'recibio', 'estado', 'turno'}
         if campo not in EDITABLES:
             return jsonify({'ok': False, 'error': f'campo no editable: {campo}'}), 400
         with database.get_db() as s:

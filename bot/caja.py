@@ -150,14 +150,30 @@ def _pedido_dict(p):
     }
 
 
+def proximo_estado_cobrado(destino, stock_status):
+    """Estado al que debe pasar un pedido recién cobrado, según destino y stock.
+
+    Regla única (usada tanto por cobrar_pedido como por cerrar_transaccion cuando
+    llega ya con pagado=True):
+      - stock='esperar'   → 'esperando_drog' (cobrado, queda en standby).
+      - destino='reparto' → 'en_planilla'    (sale por reparto del día).
+      - destino='retiro'  → 'para_retiro'    (queda guardado para que venga).
+      - default           → 'para_retiro'    (conservador, lo retomamos a mano).
+    """
+    if stock_status == 'esperar':
+        return 'esperando_drog'
+    if destino == 'reparto':
+        return 'en_planilla'
+    if destino == 'retiro':
+        return 'para_retiro'
+    return 'para_retiro'
+
+
 def cobrar_pedido(pedido_id, cajero_nombre=None):
     """Marca el pedido como pagado y lo mueve al siguiente estado según destino.
 
-    Siempre se cobra por adelantado (incluso si está esperando droguería):
-      - stock='esperar' → estado='esperando_drog' (cobrado, queda en standby).
-      - destino='reparto' → estado='en_planilla' (sale por reparto).
-      - destino='retiro'  → estado='para_retiro'  (queda guardado para que venga).
-      - destino vacío     → default 'para_retiro' (conservador, lo retomamos a mano).
+    Siempre se cobra por adelantado (incluso si está esperando droguería).
+    Ver `proximo_estado_cobrado` para la matriz de estados.
     """
     P = database.PedidoReparto
     with database.get_db() as s:
@@ -167,14 +183,7 @@ def cobrar_pedido(pedido_id, cajero_nombre=None):
         if p.pagado:
             return {'ok': False, 'error': 'ya está cobrado'}
         p.pagado = True
-        if p.stock_status == 'esperar':
-            p.estado = 'esperando_drog'
-        elif p.destino == 'reparto':
-            p.estado = 'en_planilla'
-        elif p.destino == 'retiro':
-            p.estado = 'para_retiro'
-        else:
-            p.estado = 'para_retiro'
+        p.estado = proximo_estado_cobrado(p.destino, p.stock_status)
         # `entregado_por` / `recibio` no aplican acá (son del cadete); el cajero
         # queda implícito por el timestamp. Si más adelante hace falta auditar
         # quién cobró, agregamos columna `cobrado_por` + `cobrado_en`.

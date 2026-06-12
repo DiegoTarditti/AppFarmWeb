@@ -38,6 +38,18 @@
   .footer-pedido { background:rgba(255,255,255,0.025); padding:14px 18px; display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
   .check-line { display:flex; align-items:center; gap:14px; font-size:12px; color:var(--muted); }
   .check-line label { display:flex; align-items:center; gap:5px; cursor:pointer; }
+  /* Toggle pill: por defecto gris (off); .on = naranja warn (encendido). */
+  .toggle-pill { font-size:13px; padding:7px 14px; border-radius:999px;
+                 border:1px solid var(--border); background:var(--hov); color:var(--muted);
+                 cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:6px;
+                 transition: background .15s, color .15s, border-color .15s; }
+  .toggle-pill:hover { filter:brightness(1.1); }
+  .toggle-pill.on { background:var(--warn); color:#1a1206; border-color:var(--warn); }
+  /* Badge "Venta libre / Con receta" al lado del label Observación. */
+  .receta-badge { font-size:10px; padding:2px 7px; border-radius:999px; margin-left:6px;
+                   font-weight:700; letter-spacing:.3px; }
+  .receta-badge.libre      { background:rgba(29,158,117,.18); color:var(--accent); }
+  .receta-badge.con-receta { background:var(--warn); color:#1a1206; }
   .btn-agregar { background:var(--accent); color:var(--accent-ink); border:none; border-radius:10px; padding:11px 22px; font-weight:700; font-size:14px; cursor:pointer; }
   .btn-agregar:hover { filter:brightness(1.1); }
   @media (max-width:900px){ .grid-cliente,.grid-detalle,.grid-despacho{ grid-template-columns:1fr 1fr; } }
@@ -73,13 +85,12 @@
             <label>Envío $
               <span id="envioPill" style="display:none; font-size:9px; padding:1px 6px; border-radius:999px; margin-left:4px;"></span>
             </label>
-            <input id="pEnvio" class="input input-grande" placeholder="0.00" type="number" step="0.01" min="0">
+            <input id="pEnvio" class="input input-grande" placeholder="0.00" type="number" step="0.01" min="0" oninput="_recalcularVuelto()">
           </div>
           <div class="field" style="flex:0 0 90px;">
             <label>o Cuadras</label>
-            <input id="pCuadras" class="input" placeholder="ej: 22" type="number" min="0" title="Override manual de cuadras" onkeydown="if(event.key==='Enter')cotizarEnvio()">
+            <input id="pCuadras" class="input" placeholder="ej: 22" type="number" min="0" title="Override manual de cuadras (cotiza solo)" oninput="onCuadrasInput()">
           </div>
-          <button type="button" onclick="cotizarEnvio()" class="hbtn hbtn-ok" style="padding:9px 18px; height:38px;">Cotizar</button>
           <div id="envioInfo" class="muted2" style="font-size:11px; flex:1; min-width:120px;"></div>
           <div class="field" style="flex:0 0 150px;">
             <label>Canal</label>
@@ -107,11 +118,11 @@
           </div>
           <div class="field">
             <label>Importe $</label>
-            <input id="pImporte" class="input input-grande" placeholder="0.00" type="number" step="0.01" min="0">
+            <input id="pImporte" class="input input-grande" placeholder="0.00" type="number" step="0.01" min="0" oninput="_recalcularVuelto()">
           </div>
           <div class="field">
             <label>Forma de pago</label>
-            <select id="pFormaPago" class="input">
+            <select id="pFormaPago" class="input" onchange="onFormaPagoChange()">
               <option value="">—</option>
               <option value="efectivo">Efectivo</option>
               <option value="transfer">Transfer</option>
@@ -123,12 +134,38 @@
           </div>
         </div>
         <div class="grid grid-detalle" style="margin-top:10px;">
+          <div class="field" id="fldDatoPagoMp" style="display:none;">
+            <label>Nro comprobante MP</label>
+            <input id="pDatoPagoMp" class="input" placeholder="ej: 76543210" oninput="onDatoPagoMpInput()" title="Al pegar el comprobante de MP, el pedido queda PAGADO">
+          </div>
+          <div class="field" id="fldPagaCon" style="display:none;">
+            <label>Con cuánto paga $</label>
+            <input id="pPagaCon" class="input" type="number" min="0" step="0.01" placeholder="ej: 10000" oninput="onPagaConInput()">
+          </div>
+          <div class="field" id="fldTarjeta" style="display:none;">
+            <label>¿Qué tarjeta?</label>
+            <select id="pTarjeta" class="input">
+              <option value="">— elegir —</option>
+              <option value="Visa">Visa</option>
+              <option value="Master">Master</option>
+              <option value="Amex">Amex</option>
+              <option value="Naranja">Naranja</option>
+              <option value="Cabal">Cabal</option>
+              <option value="Otros">Otros</option>
+            </select>
+          </div>
+          <div class="field" id="fldComprobanteTarj" style="display:none;">
+            <label>Nro de cupón / comprobante</label>
+            <input id="pComprobanteTarj" class="input" placeholder="ej: 001234 / nro de operación" title="Requerido para tarjeta">
+          </div>
           <div class="field">
             <label>Vuelto / obs. pago</label>
             <input id="pVuelto" class="input" placeholder="NO HAY PLATA / $">
           </div>
           <div class="field" style="grid-column:span 3;">
-            <label>Observación</label>
+            <label>Observación
+              <span id="recetaBadge" class="receta-badge libre">🟢 Venta libre</span>
+            </label>
             <input id="pObservacion" class="input" placeholder="recetas 3, TRAER PANTUS..." onkeydown="if(event.key==='Enter')agregar()">
           </div>
         </div>
@@ -146,17 +183,15 @@
               <option value="programado">🕐 Programado</option>
             </select>
           </div>
-          <div class="field">
-            <label>Turno</label>
-            <select id="pTurno" class="input" onchange="localStorage.setItem('pedido_nuevo_turno', this.value)">
-              <option value="">—</option>
-              <option value="mañana">Mañana</option>
-              <option value="tarde">Tarde</option>
-            </select>
-          </div>
+          {# Turno se asigna en la planilla por el operador de despacho, no acá. #}
           <div class="field check-line" style="justify-content:flex-start; padding-top:18px;">
-            <label><input type="checkbox" id="pReceta"> Receta</label>
-            <label><input type="checkbox" id="pPagado"> Pagado</label>
+            {# Botón toggle estilo pill. El hidden guarda el estado para el submit. #}
+            <button type="button" id="btnReceta" class="toggle-pill" onclick="toggleReceta()" title="Marcar si tiene que traer la receta">
+              📋 Traer Receta
+            </button>
+            <input type="hidden" id="pReceta" value="">
+            {# Pagado se deriva de la forma de pago — sin UI visible. #}
+            <input type="hidden" id="pPagado" value="">
           </div>
         </div>
       </div>
@@ -192,6 +227,113 @@ function showToast(msg, ms=3500){
   window._toastT = setTimeout(()=>{ t.style.display='none'; }, ms);
 }
 
+// Debounce del campo cuadras: cotiza solo después de 400 ms sin tipear,
+// para no spamear el endpoint mientras el operador escribe el número.
+let _cuaTmr = null;
+function onCuadrasInput(){
+  clearTimeout(_cuaTmr);
+  _cuaTmr = setTimeout(cotizarEnvio, 400);
+}
+
+// Toggle "Traer Receta" (botón pill que reemplaza al checkbox).
+// Sincroniza también el badge "Venta libre / Con receta" al lado de Observación.
+function toggleReceta(){
+  const inp = document.getElementById('pReceta');
+  const btn = document.getElementById('btnReceta');
+  const on = inp.value !== 'true';
+  inp.value = on ? 'true' : '';
+  btn.classList.toggle('on', on);
+  _pintarRecetaBadge(on);
+}
+
+function _pintarRecetaBadge(on){
+  const badge = document.getElementById('recetaBadge');
+  if (!badge) return;
+  if (on) {
+    badge.textContent = '🟠 Con receta — TRAER RECETA';
+    badge.className = 'receta-badge con-receta';
+  } else {
+    badge.textContent = '🟢 Venta libre';
+    badge.className = 'receta-badge libre';
+  }
+}
+
+// Pagado derivado de la forma de pago. Reglas:
+//   efectivo / vacío  → pagado=false (cobra el cadete al entregar).
+//   link / transfer   → pagado=false hasta que el operador pegue el nro de
+//                       comprobante MP (verificó que entró el pago en MP).
+//   débito / crédito  → pagado=true (POS presencial, ya cobrado).
+//   sc                → pagado=true (cubre obra social).
+// Y bonus: el campo Vuelto solo aplica con efectivo (en el resto se limpia/disabled).
+function onFormaPagoChange(){
+  const f = document.getElementById('pFormaPago').value;
+  const necesitaComprobante = (f === 'link' || f === 'transfer');
+  const esTarjeta = (f === 'debito' || f === 'credito');
+  const esSc = (f === 'sc');
+  const esEfectivo = (f === 'efectivo');
+
+  // Mostrar/ocultar campo "Nro comprobante MP".
+  document.getElementById('fldDatoPagoMp').style.display = necesitaComprobante ? '' : 'none';
+  if (!necesitaComprobante) document.getElementById('pDatoPagoMp').value = '';
+
+  // Mostrar/ocultar campo "Con cuánto paga" (solo en efectivo).
+  document.getElementById('fldPagaCon').style.display = esEfectivo ? '' : 'none';
+  if (!esEfectivo) document.getElementById('pPagaCon').value = '';
+
+  // Mostrar/ocultar tarjeta + cupón (solo en débito/crédito).
+  document.getElementById('fldTarjeta').style.display = esTarjeta ? '' : 'none';
+  document.getElementById('fldComprobanteTarj').style.display = esTarjeta ? '' : 'none';
+  if (!esTarjeta) {
+    document.getElementById('pTarjeta').value = '';
+    document.getElementById('pComprobanteTarj').value = '';
+  }
+
+  // Pagado: SC y tarjeta presencial → siempre true. link/transfer → depende del
+  // comprobante MP. Efectivo → false (cobra el cadete).
+  if (esSc || esTarjeta) {
+    document.getElementById('pPagado').value = 'true';
+  } else if (necesitaComprobante) {
+    _refrescarPagadoDesdeMp();
+  } else {
+    document.getElementById('pPagado').value = '';
+  }
+
+  // Vuelto solo en efectivo (o vacío). En el resto lo limpiamos y disabled.
+  const vu = document.getElementById('pVuelto');
+  if (esEfectivo || f === '') {
+    vu.disabled = false;
+    if (esEfectivo) _recalcularVuelto();
+  } else {
+    vu.value = '';
+    vu.disabled = true;
+  }
+}
+
+// Vuelto = paga_con − (importe + envío). Solo se actualiza si forma=efectivo.
+// El operador igual puede editar el campo a mano (caso "no tengo cambio chico").
+function onPagaConInput(){ _recalcularVuelto(); }
+function _recalcularVuelto(){
+  if (document.getElementById('pFormaPago').value !== 'efectivo') return;
+  const paga = parseFloat(document.getElementById('pPagaCon').value) || 0;
+  const imp  = parseFloat(document.getElementById('pImporte').value)  || 0;
+  const env  = parseFloat(document.getElementById('pEnvio').value)    || 0;
+  if (paga <= 0) { document.getElementById('pVuelto').value = ''; return; }
+  const exacto = paga - (imp + env);
+  // Redondeo a billetes de $100 (floor): si exacto=1450 → vuelto=1400. Si paga
+  // menos de lo que sale (exacto < 0), mantenemos el negativo para que el
+  // operador lo vea (caso 'falta plata').
+  const vuelto = exacto >= 0 ? Math.floor(exacto / 100) * 100 : exacto;
+  document.getElementById('pVuelto').value = vuelto.toFixed(2);
+}
+
+// Cuando el operador escribe el nro de comprobante de MP/transferencia, marcamos
+// pagado=true automáticamente. Si lo borra, vuelve a pagado=false.
+function onDatoPagoMpInput(){ _refrescarPagadoDesdeMp(); }
+function _refrescarPagadoDesdeMp(){
+  const v = (document.getElementById('pDatoPagoMp').value || '').trim();
+  document.getElementById('pPagado').value = v ? 'true' : '';
+}
+
 async function cotizarEnvio(){
   // Prioridad: cuadras manual > coords del domicilio > geocode por dirección+localidad.
   const dir = document.getElementById('pDir').value.trim();
@@ -223,10 +365,14 @@ async function cotizarEnvio(){
       pill.textContent = d.fuente || '—';
       pill.style.background = d.fuente==='zona' ? '#185FA5' : 'var(--accent)';
       pill.style.color = d.fuente==='zona' ? '#fff' : 'var(--accent-ink)';
-      const parts = [];
-      if (d.detalle) parts.push(d.detalle);
-      if (d.cuadras != null && !d.detalle?.includes('cuadras')) parts.push(`~${d.cuadras} cuadras`);
-      info.textContent = parts.join(' · ');
+      // Línea 1: label del tramo o zona matcheada (descripción de la tabla).
+      // Línea 2: detalle/cuadras reales.
+      const linea2 = [];
+      if (d.detalle) linea2.push(d.detalle);
+      if (d.cuadras != null && !d.detalle?.includes('cuadras')) linea2.push(`~${d.cuadras} cuadras`);
+      info.innerHTML = (d.tramo_label
+        ? `<div style="font-weight:600; color:var(--txt);">${esc(d.tramo_label)}</div>` : '')
+        + `<div>${esc(linea2.join(' · '))}</div>`;
       // Auto-guardar geo si vino del geocoder y hay domicilio elegido sin geo.
       if (geocoded && d.lat != null && d.lng != null){
         const domSel = document.getElementById('pDom');
@@ -241,7 +387,7 @@ async function cotizarEnvio(){
             opt.dataset.lat = d.lat;
             opt.dataset.lng = d.lng;
             if (!opt.text.includes('📍')) opt.text = opt.text + ' 📍';
-            info.textContent += ` · 📍 guardado ${new Date().toLocaleDateString('es-AR')}`;
+            info.innerHTML += ` · 📍 guardado ${new Date().toLocaleDateString('es-AR')}`;
           }
         }
       }
@@ -291,15 +437,19 @@ function pickProducto(p){
   window._prodOid = p.observer_id;
   document.getElementById('pProductoLink').textContent = `· obs:${p.observer_id} · stock ${p.stock}`;
   document.getElementById('resProd').style.display='none';
+  // Auto-activar el toggle "Traer Receta" si el producto NO es venta libre.
+  // (Backend devuelve p.receta=true cuando ObsProducto.id_tipo_venta_control != 'L'.)
+  // Solo ENCIENDE: si ya estaba prendido o el operador prefiere dejarlo así, no
+  // pisamos su decisión cuando el producto siguiente sea venta libre.
+  if (p.receta && document.getElementById('pReceta').value !== 'true'){
+    toggleReceta();
+  }
 }
 
 async function cargarSelects(){
   const d = await (await fetch('/reparto/api?fecha='+fechaVal())).json();
   const selC = document.getElementById('pCiudad');
   selC.innerHTML = (d.ciudades||['Rosario']).map(c=>`<option ${c==='Rosario'?'selected':''}>${esc(c)}</option>`).join('');
-  // Restaurar turno previo (recordado entre tomas)
-  const turnoPrev = localStorage.getItem('pedido_nuevo_turno') || '';
-  document.getElementById('pTurno').value = turnoPrev;
 }
 
 async function agregar(){
@@ -321,15 +471,41 @@ async function agregar(){
     importe: document.getElementById('pImporte').value || null,
     forma_pago: document.getElementById('pFormaPago').value,
     vuelto: document.getElementById('pVuelto').value.trim(),
-    requiere_receta: document.getElementById('pReceta').checked,
-    pagado: document.getElementById('pPagado').checked,
-    turno: document.getElementById('pTurno').value,
+    paga_con: document.getElementById('pPagaCon').value || null,
+    // dato_pago_mp también lleva el cupón de tarjeta (mismo campo en DB; lo
+    // distinguís por forma_pago).
+    dato_pago_mp: (document.getElementById('pDatoPagoMp').value.trim()
+                   || document.getElementById('pComprobanteTarj').value.trim()
+                   || null),
+    tarjeta_marca: document.getElementById('pTarjeta').value || null,
+    requiere_receta: document.getElementById('pReceta').value === 'true',
+    pagado: document.getElementById('pPagado').value === 'true',
+    // turno → lo asigna el operador de planilla, no se manda desde acá.
     observacion: document.getElementById('pObservacion').value.trim(),
     producto: document.getElementById('pProducto').value.trim(),
     producto_observer_id: window._prodOid || null,
     envio: document.getElementById('pEnvio').value || null,
   };
   if(!body.cliente_nombre && !body.direccion && !body.domicilio_id){ alert('Poné cliente o dirección.'); return; }
+  // Validación bloqueante: link MP y transferencia exigen el nro de comprobante.
+  if ((body.forma_pago === 'link' || body.forma_pago === 'transfer') && !body.dato_pago_mp){
+    alert('Cargá el Nro de comprobante de MP/transferencia antes de seguir.');
+    document.getElementById('pDatoPagoMp').focus();
+    return;
+  }
+  // Validación bloqueante: débito/crédito exigen marca de tarjeta y cupón.
+  if (body.forma_pago === 'debito' || body.forma_pago === 'credito'){
+    if (!body.tarjeta_marca){
+      alert('Elegí qué tarjeta es antes de seguir.');
+      document.getElementById('pTarjeta').focus();
+      return;
+    }
+    if (!body.dato_pago_mp){
+      alert('Cargá el Nro de cupón / comprobante de la tarjeta antes de seguir.');
+      document.getElementById('pComprobanteTarj').focus();
+      return;
+    }
+  }
   const d = await jpost('/reparto/pedido', body);
   if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
   if(!d.asignado){ document.getElementById('avisoCfg').textContent = '⚠️ El último pedido quedó "sin asignar".'; }
@@ -337,15 +513,23 @@ async function agregar(){
   showToast(`✓ Pedido agregado <a href="/reparto/planilla">ver planilla →</a>`);
   // Reset campos del host (cliente_picker se limpia con ClientePicker.clear)
   ClientePicker.clear();
-  ['pNota','pImporte','pVuelto','pProducto','pObservacion','pEnvio','pCuadras'].forEach(i=>{
+  ['pNota','pImporte','pVuelto','pProducto','pObservacion','pEnvio','pCuadras',
+   'pDatoPagoMp','pPagaCon','pComprobanteTarj','pTarjeta'].forEach(i=>{
     const el=document.getElementById(i); if(el) el.value='';
   });
   document.getElementById('pPrio').value='normal';
   document.getElementById('pCanal').value='mostrador';
   document.getElementById('pFormaPago').value='';
+  document.getElementById('fldDatoPagoMp').style.display='none';
+  document.getElementById('fldPagaCon').style.display='none';
+  document.getElementById('fldTarjeta').style.display='none';
+  document.getElementById('fldComprobanteTarj').style.display='none';
+  document.getElementById('pVuelto').disabled=false;
   // pTurno NO se resetea: queda el último elegido (también guardado en localStorage)
-  document.getElementById('pReceta').checked=false;
-  document.getElementById('pPagado').checked=false;
+  document.getElementById('pReceta').value='';
+  document.getElementById('btnReceta').classList.remove('on');
+  _pintarRecetaBadge(false);
+  document.getElementById('pPagado').value='';
   document.getElementById('envioInfo').textContent='';
   document.getElementById('envioPill').style.display='none';
   document.getElementById('pProductoLink').textContent='';

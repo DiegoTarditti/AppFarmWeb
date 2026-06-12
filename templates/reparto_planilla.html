@@ -27,6 +27,18 @@
   .nav-fecha button:hover { background:var(--surface); }
 
   /* Tabla */
+  /* Botón Maps al lado de la dirección. Píldora chiquita con pin. */
+  .btn-maps { display:inline-block; margin-left:5px; padding:1px 6px; font-size:11px;
+              text-decoration:none; border-radius:999px; background:rgba(29,158,117,.18);
+              color:var(--accent); border:1px solid rgba(29,158,117,.35); cursor:pointer; }
+  .btn-maps:hover { background:var(--accent); color:var(--accent-ink); }
+  /* Botones para asignar turno (al lado del cliente). El activo se ve filled. */
+  .turno-switch { display:inline-flex; gap:3px; margin-left:6px; }
+  .btn-turno { display:inline-flex; padding:0 4px; font-size:13px; cursor:pointer;
+                border-radius:999px; border:1px solid transparent; opacity:.45;
+                transition: opacity .15s, background .15s; line-height:1.4; }
+  .btn-turno:hover { opacity:1; }
+  .btn-turno.on { opacity:1; background:rgba(239,159,39,.2); border-color:rgba(239,159,39,.5); }
   .planilla-table { width:100%; border-collapse:collapse; font-size:12px; }
   .planilla-table th { background:var(--surface); color:var(--title); font-weight:600; padding:8px 6px;
                        text-align:left; border-bottom:1px solid var(--border); white-space:nowrap;
@@ -80,7 +92,7 @@
 
 <div class="wrap">
 
-{% macro render_tabla(pedidos, inicio_num) %}
+{% macro render_tabla(pedidos, inicio_num, con_turno_btns=False) %}
 <table class="planilla-table">
   <thead>
     <tr>
@@ -112,8 +124,30 @@
     {% endif %}
     <tr class="{{ row_class }}" data-pid="{{ p.id }}">
       <td style="font-weight:700; color:var(--muted2);">{{ inicio_num + loop.index0 + 1 }}</td>
-      <td><b style="color:var(--title);">{{ p.cliente_nombre or 's/cliente' }}</b></td>
-      <td style="font-size:11px; color:var(--muted);">{{ p.direccion or '' }}</td>
+      <td>
+        <b style="color:var(--title);">{{ p.cliente_nombre or 's/cliente' }}</b>
+        {% if con_turno_btns %}
+        <span class="turno-switch">
+          <span class="btn-turno {{ 'on' if p.turno == 'mañana' else '' }}"
+                onclick="setTurno({{ p.id }}, 'mañana')" title="Mañana">🌅</span>
+          <span class="btn-turno {{ 'on' if p.turno == 'tarde' else '' }}"
+                onclick="setTurno({{ p.id }}, 'tarde')" title="Tarde">🌆</span>
+        </span>
+        {% endif %}
+      </td>
+      <td style="font-size:11px; color:var(--muted);">
+        {{ p.direccion or '' }}
+        {% if p.direccion %}
+          {# Link a Google Maps: si hay coords usa lat,lng (preciso); si no, busca por dirección. #}
+          {% if p.lat is not none and p.lng is not none %}
+            {% set _maps_url = 'https://www.google.com/maps?q=' ~ p.lat ~ ',' ~ p.lng %}
+          {% else %}
+            {% set _maps_url = 'https://www.google.com/maps/search/?api=1&query=' ~ (p.direccion ~ ' Rosario')|urlencode %}
+          {% endif %}
+          <a href="{{ _maps_url }}" target="_blank" rel="noopener" class="btn-maps"
+             title="Abrir en Google Maps">📍</a>
+        {% endif %}
+      </td>
       <td class="celda-editable" data-campo="envio_costo" data-tipo="text">
         <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
       </td>
@@ -127,7 +161,16 @@
         <span class="celda-valor">{{ p.forma_pago or '—' }}</span>
       </td>
       <td class="celda-editable" data-campo="vuelto" data-tipo="text">
-        <span class="celda-valor">{{ p.vuelto or '—' }}</span>
+        {# Si el vuelto es numérico, lo formateamos como $ con separador de miles. #}
+        {% set _v = (p.vuelto or '').strip() %}
+        {% set _vn = _v.replace('.','').replace(',','').replace('-','').replace(' ','') %}
+        <span class="celda-valor">
+          {% if _v and _vn.isdigit() %}
+            $ {{ '{:,.0f}'.format(_v|float)|replace(',', '.') }}
+          {% else %}
+            {{ p.vuelto or '—' }}
+          {% endif %}
+        </span>
       </td>
       <td class="celda-editable" data-campo="producto" data-tipo="text" style="max-width:120px; overflow:hidden; text-overflow:ellipsis;">
         <span class="celda-valor">{{ p.producto or '—' }}</span>
@@ -187,14 +230,38 @@
 </table>
 {% endmacro %}
 
+{% if pedidos_pendientes_previo %}
+<div class="turno-header" style="background:#EF272720; border-left:3px solid var(--warn); padding-left:10px;">
+  📦 Pendientes del turno previo ({{ pedidos_pendientes_previo|length }})
+  <span style="font-size:11px; font-weight:normal; color:var(--muted); margin-left:8px;">
+    — Pedidos de días anteriores sin entregar. Asignalos a un turno de hoy.
+  </span>
+</div>
+{{ render_tabla(pedidos_pendientes_previo, 0, con_turno_btns=True) }}
+{% endif %}
+
+{% set _off_pendientes = pedidos_pendientes_previo|length if pedidos_pendientes_previo else 0 %}
+
+{% if pedidos_sin_asignar %}
+<div class="turno-header" style="background:#7c4dff20; border-left:3px solid #a78bfa; padding-left:10px;">
+  ⚪ Sin asignar ({{ pedidos_sin_asignar|length }} pedido{{ 's' if pedidos_sin_asignar|length != 1 }})
+  <span style="font-size:11px; font-weight:normal; color:var(--muted); margin-left:8px;">
+    — Asignalos con los botones 🌅 / 🌆 de cada fila.
+  </span>
+</div>
+{{ render_tabla(pedidos_sin_asignar, _off_pendientes, con_turno_btns=True) }}
+{% endif %}
+
+{% set _off_sa = _off_pendientes + (pedidos_sin_asignar|length if pedidos_sin_asignar else 0) %}
+
 {% if pedidos_manana %}
 <div class="turno-header">🌅 Mañana ({{ pedidos_manana|length }} pedido{{ 's' if pedidos_manana|length != 1 }})</div>
-{{ render_tabla(pedidos_manana, 0) }}
+{{ render_tabla(pedidos_manana, _off_sa) }}
 {% endif %}
 
 {% if pedidos_tarde %}
 <div class="turno-header">🌆 Tarde ({{ pedidos_tarde|length }} pedido{{ 's' if pedidos_tarde|length != 1 }})</div>
-{{ render_tabla(pedidos_tarde, pedidos_manana|length) }}
+{{ render_tabla(pedidos_tarde, _off_sa + pedidos_manana|length) }}
 {% endif %}
 
 {% if not pedidos_manana and not pedidos_tarde %}
@@ -299,6 +366,21 @@ async function avanzarEstado(pid, actual) {
   const siguiente = idx >= 0 && idx < orden.length - 1 ? orden[idx + 1] : 'pendiente';
   const res = await actualizarCampo(pid, 'estado', siguiente);
   if (res.ok) location.reload();
+}
+
+// Asignar / cambiar turno desde la planilla. POST al endpoint genérico de
+// actualización por campo. Refresca al instante.
+async function setTurno(pid, valor) {
+  try {
+    const r = await fetch(`/api/reparto/pedido/${pid}/actualizar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campo: 'turno', valor }),
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo cambiar turno')); return; }
+    location.reload();
+  } catch (e) { alert('Error: ' + e.message); }
 }
 
 async function publicarPedido(pid, btn) {

@@ -91,8 +91,12 @@ def cotizar(localidad=None, cuadras=None):
                       .filter(database.EnvioTramo.hasta_cuadras >= c)
                       .order_by(database.EnvioTramo.hasta_cuadras.asc()).first())
                 if tr:
+                    # tramo_label: descripción del tramo que matcheó (ej. "Hasta 50 cuadras").
+                    # Se muestra arriba de las cuadras reales para que el operador vea
+                    # contra qué franja de la tabla se cobró.
                     return {'monto': float(tr.monto or 0), 'fuente': 'tramo',
-                            'detalle': f'{c} cuadras'}
+                            'detalle': f'{c} cuadras',
+                            'tramo_label': f'Hasta {int(tr.hasta_cuadras)} cuadras'}
     return {'monto': None, 'fuente': None, 'detalle': 'a convenir'}
 
 
