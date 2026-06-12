@@ -217,6 +217,93 @@ def init_app(app):
             conv_id, items, current_user.id,
             cliente_nombre=ficha['nombre'] if ficha else None))
 
+    @app.route('/atencion/<int:conv_id>/cerrar-transaccion', methods=['POST'])
+    @login_required
+    def atencion_cerrar_transaccion(conv_id):
+        """Persiste el pedido completo capturado en el modal 'Cerrar transacción'
+        (spec: docs/fase_a_transaccion.md). Crea un PedidoReparto con todos los
+        campos de pago/cobertura/destino y lo deja en estado='en_caja' para que
+        el cajero lo cobre fiscalmente en ObServer y lo despache."""
+        body = request.json or {}
+
+        # Resolver drogueria_id (puede venir como id numérico o nombre).
+        drogueria_id = None
+        drog = body.get('drogueria')
+        if drog not in (None, '', 'null'):
+            try:
+                drogueria_id = int(drog)
+            except (TypeError, ValueError):
+                with database.get_db() as s:
+                    prov = (s.query(database.Provider)
+                            .filter(database.Provider.razon_social.ilike(f'%{drog}%'))
+                            .first())
+                    if prov:
+                        drogueria_id = prov.id
+
+        # Datos del cliente y del último domicilio elegido (libreta).
+        ficha = store.get_ficha_de_conversacion(conv_id)
+        doms = store.listar_domicilios(conv_id)
+        dom = doms[0] if doms else {}
+
+        # Operador que cierra (para el campo `tomo`).
+        oper = (getattr(current_user, 'nombre_completo', None)
+                or getattr(current_user, 'username', None) or 'operador')
+
+        with database.get_db() as s:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'ok': False, 'error': 'conversación no existe'}), 404
+
+            total = float(body.get('total') or 0) or None
+            try:
+                paga_con = float(body['paga_con']) if body.get('paga_con') not in (None, '') else None
+            except (TypeError, ValueError):
+                paga_con = None
+            try:
+                envio = float(body['envio_costo']) if body.get('envio_costo') not in (None, '') else None
+            except (TypeError, ValueError):
+                envio = None
+
+            p = database.PedidoReparto(
+                fecha=database.now_ar().date(),
+                cliente_id=conv.cliente_id,
+                cliente_nombre=(ficha['nombre'] if ficha else None) or conv.nombre_cliente,
+                direccion=dom.get('direccion'),
+                piso=dom.get('piso'),
+                depto=dom.get('depto'),
+                referencia=dom.get('referencia'),
+                lat=dom.get('lat'),
+                lng=dom.get('lng'),
+                # ── Pago ──
+                importe=total,                # total bruto ObServer
+                total_paciente=total,         # cobrado al paciente (idem si no hay cobertura)
+                forma_pago=body.get('forma_pago') or None,
+                paga_con=paga_con,
+                vuelto=(str(body['vuelto']) if body.get('vuelto') is not None else None),
+                link_mp=body.get('link_mp') or None,
+                dato_pago_mp=body.get('dato_pago_mp') or None,
+                tarjeta_ult4=body.get('tarjeta_ult4') or None,
+                tarjeta_nombre=body.get('tarjeta_nombre') or None,
+                tarjeta_marca=body.get('tarjeta_marca') or None,
+                # ── Cobertura ──
+                obra_social=body.get('obra_social') or None,
+                receta_estado=body.get('requiere_receta') or None,
+                requiere_firma=bool(body.get('requiere_firma') or False),
+                # ── Stock + destino ──
+                stock_status=body.get('stock') or None,
+                drogueria_id=drogueria_id,
+                destino=body.get('destino') or None,
+                envio_costo=envio,
+                # ── Workflow ──
+                estado='en_caja',
+                canal='atencion',
+                tomo=oper,
+                prioridad=body.get('prioridad') or 'normal',
+            )
+            s.add(p)
+            s.commit()
+            return jsonify({'ok': True, 'pedido_id': p.id, 'estado': p.estado})
+
     @app.route('/atencion/<int:conv_id>/ficha-notas', methods=['POST'])
     @login_required
     def atencion_guardar_notas(conv_id):
