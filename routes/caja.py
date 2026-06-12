@@ -35,6 +35,15 @@ def init_app(app):
         por_cobrar | cadetes | drogueria."""
         return jsonify({'pedidos': caja.listar_bandeja(name)})
 
+    @app.route('/caja/pedido/<int:pedido_id>/cobrar', methods=['POST'])
+    @login_required
+    def caja_pedido_cobrar(pedido_id):
+        """Confirma cobro (se cobra siempre por adelantado, incluso si está
+        esperando droguería). Mueve el estado según destino/stock."""
+        oper = (getattr(current_user, 'nombre_completo', None)
+                or getattr(current_user, 'username', None))
+        return jsonify(caja.cobrar_pedido(pedido_id, cajero_nombre=oper))
+
     @app.route('/caja/api/formas-pago')
     @login_required
     def caja_formas_pago():

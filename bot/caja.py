@@ -150,6 +150,38 @@ def _pedido_dict(p):
     }
 
 
+def cobrar_pedido(pedido_id, cajero_nombre=None):
+    """Marca el pedido como pagado y lo mueve al siguiente estado según destino.
+
+    Siempre se cobra por adelantado (incluso si está esperando droguería):
+      - stock='esperar' → estado='esperando_drog' (cobrado, queda en standby).
+      - destino='reparto' → estado='en_planilla' (sale por reparto).
+      - destino='retiro'  → estado='para_retiro'  (queda guardado para que venga).
+      - destino vacío     → default 'para_retiro' (conservador, lo retomamos a mano).
+    """
+    P = database.PedidoReparto
+    with database.get_db() as s:
+        p = s.get(P, pedido_id)
+        if not p:
+            return {'ok': False, 'error': 'pedido no existe'}
+        if p.pagado:
+            return {'ok': False, 'error': 'ya está cobrado'}
+        p.pagado = True
+        if p.stock_status == 'esperar':
+            p.estado = 'esperando_drog'
+        elif p.destino == 'reparto':
+            p.estado = 'en_planilla'
+        elif p.destino == 'retiro':
+            p.estado = 'para_retiro'
+        else:
+            p.estado = 'para_retiro'
+        # `entregado_por` / `recibio` no aplican acá (son del cadete); el cajero
+        # queda implícito por el timestamp. Si más adelante hace falta auditar
+        # quién cobró, agregamos columna `cobrado_por` + `cobrado_en`.
+        s.commit()
+        return {'ok': True, 'pedido_id': p.id, 'estado': p.estado, 'pagado': True}
+
+
 def listar_bandeja(name, limit=100):
     """Lista pedidos para una de las 3 bandejas de caja.
 

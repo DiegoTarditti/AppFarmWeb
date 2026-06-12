@@ -270,10 +270,16 @@ function pedidoCard(p) {
     p.receta === 'pendiente' ? '<span class="badge" style="background:var(--warn); color:#1a1206;">📋 receta</span>' : '',
     p.firma ? '<span class="badge" style="background:#0ea5e9; color:#06283d;">📝 firma</span>' : '',
     p.stock === 'esperar' ? '<span class="badge" style="background:#a78bfa; color:#1e1238;">📦 esperar drog.</span>' : '',
+    p.destino === 'reparto' ? '<span class="badge" style="background:#1d9e75; color:#06241a;">🛵 reparto</span>'
+      : p.destino === 'retiro' ? '<span class="badge" style="background:#ec4899; color:#3b0a23;">🛍️ retiro</span>' : '',
   ].filter(Boolean).join(' ');
   const direccion = [p.direccion, p.piso && 'P.'+p.piso, p.depto && 'D.'+p.depto].filter(Boolean).join(' · ');
   const datoMp = p.dato_pago_mp ? `<div class="row"><span class="muted">📋 Dato pago MP</span><span style="font-family:monospace;">${esc(p.dato_pago_mp)}</span></div>` : '';
   const envio = p.envio !== null && p.envio !== undefined ? `<div class="row"><span class="muted">Envío</span><span>${fmt(p.envio)}</span></div>` : '';
+  // Acción "Cobrar" solo en la bandeja "Por cobrar".
+  const accion = (tabActiva === 'por_cobrar')
+    ? `<div style="margin-top:8px;"><button onclick="cobrarPedido(${p.id})" class="hbtn hbtn-ok" style="width:100%;">✓ Cobrado</button></div>`
+    : '';
   return `<div class="card">
     <div class="card-head">
       <span class="title" style="font-weight:600; font-size:13px;">${prio} ${esc(p.cliente || 'Sin nombre')}</span>
@@ -289,8 +295,18 @@ function pedidoCard(p) {
         <span class="muted2" style="font-size:11px;">${esc(p.tomo || '')} · ${esc((p.creado_en||'').slice(0,16).replace('T',' '))}</span>
         <span class="total">${fmt(p.total)}</span>
       </div>
+      ${accion}
     </div>
   </div>`;
+}
+
+async function cobrarPedido(id) {
+  if (!confirm('Confirmar cobro del pedido #' + id + '?')) return;
+  try {
+    const d = await (await fetch(`/caja/pedido/${id}/cobrar`, { method: 'POST' })).json();
+    if (!d.ok) { alert('Error: ' + (d.error || 'desconocido')); return; }
+    cargarBandeja(tabActiva);
+  } catch (e) { alert('Error de red: ' + e.message); }
 }
 
 cargarFormas();
