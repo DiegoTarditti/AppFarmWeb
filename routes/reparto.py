@@ -710,9 +710,23 @@ def init_app(app):
         sin_asignar = [p for p in ps if not p.turno]
         manana = [p for p in ps if p.turno == 'mañana']
         tarde = [p for p in ps if p.turno == 'tarde']
+        # Pendientes del turno previo: pedidos de FECHAS ANTERIORES que quedaron
+        # sin entregar (cadete no volvió, se reprogramó, etc.). Los traemos solo
+        # cuando se mira la planilla de HOY (no para fechas pasadas, ahí ya están).
+        pendientes_previo = []
+        hoy_d = database.now_ar().date()
+        if fecha >= hoy_d:
+            estados_activos = ('pendiente', 'publicado', 'tomado', 'en_ruta',
+                                'en_caja', 'en_planilla', 'esperando_drog')
+            pendientes_previo = (s.query(database.PedidoReparto)
+                                  .filter(database.PedidoReparto.fecha < hoy_d,
+                                          database.PedidoReparto.estado.in_(estados_activos))
+                                  .order_by(database.PedidoReparto.fecha.desc(),
+                                            database.PedidoReparto.id).all())
         return render_template('reparto_planilla.html',
                                fecha=fecha, hoy=database.now_ar().date(),
                                ahora=database.now_ar(),     # para timers visuales (publicado→tomado)
+                               pedidos_pendientes_previo=pendientes_previo,
                                pedidos_sin_asignar=sin_asignar,
                                pedidos_manana=manana,
                                pedidos_tarde=tarde,

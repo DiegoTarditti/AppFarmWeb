@@ -92,7 +92,7 @@
 
 <div class="wrap">
 
-{% macro render_tabla(pedidos, inicio_num) %}
+{% macro render_tabla(pedidos, inicio_num, con_turno_btns=False) %}
 <table class="planilla-table">
   <thead>
     <tr>
@@ -126,13 +126,14 @@
       <td style="font-weight:700; color:var(--muted2);">{{ inicio_num + loop.index0 + 1 }}</td>
       <td>
         <b style="color:var(--title);">{{ p.cliente_nombre or 's/cliente' }}</b>
-        {# Botones para asignar/cambiar turno (el activo se ve filled). #}
+        {% if con_turno_btns %}
         <span class="turno-switch">
           <span class="btn-turno {{ 'on' if p.turno == 'mañana' else '' }}"
                 onclick="setTurno({{ p.id }}, 'mañana')" title="Mañana">🌅</span>
           <span class="btn-turno {{ 'on' if p.turno == 'tarde' else '' }}"
                 onclick="setTurno({{ p.id }}, 'tarde')" title="Tarde">🌆</span>
         </span>
+        {% endif %}
       </td>
       <td style="font-size:11px; color:var(--muted);">
         {{ p.direccion or '' }}
@@ -229,24 +230,38 @@
 </table>
 {% endmacro %}
 
+{% if pedidos_pendientes_previo %}
+<div class="turno-header" style="background:#EF272720; border-left:3px solid var(--warn); padding-left:10px;">
+  📦 Pendientes del turno previo ({{ pedidos_pendientes_previo|length }})
+  <span style="font-size:11px; font-weight:normal; color:var(--muted); margin-left:8px;">
+    — Pedidos de días anteriores sin entregar. Asignalos a un turno de hoy.
+  </span>
+</div>
+{{ render_tabla(pedidos_pendientes_previo, 0, con_turno_btns=True) }}
+{% endif %}
+
+{% set _off_pendientes = pedidos_pendientes_previo|length if pedidos_pendientes_previo else 0 %}
+
 {% if pedidos_sin_asignar %}
 <div class="turno-header" style="background:#7c4dff20; border-left:3px solid #a78bfa; padding-left:10px;">
   ⚪ Sin asignar ({{ pedidos_sin_asignar|length }} pedido{{ 's' if pedidos_sin_asignar|length != 1 }})
   <span style="font-size:11px; font-weight:normal; color:var(--muted); margin-left:8px;">
-    — Asignalos a un turno con los botones 🌅 / 🌆 de cada fila.
+    — Asignalos con los botones 🌅 / 🌆 de cada fila.
   </span>
 </div>
-{{ render_tabla(pedidos_sin_asignar, 0) }}
+{{ render_tabla(pedidos_sin_asignar, _off_pendientes, con_turno_btns=True) }}
 {% endif %}
+
+{% set _off_sa = _off_pendientes + (pedidos_sin_asignar|length if pedidos_sin_asignar else 0) %}
 
 {% if pedidos_manana %}
 <div class="turno-header">🌅 Mañana ({{ pedidos_manana|length }} pedido{{ 's' if pedidos_manana|length != 1 }})</div>
-{{ render_tabla(pedidos_manana, pedidos_sin_asignar|length if pedidos_sin_asignar else 0) }}
+{{ render_tabla(pedidos_manana, _off_sa) }}
 {% endif %}
 
 {% if pedidos_tarde %}
 <div class="turno-header">🌆 Tarde ({{ pedidos_tarde|length }} pedido{{ 's' if pedidos_tarde|length != 1 }})</div>
-{{ render_tabla(pedidos_tarde, (pedidos_sin_asignar|length if pedidos_sin_asignar else 0) + pedidos_manana|length) }}
+{{ render_tabla(pedidos_tarde, _off_sa + pedidos_manana|length) }}
 {% endif %}
 
 {% if not pedidos_manana and not pedidos_tarde %}
