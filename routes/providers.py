@@ -21,6 +21,35 @@ from helpers import (
 
 def init_app(app):
 
+    @app.route('/api/proveedores/drog-activas')
+    @login_required
+    def api_drog_activas():
+        """Droguerías que el operador activó para aparecer en el dropdown
+        'Pedido a' (modal Cerrar TX en /atencion y /pedido/nuevo).
+        Solo id + nombre, ordenadas alfabéticamente."""
+        with database.get_db() as session:
+            rows = (session.query(database.Provider.id,
+                                  database.Provider.razon_social)
+                    .filter(database.Provider.tipo == 'drogueria',
+                            database.Provider.activo.is_(True),
+                            database.Provider.activa_ped.is_(True))
+                    .order_by(database.Provider.razon_social).all())
+            return jsonify({'drog': [{'id': r[0], 'nombre': r[1]} for r in rows]})
+
+    @app.route('/api/provider/<int:provider_id>/activa-ped', methods=['PATCH'])
+    @login_required
+    def api_provider_activa_ped(provider_id):
+        """Toggle del flag activa_ped. Body JSON {activa: true|false}."""
+        data = request.get_json(silent=True) or {}
+        activa = bool(data.get('activa'))
+        with database.get_db() as session:
+            prov = session.get(database.Provider, provider_id)
+            if not prov:
+                return jsonify({'ok': False, 'error': 'Proveedor no encontrado'}), 404
+            prov.activa_ped = activa
+            session.commit()
+        return jsonify({'ok': True, 'activa_ped': activa})
+
     @app.route('/api/provider/<int:provider_id>/descuento-sin-transfer', methods=['PATCH'])
     @login_required
     def api_provider_descuento_sin_transfer(provider_id):

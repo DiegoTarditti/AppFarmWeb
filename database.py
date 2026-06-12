@@ -1118,6 +1118,9 @@ class Provider(Base):
     formato_archivo = Column(String(20), nullable=True)    # 'ped' | 'txt20j' | None
     sufijo          = Column(String(10), nullable=True)    # 'KEL' | '20J'
     carpeta_filtro  = Column(String(200), nullable=True)   # 'P:\\Kellerhoff'
+    # Marca para que aparezca en el dropdown de "Pedido a droguería" en /atencion y /pedido/nuevo.
+    # Default False: el operador prende solo las que usa habitualmente (no las 20+).
+    activa_ped      = Column(Boolean, nullable=False, default=False, server_default='false')
     claims = relationship('Claim', back_populates='provider')
 
 
@@ -4574,6 +4577,16 @@ def _pg_add_columns(conn):
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS perfiles_json TEXT",
         # Ciudad en el lead local (alta de clientes del bot).
         "ALTER TABLE clientes_locales ADD COLUMN IF NOT EXISTS ciudad VARCHAR(120)",
+        # Flag para que la droguería aparezca en el dropdown 'Pedido a' (atencion/pedido nuevo).
+        "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS activa_ped BOOLEAN NOT NULL DEFAULT FALSE",
+        # Seed: marcar como activas las 4 droguerías que el operador usa SIEMPRE.
+        # Idempotente: si ya están en TRUE no pasa nada.
+        "UPDATE proveedores SET activa_ped = TRUE "
+        "WHERE tipo = 'drogueria' AND ("
+        "razon_social ILIKE '%20 de junio%' OR "
+        "razon_social ILIKE '%kellerho%' OR "
+        "razon_social ILIKE '%monroe%' OR "
+        "razon_social ILIKE '%del sud%')",
     ]:
         conn.execute(text(stmt))
     # Migración PedidoReparto — campos de la planilla real (2026-06-07)

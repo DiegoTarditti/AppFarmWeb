@@ -257,7 +257,9 @@
                     <option value="hay">Sí, hay</option>
                     <option value="esperar">Esperar droguería</option>
                   </select>
-                  <input id="txDrogueria" placeholder="¿qué droguería?" style="display:none; width:100%; margin-top:5px; border-radius:8px; padding:6px 9px; font-size:12px;" class="input">
+                  <select id="txDrogueria" style="display:none; width:100%; margin-top:5px; border-radius:8px; padding:6px 9px; font-size:12px;" class="input">
+                    <option value="">— elegir droguería —</option>
+                  </select>
                 </div>
                 <div style="flex:1;">
                   <label class="muted2" style="font-size:10px;">¿Sale por?</label>
@@ -1365,9 +1367,23 @@ async function ofrecerOferta(btn) {
   else { alert('No se pudo enviar la oferta.'); }
 }
 
+// Poblar dropdown de droguerías activas (modal Cerrar TX).
+async function cargarDrogActivas() {
+  try {
+    const d = await (await fetch('/api/proveedores/drog-activas')).json();
+    const sel = document.getElementById('txDrogueria');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— elegir droguería —</option>' +
+      (d.drog || []).map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('');
+  } catch (e) {
+    console.error('No pude cargar droguerías activas:', e);
+  }
+}
+
 setVista('sin_asignar');
 cargarBandeja();
 cargarCiudades();
+cargarDrogActivas();
 heartbeat();
 cargarEquipo();
 setInterval(cargarBandeja, 5000);
