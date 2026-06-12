@@ -5,10 +5,11 @@ Carga manual: el operador agrega cada pedido (cliente + domicilio/dirección + n
 El motor de asignación vive en services/reparto.py.
 """
 import json
+import os
 import uuid
 from datetime import datetime
 
-from flask import jsonify, render_template, request
+from flask import jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 import database
@@ -27,6 +28,14 @@ def _ok():
     if getattr(current_user, 'rol', None) in _ROLES_OK:
         return True
     return any(tiene_perfil(current_user, p) for p in _PERFILES_OK)
+
+
+def _armado_enabled():
+    """Vista de armado por ruta + optimización + mapa. Se conserva para otros
+    clientes pero se apaga por farmacia con REPARTO_OPTIMIZACION (en Badia no se
+    usa la optimización; el default es OFF). El control por cadete es la vista
+    principal de /reparto."""
+    return os.environ.get('REPARTO_OPTIMIZACION', '0').strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def _fecha(arg):
@@ -98,6 +107,11 @@ def _pedido_dict(p, cadetes=None, rutas_cadete=None):
         'piso': p.piso or '',
         'depto': p.depto or '',
         'referencia': p.referencia or '',
+        # Control por cadete
+        'envio_costo': float(p.envio_costo) if p.envio_costo is not None else None,
+        'total_paciente': float(p.total_paciente) if p.total_paciente is not None else None,
+        'receta_estado': p.receta_estado or '',
+        'envio_liquidado': bool(p.envio_liquidado),
     }
 
 
@@ -262,6 +276,18 @@ def init_app(app):
     def reparto_panel():
         if not _ok():
             return 'Sin permiso', 403
+        # Vista principal: control de envíos por cadete (header + detalle).
+        return render_template('reparto_control.html', armado_enabled=_armado_enabled())
+
+    @app.route('/reparto/armado')
+    @login_required
+    def reparto_armado():
+        """Vista de armado por ruta + mapa + optimización. Solo si la farmacia la
+        tiene habilitada (REPARTO_OPTIMIZACION); si no, redirige al control."""
+        if not _ok():
+            return 'Sin permiso', 403
+        if not _armado_enabled():
+            return redirect(url_for('reparto_panel'))
         return render_template('reparto.html')
 
     # /pedido/nuevo se movió a routes/pedidos.py
@@ -563,6 +589,49 @@ def init_app(app):
                 p.estado = estado
                 s.commit()
         return jsonify({'ok': True})
+
+    @app.route('/reparto/pedido/<int:pid>/cobrar', methods=['POST'])
+    @login_required
+    def reparto_cobrar(pid):
+        """Marca/desmarca el pedido como cobrado por el cadete (panel interno)."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        pagado = bool((request.json or {}).get('pagado', True))
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pid)
+            if p:
+                p.pagado = pagado
+                s.commit()
+        return jsonify({'ok': True})
+
+    @app.route('/reparto/cadete/<int:cid>/liquidar', methods=['POST'])
+    @login_required
+    def reparto_liquidar_cadete(cid):
+        """Liquida los envíos del cadete: marca como liquidados sus pedidos
+        ENTREGADOS y aún no liquidados de la fecha. Usa el cadete EFECTIVO
+        (override por pedido o el de su ruta), igual que el control. Devuelve
+        cuántos y el total liquidado."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        fecha = _fecha((request.json or {}).get('fecha'))
+        P = database.PedidoReparto
+        total = 0.0
+        n = 0
+        with database.get_db() as s:
+            rutas_cad = {r.id: r.cadete_id for r in s.query(database.RutaReparto)
+                         .filter(database.RutaReparto.cadete_id.isnot(None)).all()}
+            ps = (s.query(P).filter(P.fecha == fecha, P.estado == 'entregado',
+                                    P.envio_liquidado.is_(False)).all())
+            ahora = database.now_ar()
+            for p in ps:
+                if reparto.cadete_efectivo_id(p, rutas_cad) != cid:
+                    continue
+                p.envio_liquidado = True
+                p.envio_liquidado_en = ahora
+                total += float(p.envio_costo or 0)
+                n += 1
+            s.commit()
+        return jsonify({'ok': True, 'liquidados': n, 'total': total})
 
     @app.route('/reparto/pedido/<int:pid>/delete', methods=['POST'])
     @login_required
