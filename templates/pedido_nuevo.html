@@ -38,6 +38,13 @@
   .footer-pedido { background:rgba(255,255,255,0.025); padding:14px 18px; display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
   .check-line { display:flex; align-items:center; gap:14px; font-size:12px; color:var(--muted); }
   .check-line label { display:flex; align-items:center; gap:5px; cursor:pointer; }
+  /* Toggle pill: por defecto gris (off); .on = naranja warn (encendido). */
+  .toggle-pill { font-size:13px; padding:7px 14px; border-radius:999px;
+                 border:1px solid var(--border); background:var(--hov); color:var(--muted);
+                 cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:6px;
+                 transition: background .15s, color .15s, border-color .15s; }
+  .toggle-pill:hover { filter:brightness(1.1); }
+  .toggle-pill.on { background:var(--warn); color:#1a1206; border-color:var(--warn); }
   .btn-agregar { background:var(--accent); color:var(--accent-ink); border:none; border-radius:10px; padding:11px 22px; font-weight:700; font-size:14px; cursor:pointer; }
   .btn-agregar:hover { filter:brightness(1.1); }
   @media (max-width:900px){ .grid-cliente,.grid-detalle,.grid-despacho{ grid-template-columns:1fr 1fr; } }
@@ -110,7 +117,7 @@
           </div>
           <div class="field">
             <label>Forma de pago</label>
-            <select id="pFormaPago" class="input">
+            <select id="pFormaPago" class="input" onchange="onFormaPagoChange()">
               <option value="">—</option>
               <option value="efectivo">Efectivo</option>
               <option value="transfer">Transfer</option>
@@ -154,8 +161,13 @@
             </select>
           </div>
           <div class="field check-line" style="justify-content:flex-start; padding-top:18px;">
-            <label><input type="checkbox" id="pReceta"> Receta</label>
-            <label><input type="checkbox" id="pPagado"> Pagado</label>
+            {# Botón toggle estilo pill. El hidden guarda el estado para el submit. #}
+            <button type="button" id="btnReceta" class="toggle-pill" onclick="toggleReceta()" title="Marcar si tiene que traer la receta">
+              📋 Traer Receta
+            </button>
+            <input type="hidden" id="pReceta" value="">
+            {# Pagado se deriva de la forma de pago — sin UI visible. #}
+            <input type="hidden" id="pPagado" value="">
           </div>
         </div>
       </div>
@@ -197,6 +209,33 @@ let _cuaTmr = null;
 function onCuadrasInput(){
   clearTimeout(_cuaTmr);
   _cuaTmr = setTimeout(cotizarEnvio, 400);
+}
+
+// Toggle "Traer Receta" (botón pill que reemplaza al checkbox).
+function toggleReceta(){
+  const inp = document.getElementById('pReceta');
+  const btn = document.getElementById('btnReceta');
+  const on = inp.value !== 'true';
+  inp.value = on ? 'true' : '';
+  btn.classList.toggle('on', on);
+}
+
+// Pagado derivado de la forma de pago. Efectivo (o vacío) → NO pagado todavía
+// (el cadete cobra al entregar). Cualquier otra forma → pagado=true (ya cobrado
+// online o presencial). SC también → pagado (cobertura de OS).
+const _FORMAS_PAGADO = new Set(['transfer','link','sc','debito','credito']);
+function onFormaPagoChange(){
+  const f = document.getElementById('pFormaPago').value;
+  document.getElementById('pPagado').value = _FORMAS_PAGADO.has(f) ? 'true' : '';
+  // Y de paso: el campo Vuelto solo tiene sentido con efectivo. Lo dejamos
+  // editable si está en efectivo y lo limpiamos+deshabilitamos en el resto.
+  const vu = document.getElementById('pVuelto');
+  if (f === 'efectivo' || f === '') {
+    vu.disabled = false;
+  } else {
+    vu.value = '';
+    vu.disabled = true;
+  }
 }
 
 async function cotizarEnvio(){
@@ -328,8 +367,8 @@ async function agregar(){
     importe: document.getElementById('pImporte').value || null,
     forma_pago: document.getElementById('pFormaPago').value,
     vuelto: document.getElementById('pVuelto').value.trim(),
-    requiere_receta: document.getElementById('pReceta').checked,
-    pagado: document.getElementById('pPagado').checked,
+    requiere_receta: document.getElementById('pReceta').value === 'true',
+    pagado: document.getElementById('pPagado').value === 'true',
     turno: document.getElementById('pTurno').value,
     observacion: document.getElementById('pObservacion').value.trim(),
     producto: document.getElementById('pProducto').value.trim(),
@@ -351,8 +390,9 @@ async function agregar(){
   document.getElementById('pCanal').value='mostrador';
   document.getElementById('pFormaPago').value='';
   // pTurno NO se resetea: queda el último elegido (también guardado en localStorage)
-  document.getElementById('pReceta').checked=false;
-  document.getElementById('pPagado').checked=false;
+  document.getElementById('pReceta').value='';
+  document.getElementById('btnReceta').classList.remove('on');
+  document.getElementById('pPagado').value='';
   document.getElementById('envioInfo').textContent='';
   document.getElementById('envioPill').style.display='none';
   document.getElementById('pProductoLink').textContent='';
