@@ -300,7 +300,15 @@ def init_app(app):
                 destino=body.get('destino') or None,
                 envio_costo=envio,
                 # ── Workflow ──
-                estado='en_caja',
+                # Si el operador ya cobró (link MP confirmado, transfer con comprobante,
+                # tarjeta presencial), saltamos 'en_caja' y vamos directo al estado
+                # destino (mismo cálculo que usa /caja/pedido/<id>/cobrar).
+                pagado=bool(body.get('pagado') or False),
+                estado=(
+                    caja.proximo_estado_cobrado(body.get('destino') or None,
+                                                body.get('stock') or None)
+                    if body.get('pagado') else 'en_caja'
+                ),
                 canal='atencion',
                 tomo=oper,
                 turno=turno_auto,

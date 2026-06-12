@@ -1242,10 +1242,10 @@ function txFormaChange() {
   if (f === 'link_mp') h =
     `<input id="txLink" placeholder="pegá el link MP" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">
      <button onclick="txPegarChat(document.getElementById('txLink').value)" class="hbtn" style="font-size:11px;padding:5px 9px;border-radius:8px;">Pegar link al chat</button>
-     <input id="txNroOp" placeholder="nro de operación MP" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
+     <input id="txNroOp" placeholder="nro de operación MP — al pegarlo queda PAGADO" oninput="txCalc()" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
   else if (f === 'transferencia') h =
     `<button onclick="txPegarChat(ALIAS_FARMACIA)" class="hbtn" style="font-size:11px;padding:5px 9px;border-radius:8px;">Mandar alias al chat</button>
-     <input id="txNroOp" placeholder="nro / comprobante" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
+     <input id="txNroOp" placeholder="nro / comprobante — al pegarlo queda PAGADO" oninput="txCalc()" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
   else if (f === 'efectivo') h =
     `<input id="txPagaCon" type="number" min="0" oninput="txCalc()" placeholder="¿con cuánto paga? $" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
   else if (f === 'tarjeta') h =
@@ -1256,6 +1256,18 @@ function txFormaChange() {
      </div>`;
   document.getElementById('txFormaExtra').innerHTML = h;
   txCalc();
+}
+
+// Reglas de pagado según la forma de pago:
+//   efectivo → false (cobra el cadete al entregar).
+//   tarjeta  → true  (POS presencial, ya cobrado).
+//   link_mp / transferencia → true SOLO si el operador pegó el nro de comprobante
+//     (verificó manualmente en MP que el pago entró).
+function txComputarPagado() {
+  const f = _txVal('txForma');
+  if (f === 'tarjeta') return true;
+  if (f === 'link_mp' || f === 'transferencia') return !!_txVal('txNroOp').trim();
+  return false;
 }
 const ALIAS_FARMACIA = 'farmacia.badia.mp';  // TODO: traer de config
 function txStockChange() {
@@ -1319,6 +1331,7 @@ async function txCerrar() {
     destino: _txVal('txSalida'),
     envio_costo: reparto ? (parseFloat(_txVal('txEnvio')) || 0) : 0,
     prioridad: _txVal('txPrioridad'),
+    pagado: txComputarPagado(),
   };
   try {
     const r = await fetch(`/atencion/${convAbierta}/cerrar-transaccion`, {
