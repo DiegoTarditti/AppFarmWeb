@@ -13,12 +13,18 @@ from sqlalchemy import func as _f
 from sqlalchemy import or_
 
 import database
+from auth import tiene_perfil
 
 _ROLES_OK = ('admin', 'dev', 'farmacia')
+# Perfiles que usan las APIs de /api/clientes/* — el cliente_picker está embebido en
+# /pedido/nuevo, /atencion (chat clientes) y en /reparto/planilla.
+_PERFILES_OK = ('pedido_manual', 'chat_clientes', 'planilla_envios')
 
 
 def _api_ok():
-    return getattr(current_user, 'rol', None) in _ROLES_OK
+    if getattr(current_user, 'rol', None) in _ROLES_OK:
+        return True
+    return any(tiene_perfil(current_user, p) for p in _PERFILES_OK)
 
 
 def init_app(app):
