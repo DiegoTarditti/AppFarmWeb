@@ -151,6 +151,11 @@
           <a href="{{ _maps_url }}" target="_blank" rel="noopener" class="btn-maps"
              title="Abrir en Google Maps">📍</a>
         {% endif %}
+        {% if p.zona_externa %}
+          <div style="color:var(--warn); font-size:11px; font-weight:700; margin-top:2px;">
+            ⚠ {{ p.zona_externa }}
+          </div>
+        {% endif %}
       </td>
       <td style="font-size:11px; color:var(--muted);">
         {% if p.telefono %}<a href="tel:{{ p.telefono }}" style="color:var(--accenttxt);">📞 {{ p.telefono }}</a>{% else %}—{% endif %}

@@ -839,6 +839,31 @@ def init_app(app):
                                           database.PedidoReparto.estado.in_(estados_activos))
                                   .order_by(database.PedidoReparto.fecha.desc(),
                                             database.PedidoReparto.id).all())
+        # Detectar zona externa por pedido (Funes/Roldán/Kentucky/Haras/...).
+        # 1) Por coords si caen en polígono. 2) Fallback: nombre de zona en la
+        # dirección. Si nada matchea → None (asumimos Rosario).
+        import json as _json
+        zonas_activas = s.query(database.EnvioZona).filter(
+            database.EnvioZona.activa.is_(True)).order_by(database.EnvioZona.orden).all()
+        zonas_poly = [(z.nombre, _json.loads(z.poligono)) for z in zonas_activas
+                       if z.poligono]
+        nombres_zona = [z.nombre for z in zonas_activas]
+
+        def _zona_externa(p):
+            if p.lat is not None and p.lng is not None:
+                for nombre, poly in zonas_poly:
+                    if reparto._punto_en_poligono(p.lat, p.lng, poly):
+                        return nombre
+            if p.direccion:
+                d_low = p.direccion.lower()
+                for nombre in nombres_zona:
+                    if nombre.lower() in d_low:
+                        return nombre
+            return None
+
+        for grupo in (sin_asignar, manana, tarde, pendientes_previo):
+            for p in grupo:
+                p.zona_externa = _zona_externa(p)
         return render_template('reparto_planilla.html',
                                fecha=fecha, hoy=database.now_ar().date(),
                                ahora=database.now_ar(),     # para timers visuales (publicado→tomado)
