@@ -22,6 +22,8 @@
 #}
 
 {% macro cliente_picker() %}
+{# Inyecta la whitelist de ciudades del geocoder para el JS (env: ENVIO_CIUDADES_FILTRO). #}
+<script>window.ENVIO_CIUDADES_FILTRO = {{ envio_ciudades_filtro|tojson }};</script>
 <div class="grid grid-cliente">
   <div class="field">
     <label>Cliente</label>

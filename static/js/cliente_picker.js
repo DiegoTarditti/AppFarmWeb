@@ -264,10 +264,12 @@
       const r = await (await fetch(`/api/clientes/geocodificar?q=${encodeURIComponent(q)}&loc=${encodeURIComponent(loc||'')}`)).json();
       let sug = r.sugerencias || [];
       if (!sug.length){ box.style.display='none'; return; }
-      // Whitelist de ciudades que servimos (Diego: 'filtremos rosario, funes y roldán').
-      // Si hay coincidencias en alguna de las 3, mostramos solo esas. Si no, fallback
-      // a la lista entera con un aviso.
-      const CIUDADES_OK = ['rosario', 'funes', 'roldan'];
+      // Whitelist de ciudades que servimos. Configurable por env
+      // ENVIO_CIUDADES_FILTRO (CSV); el template _cliente_picker.html la
+      // inyecta como window.ENVIO_CIUDADES_FILTRO. Fallback hardcoded si no.
+      const CIUDADES_OK = Array.isArray(window.ENVIO_CIUDADES_FILTRO) && window.ENVIO_CIUDADES_FILTRO.length
+        ? window.ENVIO_CIUDADES_FILTRO
+        : ['rosario', 'funes', 'roldan'];
       let aviso = '';
       const match = sug.filter(s => CIUDADES_OK.includes(_norm(s.localidad)));
       if (match.length){
