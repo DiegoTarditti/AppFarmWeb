@@ -154,7 +154,7 @@ def eliminar_tramo(tramo_id):
 
 
 def guardar_zona(zona_id, nombre, monto, lat=None, lng=None, radio_km=None,
-                 poligono_texto=None):
+                 poligono_texto=None, activa=None):
     nombre = (nombre or '').strip()
     if not nombre:
         return {'ok': False, 'error': 'nombre vacío'}
@@ -168,6 +168,8 @@ def guardar_zona(zona_id, nombre, monto, lat=None, lng=None, radio_km=None,
             s.add(z)
         z.nombre = nombre
         z.monto = float(monto or 0)
+        if activa is not None:
+            z.activa = bool(activa)
         # Solo tocar el círculo si vino en la llamada (no pisarlo al editar nombre/monto).
         if lat is not None:
             z.lat = _f(lat)

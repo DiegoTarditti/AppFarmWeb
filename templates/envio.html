@@ -123,7 +123,7 @@
       <div class="card">
         <h2>Zonas con tarifa fija (polígono)</h2>
         <table>
-          <thead><tr><th>Zona</th><th>Monto</th><th>Polígono</th><th></th></tr></thead>
+          <thead><tr><th style="text-align:center;">Activa</th><th>Zona</th><th>Monto</th><th>Polígono</th><th></th></tr></thead>
           <tbody id="tbZonas"></tbody>
         </table>
         <div class="muted" style="font-size:11px; margin-top:6px;">Pegá las esquinas del polígono desde Google Maps (lat, lng por línea). La zona pisa los tramos cuando las coords del cliente caen dentro.</div>
@@ -208,7 +208,11 @@ async function cargar(){
   document.getElementById('tbZonas').innerHTML = (d.zonas||[]).map(z=>{
     const nPts = z.poligono ? z.poligono.length : 0;
     const polyLabel = nPts >= 3 ? `✓ ${nPts} pts` : '<span class="muted">sin polígono</span>';
-    return `<tr>
+    const checked = (z.activa !== false) ? 'checked' : '';
+    return `<tr style="${z.activa===false?'opacity:.55;':''}">
+      <td style="text-align:center; width:50px;" title="Activa">
+        <input type="checkbox" ${checked} onchange="toggleActiva(${z.id}, this.checked)" style="cursor:pointer; transform:scale(1.2);">
+      </td>
       <td><input class="input" value="${esc(z.nombre)}" onchange="saveZona(${z.id}, this.value, null, null)"></td>
       <td><input class="input" type="number" value="${z.monto}" onchange="saveZona(${z.id}, null, this.value, null)"></td>
       <td style="max-width:300px;">
@@ -219,11 +223,15 @@ async function cargar(){
         <textarea id="poly_${z.id}" class="input" style="display:none; width:100%; min-height:60px; font-size:11px; font-family:monospace; margin-top:4px;"
           placeholder="Pegar esquinas: lat, lng por línea&#10;-32.95, -60.65&#10;-32.96, -60.65&#10;-32.96, -60.66&#10;-32.95, -60.66"
         >${(z.poligono||[]).map(p=>p.join(', ')).join('\n')}</textarea>
-        <button id="polyBtn_${z.id}" class="hbtn hbtn-ok" style="display:none; margin-top:4px; font-size:10px;" onclick="savePoly(${z.id})">Guardar polígono</button>
       </td>
-      <td><button class="hbtn hbtn-danger" onclick="delZona(${z.id})">Quitar</button></td>
+      <td style="width:120px;">
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <button id="polyBtn_${z.id}" class="hbtn hbtn-ok" style="display:none; font-size:11px;" onclick="savePoly(${z.id})">💾 Guardar polígono</button>
+          <button class="hbtn hbtn-danger" style="font-size:11px;" onclick="delZona(${z.id})">Quitar</button>
+        </div>
+      </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="4" class="muted">Sin zonas.</td></tr>';
+  }).join('') || '<tr><td colspan="5" class="muted">Sin zonas.</td></tr>';
   window._zonas = {}; (d.zonas||[]).forEach(z=>window._zonas[z.id]=z);
 }
 
@@ -298,6 +306,13 @@ async function saveZona(id, nombre, monto, radio){
   const z = window._zonas[id] || {};
   const body = {id, nombre: nombre!=null?nombre:z.nombre, monto: monto!=null?monto:z.monto};
   await jpost('/config/envio/zona', body);
+  cargar();
+}
+
+// Toggle de "activa" — toca el checkbox y guarda en backend.
+async function toggleActiva(id, activa){
+  const z = window._zonas[id] || {};
+  await jpost('/config/envio/zona', {id, nombre: z.nombre, monto: z.monto, activa: !!activa});
   cargar();
 }
 async function addZona(){
