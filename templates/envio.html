@@ -1,4 +1,4 @@
-{% from "_cliente_picker.html" import cliente_picker, cliente_picker_modales %}
+{% from "_cliente_picker.html" import cliente_picker %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -56,9 +56,6 @@
   .res .it:hover { background:var(--hov); }
   .grid-cliente { display:grid; grid-template-columns: 2fr 3fr 1fr; gap:10px; }
   @media (max-width:900px){ .grid-cliente { grid-template-columns:1fr 1fr; } }
-  /* Modales del cliente_picker: ocultos por default; .activo los muestra como overlay. */
-  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:50; display:none; align-items:center; justify-content:center; }
-  .modal-overlay.activo { display:flex; }
 </style>
 </head>
 <body>
@@ -73,7 +70,7 @@
     <!-- Cotizador (mismo cliente_picker que /pedido/nuevo y /atencion) -->
     <div class="card">
       <h2>Cotizador de envío</h2>
-      {{ cliente_picker() }}
+      {{ cliente_picker(con_alta_edicion=False) }}
       <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; margin-top:10px;">
         <label class="fl">o Cuadras (manual)
           <input id="cCuadras" type="number" min="0" class="input" placeholder="ej: 22" style="width:120px;" onkeydown="if(event.key==='Enter')cotizar()">
@@ -504,9 +501,11 @@ cargar = async function(){
 cargar();
 </script>
 
-{{ cliente_picker_modales() }}
 <script src="/static/js/cliente_picker.js"></script>
 <script>
+// Acá no se gestionan clientes (alta/edición), solo se cotiza con domicilios
+// existentes. Por eso pasamos con_alta_edicion=False al macro y NO incluimos
+// los modales del picker.
 ClientePicker.init({ onAddressChange: cotizar });
 </script>
 </body>
