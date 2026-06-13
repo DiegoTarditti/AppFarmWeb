@@ -135,6 +135,31 @@
       </div>
     </div>
 
+    <!-- Conversor pegar/JSON → campo de zona -->
+    <div class="card" style="margin-top:14px;">
+      <h2>🧰 Conversor de polígono</h2>
+      <div class="muted" style="font-size:11px; margin-bottom:8px;">
+        Pegá GeoJSON (de geojson.io / Earth) o líneas <code>lat,lng</code> / <code>lng,lat</code>. Lo convierto al formato del campo y lo pongo en la zona que elijas. Después apretás <b>Guardar</b> en esa zona.
+      </div>
+      <textarea id="convInput" rows="8" class="input" style="width:100%; font-family:ui-monospace,Consolas,monospace; font-size:12px;"
+                placeholder='Ejemplo GeoJSON:
+{"type":"Polygon","coordinates":[[[-60.846,-32.949],[-60.836,-32.949],[-60.836,-32.960],[-60.846,-32.960],[-60.846,-32.949]]]}
+
+O líneas:
+-60.846,-32.949
+-60.836,-32.949
+-60.836,-32.960
+-60.846,-32.960'></textarea>
+      <div style="display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap;">
+        <label class="muted2" style="font-size:11px;">Aplicar a zona:</label>
+        <select id="convZona" class="input" style="flex:0 0 220px;">
+          <option value="">— elegir —</option>
+        </select>
+        <button onclick="convertirYAplicar()" class="hbtn hbtn-ok">📋 Convertir y poner en zona</button>
+        <span id="convAviso" class="muted2" style="font-size:11px;"></span>
+      </div>
+    </div>
+
     <!-- Mapa con farmacia + polígonos de zonas activas -->
     <div class="card" style="margin-top:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
@@ -283,6 +308,83 @@ async function addZona(){
 }
 async function delZona(id){ if(confirm('¿Quitar zona?')){ await jpost(`/config/envio/zona/${id}/delete`); cargar(); } }
 
+// ── Conversor de polígono: GeoJSON / líneas → campo de la zona ────────────
+function _coordsDeGeoJSON(data){
+  if (!data) return null;
+  if (data.type === 'FeatureCollection' && (data.features||[]).length) {
+    return _coordsDeGeoJSON(data.features[0]);
+  }
+  if (data.type === 'Feature' && data.geometry) {
+    return _coordsDeGeoJSON(data.geometry);
+  }
+  if (data.type === 'Polygon' && (data.coordinates||[]).length) {
+    return data.coordinates[0];   // anillo exterior
+  }
+  if (data.type === 'MultiPolygon' && (data.coordinates||[]).length) {
+    return data.coordinates[0][0];
+  }
+  return null;
+}
+
+function convertirYAplicar(){
+  const texto = document.getElementById('convInput').value.trim();
+  const zonaId = document.getElementById('convZona').value;
+  const aviso = document.getElementById('convAviso');
+  aviso.style.color = ''; aviso.textContent = '';
+  if (!texto)  { aviso.style.color='var(--warn)'; aviso.textContent='⚠️ Pegá GeoJSON o coordenadas.'; return; }
+  if (!zonaId) { aviso.style.color='var(--warn)'; aviso.textContent='⚠️ Elegí a qué zona aplicarlo.'; return; }
+
+  let coords = null;
+  if (texto.startsWith('{') || texto.startsWith('[')) {
+    try { coords = _coordsDeGeoJSON(JSON.parse(texto)); }
+    catch (e) { aviso.style.color='var(--warn)'; aviso.textContent='⚠️ JSON inválido: ' + e.message; return; }
+  } else {
+    coords = [];
+    for (const linea of texto.split(/[\n;]/)) {
+      const ps = linea.trim().replace(/[()]/g, '').split(',');
+      if (ps.length >= 2) {
+        const a = parseFloat(ps[0]), b = parseFloat(ps[1]);
+        if (isFinite(a) && isFinite(b)) coords.push([a, b]);
+      }
+    }
+  }
+  if (!coords || coords.length < 3) {
+    aviso.style.color='var(--warn)'; aviso.textContent='⚠️ Necesito al menos 3 puntos.'; return;
+  }
+  // Auto-swap si están en lng,lat (rangos AR)
+  const enLatAR = v => v >= -55 && v <= -20;
+  const enLngAR = v => v >= -73 && v <= -53;
+  if (coords.every(p => enLngAR(p[0])) && coords.every(p => enLatAR(p[1]))) {
+    coords = coords.map(p => [p[1], p[0]]);
+  }
+  const resultado = coords.map(p => `${p[0]}, ${p[1]}`).join('\n');
+
+  // Asegurar que el textarea de la zona esté visible (en el template se abre con un botón)
+  const wrap = document.getElementById('polywrap_' + zonaId);
+  if (wrap) wrap.style.display = '';
+  const ta = document.getElementById('poly_' + zonaId);
+  if (!ta) {
+    aviso.style.color='var(--warn)';
+    aviso.textContent='⚠️ No encuentro el campo de la zona (id=' + zonaId + '). Abrila a mano y reintentá.';
+    return;
+  }
+  ta.style.display = '';
+  ta.value = resultado;
+  ta.focus();
+  ta.scrollIntoView({behavior:'smooth', block:'center'});
+  aviso.style.color='var(--accent)';
+  aviso.textContent = `✓ ${coords.length} puntos puestos en zona. Apretá Guardar en la fila de esa zona.`;
+}
+
+function popularConvZonas(d){
+  const sel = document.getElementById('convZona'); if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— elegir —</option>' +
+    (d.zonas||[]).filter(z => z.activa !== false).map(z =>
+      `<option value="${z.id}" ${z.id==prev?'selected':''}>${esc(z.nombre)}</option>`
+    ).join('');
+}
+
 // ── Mapa de zonas (Leaflet) ───────────────────────────────────────────────
 let _mapa = null, _capasZonas = [], _markerFarmacia = null;
 const PALETA = ['#EF9F27','#1D9E75','#7c4dff','#0ea5e9','#ec4899','#fbbf24','#10b981','#a78bfa'];
@@ -355,6 +457,7 @@ cargar = async function(){
   await _cargarOrig();
   try {
     const d = await (await fetch('/config/envio/api/tarifas')).json();
+    popularConvZonas(d);
     pintarMapa(d);
   } catch (e) { console.error(e); }
 };
