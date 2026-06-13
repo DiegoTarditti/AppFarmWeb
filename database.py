@@ -4602,12 +4602,16 @@ def _pg_add_columns(conn):
          "texto VARCHAR(160) NOT NULL UNIQUE, "
          "activo BOOLEAN NOT NULL DEFAULT TRUE, "
          "orden INTEGER NOT NULL DEFAULT 0, "
-         "creado_en TIMESTAMP DEFAULT NOW())"),
-        # Seed inicial idempotente (ON CONFLICT DO NOTHING preserva ediciones del operador).
-        ("INSERT INTO pedido_obs_presets (texto, orden) VALUES "
-         "('PAMI - Traer autorización firmada', 10),"
-         "('Traer Receta', 20),"
-         "('Traer Receta y Autorización', 30)"
+         "creado_en TIMESTAMP NOT NULL DEFAULT NOW())"),
+        # Por las dudas que la tabla ya existiera con activo NOT NULL sin default.
+        "ALTER TABLE pedido_obs_presets ALTER COLUMN activo SET DEFAULT TRUE",
+        "ALTER TABLE pedido_obs_presets ALTER COLUMN creado_en SET DEFAULT NOW()",
+        # Seed inicial idempotente. Listo activo + creado_en explícitos por si la tabla
+        # se creó antes del default (caso de Diego 2026-06-13).
+        ("INSERT INTO pedido_obs_presets (texto, orden, activo, creado_en) VALUES "
+         "('PAMI - Traer autorización firmada', 10, TRUE, NOW()),"
+         "('Traer Receta', 20, TRUE, NOW()),"
+         "('Traer Receta y Autorización', 30, TRUE, NOW())"
          " ON CONFLICT (texto) DO NOTHING"),
         # Flag para que la droguería aparezca en el dropdown 'Pedido a' (atencion/pedido nuevo).
         "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS activa_ped BOOLEAN NOT NULL DEFAULT FALSE",
