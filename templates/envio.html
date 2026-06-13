@@ -39,6 +39,14 @@
   .pill { font-size:10px; padding:2px 8px; border-radius:999px; background:var(--hov); color:var(--muted); }
   .pill.zona { background:var(--info,#185FA5); color:#fff; } .pill.tramo { background:var(--accent); color:var(--accent-ink); }
 </style>
+<!-- Leaflet (mapa de zonas) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  #mapaZonas { height: 480px; width: 100%; border-radius: 12px; }
+  .leg { display:inline-flex; gap:5px; align-items:center; font-size:11px; color:var(--muted); margin-right:14px; }
+  .leg .sw { display:inline-block; width:12px; height:12px; border-radius:3px; border:1px solid rgba(255,255,255,.3); }
+</style>
 </head>
 <body>
   <div class="topbar">
@@ -124,6 +132,21 @@
           <input id="nZonaMonto" type="number" min="0" class="input" placeholder="monto" style="flex:1;">
           <button onclick="addZona()" class="hbtn hbtn-ok">+ Agregar</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Mapa con farmacia + polígonos de zonas activas -->
+    <div class="card" style="margin-top:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+        <h2 style="margin:0;">🗺️ Mapa de zonas</h2>
+        <div>
+          <span class="leg"><span class="sw" style="background:#1D9E75;"></span>Farmacia</span>
+          <span id="legendaZonas"></span>
+        </div>
+      </div>
+      <div id="mapaZonas"></div>
+      <div class="muted" id="mapaAviso" style="font-size:11px; margin-top:6px;">
+        Cliqueá un polígono para ver nombre y monto. Si una zona no aparece, revisá que el polígono tenga al menos 3 puntos válidos.
       </div>
     </div>
   </div>
@@ -255,6 +278,82 @@ async function addZona(){
   document.getElementById('nZonaNombre').value=''; document.getElementById('nZonaMonto').value=''; cargar();
 }
 async function delZona(id){ if(confirm('¿Quitar zona?')){ await jpost(`/config/envio/zona/${id}/delete`); cargar(); } }
+
+// ── Mapa de zonas (Leaflet) ───────────────────────────────────────────────
+let _mapa = null, _capasZonas = [], _markerFarmacia = null;
+const PALETA = ['#EF9F27','#1D9E75','#7c4dff','#0ea5e9','#ec4899','#fbbf24','#10b981','#a78bfa'];
+
+function _initMapa(lat, lng){
+  if (_mapa) return;
+  _mapa = L.map('mapaZonas').setView([lat||-32.95, lng||-60.65], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap'
+  }).addTo(_mapa);
+}
+
+function pintarMapa(d){
+  const c = d.config || {};
+  const lat = parseFloat(c.farmacia_lat), lng = parseFloat(c.farmacia_lng);
+  if (!isFinite(lat) || !isFinite(lng)){
+    document.getElementById('mapaAviso').textContent = '⚠️ Falta la ubicación de la farmacia: cargala arriba para ver el mapa.';
+    return;
+  }
+  _initMapa(lat, lng);
+
+  // Marker de la farmacia (verde acento)
+  if (_markerFarmacia) _markerFarmacia.remove();
+  _markerFarmacia = L.circleMarker([lat, lng], {
+    radius: 9, color: '#1D9E75', fillColor: '#1D9E75', fillOpacity: 0.85, weight: 3
+  }).addTo(_mapa).bindPopup('<b>Farmacia (origen)</b>');
+
+  // Limpiar polígonos anteriores
+  _capasZonas.forEach(p => p.remove()); _capasZonas = [];
+
+  // Pintar zonas activas con polígono
+  const zonas = (d.zonas || []).filter(z => z.activa !== false && Array.isArray(z.poligono) && z.poligono.length >= 3);
+  const conPoly = [];
+  zonas.forEach((z, i) => {
+    const color = PALETA[i % PALETA.length];
+    try {
+      const poly = L.polygon(z.poligono, {
+        color, weight: 2, fillColor: color, fillOpacity: 0.18
+      }).addTo(_mapa);
+      poly.bindPopup(`<b>${esc(z.nombre)}</b><br>$ ${(z.monto||0).toLocaleString('es-AR')}`);
+      _capasZonas.push(poly);
+      conPoly.push({nombre: z.nombre, color, monto: z.monto});
+    } catch (e) {
+      console.error('Polígono inválido en zona', z.nombre, e);
+    }
+  });
+
+  // Leyenda
+  const leg = document.getElementById('legendaZonas');
+  leg.innerHTML = conPoly.length
+    ? conPoly.map(z => `<span class="leg"><span class="sw" style="background:${z.color};"></span>${esc(z.nombre)}</span>`).join('')
+    : '<span class="muted2" style="font-size:11px;">Sin zonas con polígono cargado.</span>';
+
+  // Mensaje informativo
+  const zonasSinPoly = (d.zonas || []).filter(z => z.activa !== false && (!Array.isArray(z.poligono) || z.poligono.length < 3));
+  let aviso = `📍 Farmacia + ${conPoly.length} zona${conPoly.length===1?'':'s'} con polígono.`;
+  if (zonasSinPoly.length) aviso += ` Sin polígono: ${zonasSinPoly.map(z => z.nombre).join(', ')}.`;
+  document.getElementById('mapaAviso').textContent = aviso;
+
+  // Ajustar zoom para que entren todos los polígonos + la farmacia
+  if (_capasZonas.length){
+    const grupo = L.featureGroup([_markerFarmacia, ..._capasZonas]);
+    _mapa.fitBounds(grupo.getBounds().pad(0.15));
+  }
+}
+
+// Engancho con cargar() para refrescar el mapa cuando se actualizan tarifas
+const _cargarOrig = cargar;
+cargar = async function(){
+  await _cargarOrig();
+  try {
+    const d = await (await fetch('/config/envio/api/tarifas')).json();
+    pintarMapa(d);
+  } catch (e) { console.error(e); }
+};
 
 cargar();
 </script>
