@@ -47,6 +47,15 @@
   #mapaZonas { height: 480px; width: 100%; border-radius: 12px; }
   .leg { display:inline-flex; gap:5px; align-items:center; font-size:11px; color:var(--muted); margin-right:14px; }
   .leg .sw { display:inline-block; width:12px; height:12px; border-radius:3px; border:1px solid rgba(255,255,255,.3); }
+  /* Clases que usa el componente _cliente_picker (estaban solo en pedido_nuevo). */
+  .field { display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .field label { font-size:11px; color:var(--muted); font-weight:600; }
+  .muted2 { color:var(--muted2); }
+  .res { background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:4px; max-height:180px; overflow:auto; box-shadow:0 4px 14px rgba(0,0,0,.35); }
+  .res .it { padding:6px 9px; cursor:pointer; font-size:12px; border-bottom:1px solid var(--row-bd); }
+  .res .it:hover { background:var(--hov); }
+  .grid-cliente { display:grid; grid-template-columns: 2fr 3fr 1fr; gap:10px; }
+  @media (max-width:900px){ .grid-cliente { grid-template-columns:1fr 1fr; } }
 </style>
 </head>
 <body>
