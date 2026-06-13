@@ -56,6 +56,9 @@
   .res .it:hover { background:var(--hov); }
   .grid-cliente { display:grid; grid-template-columns: 2fr 3fr 1fr; gap:10px; }
   @media (max-width:900px){ .grid-cliente { grid-template-columns:1fr 1fr; } }
+  /* Modales del cliente_picker: ocultos por default; .activo los muestra como overlay. */
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:50; display:none; align-items:center; justify-content:center; }
+  .modal-overlay.activo { display:flex; }
 </style>
 </head>
 <body>
