@@ -1,3 +1,4 @@
+{% from "_cliente_picker.html" import cliente_picker, cliente_picker_modales %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -57,26 +58,19 @@
   </div>
 
   <div class="wrap">
-    <!-- Cotizador -->
+    <!-- Cotizador (mismo cliente_picker que /pedido/nuevo y /atencion) -->
     <div class="card">
       <h2>Cotizador de envío</h2>
-      <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
-        <label class="fl" style="flex:1 1 260px;">Dirección (geolocaliza)
-          <input id="cDir" class="input" placeholder="ej: Córdoba 3400" style="width:100%;" onkeydown="if(event.key==='Enter')cotizar()">
+      {{ cliente_picker() }}
+      <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; margin-top:10px;">
+        <label class="fl">o Cuadras (manual)
+          <input id="cCuadras" type="number" min="0" class="input" placeholder="ej: 22" style="width:120px;" onkeydown="if(event.key==='Enter')cotizar()">
         </label>
-        <label class="fl">Ciudad
-          <select id="cCiudad" class="input" style="width:150px;"></select>
-        </label>
-        <label class="fl">o Cuadras
-          <input id="cCuadras" type="number" min="0" class="input" placeholder="ej: 22" style="width:90px;" onkeydown="if(event.key==='Enter')cotizar()">
-        </label>
-        <button onclick="cotizar()" class="hbtn hbtn-ok" style="padding:9px 16px;">Cotizar</button>
-      </div>
-      <div style="display:flex; flex-wrap:wrap; gap:10px; justify-content:space-between; align-items:flex-end; margin-top:8px;">
+        <button onclick="cotizar()" class="hbtn hbtn-ok" style="padding:9px 18px; height:38px;">Cotizar</button>
         <div class="muted" style="font-size:11px; flex:1 1 240px;">
-          La ciudad/zona nombrada (Roldán, Kentucky…) pisa al resto. Dirección → geocodifica y mide cuadras; o cargá las cuadras a mano. Los barrios (centro, refinería) se detectan por la dirección.
+          Buscá el cliente arriba y elegí un domicilio (toma coords). O tipeá las cuadras a mano y dale Cotizar.
         </div>
-        <div style="text-align:right;">
+        <div style="text-align:right; min-width:140px;">
           <span class="cot-monto" id="cMonto">—</span>
           <div class="cot-det" id="cDet"></div>
         </div>
@@ -192,10 +186,8 @@ async function cargar(){
   document.getElementById('cfAviso').textContent = (c.farmacia_lat==null)
     ? '⚠️ Falta la ubicación de la farmacia: sin eso no se puede estimar cuadras desde el pin.'
     : 'Origen configurado ✓';
-  // Dropdown de ciudades (conserva la selección actual)
-  const sel = document.getElementById('cCiudad'); const prev = sel.value;
-  sel.innerHTML = '<option value="">— ciudad —</option>' +
-    (d.ciudades||[]).map(c=>`<option ${c===prev?'selected':''}>${esc(c)}</option>`).join('');
+  // El dropdown de ciudades viejo (cCiudad) ya no está acá; el cliente_picker
+  // tiene su propio dropdown (pCiudad) y lo puebla solo.
   // Tramos
   document.getElementById('tbTramos').innerHTML = (d.tramos||[]).map(t=>`
     <tr>
@@ -236,19 +228,34 @@ async function cargar(){
 }
 
 async function cotizar(){
-  const dir = document.getElementById('cDir').value.trim();
-  const loc = document.getElementById('cCiudad').value.trim();
+  // Prioridad: cuadras manual > coords del domicilio elegido > geocode por dirección+localidad.
   const cua = document.getElementById('cCuadras').value.trim();
+  const dir = (document.getElementById('pDir')?.value || '').trim();
+  const loc = (document.getElementById('pCiudad')?.value || '').trim();
   const p = new URLSearchParams();
-  if(dir) p.set('direccion',dir);
-  if(loc) p.set('localidad',loc);
-  if(cua) p.set('cuadras',cua);
+  if (cua) {
+    p.set('cuadras', cua);
+    if (loc) p.set('localidad', loc);
+  } else if (window._domLat != null && window._domLng != null){
+    p.set('lat', window._domLat);
+    p.set('lng', window._domLng);
+    if (loc) p.set('localidad', loc);
+  } else if (dir) {
+    p.set('direccion', dir);
+    if (loc) p.set('localidad', loc);
+  } else {
+    document.getElementById('cMonto').textContent = '—';
+    document.getElementById('cDet').textContent = 'Buscá un cliente + domicilio, o tipeá cuadras.';
+    return;
+  }
   document.getElementById('cMonto').textContent = '…';
   const d = await (await fetch('/config/envio/api/cotizar?'+p.toString())).json();
   document.getElementById('cMonto').textContent = fmt(d.monto);
   const pill = d.fuente ? `<span class="pill ${d.fuente}">${d.fuente}</span> ` : '';
-  const cu = d.cuadras!=null ? ` · ${d.cuadras} cuadras` : '';
-  document.getElementById('cDet').innerHTML = pill + esc(d.detalle||'') ;
+  const parts = [];
+  if (d.tramo_label) parts.push(d.tramo_label);
+  if (d.detalle) parts.push(d.detalle);
+  document.getElementById('cDet').innerHTML = pill + parts.map(esc).join(' · ');
 }
 
 async function guardarConfig(){
@@ -483,6 +490,12 @@ cargar = async function(){
 };
 
 cargar();
+</script>
+
+{{ cliente_picker_modales() }}
+<script src="/static/js/cliente_picker.js"></script>
+<script>
+ClientePicker.init({ onAddressChange: cotizar });
 </script>
 </body>
 </html>
