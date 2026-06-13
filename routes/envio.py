@@ -54,7 +54,8 @@ def init_app(app):
         lat, lng = request.args.get('lat'), request.args.get('lng')
         direccion = request.args.get('direccion')
         if lat and lng:                                  # pin / coordenadas
-            return jsonify(envio.cotizar_por_coords(lat, lng))
+            return jsonify(envio.cotizar_por_coords(
+                lat, lng, localidad_hint=request.args.get('localidad')))
         if direccion:                                    # dirección escrita (geocoder)
             return jsonify(envio.cotizar_por_direccion(
                 direccion, localidad=request.args.get('localidad')))

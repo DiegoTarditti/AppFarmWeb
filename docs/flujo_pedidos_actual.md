@@ -372,7 +372,83 @@ Seeded automáticamente para: 20 de Junio, Kellerhoff. Diego cargó Monroe y Del
 
 ---
 
-## 9. Lo que queda fuera de este alcance (futuro)
+## 9. Anexo — Cálculo de envío (post-simplificación 2026-06-12)
+
+### 9.1 Premisa
+
+**Las coords del destino son obligatorias.** Se obtienen del pin de WhatsApp,
+del geocoder al cargar dirección, o del cliente_picker. Sin coords → no se
+puede cotizar (mensaje claro al operador).
+
+### 9.2 Algoritmo de `cotizar_por_coords(lat, lng, localidad_hint=None)`
+
+```
+1. POLÍGONOS — se chequea primero (ciudades externas con tarifa fija
+   como Kentucky/Haras/Roldán cuando tengan polígono cargado).
+   point-in-polygon (ray casting) sobre EnvioZona.poligono activos.
+   Si matchea → tarifa de la zona, fuente='zona'.
+
+2. TRAMO POR CUADRAS — cubre Rosario (lo más común).
+   cuadras = haversine(farmacia ↔ punto) × factor_cuadras (default 1.3).
+   Se distinguen dos clases de tramos:
+     - "tramos normales": hasta_cuadras < 1000 (ej. 14/24/34/49/59/70).
+     - "catchall": hasta_cuadras >= 1000 (ej. 9999).
+   Si cuadras <= tope_normal (= max de los normales, hoy 70):
+     → primer tramo normal con hasta_cuadras >= cuadras, fuente='tramo'.
+
+3. FALLBACK POR LOCALIDAD — solo si cuadras > tope_normal Y hay hint.
+   Iteramos zonas activas (incluyendo las que solo tienen nombre, sin
+   polígono), match tolerante (substring + sin acentos). Tarifa fija
+   de la zona, fuente='zona'.
+
+4. CATCHALL — si está cargado y nada de lo anterior matcheó.
+   Tarifa fija del catchall ($8000 hoy), fuente='tramo',
+   detalle='sin zona'.
+
+5. A CONVENIR — si no hay catchall y nada matcheó.
+   fuente=None, detalle='a convenir'. Operador edita a mano.
+```
+
+### 9.3 Decisiones de diseño (simplificación)
+
+| Antes | Ahora |
+|---|---|
+| Zonas internas de Rosario (`refinería`, `centro`, etc.) con tarifa fija $X | **Sacadas (desactivadas)**. Todo Rosario va por tramos por cuadras. |
+| Múltiples paths (`cotizar` / `cotizar_por_direccion` / `cotizar_por_coords`) con lógicas distintas | El path principal es `cotizar_por_coords`. Los otros se mantienen para retrocompat pero la entrada normal es por coords. |
+| El catchall (tramo 9999 cuadras) atrapaba antes que el fallback por nombre | **Fix**: el catchall solo se aplica si el fallback por nombre no matcheó. |
+
+### 9.4 Configuración
+
+| Tabla | Para qué |
+|---|---|
+| `envio_config` | `farmacia_lat/lng`, `factor_cuadras` (default 1.3), `metros_por_cuadra` (default 100). |
+| `envio_zonas` | Zonas con tarifa fija. Pueden tener `poligono` (GeoJSON), `nombre` o ambos. |
+| `envio_tramos` | Tarifa por cuadras. `hasta_cuadras` = límite superior inclusive. Para "catchall" usar un valor >= 1000 (típicamente 9999). |
+| `envio_ciudades` | Lista del dropdown ciudad en el cliente_picker. |
+
+### 9.5 Estado actual de tarifas (2026-06-12)
+
+**Tramos (Rosario):**
+| Hasta | Tarifa |
+|---|---|
+| 14 cuadras | $2500 |
+| 24 cuadras | $3000 |
+| 34 cuadras | $3500 |
+| 49 cuadras | $4000 |
+| 59 cuadras | $5000 |
+| 70 cuadras | $6000 |
+| 9999 (catchall) | $8000 |
+
+**Zonas (externas):**
+| Nombre | Tarifa | Tipo |
+|---|---|---|
+| Kentucky | $10000 | nombre (a sumar polígono) |
+| haras | $12000 | nombre (a sumar polígono) |
+| Roldán | $15000 | nombre |
+
+---
+
+## 10. Lo que queda fuera de este alcance (futuro)
 
 - **Webhook que recibe el "tomo"** del cadete desde el grupo → asignación atómica + cambio de estado a `tomado` (Fase D).
 - **Chat 1:1 cadete ↔ bot** post-toma con detalle completo del pedido (privado).
