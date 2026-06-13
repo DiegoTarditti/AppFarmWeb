@@ -155,7 +155,7 @@ O líneas:
         <select id="convZona" class="input" style="flex:0 0 220px;">
           <option value="">— elegir —</option>
         </select>
-        <button onclick="convertirYAplicar()" class="hbtn hbtn-ok">📋 Convertir y poner en zona</button>
+        <button onclick="convertirYAplicar()" class="hbtn hbtn-ok">📋 Convertir y GUARDAR en zona</button>
         <span id="convAviso" class="muted2" style="font-size:11px;"></span>
       </div>
     </div>
@@ -295,7 +295,12 @@ function togglePoly(id){
 async function savePoly(id){
   const ta = document.getElementById('poly_'+id);
   if(!ta) return;
-  const r = await jpost('/config/envio/zona', {id, poligono_texto: ta.value});
+  // El backend exige nombre y monto en cada upsert. Los traemos del state actual.
+  const z = window._zonas[id] || {};
+  const r = await jpost('/config/envio/zona', {
+    id, nombre: z.nombre, monto: z.monto,
+    poligono_texto: ta.value,
+  });
   if (!r.ok) {
     alert('⚠️ ' + (r.error || 'No se pudo guardar el polígono.'));
     return;   // no recargo, así no pierde lo que escribió
@@ -385,10 +390,10 @@ function convertirYAplicar(){
   }
   ta.style.display = '';
   ta.value = resultado;
-  ta.focus();
-  ta.scrollIntoView({behavior:'smooth', block:'center'});
+  // Guardamos directo (un solo paso) para evitar el "olvidé apretar Guardar".
+  await savePoly(zonaId);
   aviso.style.color='var(--accent)';
-  aviso.textContent = `✓ ${coords.length} puntos puestos en zona. Apretá Guardar en la fila de esa zona.`;
+  aviso.textContent = `✓ ${coords.length} puntos convertidos y guardados en zona. Mirá el mapa abajo.`;
 }
 
 function popularConvZonas(d){
