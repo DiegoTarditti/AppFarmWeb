@@ -253,6 +253,8 @@
     _geoTmr = setTimeout(buscarGeoSugerencias, 350);
   }
 
+  function _norm(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim(); }
+
   async function buscarGeoSugerencias(){
     const q = $('pDir').value.trim();
     const loc = $('pCiudad').value;
@@ -260,10 +262,21 @@
     if (q.length < 3) return;
     try {
       const r = await (await fetch(`/api/clientes/geocodificar?q=${encodeURIComponent(q)}&loc=${encodeURIComponent(loc||'')}`)).json();
-      const sug = r.sugerencias || [];
+      let sug = r.sugerencias || [];
       if (!sug.length){ box.style.display='none'; return; }
+      // Whitelist de ciudades que servimos (Diego: 'filtremos rosario, funes y roldán').
+      // Si hay coincidencias en alguna de las 3, mostramos solo esas. Si no, fallback
+      // a la lista entera con un aviso.
+      const CIUDADES_OK = ['rosario', 'funes', 'roldan'];
+      let aviso = '';
+      const match = sug.filter(s => CIUDADES_OK.includes(_norm(s.localidad)));
+      if (match.length){
+        sug = match;
+      } else {
+        aviso = `<div class="muted2" style="padding:6px 9px; font-size:10px; background:rgba(239,159,39,.12);">⚠ Sin coincidencias en Rosario / Funes / Roldán. Mostramos otras:</div>`;
+      }
       box.style.display='block';
-      box.innerHTML = sug.map(s=>{
+      box.innerHTML = aviso + sug.map(s=>{
         return `<div class="it" onclick='ClientePicker.pickGeo(${JSON.stringify(s)})'>
           <b>${esc(s.direccion||s.nomenclatura)}</b>
           <span class="muted2" style="font-size:10px;"> · ${esc(s.localidad||'')}</span>
