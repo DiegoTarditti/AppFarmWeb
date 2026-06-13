@@ -328,6 +328,43 @@ def init_app(app):
     # APIs de cliente viven en routes/clientes.py (/api/clientes/*).
     # Redirects 308 retirados el 2026-06-10 — ya no hay callers vivos.
 
+    @app.route('/api/pedido/obs-presets')
+    @login_required
+    def api_pedido_obs_presets():
+        """Lista los presets de observación (activos) para alimentar el datalist."""
+        if not _ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        with database.get_db() as s:
+            rows = (s.query(database.PedidoObsPreset)
+                    .filter(database.PedidoObsPreset.activo.is_(True))
+                    .order_by(database.PedidoObsPreset.orden,
+                              database.PedidoObsPreset.id).all())
+            return jsonify({'presets': [{'id': r.id, 'texto': r.texto} for r in rows]})
+
+    @app.route('/api/pedido/obs-presets', methods=['POST'])
+    @login_required
+    def api_pedido_obs_presets_crear():
+        """Agrega un preset nuevo (o reactiva si existía desactivado).
+        Body: {texto: 'PAMI - Traer ...'}. Idempotente por texto."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        texto = ((request.json or {}).get('texto') or '').strip()
+        if not texto:
+            return jsonify({'ok': False, 'error': 'texto vacío'}), 400
+        if len(texto) > 160:
+            return jsonify({'ok': False, 'error': 'texto muy largo (máx 160)'}), 400
+        with database.get_db() as s:
+            P = database.PedidoObsPreset
+            ya = s.query(P).filter(P.texto == texto).first()
+            if ya:
+                ya.activo = True
+                s.commit()
+                return jsonify({'ok': True, 'id': ya.id, 'reusado': True})
+            nuevo = P(texto=texto, orden=999)
+            s.add(nuevo)
+            s.commit()
+            return jsonify({'ok': True, 'id': nuevo.id, 'reusado': False})
+
     @app.route('/reparto/pedido', methods=['POST'])
     @login_required
     def reparto_crear_pedido():

@@ -619,6 +619,18 @@ class EnvioConfig(Base):
     actualizado_en = Column(DateTime, default=now_ar)
 
 
+class PedidoObsPreset(Base):
+    """Catálogo editable de presets para el campo Observación del pedido.
+    Acumula sugerencias frecuentes ('Traer Receta', 'PAMI - Traer autorización
+    Firmada', ...) que el operador puede pegar con un click."""
+    __tablename__ = 'pedido_obs_presets'
+    id = Column(Integer, primary_key=True)
+    texto = Column(String(160), nullable=False, unique=True)
+    activo = Column(Boolean, nullable=False, default=True)
+    orden = Column(Integer, nullable=False, default=0)
+    creado_en = Column(DateTime, default=now_ar)
+
+
 class Cadete(Base):
     """Repartidor. La misma ficha sirve para asignar zonas (un cadete puede
     cubrir varias rutas) y para los pagos (tarifa por jornada)."""
@@ -4584,6 +4596,19 @@ def _pg_add_columns(conn):
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS perfiles_json TEXT",
         # Ciudad en el lead local (alta de clientes del bot).
         "ALTER TABLE clientes_locales ADD COLUMN IF NOT EXISTS ciudad VARCHAR(120)",
+        # Presets para el campo Observación del pedido.
+        ("CREATE TABLE IF NOT EXISTS pedido_obs_presets ("
+         "id SERIAL PRIMARY KEY, "
+         "texto VARCHAR(160) NOT NULL UNIQUE, "
+         "activo BOOLEAN NOT NULL DEFAULT TRUE, "
+         "orden INTEGER NOT NULL DEFAULT 0, "
+         "creado_en TIMESTAMP DEFAULT NOW())"),
+        # Seed inicial idempotente (ON CONFLICT DO NOTHING preserva ediciones del operador).
+        ("INSERT INTO pedido_obs_presets (texto, orden) VALUES "
+         "('PAMI - Traer autorización firmada', 10),"
+         "('Traer Receta', 20),"
+         "('Traer Receta y Autorización', 30)"
+         " ON CONFLICT (texto) DO NOTHING"),
         # Flag para que la droguería aparezca en el dropdown 'Pedido a' (atencion/pedido nuevo).
         "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS activa_ped BOOLEAN NOT NULL DEFAULT FALSE",
         # Seed: marcar como activas las 4 droguerías que el operador usa SIEMPRE.
