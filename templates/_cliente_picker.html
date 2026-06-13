@@ -25,7 +25,7 @@
 {# Inyecta la whitelist de ciudades del geocoder para el JS (env: ENVIO_CIUDADES_FILTRO).
    `con_alta_edicion=False` esconde los botones + (nuevo) y ✏️ (editar), p.ej. cuando se usa
    solo para cotizar tarifas y no se quiere permitir altas desde acá. #}
-<script>window.ENVIO_CIUDADES_FILTRO = {{ envio_ciudades_filtro|tojson }};</script>
+<script>window.ENVIO_CIUDADES_FILTRO = {{ (envio_ciudades_filtro or ['rosario','funes','roldan'])|tojson }};</script>
 <div class="grid grid-cliente">
   <div class="field" style="position:relative;">
     <label>Cliente
