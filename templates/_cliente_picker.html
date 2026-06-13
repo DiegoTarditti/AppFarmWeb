@@ -27,8 +27,10 @@
    solo para cotizar tarifas y no se quiere permitir altas desde acá. #}
 <script>window.ENVIO_CIUDADES_FILTRO = {{ envio_ciudades_filtro|tojson }};</script>
 <div class="grid grid-cliente">
-  <div class="field">
-    <label>Cliente</label>
+  <div class="field" style="position:relative;">
+    <label>Cliente
+      <span id="osBadge" style="display:none; margin-left:6px; font-size:10px; padding:2px 7px; border-radius:999px; font-weight:700; background:rgba(124,77,255,.18); color:#a78bfa; border:1px solid rgba(124,77,255,.35);"></span>
+    </label>
     <div style="display:flex; gap:5px;">
       <input id="pCliente" class="input" placeholder="Buscar (multi-palabra)" style="flex:1;" autocomplete="off" oninput="ClientePicker.onClienteInput()" onkeydown="if(event.key==='Escape')document.getElementById('resCli').style.display='none'">
       <button onclick="ClientePicker.buscarCli()" class="hbtn" title="Forzar búsqueda">🔎</button>

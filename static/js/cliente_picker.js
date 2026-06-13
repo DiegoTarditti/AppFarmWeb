@@ -183,6 +183,7 @@
                               : `observer_id=${observer_id}`;
     const ficha = await (await fetch(`/api/clientes/ficha?${params}`)).json();
     if(ficha && !ficha.error){
+      _pintarOsBadge(ficha.obra_social);
       // Setear nombre solo si el input está vacío (pickCli lo setea explícito antes).
       if (!$('pCliente').value){
         const raw = ficha.raw || {};
@@ -443,12 +444,28 @@
     };
   }
 
+  // Badge de OS al lado del label Cliente. Confirmada → tildecita; inferida → ~ con confianza.
+  function _pintarOsBadge(os){
+    const el = $('osBadge'); if (!el) return;
+    if (!os || !os.nombre){ el.style.display = 'none'; el.textContent = ''; return; }
+    if (os.fuente === 'inferida'){
+      const c = os.confidence_pct || os.confianza_pct || 0;
+      el.textContent = `🏥 ${os.nombre} ~${Math.round(c)}%`;
+      el.title = 'OS inferida del histórico (no confirmada manualmente).';
+    } else {
+      el.textContent = `🏥 ${os.nombre} ✓`;
+      el.title = 'OS confirmada por un operador.';
+    }
+    el.style.display = '';
+  }
+
   function clear(){
     ['pCliente','pDir','pPiso','pDepto','pRef'].forEach(i=>{
       const el = $(i); if (el) el.value = '';
     });
     $('pDom').innerHTML = '<option value="">— escribir dirección —</option>';
-    $('btnEditarCli').style.display = 'none';
+    if ($('btnEditarCli')) $('btnEditarCli').style.display = 'none';
+    _pintarOsBadge(null);
     window._cid = null;
     window._oid = null;
     window._doms = [];
