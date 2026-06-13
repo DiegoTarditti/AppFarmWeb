@@ -178,8 +178,15 @@ def guardar_zona(zona_id, nombre, monto, lat=None, lng=None, radio_km=None,
         # Polígono GeoJSON (reemplaza el círculo para detección geográfica).
         if poligono_texto is not None:
             from services import reparto as _rep
-            parsed = _rep.parse_poligono(poligono_texto)
-            z.poligono = json.dumps(parsed) if parsed else None
+            texto = (poligono_texto or '').strip()
+            if texto:
+                parsed = _rep.parse_poligono(texto)
+                if not parsed:
+                    return {'ok': False,
+                            'error': 'No pude leer el polígono. Necesita al menos 3 puntos. Formato aceptado: una línea por punto como "lat, lng" (ej. -32.93, -60.72), o un GeoJSON pegado.'}
+                z.poligono = json.dumps(parsed)
+            else:
+                z.poligono = None
         s.commit()
         return {'ok': True, 'id': z.id}
 

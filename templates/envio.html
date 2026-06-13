@@ -262,7 +262,11 @@ function togglePoly(id){
 async function savePoly(id){
   const ta = document.getElementById('poly_'+id);
   if(!ta) return;
-  await jpost('/config/envio/zona', {id, poligono_texto: ta.value});
+  const r = await jpost('/config/envio/zona', {id, poligono_texto: ta.value});
+  if (!r.ok) {
+    alert('⚠️ ' + (r.error || 'No se pudo guardar el polígono.'));
+    return;   // no recargo, así no pierde lo que escribió
+  }
   cargar();
 }
 async function saveZona(id, nombre, monto, radio){
