@@ -859,8 +859,9 @@ const INP = 'input';
 function renderFicha() {
   const p = document.getElementById('ficha');
   const f = fichaData && fichaData.ficha;
+  const extra = document.getElementById('pCiudadExtra');
   if (!f) {
-    // El cliente_picker de arriba ya invita a buscar/crear. No duplicamos UI acá.
+    if (extra) extra.innerHTML = '';
     p.innerHTML = `<div class="muted" style="font-size:11px;">Sin cliente vinculado. Buscalo o creálo arriba ☝️.</div>`;
     return;
   }
@@ -868,6 +869,10 @@ function renderFicha() {
   const badge = esLocal
     ? '<span class="tag-blue" style="font-size:9px; padding:2px 7px; border-radius:8px;">lead local</span>'
     : '<span class="tag-green" style="font-size:9px; padding:2px 7px; border-radius:8px;">ObServer</span>';
+  // Slot al lado del label Ciudad: badge fuente + teléfono.
+  if (extra) {
+    extra.innerHTML = `${f.telefono ? '☎ '+esc(f.telefono)+' ' : ''}${badge}`;
+  }
   const fila = (ic, lab, val) => val ? `
     <div><div class="muted" style="margin-bottom:2px;"><i class="ti ti-${ic}" style="font-size:12px; vertical-align:-1px; margin-right:5px"></i>${lab}</div><div class="txt">${esc(val)}</div></div>` : '';
   const osLabel = osInferida && osInferida.confirmada ? 'Obra social ✓' : 'Obra social inferida';
@@ -891,15 +896,11 @@ function renderFicha() {
          <div class="muted" style="font-size:10px; margin-bottom:4px;">Obra social</div>
          <button onclick="abrirEditarOS()" class="hbtn" style="font-size:10px; padding:3px 10px;">+ Asignar OS</button>
        </div>`;
-  // Nombre, domicilio y avatar viven en el picker de arriba. Acá solo info aux:
-  // fuente, documento, teléfono, notas y obra social.
+  // Nombre, domicilio, teléfono y badge (al lado de Ciudad) viven en el picker
+  // de arriba. Acá solo info aux: DNI, notas y obra social.
   p.innerHTML = `
-    <div style="display:flex; gap:8px; align-items:center; font-size:11px; margin-bottom:10px;">
-      ${badge}
-      ${f.documento ? `<span class="muted">DNI</span> <span class="txt">${esc(f.documento)}</span>` : ''}
-      ${f.telefono ? `<span class="muted" style="margin-left:6px;">☎</span> <span class="txt">${esc(f.telefono)}</span>` : ''}
-    </div>
-    <div class="bt" style="margin-top:6px; padding-top:10px; border-top:0.5px solid;">
+    ${f.documento ? `<div style="font-size:11px; margin-bottom:8px;"><span class="muted">DNI</span> <span class="txt">${esc(f.documento)}</span></div>` : ''}
+    <div class="bt" style="padding-top:10px; border-top:0.5px solid;">
       <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas del cliente <span class="muted2" style="font-size:9px; font-weight:normal;">(perdurables, NO por transacción)</span></div>
       <textarea id="fichaNotas" rows="3" class="${INP}" style="width:100%; border-radius:8px; padding:6px 9px; font-size:11px; margin-bottom:6px;">${esc(f.notas || '')}</textarea>
       <div style="display:flex; gap:6px;">
