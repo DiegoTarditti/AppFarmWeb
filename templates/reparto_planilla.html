@@ -268,12 +268,21 @@
             ✓ {{ p.tomado_por_wsap }}{% if p.tomado_en %} · {{ p.tomado_en.strftime('%H:%M') }}{% endif %}
           </span>
         {% elif p.publicado_en %}
-          {# Timer SLA: 20 min warning, 40 min crítico (sin que ningún cadete lo tome). #}
+          {# Timer SLA: 20 min warning, 40 min crítico (sin que ningún cadete lo tome).
+             Formato del tiempo: <60m → "5m", <24h → "2.5h", sino "3d".
+             #N del pedido siempre visible para matchear con el msg del grupo. #}
           {% set _min = ((ahora - p.publicado_en).total_seconds() / 60) | int %}
           {% set _col = '#1D9E75' if _min < 20 else ('#EF9F27' if _min < 40 else '#EF4444') %}
           {% set _icon = '🟢' if _min < 20 else ('🟡' if _min < 40 else '🔴') %}
-          <span title="Publicado {{ p.publicado_en.strftime('%H:%M') }} — {{ _min }} min sin tomar" style="font-size:10px; color:{{ _col }}; font-weight:600;">
-            {{ _icon }} {{ _min }}m
+          {% if _min < 60 %}
+            {% set _t = _min ~ 'm' %}
+          {% elif _min < 1440 %}
+            {% set _t = ('%.1f' % (_min/60)) ~ 'h' %}
+          {% else %}
+            {% set _t = (_min // 1440) ~ 'd' %}
+          {% endif %}
+          <span title="Pedido #{{ p.id }} · publicado {{ p.publicado_en.strftime('%d/%m %H:%M') }} — {{ _min }} min sin tomar" style="font-size:10px; color:{{ _col }}; font-weight:600;">
+            {{ _icon }} #{{ p.id }} · {{ _t }}
           </span>
           <button onclick="publicarPedido({{ p.id }}, this)" class="hbtn" style="font-size:9px; padding:1px 4px; margin-left:3px;" title="Republicar">↻</button>
         {% else %}
