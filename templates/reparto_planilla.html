@@ -72,6 +72,52 @@
 
   .muted { color:var(--muted); }
   .sin-pedidos { text-align:center; padding:40px; color:var(--muted); }
+
+  /* ── Panel colapsable de chat de reparto (Grupo cadetes + DMs) ────────── */
+  .planilla-shell { display:flex; align-items:stretch; min-height:calc(100vh - 50px); }
+  .wrap { flex:1; min-width:0; }   /* deja respirar al aside lateral */
+  .chat-panel { flex:0 0 360px; background:var(--surface); border-left:1px solid var(--border);
+                display:flex; flex-direction:column; transition:flex-basis 0.18s ease;
+                overflow:hidden; }
+  .chat-panel.is-collapsed { flex:0 0 40px; }
+  .chat-head { display:flex; align-items:center; gap:8px; padding:8px 10px;
+               border-bottom:1px solid var(--border); cursor:pointer; user-select:none; }
+  .chat-head .chev { transition:transform 0.18s ease; font-size:13px; color:var(--muted); }
+  .chat-panel.is-collapsed .chat-head .chev { transform:rotate(180deg); }
+  .chat-panel.is-collapsed .chat-head-text { display:none; }
+  .chat-panel.is-collapsed .chat-body { display:none; }
+  .chat-head-text { font-size:12px; font-weight:600; color:var(--title); }
+  .chat-body { display:flex; flex-direction:column; flex:1; min-height:0; }
+  .chat-section { display:flex; flex-direction:column; min-height:0; }
+  .chat-section.grupo { flex:0 0 40%; border-bottom:1px solid var(--border); }
+  .chat-section.dms { flex:1; min-height:0; }
+  .chat-section-head { padding:5px 10px; font-size:10px; color:var(--muted); font-weight:700;
+                       background:rgba(0,0,0,0.18); display:flex; justify-content:space-between;
+                       align-items:center; text-transform:uppercase; letter-spacing:0.4px; }
+  .chat-section-head .dot-on { display:inline-block; width:6px; height:6px; border-radius:50%;
+                                background:var(--accent); margin-right:5px; }
+  .chat-msgs { flex:1; overflow-y:auto; padding:6px 10px; display:flex; flex-direction:column; gap:4px; }
+  .chat-msg { font-size:11.5px; padding:5px 8px; border-radius:7px; max-width:88%; word-break:break-word; line-height:1.3; }
+  .chat-msg .meta { display:block; font-size:9px; color:var(--muted2); margin-bottom:2px; }
+  .chat-msg.cliente { background:var(--card); align-self:flex-start; }
+  .chat-msg.operador { background:var(--accent); color:var(--accent-ink); align-self:flex-end; }
+  .chat-msg.sistema { background:transparent; color:var(--muted2); align-self:center;
+                       font-size:10px; font-style:italic; }
+  .chat-input-row { display:flex; gap:5px; padding:6px 8px; border-top:1px solid var(--border); }
+  .chat-input-row input { flex:1; font-size:12px; }
+  .chat-input-row button { font-size:11px; padding:5px 10px; }
+  .dm-list { overflow-y:auto; flex:1; }
+  .dm-item { padding:7px 10px; border-bottom:1px solid var(--row-bd); cursor:pointer;
+              display:flex; justify-content:space-between; align-items:flex-start; gap:6px; }
+  .dm-item:hover { background:var(--hov); }
+  .dm-item .name { font-weight:600; font-size:12px; color:var(--title); }
+  .dm-item .last { font-size:10px; color:var(--muted); margin-top:2px; overflow:hidden;
+                   text-overflow:ellipsis; white-space:nowrap; max-width:200px; }
+  .dm-item .time { font-size:10px; color:var(--muted2); white-space:nowrap; }
+  .dm-detail-back { padding:6px 10px; font-size:11px; cursor:pointer; border-bottom:1px solid var(--border);
+                    color:var(--muted); }
+  .dm-detail-back:hover { color:var(--title); }
+  .dm-empty { padding:20px; text-align:center; color:var(--muted); font-size:11px; }
 </style>
 </head>
 <body>
@@ -91,6 +137,7 @@
   <a href="/reparto" class="hbtn">← Volver</a>
 </div>
 
+<div class="planilla-shell">
 <div class="wrap">
 
 {% macro render_tabla(pedidos, inicio_num, con_turno_btns=False) %}
@@ -279,6 +326,57 @@
 
 </div><!-- wrap -->
 
+{# ── Panel colapsable de chat de reparto ─────────────────────────────
+   Stack vertical: arriba caja del grupo de cadetes (input + mensajes),
+   abajo lista de DMs por cadete con vista detalle al hacer click.
+   Polling cada 3s mientras el panel esté abierto. #}
+<aside id="chatPanel" class="chat-panel">
+  <div class="chat-head" onclick="chatToggle()">
+    <span class="chev">◀</span>
+    <span class="chat-head-text">💬 Chats reparto</span>
+  </div>
+  <div class="chat-body">
+    <!-- Grupo cadetes (siempre visible arriba) -->
+    <div class="chat-section grupo">
+      <div class="chat-section-head">
+        <span><span class="dot-on"></span>🚚 Grupo cadetes</span>
+        <span class="muted" style="font-weight:400; text-transform:none; font-size:9px;"
+              id="chatGrupoUlt">—</span>
+      </div>
+      <div class="chat-msgs" id="chatGrupoMsgs">
+        <div class="dm-empty">cargando…</div>
+      </div>
+      <div class="chat-input-row">
+        <input id="chatGrupoInput" class="input" placeholder="Mensaje al grupo…"
+               onkeydown="if(event.key==='Enter')chatGrupoEnviar()">
+        <button class="hbtn" onclick="chatGrupoEnviar()">▶</button>
+      </div>
+    </div>
+    <!-- DMs cadetes (lista + vista detalle de la conv abierta) -->
+    <div class="chat-section dms" id="chatDmsSection">
+      <div class="chat-section-head">
+        <span>💬 DMs cadetes</span>
+        <span class="muted" style="font-weight:400; text-transform:none; font-size:9px;"
+              id="chatDmsCount">0</span>
+      </div>
+      <div class="dm-list" id="chatDmList">
+        <div class="dm-empty">sin chats todavía.</div>
+      </div>
+      <!-- Vista detalle (se muestra cuando el operador entra a un DM) -->
+      <div id="chatDmDetail" style="display:none; flex:1; min-height:0; flex-direction:column;">
+        <div class="dm-detail-back" onclick="chatVolverDMs()">◀ volver a la lista</div>
+        <div class="chat-msgs" id="chatDmMsgs"></div>
+        <div class="chat-input-row">
+          <input id="chatDmInput" class="input" placeholder="Mensaje al cadete…"
+                 onkeydown="if(event.key==='Enter')chatDmEnviar()">
+          <button class="hbtn" onclick="chatDmEnviar()">▶</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</aside>
+</div><!-- planilla-shell -->
+
 <script>
 function cambiarDia(delta, fechaStr) {
   let d;
@@ -404,6 +502,205 @@ async function publicarPedido(pid, btn) {
     if (btn) { btn.disabled = false; btn.textContent = '📤 Publicar'; }
   }
 }
+
+/* ── Panel de chat de reparto ──────────────────────────────────────────
+   Estado en memoria: último id de mensaje visto en grupo y en cada DM
+   (para que el polling solo traiga lo nuevo). */
+const chatState = { grupoUltId: 0, dmActivo: null, dmUltIds: {}, pollHandle: null };
+
+function chatToggle(){
+  const p = document.getElementById('chatPanel');
+  p.classList.toggle('is-collapsed');
+  const colapsado = p.classList.contains('is-collapsed') ? '1' : '0';
+  localStorage.setItem('planillaChatCollapsed', colapsado);
+  if (colapsado === '0' && !chatState.pollHandle) chatIniciarPolling();
+  if (colapsado === '1' && chatState.pollHandle){ clearInterval(chatState.pollHandle); chatState.pollHandle = null; }
+}
+
+function chatHora(iso){
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'});
+}
+
+function chatRenderMsg(m){
+  const cls = m.origen === 'operador' ? 'operador' :
+              (m.origen === 'sistema' ? 'sistema' : 'cliente');
+  return `<div class="chat-msg ${cls}" data-id="${m.id}">
+    <span class="meta">${chatHora(m.creado_en)}</span>${esc(m.texto || '')}
+  </div>`;
+}
+
+function chatScrollFondo(elId){
+  const c = document.getElementById(elId);
+  if (c) c.scrollTop = c.scrollHeight;
+}
+
+async function chatGrupoCargarPrimero(){
+  const r = await fetch('/api/reparto/chat/grupo/mensajes');
+  const d = await r.json();
+  if (!d.ok) return;
+  const cont = document.getElementById('chatGrupoMsgs');
+  if (!d.mensajes.length) {
+    cont.innerHTML = '<div class="dm-empty">sin mensajes todavía.</div>';
+    return;
+  }
+  cont.innerHTML = d.mensajes.map(chatRenderMsg).join('');
+  chatState.grupoUltId = d.mensajes[d.mensajes.length - 1].id;
+  chatScrollFondo('chatGrupoMsgs');
+}
+
+async function chatGrupoEnviar(){
+  const inp = document.getElementById('chatGrupoInput');
+  const t = (inp.value || '').trim();
+  if (!t) return;
+  inp.disabled = true;
+  try {
+    const r = await fetch('/api/reparto/chat/grupo/responder', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({texto: t})
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se envió')); inp.disabled = false; return; }
+    inp.value = '';
+    inp.disabled = false;
+    // Append local sin esperar polling
+    const cont = document.getElementById('chatGrupoMsgs');
+    if (cont.querySelector('.dm-empty')) cont.innerHTML = '';
+    cont.insertAdjacentHTML('beforeend', chatRenderMsg(d.mensaje));
+    chatState.grupoUltId = d.mensaje.id;
+    chatScrollFondo('chatGrupoMsgs');
+    inp.focus();
+  } catch (e) { alert('Error: ' + e.message); inp.disabled = false; }
+}
+
+async function chatRefrescar(){
+  // 1) Resumen (lista DMs + badge grupo)
+  try {
+    const r = await fetch('/api/reparto/chat/resumen');
+    const d = await r.json();
+    if (d.ok){
+      // Badge grupo
+      const ul = document.getElementById('chatGrupoUlt');
+      if (ul) ul.textContent = d.grupo && d.grupo.ultimo
+        ? `${chatHora(d.grupo.ultimo_en)} · ${d.grupo.ultimo}` : '—';
+      // Lista DMs
+      const lst = document.getElementById('chatDmList');
+      const cnt = document.getElementById('chatDmsCount');
+      cnt.textContent = d.dms.length;
+      if (!d.dms.length) {
+        lst.innerHTML = '<div class="dm-empty">sin chats todavía.</div>';
+      } else {
+        lst.innerHTML = d.dms.map(it => `
+          <div class="dm-item" onclick="chatAbrirDm(${it.cadete_id}, '${esc(it.nombre)}')">
+            <div>
+              <div class="name">${esc(it.nombre)}</div>
+              <div class="last">${esc(it.ultimo || '')}</div>
+            </div>
+            <div class="time">${chatHora(it.ultimo_en)}</div>
+          </div>`).join('');
+      }
+    }
+  } catch (e) { /* polling silencioso */ }
+  // 2) Mensajes nuevos del grupo (solo lo posterior al último visto)
+  if (chatState.grupoUltId){
+    try {
+      const r = await fetch('/api/reparto/chat/grupo/mensajes?desde_id=' + chatState.grupoUltId);
+      const d = await r.json();
+      if (d.ok && d.mensajes && d.mensajes.length){
+        const cont = document.getElementById('chatGrupoMsgs');
+        if (cont.querySelector('.dm-empty')) cont.innerHTML = '';
+        d.mensajes.forEach(m => cont.insertAdjacentHTML('beforeend', chatRenderMsg(m)));
+        chatState.grupoUltId = d.mensajes[d.mensajes.length - 1].id;
+        chatScrollFondo('chatGrupoMsgs');
+      }
+    } catch (e) {}
+  }
+  // 3) Mensajes nuevos del DM activo
+  if (chatState.dmActivo){
+    const cid = chatState.dmActivo;
+    const desde = chatState.dmUltIds[cid] || 0;
+    if (desde){
+      try {
+        const r = await fetch(`/api/reparto/chat/cadete/${cid}/mensajes?desde_id=${desde}`);
+        const d = await r.json();
+        if (d.ok && d.mensajes && d.mensajes.length){
+          const cont = document.getElementById('chatDmMsgs');
+          d.mensajes.forEach(m => cont.insertAdjacentHTML('beforeend', chatRenderMsg(m)));
+          chatState.dmUltIds[cid] = d.mensajes[d.mensajes.length - 1].id;
+          chatScrollFondo('chatDmMsgs');
+        }
+      } catch (e) {}
+    }
+  }
+}
+
+async function chatAbrirDm(cadete_id, nombre){
+  chatState.dmActivo = cadete_id;
+  document.getElementById('chatDmList').style.display = 'none';
+  const det = document.getElementById('chatDmDetail');
+  det.style.display = 'flex';
+  const back = det.querySelector('.dm-detail-back');
+  back.textContent = '◀ volver — ' + nombre;
+  const cont = document.getElementById('chatDmMsgs');
+  cont.innerHTML = '<div class="dm-empty">cargando…</div>';
+  try {
+    const r = await fetch(`/api/reparto/chat/cadete/${cadete_id}/mensajes`);
+    const d = await r.json();
+    if (!d.ok) { cont.innerHTML = '<div class="dm-empty">error</div>'; return; }
+    if (!d.mensajes.length) { cont.innerHTML = '<div class="dm-empty">sin mensajes.</div>'; return; }
+    cont.innerHTML = d.mensajes.map(chatRenderMsg).join('');
+    chatState.dmUltIds[cadete_id] = d.mensajes[d.mensajes.length - 1].id;
+    chatScrollFondo('chatDmMsgs');
+    document.getElementById('chatDmInput').focus();
+  } catch (e) { cont.innerHTML = '<div class="dm-empty">error</div>'; }
+}
+
+function chatVolverDMs(){
+  chatState.dmActivo = null;
+  document.getElementById('chatDmDetail').style.display = 'none';
+  document.getElementById('chatDmList').style.display = '';
+}
+
+async function chatDmEnviar(){
+  if (!chatState.dmActivo) return;
+  const inp = document.getElementById('chatDmInput');
+  const t = (inp.value || '').trim();
+  if (!t) return;
+  inp.disabled = true;
+  try {
+    const r = await fetch(`/api/reparto/chat/cadete/${chatState.dmActivo}/responder`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({texto: t})
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se envió')); inp.disabled = false; return; }
+    inp.value = '';
+    inp.disabled = false;
+    const cont = document.getElementById('chatDmMsgs');
+    if (cont.querySelector('.dm-empty')) cont.innerHTML = '';
+    cont.insertAdjacentHTML('beforeend', chatRenderMsg(d.mensaje));
+    chatState.dmUltIds[chatState.dmActivo] = d.mensaje.id;
+    chatScrollFondo('chatDmMsgs');
+    inp.focus();
+  } catch (e) { alert('Error: ' + e.message); inp.disabled = false; }
+}
+
+function chatIniciarPolling(){
+  if (chatState.pollHandle) return;
+  chatGrupoCargarPrimero();
+  chatRefrescar();
+  chatState.pollHandle = setInterval(chatRefrescar, 3000);
+}
+
+// Restaurar estado colapsado y arrancar polling si está abierto.
+(function chatInit(){
+  if (localStorage.getItem('planillaChatCollapsed') === '1'){
+    document.getElementById('chatPanel').classList.add('is-collapsed');
+  } else {
+    chatIniciarPolling();
+  }
+})();
 </script>
 </body>
 </html>
