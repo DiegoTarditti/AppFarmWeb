@@ -642,6 +642,11 @@ class Cadete(Base):
     tarifa_dia = Column(DECIMAL(12, 2), nullable=True)   # jornada (para pagos)
     activo = Column(Boolean, nullable=False, default=True)
     token = Column(String(12), nullable=True, unique=True, index=True)  # link móvil
+    # wa_id de WhatsApp del cadete (formato '<num>@c.us'). Sirve para vincular
+    # los DMs entrantes a un Cadete sin depender del push_name (que puede repetirse).
+    # Se autocompleta la primera vez que el cadete responde algo en el grupo si el
+    # push_name matchea inequívocamente con Cadete.nombre.
+    wa_id = Column(String(40), nullable=True, index=True)
     creado_en = Column(DateTime, default=now_ar)
 
 
@@ -2630,6 +2635,11 @@ class BotConversacion(Base):
     # Alternativa: cliente capturado localmente (lead) que aún no está en ObServer.
     cliente_local_id = Column(Integer, ForeignKey('clientes_locales.id'),
                               nullable=True, index=True)   # legacy (2a)
+    # Vinculación a un Cadete (cuando la conv es un DM de cadete o el grupo de
+    # cadetes). Se usa para discriminar en el panel /reparto/planilla las convs
+    # de reparto vs las de clientes (que también usan canal='whatsapp').
+    cadete_id = Column(Integer, ForeignKey('cadetes.id', ondelete='SET NULL'),
+                       nullable=True, index=True)
     cliente = relationship('Cliente', foreign_keys=[cliente_id])
     nodo = Column(String(50), default='inicio')      # estado del flujo conversacional
     esperando = Column(String(50))                   # acción esperando input del usuario
@@ -4623,6 +4633,14 @@ def _pg_add_columns(conn):
         # Costo de envío acordado en el chat (Diego 2026-06-14: necesita verlo en el
         # sidebar para calcular vuelto sin abrir el modal Cerrar TX).
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS envio_costo DECIMAL(12,2)",
+        # Chat de reparto (panel en /reparto/planilla): la conv puede ser de un
+        # cadete o del grupo. cadete_id discrimina vs convs de clientes que también
+        # tienen canal='whatsapp'.
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS cadete_id INTEGER REFERENCES cadetes(id) ON DELETE SET NULL",
+        "CREATE INDEX IF NOT EXISTS idx_bot_conv_cadete ON bot_conversaciones(cadete_id)",
+        # wa_id del cadete (auto-vínculo del DM al Cadete por número).
+        "ALTER TABLE cadetes ADD COLUMN IF NOT EXISTS wa_id VARCHAR(40)",
+        "CREATE INDEX IF NOT EXISTS idx_cadetes_wa_id ON cadetes(wa_id)",
         # Presencia de agentes en el panel de atención.
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_presencia VARCHAR(12) NOT NULL DEFAULT 'online'",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",
