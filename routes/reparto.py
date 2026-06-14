@@ -584,10 +584,13 @@ def init_app(app):
         except Exception as e:  # noqa: BLE001 — la persistencia no debe romper el flujo de toma
             log.exception('persistir mensaje reparto falló: %s', e)
 
-        # TEMP TEST: aceptar mensajes propios mientras pruebas vos solo en el grupo.
-        # En prod cambiar a: if msg.get('fromMe'): return jsonify({'ok': True, 'ignored': 'self'})
-        # if msg.get('fromMe'):
-        #     return jsonify({'ok': True, 'ignored': 'self'})
+        # Si el mensaje es fromMe (lo mandó la farmacia desde WAHA), ya quedó
+        # persistido por el endpoint responder del panel — NO duplicar.
+        # Trade-off: si el operador escribe al grupo desde su celular físico
+        # (no desde el panel), ese msg no aparece en el historial del panel.
+        # Vivible: hoy todo sale por el panel.
+        if from_me:
+            return jsonify({'ok': True, 'ignored': 'self'})
         # ── Paso 2: si no es frase de toma, listo (ya quedó persistido) ───────
         if not whatsapp_grupo.es_frase_de_toma(body):
             return jsonify({'ok': True, 'ignored': 'not_take_phrase'})
