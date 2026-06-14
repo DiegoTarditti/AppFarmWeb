@@ -1329,12 +1329,10 @@ function txFormaChange() {
   const f = document.getElementById('txForma').value;
   let h = '';
   if (f === 'link_mp') h =
-    `<input id="txLink" placeholder="pegá el link MP" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">
-     <button onclick="txPegarChat(document.getElementById('txLink').value)" class="hbtn" style="font-size:11px;padding:5px 9px;border-radius:8px;">Pegar link al chat</button>
+    `<input id="txLink" placeholder="link MP" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">
      <input id="txNroOp" placeholder="nro de operación MP — al pegarlo queda PAGADO" oninput="txCalc()" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
   else if (f === 'transferencia') h =
-    `<button onclick="txPegarChat(ALIAS_FARMACIA)" class="hbtn" style="font-size:11px;padding:5px 9px;border-radius:8px;">Mandar alias al chat</button>
-     <input id="txNroOp" placeholder="nro / comprobante — al pegarlo queda PAGADO" oninput="txCalc()" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
+    `<input id="txNroOp" placeholder="nro / comprobante — al pegarlo queda PAGADO" oninput="txCalc()" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
   else if (f === 'efectivo') h =
     `<input id="txPagaCon" type="number" min="0" oninput="txCalc()" placeholder="¿con cuánto paga? $" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
   else if (f === 'tarjeta') h =
@@ -1403,7 +1401,23 @@ async function txCotizarEnvio() {
 async function txCerrar() {
   const total = parseFloat(_txVal('txTotal')) || 0;
   if (!total) { alert('Cargá el total de ObServer.'); return; }
-  if (!_txVal('txForma')) { alert('Elegí la forma de pago.'); return; }
+  const forma = _txVal('txForma');
+  if (!forma) { alert('Elegí la forma de pago.'); return; }
+  // Validaciones por forma de pago: sin estos datos no se puede cerrar.
+  if ((forma === 'link_mp' || forma === 'transferencia') && !_txVal('txNroOp').trim()){
+    alert('Cargá el Nro de operación / comprobante de ' + (forma === 'link_mp' ? 'MP' : 'transferencia') + ' antes de cerrar.');
+    const el = document.getElementById('txNroOp'); if (el) el.focus();
+    return;
+  }
+  if (forma === 'efectivo' && (!_txVal('txPagaCon') || parseFloat(_txVal('txPagaCon')) <= 0)){
+    alert('Cargá con cuánto paga (efectivo).');
+    const el = document.getElementById('txPagaCon'); if (el) el.focus();
+    return;
+  }
+  if (forma === 'tarjeta'){
+    if (!_txVal('txUlt4').trim()){ alert('Cargá los últimos 4 dígitos de la tarjeta.'); return; }
+    if (!_txVal('txTarjNombre').trim()){ alert('Cargá el nombre del titular de la tarjeta.'); return; }
+  }
   const reparto = _txVal('txSalida') === 'reparto';
   const domSel = document.getElementById('txDomicilio');
   // Si va por reparto y el cliente tiene VARIAS direcciones, exigir elegir cuál.
@@ -1580,7 +1594,28 @@ async function guardarPagoAcordado(){
 }
 
 // Guarda el pago + abre/refresca el modal Cerrar TX con todo precargado.
+// Valida primero lo MÍNIMO del sidebar (monto + forma); el modal valida el resto.
 async function guardarYCerrarTx(){
+  const monto = parseFloat(document.getElementById('pgMonto').value) || 0;
+  if (!monto){ alert('Cargá el monto de la operación.'); document.getElementById('pgMonto').focus(); return; }
+  const forma = document.getElementById('pgForma').value;
+  if (!forma){ alert('Elegí la forma de pago.'); document.getElementById('pgForma').focus(); return; }
+  // Validaciones por forma — bloqueantes acá también para no perder tiempo abriendo el modal.
+  const get = id => { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; };
+  if (forma === 'link_mp' && !get('pgLink')){
+    alert('Pegá el link de MP que le mandaste al cliente.'); document.getElementById('pgLink').focus(); return;
+  }
+  if ((forma === 'link_mp' || forma === 'transferencia') && !get('pgDato')){
+    alert('Cargá el nro de operación / comprobante (se obtiene de MP cuando entra el pago).');
+    document.getElementById('pgDato').focus(); return;
+  }
+  if (forma === 'efectivo' && (!get('pgPagaCon') || parseFloat(get('pgPagaCon')) <= 0)){
+    alert('Cargá con cuánto paga (efectivo).'); document.getElementById('pgPagaCon').focus(); return;
+  }
+  if (forma === 'tarjeta'){
+    if (!get('pgUlt4')){ alert('Cargá los últimos 4 de la tarjeta.'); return; }
+    if (!get('pgTarjNombre')){ alert('Cargá el nombre del titular.'); return; }
+  }
   await guardarPagoAcordado();
   const modal = document.getElementById('cerrarTxCard');
   if (modal && modal.style.display === 'none' && typeof toggleCerrarTx === 'function'){
