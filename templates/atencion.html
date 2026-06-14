@@ -823,32 +823,10 @@ function renderFicha() {
   const p = document.getElementById('ficha');
   const f = fichaData && fichaData.ficha;
   if (!f) {
-    p.innerHTML = `
-      <div class="muted" style="margin-bottom:8px; font-size:12px;">Sin cliente vinculado.</div>
-      <div style="display:flex; gap:6px; margin-bottom:6px;">
-        <input id="buscarCli" placeholder="Buscar nombre o DNI…" autocomplete="off" onkeydown="if(event.key==='Enter')buscarClientes()" class="${INP}" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">
-        <button onclick="buscarClientes()" class="hbtn hbtn-info" style="border-radius:8px; padding:6px 9px; font-size:11px; flex-shrink:0;">Buscar</button>
-      </div>
-      <div id="resultadosCli" style="margin-bottom:14px;"></div>
-      <div class="bt" style="border-top:0.5px solid; padding-top:10px;">
-        <div class="muted" style="font-size:10px; margin-bottom:6px;">…o crear ficha nueva</div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
-          <input id="nuevoNombre" placeholder="Nombre" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
-          <input id="nuevoApellido" placeholder="Apellido" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
-          <input id="nuevoDni" placeholder="DNI" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
-          <input id="nuevoDom" placeholder="Domicilio" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
-        </div>
-        <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px;">
-          <select id="nuevoCiudad" class="${INP}" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">${optsCiudad()}</select>
-          <button onclick="abrirModalCiudades()" class="hbtn" title="Gestionar ciudades" style="border-radius:8px; padding:6px 9px; font-size:11px; flex-shrink:0;">⚙</button>
-        </div>
-        <button onclick="crearCliente()" class="hbtn hbtn-ok" style="border-radius:8px; padding:6px 11px; font-size:12px;">＋ Crear ficha</button>
-      </div>
-      <div id="domicilios" style="margin-top:14px;"></div>`;
-    cargarDomicilios();
+    // El cliente_picker de arriba ya invita a buscar/crear. No duplicamos UI acá.
+    p.innerHTML = `<div class="muted" style="font-size:11px;">Sin cliente vinculado. Buscalo o creálo arriba ☝️.</div>`;
     return;
   }
-  const ini = (f.nombre || '?').replace(/[^A-Za-zÀ-ÿ ]/g,'').split(/[ ,]+/).filter(Boolean).slice(0,2).map(s=>s[0]).join('').toUpperCase() || '?';
   const esLocal = f.fuente === 'local';
   const badge = esLocal
     ? '<span class="tag-blue" style="font-size:9px; padding:2px 7px; border-radius:8px;">lead local</span>'
@@ -876,18 +854,15 @@ function renderFicha() {
          <div class="muted" style="font-size:10px; margin-bottom:4px;">Obra social</div>
          <button onclick="abrirEditarOS()" class="hbtn" style="font-size:10px; padding:3px 10px;">+ Asignar OS</button>
        </div>`;
+  // Nombre, domicilio y avatar viven en el picker de arriba. Acá solo info aux:
+  // fuente, documento, teléfono, notas y obra social.
   p.innerHTML = `
-    <div style="display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:14px;">
-      <div style="width:48px; height:48px; border-radius:50%; background:#185FA5; color:#E6F1FB; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:600; margin-bottom:8px;">${esc(ini)}</div>
-      <div class="title" style="font-size:13px; font-weight:600;">${esc(f.nombre)}</div>
-      <div style="margin-top:4px;">${badge}</div>
+    <div style="display:flex; gap:8px; align-items:center; font-size:11px; margin-bottom:10px;">
+      ${badge}
+      ${f.documento ? `<span class="muted">DNI</span> <span class="txt">${esc(f.documento)}</span>` : ''}
+      ${f.telefono ? `<span class="muted" style="margin-left:6px;">☎</span> <span class="txt">${esc(f.telefono)}</span>` : ''}
     </div>
-    <div style="display:flex; flex-direction:column; gap:10px; font-size:11px;">
-      ${fila('id', 'Documento', f.documento)}
-      ${fila('phone', 'Teléfono', f.telefono)}
-      ${fila('map-pin', 'Domicilio', f.domicilio)}
-    </div>
-    <div class="bt" style="margin-top:14px; padding-top:12px; border-top:0.5px solid;">
+    <div class="bt" style="margin-top:6px; padding-top:10px; border-top:0.5px solid;">
       <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas</div>
       <textarea id="fichaNotas" rows="3" class="${INP}" style="width:100%; border-radius:8px; padding:6px 9px; font-size:11px; margin-bottom:6px;">${esc(f.notas || '')}</textarea>
       <div style="display:flex; gap:6px;">
@@ -895,7 +870,6 @@ function renderFicha() {
         <button onclick="desvincularCliente()" class="hbtn" style="border-radius:8px; padding:5px 11px; font-size:11px;">Desvincular</button>
       </div>
     </div>
-    <div id="domicilios" style="margin-top:14px;"></div>
     ${osHtml}`;
   cargarDomicilios();
 }
