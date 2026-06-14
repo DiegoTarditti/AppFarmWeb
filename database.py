@@ -2638,6 +2638,19 @@ class BotConversacion(Base):
     producto_pendiente = Column(Text, nullable=True)
     tiene_encargo = Column(Boolean, default=False, nullable=False,
                            server_default='false')   # hay un pedido concreto esperando
+    # ── Pago acordado durante el chat (Fase A.5) ──────────────────────────────
+    # El operador empieza a definir la forma de pago + manda el link/alias al
+    # cliente MIENTRAS sigue el chat, antes de abrir 'Cerrar transacción'.
+    # Cuando finalmente cierra, el modal precarga estos campos.
+    forma_pago_propuesta = Column(String(20), nullable=True)
+    link_mp = Column(Text, nullable=True)              # link MP que se le mandó al cliente
+    paga_con = Column(DECIMAL(12, 2), nullable=True)   # efectivo: con cuánto paga
+    dato_pago = Column(Text, nullable=True)            # nro de op MP / transferencia / cupón
+    tarjeta_marca = Column(String(20), nullable=True)
+    tarjeta_nombre = Column(String(80), nullable=True)
+    tarjeta_ult4 = Column(String(4), nullable=True)
+    pago_acordado_en = Column(DateTime, nullable=True)     # cuando guardó forma+link
+    pago_confirmado_en = Column(DateTime, nullable=True)   # cuando llegó dato_pago
     creado_en = Column(DateTime, default=now_ar)
     ultimo_en = Column(DateTime, default=now_ar, index=True)
 
@@ -4589,6 +4602,17 @@ def _pg_add_columns(conn):
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS tiene_encargo BOOLEAN NOT NULL DEFAULT FALSE",
         # Producto que el cliente "iba a encargar" cuando arranca el flujo de identificación (DNI/nombre).
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS producto_pendiente TEXT",
+        # ── Pago acordado durante el chat (Fase A.5) ─────────────────────────
+        # El operador define forma_pago + manda link/alias antes de Cerrar TX.
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS forma_pago_propuesta VARCHAR(20)",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS link_mp TEXT",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS paga_con DECIMAL(12,2)",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS dato_pago TEXT",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS tarjeta_marca VARCHAR(20)",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS tarjeta_nombre VARCHAR(80)",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS tarjeta_ult4 VARCHAR(4)",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS pago_acordado_en TIMESTAMP",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS pago_confirmado_en TIMESTAMP",
         # Presencia de agentes en el panel de atención.
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_presencia VARCHAR(12) NOT NULL DEFAULT 'online'",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",
