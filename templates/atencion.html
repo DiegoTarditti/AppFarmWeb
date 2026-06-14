@@ -373,7 +373,7 @@
         </div>
         <div id="pgExtra" style="margin-top:7px; display:flex; flex-direction:column; gap:6px;"></div>
         <div id="pgVuelto" style="margin-top:6px; font-size:11px; color:var(--muted); display:none;"></div>
-        <button onclick="guardarPagoAcordado()" class="hbtn hbtn-ok" style="width:100%; margin-top:8px; font-size:12px; padding:6px;">💾 Guardar</button>
+        <button onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="width:100%; margin-top:8px; font-size:13px; padding:8px; font-weight:600;">💳 Cerrar transacción</button>
       </div>
 
       <div id="ficha" style="padding:16px 14px; font-size:11px;">
@@ -900,7 +900,7 @@ function renderFicha() {
       ${f.telefono ? `<span class="muted" style="margin-left:6px;">☎</span> <span class="txt">${esc(f.telefono)}</span>` : ''}
     </div>
     <div class="bt" style="margin-top:6px; padding-top:10px; border-top:0.5px solid;">
-      <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas</div>
+      <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas del cliente <span class="muted2" style="font-size:9px; font-weight:normal;">(perdurables, NO por transacción)</span></div>
       <textarea id="fichaNotas" rows="3" class="${INP}" style="width:100%; border-radius:8px; padding:6px 9px; font-size:11px; margin-bottom:6px;">${esc(f.notas || '')}</textarea>
       <div style="display:flex; gap:6px;">
         <button id="btnGuardarFicha" onclick="guardarFicha()" class="hbtn hbtn-ok" style="border-radius:8px; padding:5px 11px; font-size:11px;">Guardar notas</button>
@@ -1570,7 +1570,21 @@ async function guardarPagoAcordado(){
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify(body),
   });
-  cargarPagoAcordado();
+  await cargarPagoAcordado();
+  // Si el modal Cerrar TX está visible, re-precargar con el estado nuevo.
+  const modal = document.getElementById('cerrarTxCard');
+  if (modal && modal.style.display !== 'none' && typeof txPrecargarPago === 'function') {
+    await txPrecargarPago();
+  }
+}
+
+// Guarda el pago + abre/refresca el modal Cerrar TX con todo precargado.
+async function guardarYCerrarTx(){
+  await guardarPagoAcordado();
+  const modal = document.getElementById('cerrarTxCard');
+  if (modal && modal.style.display === 'none' && typeof toggleCerrarTx === 'function'){
+    toggleCerrarTx();   // abre el modal (este ya llama txPrecargarPago al abrir)
+  }
 }
 
 cargarCiudades();
