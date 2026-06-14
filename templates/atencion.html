@@ -1622,12 +1622,38 @@ setInterval(cargarEquipo, 12000);
 <script src="/static/js/cliente_picker.js"></script>
 <script>
 // Inicialización del cliente_picker para /atencion.
+// Cotizador de envío automático: corre cuando el picker reporta cambio de
+// dirección (elegir domicilio del dropdown, geocode manual, etc.) — antes
+// estaba sin enganchar y el operador veía pgEnvio en cero (Diego 2026-06-14).
+async function cotizarEnvioAtencion(){
+  const inp = document.getElementById('pgEnvio');
+  if (!inp) return;
+  let url;
+  if (window._domLat != null && window._domLng != null){
+    url = `/config/envio/api/cotizar?lat=${window._domLat}&lng=${window._domLng}`;
+  } else {
+    const dir = (document.getElementById('pDir')||{}).value || '';
+    const ciu = (document.getElementById('pCiudad')||{}).value || '';
+    if (!dir.trim()) return;
+    url = `/config/envio/api/cotizar?direccion=${encodeURIComponent(dir)}&localidad=${encodeURIComponent(ciu)}`;
+  }
+  try {
+    const d = await (await fetch(url)).json();
+    if (d && d.monto != null){
+      inp.value = Number(d.monto).toFixed(2);
+      if (typeof pagoRecalcVuelto === 'function') pagoRecalcVuelto();
+    }
+  } catch (e) { console.error('cotizar envio:', e); }
+}
+
 // Hooks con la conversación abierta:
 //  - Al elegir cliente → vincula a la conv (POST /atencion/<id>/vincular-cliente).
+//  - Al cambiar de dirección/domicilio → cotiza el envío y lo escribe en pgEnvio.
 //  - Al limpiar (clear) → desvincula si había vínculo.
 // La sincronización inversa (cargar el cliente vinculado en el picker al cambiar
 // de conversación) se hace dentro de cargarFicha() — ver más arriba en este archivo.
 ClientePicker.init({
+  onAddressChange: cotizarEnvioAtencion,
   onClienteSelected: async function({observer_id, cliente_id}){
     if (!convAbierta) return;
     try {
