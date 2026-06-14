@@ -103,14 +103,16 @@
   .tag-blue { background:var(--tagb-bg); color:var(--tagb-tx); } .tag-green { background:var(--tagg-bg); color:var(--tagg-tx); }
   ::-webkit-scrollbar{ width:9px; } ::-webkit-scrollbar-thumb{ background:var(--hov); border-radius:9px; }
   /* Clases que necesita el componente _cliente_picker (sidebar de /atencion). */
-  #pickerWrap .field { display:flex; flex-direction:column; gap:3px; min-width:0; margin-bottom:8px; }
-  #pickerWrap .field label { font-size:11px; color:var(--muted); font-weight:600; margin-bottom:2px; }
+  #pickerWrap .field { display:flex; flex-direction:column; gap:2px; min-width:0; margin-bottom:0; }
+  #pickerWrap .field label { font-size:11px; color:var(--muted); font-weight:600; margin-bottom:1px; }
   #pickerWrap .muted2 { color:var(--muted2); }
   #pickerWrap .res { background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:4px; max-height:180px; overflow:auto; box-shadow:0 4px 14px rgba(0,0,0,.35); }
   #pickerWrap .res .it { padding:6px 9px; cursor:pointer; font-size:12px; border-bottom:1px solid var(--row-bd); }
   #pickerWrap .res .it:hover { background:var(--hov); }
   /* Grid del picker apilado vertical para el sidebar (que es angosto vs /pedido/nuevo). */
-  #pickerWrap .grid-cliente { display:grid; grid-template-columns:1fr; gap:6px; }
+  #pickerWrap .grid-cliente { display:grid; grid-template-columns:1fr; gap:5px; }
+  /* el segundo grid (Domicilio / coords) en el macro trae margin-top:10px inline; lo bajamos */
+  #pickerWrap .grid-cliente + .grid-cliente { margin-top:4px !important; }
 </style>
 </head>
 <body>
@@ -335,13 +337,13 @@
 
     <!-- Ficha del cliente -->
     <div class="col-side" id="fichaCol" style="border-left:0.5px solid; overflow-y:auto; min-height:0;">
-      <div style="padding:8px 12px; border-bottom:0.5px solid;">
-        <span class="muted" style="font-size:11px;">👤 Datos del cliente</span>
-      </div>
+      {# Header "Datos del cliente" sacado (Diego 2026-06-14): el primer campo
+         del picker ya dice 'Cliente', no aporta y ocupa una línea vertical
+         valiosa en sidebar angosto. #}
       {# Picker reusable (igual que /pedido/nuevo). Se inicializa una sola vez al
          cargar la pantalla; los cambios se sincronizan con la conv abierta vía
          callbacks (ver ClientePicker.init más abajo). #}
-      <div id="pickerWrap" style="padding:10px 12px; border-bottom:1px solid var(--border);">
+      <div id="pickerWrap" style="padding:8px 12px; border-bottom:1px solid var(--border);">
         {{ cliente_picker() }}
       </div>
 
