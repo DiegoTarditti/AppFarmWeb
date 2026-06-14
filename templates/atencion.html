@@ -102,6 +102,15 @@
   .alert { background:var(--alert-bg); color:var(--alert-tx); }
   .tag-blue { background:var(--tagb-bg); color:var(--tagb-tx); } .tag-green { background:var(--tagg-bg); color:var(--tagg-tx); }
   ::-webkit-scrollbar{ width:9px; } ::-webkit-scrollbar-thumb{ background:var(--hov); border-radius:9px; }
+  /* Clases que necesita el componente _cliente_picker (sidebar de /atencion). */
+  #pickerWrap .field { display:flex; flex-direction:column; gap:3px; min-width:0; margin-bottom:8px; }
+  #pickerWrap .field label { font-size:11px; color:var(--muted); font-weight:600; margin-bottom:2px; }
+  #pickerWrap .muted2 { color:var(--muted2); }
+  #pickerWrap .res { background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:4px; max-height:180px; overflow:auto; box-shadow:0 4px 14px rgba(0,0,0,.35); }
+  #pickerWrap .res .it { padding:6px 9px; cursor:pointer; font-size:12px; border-bottom:1px solid var(--row-bd); }
+  #pickerWrap .res .it:hover { background:var(--hov); }
+  /* Grid del picker apilado vertical para el sidebar (que es angosto vs /pedido/nuevo). */
+  #pickerWrap .grid-cliente { display:grid; grid-template-columns:1fr; gap:6px; }
 </style>
 </head>
 <body>
@@ -119,7 +128,7 @@
         {% for l in lineas %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
       </select>
 
-      <button onclick="abrirModalClientes()" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Clientes</button>
+      {# Botón 'Clientes' (modal) eliminado — el picker integrado en el sidebar ya cubre la búsqueda. #}
       {% if current_user.rol in ('admin', 'dev') %}
       <button onclick="abrirModalOperadores()" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Operadores</button>
       <a href="/atencion/respuestas-rapidas" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">⚡ RR</a>
@@ -147,7 +156,7 @@
   </div>
 
   <!-- ── 3 columnas ─────────────────────────────────────────────────────── -->
-  <div id="grid3" style="display:grid; grid-template-columns:300px 1fr 330px; flex:1; min-height:0;">
+  <div id="grid3" style="display:grid; grid-template-columns:300px 1fr 500px; flex:1; min-height:0;">
 
     <!-- Lista de conversaciones -->
     <div class="col-side" style="border-right:0.5px solid; display:flex; flex-direction:column; min-height:0;">
@@ -167,7 +176,7 @@
       <div class="chat-head" style="padding:9px 16px; border-bottom:0.5px solid; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:50px;">
         <div id="chatHeadInner" class="muted" style="font-size:13px;">Elegí una conversación 👈</div>
         <div id="chatAcciones" style="display:none; align-items:center; gap:7px; flex-shrink:0;">
-          <button onclick="toggleFicha()" class="hbtn" style="font-size:12px; padding:5px 9px; border-radius:8px;" title="Datos del cliente">👤</button>
+          {# Botón 👤 (toggle ficha) eliminado — el panel de cliente ahora es fijo. #}
           <button onclick="toggleCerrarTx()" class="hbtn hbtn-ok" style="font-size:12px; padding:5px 9px; border-radius:8px;" title="Cerrar transacción / cobrar">💳</button>
           <button id="btnTomar" onclick="tomar()" class="hbtn hbtn-ok" style="display:none; font-size:12px; padding:5px 11px; border-radius:8px;">Tomar</button>
           <button onclick="toggleTransfer()" class="hbtn hbtn-info" style="font-size:12px; padding:5px 11px; border-radius:8px;">Transferir</button>
@@ -322,9 +331,8 @@
 
     <!-- Ficha del cliente -->
     <div class="col-side" id="fichaCol" style="border-left:0.5px solid; overflow-y:auto; min-height:0;">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:0.5px solid;">
+      <div style="padding:8px 12px; border-bottom:0.5px solid;">
         <span class="muted" style="font-size:11px;">👤 Datos del cliente</span>
-        <button onclick="toggleFicha()" class="hbtn" style="font-size:13px; padding:2px 9px; border-radius:7px;" title="Cerrar">✕</button>
       </div>
       {# Picker reusable (igual que /pedido/nuevo). Se inicializa una sola vez al
          cargar la pantalla; los cambios se sincronizan con la conv abierta vía
