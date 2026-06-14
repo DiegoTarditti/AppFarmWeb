@@ -137,6 +137,30 @@ from helpers import detectar_entorno
 def _inyectar_entorno():
     return {'entorno': detectar_entorno()}
 
+
+@app.context_processor
+def _inyectar_ciudades_envio():
+    """Whitelist de ciudades que el cliente_picker filtra en el dropdown del
+    geocoder. Configurable por env var ENVIO_CIUDADES_FILTRO (CSV, p.ej.
+    'rosario,funes,roldan'). Default: las 3 de Badia."""
+    raw = os.environ.get('ENVIO_CIUDADES_FILTRO', 'rosario,funes,roldan')
+    ciudades = [c.strip().lower() for c in raw.split(',') if c.strip()]
+    return {'envio_ciudades_filtro': ciudades}
+
+
+@app.context_processor
+def _inyectar_alias_transferencia():
+    """Alias para transferencias (config en /config/envio). Se usa en /atencion
+    cuando el operador elige forma de pago = Transferencia. None si no se cargó."""
+    alias = ''
+    try:
+        from bot import envio as _envio
+        c = _envio.get_config()
+        alias = (c.get('alias_transferencia') or '') or ''
+    except Exception:  # noqa: BLE001 — defensivo (DB no disponible en algunos render iniciales)
+        pass
+    return {'alias_transferencia': alias}
+
 from routes import register_routes
 
 register_routes(app)

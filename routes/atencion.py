@@ -207,6 +207,66 @@ def init_app(app):
     def atencion_desvincular_cliente(conv_id):
         return jsonify(store.desvincular_cliente(conv_id))
 
+    # ── Pago acordado durante el chat (Fase A.5) ──────────────────────────────
+    # El operador define la forma de pago + le manda el link/alias al cliente
+    # MIENTRAS sigue chateando, antes del cierre de transacción. Acá se persiste
+    # ese estado para que el modal 'Cerrar TX' lo precargue después.
+
+    _PAGO_FIELDS = ('forma_pago_propuesta', 'total_acordado', 'link_mp', 'paga_con',
+                    'dato_pago', 'tarjeta_marca', 'tarjeta_nombre', 'tarjeta_ult4')
+
+    @app.route('/atencion/<int:conv_id>/pago')
+    @login_required
+    def atencion_pago_get(conv_id):
+        with database.get_db() as s:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'error': 'no existe'}), 404
+            return jsonify({
+                'forma_pago_propuesta': conv.forma_pago_propuesta,
+                'total_acordado': float(conv.total_acordado) if conv.total_acordado is not None else None,
+                'link_mp': conv.link_mp,
+                'paga_con': float(conv.paga_con) if conv.paga_con is not None else None,
+                'dato_pago': conv.dato_pago,
+                'tarjeta_marca': conv.tarjeta_marca,
+                'tarjeta_nombre': conv.tarjeta_nombre,
+                'tarjeta_ult4': conv.tarjeta_ult4,
+                'pago_acordado_en': conv.pago_acordado_en.isoformat() if conv.pago_acordado_en else None,
+                'pago_confirmado_en': conv.pago_confirmado_en.isoformat() if conv.pago_confirmado_en else None,
+            })
+
+    @app.route('/atencion/<int:conv_id>/pago', methods=['POST'])
+    @login_required
+    def atencion_pago_set(conv_id):
+        body = request.json or {}
+        with database.get_db() as s:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'ok': False, 'error': 'no existe'}), 404
+            # Aplicar solo los campos que llegaron (no pisar con NULL si no vienen).
+            for k in _PAGO_FIELDS:
+                if k in body:
+                    v = body[k]
+                    if k in ('paga_con', 'total_acordado') and v not in (None, ''):
+                        try: v = float(v)
+                        except (TypeError, ValueError): v = None
+                    elif v in ('', 'null'):
+                        v = None
+                    setattr(conv, k, v)
+            # Timestamps automáticos.
+            ahora = database.now_ar()
+            if conv.forma_pago_propuesta and not conv.pago_acordado_en:
+                conv.pago_acordado_en = ahora
+            if conv.dato_pago and not conv.pago_confirmado_en:
+                conv.pago_confirmado_en = ahora
+            # Si limpia dato_pago, reseteo pago_confirmado_en (caso edit).
+            if 'dato_pago' in body and not body['dato_pago']:
+                conv.pago_confirmado_en = None
+            s.commit()
+            return jsonify({'ok': True,
+                            'pago_acordado_en': conv.pago_acordado_en.isoformat() if conv.pago_acordado_en else None,
+                            'pago_confirmado_en': conv.pago_confirmado_en.isoformat() if conv.pago_confirmado_en else None})
+
     @app.route('/atencion/<int:conv_id>/ticket', methods=['POST'])
     @login_required
     def atencion_crear_ticket(conv_id):

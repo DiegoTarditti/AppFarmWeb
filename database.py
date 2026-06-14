@@ -616,7 +616,20 @@ class EnvioConfig(Base):
     farmacia_lng = Column(Float, nullable=True)
     factor_cuadras = Column(Float, nullable=False, default=1.3)
     metros_por_cuadra = Column(Integer, nullable=False, default=100)
+    alias_transferencia = Column(String(80), nullable=True)   # alias/CBU para pegar al chat
     actualizado_en = Column(DateTime, default=now_ar)
+
+
+class PedidoObsPreset(Base):
+    """Catálogo editable de presets para el campo Observación del pedido.
+    Acumula sugerencias frecuentes ('Traer Receta', 'PAMI - Traer autorización
+    Firmada', ...) que el operador puede pegar con un click."""
+    __tablename__ = 'pedido_obs_presets'
+    id = Column(Integer, primary_key=True)
+    texto = Column(String(160), nullable=False, unique=True)
+    activo = Column(Boolean, nullable=False, default=True)
+    orden = Column(Integer, nullable=False, default=0)
+    creado_en = Column(DateTime, default=now_ar)
 
 
 class Cadete(Base):
@@ -2626,6 +2639,20 @@ class BotConversacion(Base):
     producto_pendiente = Column(Text, nullable=True)
     tiene_encargo = Column(Boolean, default=False, nullable=False,
                            server_default='false')   # hay un pedido concreto esperando
+    # ── Pago acordado durante el chat (Fase A.5) ──────────────────────────────
+    # El operador empieza a definir la forma de pago + manda el link/alias al
+    # cliente MIENTRAS sigue el chat, antes de abrir 'Cerrar transacción'.
+    # Cuando finalmente cierra, el modal precarga estos campos.
+    forma_pago_propuesta = Column(String(20), nullable=True)
+    total_acordado = Column(DECIMAL(12, 2), nullable=True)  # monto de la operación (de ObServer)
+    link_mp = Column(Text, nullable=True)              # link MP que se le mandó al cliente
+    paga_con = Column(DECIMAL(12, 2), nullable=True)   # efectivo: con cuánto paga
+    dato_pago = Column(Text, nullable=True)            # nro de op MP / transferencia / cupón
+    tarjeta_marca = Column(String(20), nullable=True)
+    tarjeta_nombre = Column(String(80), nullable=True)
+    tarjeta_ult4 = Column(String(4), nullable=True)
+    pago_acordado_en = Column(DateTime, nullable=True)     # cuando guardó forma+link
+    pago_confirmado_en = Column(DateTime, nullable=True)   # cuando llegó dato_pago
     creado_en = Column(DateTime, default=now_ar)
     ultimo_en = Column(DateTime, default=now_ar, index=True)
 
@@ -4577,6 +4604,18 @@ def _pg_add_columns(conn):
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS tiene_encargo BOOLEAN NOT NULL DEFAULT FALSE",
         # Producto que el cliente "iba a encargar" cuando arranca el flujo de identificación (DNI/nombre).
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS producto_pendiente TEXT",
+        # ── Pago acordado durante el chat (Fase A.5) ─────────────────────────
+        # El operador define forma_pago + manda link/alias antes de Cerrar TX.
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS forma_pago_propuesta VARCHAR(20)",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS total_acordado DECIMAL(12,2)",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS link_mp TEXT",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS paga_con DECIMAL(12,2)",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS dato_pago TEXT",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS tarjeta_marca VARCHAR(20)",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS tarjeta_nombre VARCHAR(80)",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS tarjeta_ult4 VARCHAR(4)",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS pago_acordado_en TIMESTAMP",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS pago_confirmado_en TIMESTAMP",
         # Presencia de agentes en el panel de atención.
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_presencia VARCHAR(12) NOT NULL DEFAULT 'online'",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",
@@ -4584,6 +4623,24 @@ def _pg_add_columns(conn):
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS perfiles_json TEXT",
         # Ciudad en el lead local (alta de clientes del bot).
         "ALTER TABLE clientes_locales ADD COLUMN IF NOT EXISTS ciudad VARCHAR(120)",
+        # Presets para el campo Observación del pedido.
+        ("CREATE TABLE IF NOT EXISTS pedido_obs_presets ("
+         "id SERIAL PRIMARY KEY, "
+         "texto VARCHAR(160) NOT NULL UNIQUE, "
+         "activo BOOLEAN NOT NULL DEFAULT TRUE, "
+         "orden INTEGER NOT NULL DEFAULT 0, "
+         "creado_en TIMESTAMP NOT NULL DEFAULT NOW())"),
+        # Por las dudas que la tabla ya existiera con activo NOT NULL sin default.
+        "ALTER TABLE envio_config ADD COLUMN IF NOT EXISTS alias_transferencia VARCHAR(80)",
+        "ALTER TABLE pedido_obs_presets ALTER COLUMN activo SET DEFAULT TRUE",
+        "ALTER TABLE pedido_obs_presets ALTER COLUMN creado_en SET DEFAULT NOW()",
+        # Seed inicial idempotente. Listo activo + creado_en explícitos por si la tabla
+        # se creó antes del default (caso de Diego 2026-06-13).
+        ("INSERT INTO pedido_obs_presets (texto, orden, activo, creado_en) VALUES "
+         "('PAMI - Traer autorización firmada', 10, TRUE, NOW()),"
+         "('Traer Receta', 20, TRUE, NOW()),"
+         "('Traer Receta y Autorización', 30, TRUE, NOW())"
+         " ON CONFLICT (texto) DO NOTHING"),
         # Flag para que la droguería aparezca en el dropdown 'Pedido a' (atencion/pedido nuevo).
         "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS activa_ped BOOLEAN NOT NULL DEFAULT FALSE",
         # Seed: marcar como activas las 4 droguerías que el operador usa SIEMPRE.

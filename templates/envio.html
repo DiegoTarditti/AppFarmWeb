@@ -1,3 +1,4 @@
+{% from "_cliente_picker.html" import cliente_picker %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -39,6 +40,23 @@
   .pill { font-size:10px; padding:2px 8px; border-radius:999px; background:var(--hov); color:var(--muted); }
   .pill.zona { background:var(--info,#185FA5); color:#fff; } .pill.tramo { background:var(--accent); color:var(--accent-ink); }
 </style>
+<!-- Leaflet (mapa de zonas) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  #mapaZonas { height: 480px; width: 100%; border-radius: 12px; }
+  .leg { display:inline-flex; gap:5px; align-items:center; font-size:11px; color:var(--muted); margin-right:14px; }
+  .leg .sw { display:inline-block; width:12px; height:12px; border-radius:3px; border:1px solid rgba(255,255,255,.3); }
+  /* Clases que usa el componente _cliente_picker (estaban solo en pedido_nuevo). */
+  .field { display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .field label { font-size:11px; color:var(--muted); font-weight:600; }
+  .muted2 { color:var(--muted2); }
+  .res { background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:4px; max-height:180px; overflow:auto; box-shadow:0 4px 14px rgba(0,0,0,.35); }
+  .res .it { padding:6px 9px; cursor:pointer; font-size:12px; border-bottom:1px solid var(--row-bd); }
+  .res .it:hover { background:var(--hov); }
+  .grid-cliente { display:grid; grid-template-columns: 2fr 3fr 1fr; gap:10px; }
+  @media (max-width:900px){ .grid-cliente { grid-template-columns:1fr 1fr; } }
+</style>
 </head>
 <body>
   <div class="topbar">
@@ -49,26 +67,19 @@
   </div>
 
   <div class="wrap">
-    <!-- Cotizador -->
+    <!-- Cotizador (mismo cliente_picker que /pedido/nuevo y /atencion) -->
     <div class="card">
       <h2>Cotizador de envío</h2>
-      <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
-        <label class="fl" style="flex:1 1 260px;">Dirección (geolocaliza)
-          <input id="cDir" class="input" placeholder="ej: Córdoba 3400" style="width:100%;" onkeydown="if(event.key==='Enter')cotizar()">
+      {{ cliente_picker(con_alta_edicion=False) }}
+      <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; margin-top:10px;">
+        <label class="fl">o Cuadras (manual)
+          <input id="cCuadras" type="number" min="0" class="input" placeholder="ej: 22" style="width:120px;" onkeydown="if(event.key==='Enter')cotizar()">
         </label>
-        <label class="fl">Ciudad
-          <select id="cCiudad" class="input" style="width:150px;"></select>
-        </label>
-        <label class="fl">o Cuadras
-          <input id="cCuadras" type="number" min="0" class="input" placeholder="ej: 22" style="width:90px;" onkeydown="if(event.key==='Enter')cotizar()">
-        </label>
-        <button onclick="cotizar()" class="hbtn hbtn-ok" style="padding:9px 16px;">Cotizar</button>
-      </div>
-      <div style="display:flex; flex-wrap:wrap; gap:10px; justify-content:space-between; align-items:flex-end; margin-top:8px;">
+        <button onclick="cotizar()" class="hbtn hbtn-ok" style="padding:9px 18px; height:38px;">Cotizar</button>
         <div class="muted" style="font-size:11px; flex:1 1 240px;">
-          La ciudad/zona nombrada (Roldán, Kentucky…) pisa al resto. Dirección → geocodifica y mide cuadras; o cargá las cuadras a mano. Los barrios (centro, refinería) se detectan por la dirección.
+          Buscá el cliente arriba y elegí un domicilio (toma coords). O tipeá las cuadras a mano y dale Cotizar.
         </div>
-        <div style="text-align:right;">
+        <div style="text-align:right; min-width:140px;">
           <span class="cot-monto" id="cMonto">—</span>
           <div class="cot-det" id="cDet"></div>
         </div>
@@ -93,6 +104,14 @@
         </label>
       </div>
       <div class="muted" id="cfAviso" style="font-size:11px; margin-top:8px;"></div>
+      {# Alias para transferencias: se pega al chat cuando el operador elige
+         'Transferencia' como forma de pago en /atencion. #}
+      <div style="display:flex; gap:10px; align-items:flex-end; margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+        <label class="fl" style="flex:1;">Alias para transferencias (lo que se le manda al cliente)
+          <input id="cfAlias" class="input" style="width:100%;" placeholder="ej: farmacia.badia.mp">
+        </label>
+        <button onclick="guardarConfig()" class="hbtn hbtn-ok">Guardar alias</button>
+      </div>
     </div>
 
     <div class="grid2">
@@ -115,7 +134,7 @@
       <div class="card">
         <h2>Zonas con tarifa fija (polígono)</h2>
         <table>
-          <thead><tr><th>Zona</th><th>Monto</th><th>Polígono</th><th></th></tr></thead>
+          <thead><tr><th style="text-align:center;">Activa</th><th>Zona</th><th>Monto</th><th>Polígono</th><th></th></tr></thead>
           <tbody id="tbZonas"></tbody>
         </table>
         <div class="muted" style="font-size:11px; margin-top:6px;">Pegá las esquinas del polígono desde Google Maps (lat, lng por línea). La zona pisa los tramos cuando las coords del cliente caen dentro.</div>
@@ -124,6 +143,46 @@
           <input id="nZonaMonto" type="number" min="0" class="input" placeholder="monto" style="flex:1;">
           <button onclick="addZona()" class="hbtn hbtn-ok">+ Agregar</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Conversor pegar/JSON → campo de zona -->
+    <div class="card" style="margin-top:14px;">
+      <h2>🧰 Conversor de polígono</h2>
+      <div class="muted" style="font-size:11px; margin-bottom:8px;">
+        Pegá GeoJSON (de geojson.io / Earth) o líneas <code>lat,lng</code> / <code>lng,lat</code>. Lo convierto al formato del campo y lo pongo en la zona que elijas. Después apretás <b>Guardar</b> en esa zona.
+      </div>
+      <textarea id="convInput" rows="8" class="input" style="width:100%; font-family:ui-monospace,Consolas,monospace; font-size:12px;"
+                placeholder='Ejemplo GeoJSON:
+{"type":"Polygon","coordinates":[[[-60.846,-32.949],[-60.836,-32.949],[-60.836,-32.960],[-60.846,-32.960],[-60.846,-32.949]]]}
+
+O líneas:
+-60.846,-32.949
+-60.836,-32.949
+-60.836,-32.960
+-60.846,-32.960'></textarea>
+      <div style="display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap;">
+        <label class="muted2" style="font-size:11px;">Aplicar a zona:</label>
+        <select id="convZona" class="input" style="flex:0 0 220px;">
+          <option value="">— elegir —</option>
+        </select>
+        <button onclick="convertirYAplicar()" class="hbtn hbtn-ok">📋 Convertir y GUARDAR en zona</button>
+        <span id="convAviso" class="muted2" style="font-size:11px;"></span>
+      </div>
+    </div>
+
+    <!-- Mapa con farmacia + polígonos de zonas activas -->
+    <div class="card" style="margin-top:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+        <h2 style="margin:0;">🗺️ Mapa de zonas</h2>
+        <div>
+          <span class="leg"><span class="sw" style="background:#1D9E75;"></span>Farmacia</span>
+          <span id="legendaZonas"></span>
+        </div>
+      </div>
+      <div id="mapaZonas"></div>
+      <div class="muted" id="mapaAviso" style="font-size:11px; margin-top:6px;">
+        Cliqueá un polígono para ver nombre y monto. Si una zona no aparece, revisá que el polígono tenga al menos 3 puntos válidos.
       </div>
     </div>
   </div>
@@ -141,13 +200,12 @@ async function cargar(){
   document.getElementById('cfLng').value = c.farmacia_lng ?? '';
   document.getElementById('cfFactor').value = c.factor_cuadras ?? '';
   document.getElementById('cfMpc').value = c.metros_por_cuadra ?? '';
+  document.getElementById('cfAlias').value = c.alias_transferencia ?? '';
   document.getElementById('cfAviso').textContent = (c.farmacia_lat==null)
     ? '⚠️ Falta la ubicación de la farmacia: sin eso no se puede estimar cuadras desde el pin.'
     : 'Origen configurado ✓';
-  // Dropdown de ciudades (conserva la selección actual)
-  const sel = document.getElementById('cCiudad'); const prev = sel.value;
-  sel.innerHTML = '<option value="">— ciudad —</option>' +
-    (d.ciudades||[]).map(c=>`<option ${c===prev?'selected':''}>${esc(c)}</option>`).join('');
+  // El dropdown de ciudades viejo (cCiudad) ya no está acá; el cliente_picker
+  // tiene su propio dropdown (pCiudad) y lo puebla solo.
   // Tramos
   document.getElementById('tbTramos').innerHTML = (d.tramos||[]).map(t=>`
     <tr>
@@ -160,7 +218,11 @@ async function cargar(){
   document.getElementById('tbZonas').innerHTML = (d.zonas||[]).map(z=>{
     const nPts = z.poligono ? z.poligono.length : 0;
     const polyLabel = nPts >= 3 ? `✓ ${nPts} pts` : '<span class="muted">sin polígono</span>';
-    return `<tr>
+    const checked = (z.activa !== false) ? 'checked' : '';
+    return `<tr style="${z.activa===false?'opacity:.55;':''}">
+      <td style="text-align:center; width:50px;" title="Activa">
+        <input type="checkbox" ${checked} onchange="toggleActiva(${z.id}, this.checked)" style="cursor:pointer; transform:scale(1.2);">
+      </td>
       <td><input class="input" value="${esc(z.nombre)}" onchange="saveZona(${z.id}, this.value, null, null)"></td>
       <td><input class="input" type="number" value="${z.monto}" onchange="saveZona(${z.id}, null, this.value, null)"></td>
       <td style="max-width:300px;">
@@ -171,28 +233,47 @@ async function cargar(){
         <textarea id="poly_${z.id}" class="input" style="display:none; width:100%; min-height:60px; font-size:11px; font-family:monospace; margin-top:4px;"
           placeholder="Pegar esquinas: lat, lng por línea&#10;-32.95, -60.65&#10;-32.96, -60.65&#10;-32.96, -60.66&#10;-32.95, -60.66"
         >${(z.poligono||[]).map(p=>p.join(', ')).join('\n')}</textarea>
-        <button id="polyBtn_${z.id}" class="hbtn hbtn-ok" style="display:none; margin-top:4px; font-size:10px;" onclick="savePoly(${z.id})">Guardar polígono</button>
       </td>
-      <td><button class="hbtn hbtn-danger" onclick="delZona(${z.id})">Quitar</button></td>
+      <td style="width:120px;">
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <button id="polyBtn_${z.id}" class="hbtn hbtn-ok" style="display:none; font-size:11px;" onclick="savePoly(${z.id})">💾 Guardar polígono</button>
+          <button class="hbtn hbtn-danger" style="font-size:11px;" onclick="delZona(${z.id})">Quitar</button>
+        </div>
+      </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="4" class="muted">Sin zonas.</td></tr>';
+  }).join('') || '<tr><td colspan="5" class="muted">Sin zonas.</td></tr>';
   window._zonas = {}; (d.zonas||[]).forEach(z=>window._zonas[z.id]=z);
 }
 
 async function cotizar(){
-  const dir = document.getElementById('cDir').value.trim();
-  const loc = document.getElementById('cCiudad').value.trim();
+  // Prioridad: cuadras manual > coords del domicilio elegido > geocode por dirección+localidad.
   const cua = document.getElementById('cCuadras').value.trim();
+  const dir = (document.getElementById('pDir')?.value || '').trim();
+  const loc = (document.getElementById('pCiudad')?.value || '').trim();
   const p = new URLSearchParams();
-  if(dir) p.set('direccion',dir);
-  if(loc) p.set('localidad',loc);
-  if(cua) p.set('cuadras',cua);
+  if (cua) {
+    p.set('cuadras', cua);
+    if (loc) p.set('localidad', loc);
+  } else if (window._domLat != null && window._domLng != null){
+    p.set('lat', window._domLat);
+    p.set('lng', window._domLng);
+    if (loc) p.set('localidad', loc);
+  } else if (dir) {
+    p.set('direccion', dir);
+    if (loc) p.set('localidad', loc);
+  } else {
+    document.getElementById('cMonto').textContent = '—';
+    document.getElementById('cDet').textContent = 'Buscá un cliente + domicilio, o tipeá cuadras.';
+    return;
+  }
   document.getElementById('cMonto').textContent = '…';
   const d = await (await fetch('/config/envio/api/cotizar?'+p.toString())).json();
   document.getElementById('cMonto').textContent = fmt(d.monto);
   const pill = d.fuente ? `<span class="pill ${d.fuente}">${d.fuente}</span> ` : '';
-  const cu = d.cuadras!=null ? ` · ${d.cuadras} cuadras` : '';
-  document.getElementById('cDet').innerHTML = pill + esc(d.detalle||'') ;
+  const parts = [];
+  if (d.tramo_label) parts.push(d.tramo_label);
+  if (d.detalle) parts.push(d.detalle);
+  document.getElementById('cDet').innerHTML = pill + parts.map(esc).join(' · ');
 }
 
 async function guardarConfig(){
@@ -200,7 +281,8 @@ async function guardarConfig(){
     farmacia_lat: document.getElementById('cfLat').value,
     farmacia_lng: document.getElementById('cfLng').value,
     factor_cuadras: document.getElementById('cfFactor').value,
-    metros_por_cuadra: document.getElementById('cfMpc').value });
+    metros_por_cuadra: document.getElementById('cfMpc').value,
+    alias_transferencia: document.getElementById('cfAlias').value });
   cargar();
 }
 async function geoFarmacia(){
@@ -239,13 +321,29 @@ function togglePoly(id){
 async function savePoly(id){
   const ta = document.getElementById('poly_'+id);
   if(!ta) return;
-  await jpost('/config/envio/zona', {id, poligono_texto: ta.value});
+  // El backend exige nombre y monto en cada upsert. Los traemos del state actual.
+  const z = window._zonas[id] || {};
+  const r = await jpost('/config/envio/zona', {
+    id, nombre: z.nombre, monto: z.monto,
+    poligono_texto: ta.value,
+  });
+  if (!r.ok) {
+    alert('⚠️ ' + (r.error || 'No se pudo guardar el polígono.'));
+    return;   // no recargo, así no pierde lo que escribió
+  }
   cargar();
 }
 async function saveZona(id, nombre, monto, radio){
   const z = window._zonas[id] || {};
   const body = {id, nombre: nombre!=null?nombre:z.nombre, monto: monto!=null?monto:z.monto};
   await jpost('/config/envio/zona', body);
+  cargar();
+}
+
+// Toggle de "activa" — toca el checkbox y guarda en backend.
+async function toggleActiva(id, activa){
+  const z = window._zonas[id] || {};
+  await jpost('/config/envio/zona', {id, nombre: z.nombre, monto: z.monto, activa: !!activa});
   cargar();
 }
 async function addZona(){
@@ -256,7 +354,169 @@ async function addZona(){
 }
 async function delZona(id){ if(confirm('¿Quitar zona?')){ await jpost(`/config/envio/zona/${id}/delete`); cargar(); } }
 
+// ── Conversor de polígono: GeoJSON / líneas → campo de la zona ────────────
+function _coordsDeGeoJSON(data){
+  if (!data) return null;
+  if (data.type === 'FeatureCollection' && (data.features||[]).length) {
+    return _coordsDeGeoJSON(data.features[0]);
+  }
+  if (data.type === 'Feature' && data.geometry) {
+    return _coordsDeGeoJSON(data.geometry);
+  }
+  if (data.type === 'Polygon' && (data.coordinates||[]).length) {
+    return data.coordinates[0];   // anillo exterior
+  }
+  if (data.type === 'MultiPolygon' && (data.coordinates||[]).length) {
+    return data.coordinates[0][0];
+  }
+  return null;
+}
+
+async function convertirYAplicar(){
+  const texto = document.getElementById('convInput').value.trim();
+  const zonaId = document.getElementById('convZona').value;
+  const aviso = document.getElementById('convAviso');
+  aviso.style.color = ''; aviso.textContent = '';
+  if (!texto)  { aviso.style.color='var(--warn)'; aviso.textContent='⚠️ Pegá GeoJSON o coordenadas.'; return; }
+  if (!zonaId) { aviso.style.color='var(--warn)'; aviso.textContent='⚠️ Elegí a qué zona aplicarlo.'; return; }
+
+  let coords = null;
+  if (texto.startsWith('{') || texto.startsWith('[')) {
+    try { coords = _coordsDeGeoJSON(JSON.parse(texto)); }
+    catch (e) { aviso.style.color='var(--warn)'; aviso.textContent='⚠️ JSON inválido: ' + e.message; return; }
+  } else {
+    coords = [];
+    for (const linea of texto.split(/[\n;]/)) {
+      const ps = linea.trim().replace(/[()]/g, '').split(',');
+      if (ps.length >= 2) {
+        const a = parseFloat(ps[0]), b = parseFloat(ps[1]);
+        if (isFinite(a) && isFinite(b)) coords.push([a, b]);
+      }
+    }
+  }
+  if (!coords || coords.length < 3) {
+    aviso.style.color='var(--warn)'; aviso.textContent='⚠️ Necesito al menos 3 puntos.'; return;
+  }
+  // Auto-swap si están en lng,lat (rangos AR)
+  const enLatAR = v => v >= -55 && v <= -20;
+  const enLngAR = v => v >= -73 && v <= -53;
+  if (coords.every(p => enLngAR(p[0])) && coords.every(p => enLatAR(p[1]))) {
+    coords = coords.map(p => [p[1], p[0]]);
+  }
+  const resultado = coords.map(p => `${p[0]}, ${p[1]}`).join('\n');
+
+  // Asegurar que el textarea de la zona esté visible (en el template se abre con un botón)
+  const wrap = document.getElementById('polywrap_' + zonaId);
+  if (wrap) wrap.style.display = '';
+  const ta = document.getElementById('poly_' + zonaId);
+  if (!ta) {
+    aviso.style.color='var(--warn)';
+    aviso.textContent='⚠️ No encuentro el campo de la zona (id=' + zonaId + '). Abrila a mano y reintentá.';
+    return;
+  }
+  ta.style.display = '';
+  ta.value = resultado;
+  // Guardamos directo (un solo paso) para evitar el "olvidé apretar Guardar".
+  await savePoly(zonaId);
+  aviso.style.color='var(--accent)';
+  aviso.textContent = `✓ ${coords.length} puntos convertidos y guardados en zona. Mirá el mapa abajo.`;
+}
+
+function popularConvZonas(d){
+  const sel = document.getElementById('convZona'); if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— elegir —</option>' +
+    (d.zonas||[]).filter(z => z.activa !== false).map(z =>
+      `<option value="${z.id}" ${z.id==prev?'selected':''}>${esc(z.nombre)}</option>`
+    ).join('');
+}
+
+// ── Mapa de zonas (Leaflet) ───────────────────────────────────────────────
+let _mapa = null, _capasZonas = [], _markerFarmacia = null;
+const PALETA = ['#EF9F27','#1D9E75','#7c4dff','#0ea5e9','#ec4899','#fbbf24','#10b981','#a78bfa'];
+
+function _initMapa(lat, lng){
+  if (_mapa) return;
+  _mapa = L.map('mapaZonas').setView([lat||-32.95, lng||-60.65], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap'
+  }).addTo(_mapa);
+}
+
+function pintarMapa(d){
+  const c = d.config || {};
+  const lat = parseFloat(c.farmacia_lat), lng = parseFloat(c.farmacia_lng);
+  if (!isFinite(lat) || !isFinite(lng)){
+    document.getElementById('mapaAviso').textContent = '⚠️ Falta la ubicación de la farmacia: cargala arriba para ver el mapa.';
+    return;
+  }
+  _initMapa(lat, lng);
+
+  // Marker de la farmacia (verde acento)
+  if (_markerFarmacia) _markerFarmacia.remove();
+  _markerFarmacia = L.circleMarker([lat, lng], {
+    radius: 9, color: '#1D9E75', fillColor: '#1D9E75', fillOpacity: 0.85, weight: 3
+  }).addTo(_mapa).bindPopup('<b>Farmacia (origen)</b>');
+
+  // Limpiar polígonos anteriores
+  _capasZonas.forEach(p => p.remove()); _capasZonas = [];
+
+  // Pintar zonas activas con polígono
+  const zonas = (d.zonas || []).filter(z => z.activa !== false && Array.isArray(z.poligono) && z.poligono.length >= 3);
+  const conPoly = [];
+  zonas.forEach((z, i) => {
+    const color = PALETA[i % PALETA.length];
+    try {
+      const poly = L.polygon(z.poligono, {
+        color, weight: 2, fillColor: color, fillOpacity: 0.18
+      }).addTo(_mapa);
+      poly.bindPopup(`<b>${esc(z.nombre)}</b><br>$ ${(z.monto||0).toLocaleString('es-AR')}`);
+      _capasZonas.push(poly);
+      conPoly.push({nombre: z.nombre, color, monto: z.monto});
+    } catch (e) {
+      console.error('Polígono inválido en zona', z.nombre, e);
+    }
+  });
+
+  // Leyenda
+  const leg = document.getElementById('legendaZonas');
+  leg.innerHTML = conPoly.length
+    ? conPoly.map(z => `<span class="leg"><span class="sw" style="background:${z.color};"></span>${esc(z.nombre)}</span>`).join('')
+    : '<span class="muted2" style="font-size:11px;">Sin zonas con polígono cargado.</span>';
+
+  // Mensaje informativo
+  const zonasSinPoly = (d.zonas || []).filter(z => z.activa !== false && (!Array.isArray(z.poligono) || z.poligono.length < 3));
+  let aviso = `📍 Farmacia + ${conPoly.length} zona${conPoly.length===1?'':'s'} con polígono.`;
+  if (zonasSinPoly.length) aviso += ` Sin polígono: ${zonasSinPoly.map(z => z.nombre).join(', ')}.`;
+  document.getElementById('mapaAviso').textContent = aviso;
+
+  // Ajustar zoom para que entren todos los polígonos + la farmacia
+  if (_capasZonas.length){
+    const grupo = L.featureGroup([_markerFarmacia, ..._capasZonas]);
+    _mapa.fitBounds(grupo.getBounds().pad(0.15));
+  }
+}
+
+// Engancho con cargar() para refrescar el mapa cuando se actualizan tarifas
+const _cargarOrig = cargar;
+cargar = async function(){
+  await _cargarOrig();
+  try {
+    const d = await (await fetch('/config/envio/api/tarifas')).json();
+    popularConvZonas(d);
+    pintarMapa(d);
+  } catch (e) { console.error(e); }
+};
+
 cargar();
+</script>
+
+<script src="/static/js/cliente_picker.js"></script>
+<script>
+// Acá no se gestionan clientes (alta/edición), solo se cotiza con domicilios
+// existentes. Por eso pasamos con_alta_edicion=False al macro y NO incluimos
+// los modales del picker.
+ClientePicker.init({ onAddressChange: cotizar });
 </script>
 </body>
 </html>

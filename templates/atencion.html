@@ -1,3 +1,4 @@
+{% from "_cliente_picker.html" import cliente_picker, cliente_picker_modales %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -101,6 +102,15 @@
   .alert { background:var(--alert-bg); color:var(--alert-tx); }
   .tag-blue { background:var(--tagb-bg); color:var(--tagb-tx); } .tag-green { background:var(--tagg-bg); color:var(--tagg-tx); }
   ::-webkit-scrollbar{ width:9px; } ::-webkit-scrollbar-thumb{ background:var(--hov); border-radius:9px; }
+  /* Clases que necesita el componente _cliente_picker (sidebar de /atencion). */
+  #pickerWrap .field { display:flex; flex-direction:column; gap:3px; min-width:0; margin-bottom:8px; }
+  #pickerWrap .field label { font-size:11px; color:var(--muted); font-weight:600; margin-bottom:2px; }
+  #pickerWrap .muted2 { color:var(--muted2); }
+  #pickerWrap .res { background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:4px; max-height:180px; overflow:auto; box-shadow:0 4px 14px rgba(0,0,0,.35); }
+  #pickerWrap .res .it { padding:6px 9px; cursor:pointer; font-size:12px; border-bottom:1px solid var(--row-bd); }
+  #pickerWrap .res .it:hover { background:var(--hov); }
+  /* Grid del picker apilado vertical para el sidebar (que es angosto vs /pedido/nuevo). */
+  #pickerWrap .grid-cliente { display:grid; grid-template-columns:1fr; gap:6px; }
 </style>
 </head>
 <body>
@@ -118,7 +128,7 @@
         {% for l in lineas %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
       </select>
 
-      <button onclick="abrirModalClientes()" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Clientes</button>
+      {# Botón 'Clientes' (modal) eliminado — el picker integrado en el sidebar ya cubre la búsqueda. #}
       {% if current_user.rol in ('admin', 'dev') %}
       <button onclick="abrirModalOperadores()" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Operadores</button>
       <a href="/atencion/respuestas-rapidas" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">⚡ RR</a>
@@ -146,7 +156,7 @@
   </div>
 
   <!-- ── 3 columnas ─────────────────────────────────────────────────────── -->
-  <div id="grid3" style="display:grid; grid-template-columns:300px 1fr 330px; flex:1; min-height:0;">
+  <div id="grid3" style="display:grid; grid-template-columns:300px 1fr 500px; flex:1; min-height:0;">
 
     <!-- Lista de conversaciones -->
     <div class="col-side" style="border-right:0.5px solid; display:flex; flex-direction:column; min-height:0;">
@@ -166,7 +176,7 @@
       <div class="chat-head" style="padding:9px 16px; border-bottom:0.5px solid; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:50px;">
         <div id="chatHeadInner" class="muted" style="font-size:13px;">Elegí una conversación 👈</div>
         <div id="chatAcciones" style="display:none; align-items:center; gap:7px; flex-shrink:0;">
-          <button onclick="toggleFicha()" class="hbtn" style="font-size:12px; padding:5px 9px; border-radius:8px;" title="Datos del cliente">👤</button>
+          {# Botón 👤 (toggle ficha) eliminado — el panel de cliente ahora es fijo. #}
           <button onclick="toggleCerrarTx()" class="hbtn hbtn-ok" style="font-size:12px; padding:5px 9px; border-radius:8px;" title="Cerrar transacción / cobrar">💳</button>
           <button id="btnTomar" onclick="tomar()" class="hbtn hbtn-ok" style="display:none; font-size:12px; padding:5px 11px; border-radius:8px;">Tomar</button>
           <button onclick="toggleTransfer()" class="hbtn hbtn-info" style="font-size:12px; padding:5px 11px; border-radius:8px;">Transferir</button>
@@ -221,21 +231,23 @@
               <span class="muted" style="font-size:9px; margin-left:auto;">prototipo · la venta se carga en ObServer</span>
             </div>
             <div style="padding:11px 13px; display:flex; flex-direction:column; gap:10px; font-size:12px;">
-              <div>
-                <label class="muted2" style="font-size:10px;">Total (de ObServer)</label>
-                <input id="txTotal" type="number" min="0" oninput="txCalc()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:13px;">
+              <div style="display:flex; gap:8px; align-items:flex-end;">
+                <div style="flex:0 0 130px;">
+                  <label class="muted2" style="font-size:10px;">Total (ObServer)</label>
+                  <input id="txTotal" type="number" min="0" oninput="txCalc()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:13px;">
+                </div>
+                <div style="flex:1; min-width:0;">
+                  <label class="muted2" style="font-size:10px;">Forma de pago</label>
+                  <select id="txForma" onchange="txFormaChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                    <option value="">— elegir —</option>
+                    <option value="link_mp">Link Mercado Pago</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="efectivo">Efectivo</option>
+                    <option value="tarjeta">Tarjeta de crédito</option>
+                  </select>
+                </div>
               </div>
-              <div>
-                <label class="muted2" style="font-size:10px;">Forma de pago</label>
-                <select id="txForma" onchange="txFormaChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                  <option value="">— elegir —</option>
-                  <option value="link_mp">Link Mercado Pago</option>
-                  <option value="transferencia">Transferencia</option>
-                  <option value="efectivo">Efectivo</option>
-                  <option value="tarjeta">Tarjeta de crédito</option>
-                </select>
-                <div id="txFormaExtra" style="margin-top:7px; display:flex; flex-direction:column; gap:6px;"></div>
-              </div>
+              <div id="txFormaExtra" style="display:flex; flex-direction:column; gap:6px;"></div>
               <div style="display:flex; gap:8px;">
                 <div style="flex:1;">
                   <label class="muted2" style="font-size:10px;">Obra social (opcional)</label>
@@ -250,6 +262,17 @@
                   </select>
                 </div>
               </div>
+              <div id="txEnvioWrap" style="display:flex; gap:8px; align-items:flex-end;">
+                <div style="flex:1; min-width:0;">
+                  <label class="muted2" style="font-size:10px;">Domicilio de entrega</label>
+                  <select id="txDomicilio" onchange="txCotizarEnvio()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;"></select>
+                </div>
+                <div style="flex:0 0 120px;">
+                  <label class="muted2" style="font-size:10px;">Envío</label>
+                  <input id="txEnvio" type="number" min="0" oninput="txCalc()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                </div>
+              </div>
+              {# Stock + Sale por + Prioridad — fila compacta abajo de todo. #}
               <div style="display:flex; gap:8px;">
                 <div style="flex:1;">
                   <label class="muted2" style="font-size:10px;">¿Stock?</label>
@@ -268,23 +291,14 @@
                     <option value="retiro">Retiro</option>
                   </select>
                 </div>
-              </div>
-              <div id="txEnvioWrap">
-                <label class="muted2" style="font-size:10px;">Domicilio de entrega</label>
-                <select id="txDomicilio" class="input" style="width:100%; margin-bottom:8px; border-radius:8px; padding:6px 9px; font-size:12px;"></select>
-                <label class="muted2" style="font-size:10px;">Envío</label>
-                <div style="display:flex; gap:6px; align-items:center;">
-                  <input id="txEnvio" type="number" min="0" oninput="txCalc()" placeholder="$" class="input" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">
-                  <button onclick="txCotizarEnvio()" class="hbtn" style="font-size:11px; padding:6px 10px; border-radius:8px;">Cotizar</button>
+                <div style="flex:1;">
+                  <label class="muted2" style="font-size:10px;">Prioridad</label>
+                  <select id="txPrioridad" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                    <option value="normal">Normal</option>
+                    <option value="alta">Alta</option>
+                    <option value="urgente">🚨 Urgente</option>
+                  </select>
                 </div>
-              </div>
-              <div>
-                <label class="muted2" style="font-size:10px;">Prioridad</label>
-                <select id="txPrioridad" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                  <option value="normal">Normal</option>
-                  <option value="alta">Alta</option>
-                  <option value="urgente">🚨 Urgente</option>
-                </select>
               </div>
               <div style="display:flex; justify-content:space-between; align-items:center; border-top:0.5px solid; padding-top:8px;">
                 <span class="muted2" style="font-size:11px;">A cobrar</span>
@@ -321,10 +335,47 @@
 
     <!-- Ficha del cliente -->
     <div class="col-side" id="fichaCol" style="border-left:0.5px solid; overflow-y:auto; min-height:0;">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:0.5px solid;">
+      <div style="padding:8px 12px; border-bottom:0.5px solid;">
         <span class="muted" style="font-size:11px;">👤 Datos del cliente</span>
-        <button onclick="toggleFicha()" class="hbtn" style="font-size:13px; padding:2px 9px; border-radius:7px;" title="Cerrar">✕</button>
       </div>
+      {# Picker reusable (igual que /pedido/nuevo). Se inicializa una sola vez al
+         cargar la pantalla; los cambios se sincronizan con la conv abierta vía
+         callbacks (ver ClientePicker.init más abajo). #}
+      <div id="pickerWrap" style="padding:10px 12px; border-bottom:1px solid var(--border);">
+        {{ cliente_picker() }}
+      </div>
+
+      {# Card 'Pago' — forma de pago acordada durante el chat (Fase A.5). Persistida
+         en BotConversacion. El modal 'Cerrar TX' la precarga al abrir. #}
+      <div id="pagoCard" style="padding:10px 12px; border-bottom:1px solid var(--border); display:none;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+          <span class="muted" style="font-size:11px;">💳 Pago acordado</span>
+          <div style="display:flex; gap:4px;">
+            <span id="pagoBadgeLink" class="tag-blue" style="font-size:9px; padding:2px 7px; border-radius:8px; display:none;">link enviado ✓</span>
+            <span id="pagoBadgeConf" class="tag-green" style="font-size:9px; padding:2px 7px; border-radius:8px; display:none;">pago confirmado ✓</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:6px; align-items:flex-end;">
+          <div style="flex:0 0 120px;">
+            <label class="muted2" style="font-size:10px; display:block;">Monto $</label>
+            <input id="pgMonto" type="number" min="0" step="0.01" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+          </div>
+          <div style="flex:1; min-width:0;">
+            <label class="muted2" style="font-size:10px; display:block;">Forma de pago</label>
+            <select id="pgForma" onchange="pagoFormaChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+              <option value="">— elegir —</option>
+              <option value="link_mp">Link Mercado Pago</option>
+              <option value="transferencia">Transferencia</option>
+              <option value="efectivo">Efectivo</option>
+              <option value="tarjeta">Tarjeta de crédito</option>
+            </select>
+          </div>
+        </div>
+        <div id="pgExtra" style="margin-top:7px; display:flex; flex-direction:column; gap:6px;"></div>
+        <div id="pgVuelto" style="margin-top:6px; font-size:11px; color:var(--muted); display:none;"></div>
+        <button onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="width:100%; margin-top:8px; font-size:13px; padding:8px; font-weight:600;">💳 Cerrar transacción</button>
+      </div>
+
       <div id="ficha" style="padding:16px 14px; font-size:11px;">
         <div class="muted">Abrí una conversación para ver al cliente.</div>
       </div>
@@ -778,7 +829,11 @@ function abrirPedidoNuevo() {
 /* ── Ficha del cliente ── */
 let fichaData = null;
 async function cargarFicha() {
-  if (!convAbierta) { fichaData = null; osInferida = null; return; }
+  if (!convAbierta) {
+    fichaData = null; osInferida = null;
+    if (window.ClientePicker && ClientePicker.clear) ClientePicker.clear();
+    return;
+  }
   const r = await fetch(`/atencion/api/${convAbierta}/cliente`);
   fichaData = r.ok ? await r.json() : null;
   osInferida = null;
@@ -787,43 +842,37 @@ async function cargarFicha() {
     const osr = await (await fetch(`/atencion/api/clientes/${f.observer_id}/obra-social`)).json();
     if (osr && osr.tiene_os) osInferida = osr;
   }
+  // Sincronizo el picker: si hay cliente vinculado, lo precargo (sin disparar
+  // el onClienteSelected — loadCliente no lo dispara, solo pickCli lo hace).
+  // Si no, limpio el picker para que el operador busque uno.
+  if (window.ClientePicker) {
+    if (f && (f.observer_id || f.cliente_id)) {
+      ClientePicker.loadCliente({observer_id: f.observer_id, cliente_id: f.cliente_id});
+    } else {
+      ClientePicker.clear();
+    }
+  }
   renderFicha();
+  if (typeof cargarPagoAcordado === 'function') cargarPagoAcordado();
 }
 const INP = 'input';
 function renderFicha() {
   const p = document.getElementById('ficha');
   const f = fichaData && fichaData.ficha;
+  const extra = document.getElementById('pCiudadExtra');
   if (!f) {
-    p.innerHTML = `
-      <div class="muted" style="margin-bottom:8px; font-size:12px;">Sin cliente vinculado.</div>
-      <div style="display:flex; gap:6px; margin-bottom:6px;">
-        <input id="buscarCli" placeholder="Buscar nombre o DNI…" autocomplete="off" onkeydown="if(event.key==='Enter')buscarClientes()" class="${INP}" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">
-        <button onclick="buscarClientes()" class="hbtn hbtn-info" style="border-radius:8px; padding:6px 9px; font-size:11px; flex-shrink:0;">Buscar</button>
-      </div>
-      <div id="resultadosCli" style="margin-bottom:14px;"></div>
-      <div class="bt" style="border-top:0.5px solid; padding-top:10px;">
-        <div class="muted" style="font-size:10px; margin-bottom:6px;">…o crear ficha nueva</div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
-          <input id="nuevoNombre" placeholder="Nombre" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
-          <input id="nuevoApellido" placeholder="Apellido" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
-          <input id="nuevoDni" placeholder="DNI" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
-          <input id="nuevoDom" placeholder="Domicilio" class="${INP}" style="border-radius:8px; padding:6px 9px; font-size:12px;">
-        </div>
-        <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px;">
-          <select id="nuevoCiudad" class="${INP}" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">${optsCiudad()}</select>
-          <button onclick="abrirModalCiudades()" class="hbtn" title="Gestionar ciudades" style="border-radius:8px; padding:6px 9px; font-size:11px; flex-shrink:0;">⚙</button>
-        </div>
-        <button onclick="crearCliente()" class="hbtn hbtn-ok" style="border-radius:8px; padding:6px 11px; font-size:12px;">＋ Crear ficha</button>
-      </div>
-      <div id="domicilios" style="margin-top:14px;"></div>`;
-    cargarDomicilios();
+    if (extra) extra.innerHTML = '';
+    p.innerHTML = `<div class="muted" style="font-size:11px;">Sin cliente vinculado. Buscalo o creálo arriba ☝️.</div>`;
     return;
   }
-  const ini = (f.nombre || '?').replace(/[^A-Za-zÀ-ÿ ]/g,'').split(/[ ,]+/).filter(Boolean).slice(0,2).map(s=>s[0]).join('').toUpperCase() || '?';
   const esLocal = f.fuente === 'local';
   const badge = esLocal
     ? '<span class="tag-blue" style="font-size:9px; padding:2px 7px; border-radius:8px;">lead local</span>'
     : '<span class="tag-green" style="font-size:9px; padding:2px 7px; border-radius:8px;">ObServer</span>';
+  // Slot al lado del label Ciudad: badge fuente + teléfono.
+  if (extra) {
+    extra.innerHTML = `${f.telefono ? '☎ '+esc(f.telefono)+' ' : ''}${badge}`;
+  }
   const fila = (ic, lab, val) => val ? `
     <div><div class="muted" style="margin-bottom:2px;"><i class="ti ti-${ic}" style="font-size:12px; vertical-align:-1px; margin-right:5px"></i>${lab}</div><div class="txt">${esc(val)}</div></div>` : '';
   const osLabel = osInferida && osInferida.confirmada ? 'Obra social ✓' : 'Obra social inferida';
@@ -847,26 +896,18 @@ function renderFicha() {
          <div class="muted" style="font-size:10px; margin-bottom:4px;">Obra social</div>
          <button onclick="abrirEditarOS()" class="hbtn" style="font-size:10px; padding:3px 10px;">+ Asignar OS</button>
        </div>`;
+  // Nombre, domicilio, teléfono y badge (al lado de Ciudad) viven en el picker
+  // de arriba. Acá solo info aux: DNI, notas y obra social.
   p.innerHTML = `
-    <div style="display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:14px;">
-      <div style="width:48px; height:48px; border-radius:50%; background:#185FA5; color:#E6F1FB; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:600; margin-bottom:8px;">${esc(ini)}</div>
-      <div class="title" style="font-size:13px; font-weight:600;">${esc(f.nombre)}</div>
-      <div style="margin-top:4px;">${badge}</div>
-    </div>
-    <div style="display:flex; flex-direction:column; gap:10px; font-size:11px;">
-      ${fila('id', 'Documento', f.documento)}
-      ${fila('phone', 'Teléfono', f.telefono)}
-      ${fila('map-pin', 'Domicilio', f.domicilio)}
-    </div>
-    <div class="bt" style="margin-top:14px; padding-top:12px; border-top:0.5px solid;">
-      <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas</div>
+    ${f.documento ? `<div style="font-size:11px; margin-bottom:8px;"><span class="muted">DNI</span> <span class="txt">${esc(f.documento)}</span></div>` : ''}
+    <div class="bt" style="padding-top:10px; border-top:0.5px solid;">
+      <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas del cliente <span class="muted2" style="font-size:9px; font-weight:normal;">(perdurables, NO por transacción)</span></div>
       <textarea id="fichaNotas" rows="3" class="${INP}" style="width:100%; border-radius:8px; padding:6px 9px; font-size:11px; margin-bottom:6px;">${esc(f.notas || '')}</textarea>
       <div style="display:flex; gap:6px;">
         <button id="btnGuardarFicha" onclick="guardarFicha()" class="hbtn hbtn-ok" style="border-radius:8px; padding:5px 11px; font-size:11px;">Guardar notas</button>
         <button onclick="desvincularCliente()" class="hbtn" style="border-radius:8px; padding:5px 11px; font-size:11px;">Desvincular</button>
       </div>
     </div>
-    <div id="domicilios" style="margin-top:14px;"></div>
     ${osHtml}`;
   cargarDomicilios();
 }
@@ -1240,7 +1281,34 @@ async function toggleCerrarTx() {
   const c = document.getElementById('cerrarTxCard');
   const abriendo = c.style.display === 'none';
   c.style.display = abriendo ? 'block' : 'none';
-  if (abriendo) await txCargarDomicilios();
+  if (abriendo) {
+    await txCargarDomicilios();
+    await txPrecargarPago();
+  }
+}
+
+// Precarga el modal con la forma de pago + link/dato que el operador ya acordó
+// durante el chat (card 'Pago' del sidebar). Si no hay nada acordado, el modal
+// se abre vacío como antes.
+async function txPrecargarPago(){
+  if (!_pagoState) await cargarPagoAcordado();
+  if (!_pagoState || !_pagoState.forma_pago_propuesta) return;
+  const sel = document.getElementById('txForma');
+  if (!sel) return;
+  sel.value = _pagoState.forma_pago_propuesta;
+  txFormaChange();
+  // Total (de ObServer) si ya lo cargamos en el sidebar:
+  const txTotal = document.getElementById('txTotal');
+  if (txTotal && _pagoState.total_acordado != null && !txTotal.value) txTotal.value = _pagoState.total_acordado;
+  // Ahora los inputs condicionales existen — los lleno.
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+  set('txLink', _pagoState.link_mp);
+  set('txNroOp', _pagoState.dato_pago);
+  set('txPagaCon', _pagoState.paga_con);
+  set('txUlt4', _pagoState.tarjeta_ult4);
+  set('txTarjNombre', _pagoState.tarjeta_nombre);
+  if (_pagoState.tarjeta_marca){ const m = document.getElementById('txMarca'); if (m) m.value = _pagoState.tarjeta_marca; }
+  if (typeof txCalc === 'function') txCalc();
 }
 // Carga el dropdown de domicilios del cliente. Con varias direcciones, fuerza
 // elección explícita (no asume la primera) → el pedido sale a la dirección correcta.
@@ -1261,12 +1329,10 @@ function txFormaChange() {
   const f = document.getElementById('txForma').value;
   let h = '';
   if (f === 'link_mp') h =
-    `<input id="txLink" placeholder="pegá el link MP" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">
-     <button onclick="txPegarChat(document.getElementById('txLink').value)" class="hbtn" style="font-size:11px;padding:5px 9px;border-radius:8px;">Pegar link al chat</button>
+    `<input id="txLink" placeholder="link MP" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">
      <input id="txNroOp" placeholder="nro de operación MP — al pegarlo queda PAGADO" oninput="txCalc()" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
   else if (f === 'transferencia') h =
-    `<button onclick="txPegarChat(ALIAS_FARMACIA)" class="hbtn" style="font-size:11px;padding:5px 9px;border-radius:8px;">Mandar alias al chat</button>
-     <input id="txNroOp" placeholder="nro / comprobante — al pegarlo queda PAGADO" oninput="txCalc()" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
+    `<input id="txNroOp" placeholder="nro / comprobante — al pegarlo queda PAGADO" oninput="txCalc()" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
   else if (f === 'efectivo') h =
     `<input id="txPagaCon" type="number" min="0" oninput="txCalc()" placeholder="¿con cuánto paga? $" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
   else if (f === 'tarjeta') h =
@@ -1290,7 +1356,7 @@ function txComputarPagado() {
   if (f === 'link_mp' || f === 'transferencia') return !!_txVal('txNroOp').trim();
   return false;
 }
-const ALIAS_FARMACIA = 'farmacia.badia.mp';  // TODO: traer de config
+const ALIAS_FARMACIA = {{ (alias_transferencia or '')|tojson }};
 function txStockChange() {
   document.getElementById('txDrogueria').style.display =
     document.getElementById('txStock').value === 'esperar' ? 'block' : 'none';
@@ -1335,7 +1401,23 @@ async function txCotizarEnvio() {
 async function txCerrar() {
   const total = parseFloat(_txVal('txTotal')) || 0;
   if (!total) { alert('Cargá el total de ObServer.'); return; }
-  if (!_txVal('txForma')) { alert('Elegí la forma de pago.'); return; }
+  const forma = _txVal('txForma');
+  if (!forma) { alert('Elegí la forma de pago.'); return; }
+  // Validaciones por forma de pago: sin estos datos no se puede cerrar.
+  if ((forma === 'link_mp' || forma === 'transferencia') && !_txVal('txNroOp').trim()){
+    alert('Cargá el Nro de operación / comprobante de ' + (forma === 'link_mp' ? 'MP' : 'transferencia') + ' antes de cerrar.');
+    const el = document.getElementById('txNroOp'); if (el) el.focus();
+    return;
+  }
+  if (forma === 'efectivo' && (!_txVal('txPagaCon') || parseFloat(_txVal('txPagaCon')) <= 0)){
+    alert('Cargá con cuánto paga (efectivo).');
+    const el = document.getElementById('txPagaCon'); if (el) el.focus();
+    return;
+  }
+  if (forma === 'tarjeta'){
+    if (!_txVal('txUlt4').trim()){ alert('Cargá los últimos 4 dígitos de la tarjeta.'); return; }
+    if (!_txVal('txTarjNombre').trim()){ alert('Cargá el nombre del titular de la tarjeta.'); return; }
+  }
   const reparto = _txVal('txSalida') === 'reparto';
   const domSel = document.getElementById('txDomicilio');
   // Si va por reparto y el cliente tiene VARIAS direcciones, exigir elegir cuál.
@@ -1408,6 +1490,139 @@ async function cargarDrogActivas() {
 
 setVista('sin_asignar');
 cargarBandeja();
+// ── Card 'Pago acordado': forma de pago + link que el operador acuerda con el
+// cliente durante el chat. Persiste en BotConversacion (vía /atencion/<id>/pago).
+let _pagoState = null;
+function _esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function pagoFormaChange(){
+  const f = document.getElementById('pgForma').value;
+  let h = '';
+  if (f === 'link_mp') h = `
+    <input id="pgLink" placeholder="pegá link MP" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">
+    <button onclick="pagoPegarChat(document.getElementById('pgLink').value)" class="hbtn" style="font-size:11px; padding:5px 9px; border-radius:8px;">📤 Mandar link al chat</button>
+    <input id="pgDato" placeholder="nro de operación MP (cuando confirme)" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
+  else if (f === 'transferencia') h = `
+    <button onclick="pagoPegarChat(ALIAS_FARMACIA)" class="hbtn" style="font-size:11px; padding:5px 9px; border-radius:8px;">📤 Mandar alias al chat</button>
+    <input id="pgDato" placeholder="nro de comprobante (cuando confirme)" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
+  else if (f === 'efectivo') h = `
+    <input id="pgPagaCon" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="¿con cuánto paga? $" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
+  else if (f === 'tarjeta') h = `
+    <div style="display:flex; gap:6px;">
+      <input id="pgUlt4" maxlength="4" placeholder="últ. 4" class="input" style="width:70px; border-radius:8px; padding:6px 9px; font-size:12px;">
+      <input id="pgTarjNombre" placeholder="titular" class="input" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">
+      <select id="pgMarca" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;"><option>Visa</option><option>Master</option><option>Amex</option><option>Naranja</option><option>Cabal</option></select>
+    </div>`;
+  document.getElementById('pgExtra').innerHTML = h;
+  // Si tenemos estado previo, prellenamos los inputs nuevos.
+  if (_pagoState){
+    const setIfExists = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+    setIfExists('pgLink', _pagoState.link_mp);
+    setIfExists('pgDato', _pagoState.dato_pago);
+    setIfExists('pgPagaCon', _pagoState.paga_con);
+    setIfExists('pgUlt4', _pagoState.tarjeta_ult4);
+    setIfExists('pgTarjNombre', _pagoState.tarjeta_nombre);
+    if (_pagoState.tarjeta_marca){ const m = document.getElementById('pgMarca'); if (m) m.value = _pagoState.tarjeta_marca; }
+  }
+}
+// Reusa el sender real del chat (POST /responder) — antes solo pegaba en un input
+// que no existe en este template y no llegaba al cliente.
+async function pagoPegarChat(texto){
+  if (!texto || !convAbierta) return;
+  await fetch(`/atencion/${convAbierta}/responder`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({texto}),
+  });
+  await refrescarChat(false);
+}
+
+// Vuelto = Monto operación - Paga con. Redondeo a billetes de $100 (floor).
+// Aparece solo si forma=efectivo y hay monto + paga_con.
+function pagoRecalcVuelto(){
+  const out = document.getElementById('pgVuelto');
+  if (!out) return;
+  const f = document.getElementById('pgForma').value;
+  const monto = parseFloat(document.getElementById('pgMonto').value) || 0;
+  const pagaInp = document.getElementById('pgPagaCon');
+  const paga = pagaInp ? (parseFloat(pagaInp.value) || 0) : 0;
+  if (f !== 'efectivo' || monto <= 0 || paga <= 0){ out.style.display = 'none'; return; }
+  const exacto = paga - monto;
+  const vuelto = exacto >= 0 ? Math.floor(exacto / 100) * 100 : exacto;
+  out.style.display = '';
+  out.innerHTML = `Vuelto: <b style="color:${vuelto >= 0 ? 'var(--accent)' : 'var(--warn)'};">$ ${vuelto.toLocaleString('es-AR')}</b>` +
+                  (exacto !== vuelto ? ` <span class="muted2" style="font-size:10px;">(exacto: $${exacto.toLocaleString('es-AR')})</span>` : '');
+}
+async function cargarPagoAcordado(){
+  const card = document.getElementById('pagoCard');
+  if (!convAbierta){ card.style.display = 'none'; _pagoState = null; return; }
+  try {
+    const r = await fetch(`/atencion/${convAbierta}/pago`);
+    if (!r.ok){ card.style.display = 'none'; return; }
+    _pagoState = await r.json();
+    card.style.display = '';
+    document.getElementById('pgForma').value = _pagoState.forma_pago_propuesta || '';
+    document.getElementById('pgMonto').value = _pagoState.total_acordado != null ? _pagoState.total_acordado : '';
+    pagoFormaChange();
+    pagoRecalcVuelto();
+    document.getElementById('pagoBadgeLink').style.display = _pagoState.pago_acordado_en ? '' : 'none';
+    document.getElementById('pagoBadgeConf').style.display = _pagoState.pago_confirmado_en ? '' : 'none';
+  } catch (e) { console.error('pago load:', e); }
+}
+async function guardarPagoAcordado(){
+  if (!convAbierta) return;
+  const f = document.getElementById('pgForma').value;
+  const body = { forma_pago_propuesta: f || null,
+                 total_acordado: document.getElementById('pgMonto').value || null };
+  const get = id => { const el = document.getElementById(id); return el ? el.value : null; };
+  if (f === 'link_mp'){ body.link_mp = get('pgLink'); body.dato_pago = get('pgDato'); }
+  else if (f === 'transferencia'){ body.dato_pago = get('pgDato'); }
+  else if (f === 'efectivo'){ body.paga_con = get('pgPagaCon'); }
+  else if (f === 'tarjeta'){
+    body.tarjeta_ult4 = get('pgUlt4');
+    body.tarjeta_nombre = get('pgTarjNombre');
+    body.tarjeta_marca = get('pgMarca');
+  }
+  await fetch(`/atencion/${convAbierta}/pago`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  await cargarPagoAcordado();
+  // Si el modal Cerrar TX está visible, re-precargar con el estado nuevo.
+  const modal = document.getElementById('cerrarTxCard');
+  if (modal && modal.style.display !== 'none' && typeof txPrecargarPago === 'function') {
+    await txPrecargarPago();
+  }
+}
+
+// Guarda el pago + abre/refresca el modal Cerrar TX con todo precargado.
+// Valida primero lo MÍNIMO del sidebar (monto + forma); el modal valida el resto.
+async function guardarYCerrarTx(){
+  const monto = parseFloat(document.getElementById('pgMonto').value) || 0;
+  if (!monto){ alert('Cargá el monto de la operación.'); document.getElementById('pgMonto').focus(); return; }
+  const forma = document.getElementById('pgForma').value;
+  if (!forma){ alert('Elegí la forma de pago.'); document.getElementById('pgForma').focus(); return; }
+  // Validaciones por forma — bloqueantes acá también para no perder tiempo abriendo el modal.
+  const get = id => { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; };
+  if (forma === 'link_mp' && !get('pgLink')){
+    alert('Pegá el link de MP que le mandaste al cliente.'); document.getElementById('pgLink').focus(); return;
+  }
+  if ((forma === 'link_mp' || forma === 'transferencia') && !get('pgDato')){
+    alert('Cargá el nro de operación / comprobante (se obtiene de MP cuando entra el pago).');
+    document.getElementById('pgDato').focus(); return;
+  }
+  if (forma === 'efectivo' && (!get('pgPagaCon') || parseFloat(get('pgPagaCon')) <= 0)){
+    alert('Cargá con cuánto paga (efectivo).'); document.getElementById('pgPagaCon').focus(); return;
+  }
+  if (forma === 'tarjeta'){
+    if (!get('pgUlt4')){ alert('Cargá los últimos 4 de la tarjeta.'); return; }
+    if (!get('pgTarjNombre')){ alert('Cargá el nombre del titular.'); return; }
+  }
+  await guardarPagoAcordado();
+  const modal = document.getElementById('cerrarTxCard');
+  if (modal && modal.style.display === 'none' && typeof toggleCerrarTx === 'function'){
+    toggleCerrarTx();   // abre el modal (este ya llama txPrecargarPago al abrir)
+  }
+}
+
 cargarCiudades();
 cargarDrogActivas();
 heartbeat();
@@ -1416,6 +1631,41 @@ setInterval(cargarBandeja, 5000);
 setInterval(() => refrescarChat(false), 4000);
 setInterval(heartbeat, 30000);
 setInterval(cargarEquipo, 12000);
+</script>
+
+{{ cliente_picker_modales() }}
+<script src="/static/js/cliente_picker.js"></script>
+<script>
+// Inicialización del cliente_picker para /atencion.
+// Hooks con la conversación abierta:
+//  - Al elegir cliente → vincula a la conv (POST /atencion/<id>/vincular-cliente).
+//  - Al limpiar (clear) → desvincula si había vínculo.
+// La sincronización inversa (cargar el cliente vinculado en el picker al cambiar
+// de conversación) se hace dentro de cargarFicha() — ver más arriba en este archivo.
+ClientePicker.init({
+  onClienteSelected: async function({observer_id, cliente_id}){
+    if (!convAbierta) return;
+    try {
+      await fetch(`/atencion/${convAbierta}/vincular-cliente`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({observer_id, cliente_id}),
+      });
+      // Recargo la ficha auxiliar (OS confirmada, historial, etc.)
+      if (typeof cargarFicha === 'function') cargarFicha();
+    } catch (e) { console.error('vincular-cliente fallo:', e); }
+  },
+  onClear: async function(){
+    if (!convAbierta) return;
+    // Si la conv ya tenía vínculo, lo soltamos también en backend.
+    if (fichaData && fichaData.ficha && fichaData.ficha.observer_id){
+      try {
+        await fetch(`/atencion/${convAbierta}/desvincular-cliente`, {method:'POST'});
+        if (typeof cargarFicha === 'function') cargarFicha();
+      } catch (e) { console.error('desvincular-cliente fallo:', e); }
+    }
+  },
+});
 </script>
 </body>
 </html>

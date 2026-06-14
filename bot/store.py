@@ -469,6 +469,21 @@ def _ficha_de_cliente(s, cliente_id):
         localidad = c.ciudad or ''
         domicilio = ', '.join(x for x in [direccion, localidad] if x)
         fuente = 'local'
+    # Obra social del cliente: confirmada manualmente (gana) → inferida del histórico de
+    # ventas si la confianza es razonable (>=50%). Solo si tiene observer_id.
+    obra_social = None
+    if c.observer_id:
+        conf = s.get(database.ClienteOsConfirmada, c.observer_id)
+        if conf and conf.obra_social_nombre:
+            obra_social = {'nombre': conf.obra_social_nombre, 'fuente': 'confirmada'}
+        else:
+            inf = (s.query(database.ClienteOsInferida)
+                   .filter_by(cliente_observer=c.observer_id).first())
+            if inf and inf.obra_social_observer and (inf.confianza_pct or 0) >= 50:
+                os_obj = s.get(database.ObsObraSocial, inf.obra_social_observer)
+                if os_obj and os_obj.descripcion:
+                    obra_social = {'nombre': os_obj.descripcion, 'fuente': 'inferida',
+                                   'confianza_pct': float(inf.confianza_pct or 0)}
     return {
         'cliente_id': c.id, 'observer_id': c.observer_id, 'fuente': fuente,
         'nombre': nombre, 'documento': documento, 'telefono': telefono,
@@ -476,6 +491,7 @@ def _ficha_de_cliente(s, cliente_id):
         'direccion': direccion, 'localidad': localidad,
         'notas': c.notas or '', 'tags': c.tags or '',
         'whatsapp': c.whatsapp or '', 'email': c.email or '',
+        'obra_social': obra_social,
     }
 
 

@@ -54,7 +54,8 @@ def init_app(app):
         lat, lng = request.args.get('lat'), request.args.get('lng')
         direccion = request.args.get('direccion')
         if lat and lng:                                  # pin / coordenadas
-            return jsonify(envio.cotizar_por_coords(lat, lng))
+            return jsonify(envio.cotizar_por_coords(
+                lat, lng, localidad_hint=request.args.get('localidad')))
         if direccion:                                    # dirección escrita (geocoder)
             return jsonify(envio.cotizar_por_direccion(
                 direccion, localidad=request.args.get('localidad')))
@@ -70,7 +71,8 @@ def init_app(app):
         return jsonify(envio.guardar_config(
             farmacia_lat=b.get('farmacia_lat'), farmacia_lng=b.get('farmacia_lng'),
             factor_cuadras=b.get('factor_cuadras'),
-            metros_por_cuadra=b.get('metros_por_cuadra')))
+            metros_por_cuadra=b.get('metros_por_cuadra'),
+            alias_transferencia=b.get('alias_transferencia')))
 
     @app.route('/config/envio/geolocalizar', methods=['POST'])
     @login_required
@@ -112,7 +114,8 @@ def init_app(app):
         return jsonify(envio.guardar_zona(
             b.get('id'), b.get('nombre'), b.get('monto'),
             lat=b.get('lat'), lng=b.get('lng'), radio_km=b.get('radio_km'),
-            poligono_texto=b.get('poligono_texto')))
+            poligono_texto=b.get('poligono_texto'),
+            activa=b.get('activa')))
 
     @app.route('/config/envio/zona/<int:zid>/delete', methods=['POST'])
     @login_required

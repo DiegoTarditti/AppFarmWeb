@@ -166,7 +166,11 @@
             <label>Observación
               <span id="recetaBadge" class="receta-badge libre">🟢 Venta libre</span>
             </label>
-            <input id="pObservacion" class="input" placeholder="recetas 3, TRAER PANTUS..." onkeydown="if(event.key==='Enter')agregar()">
+            <div style="display:flex; gap:5px;">
+              <input id="pObservacion" class="input" list="obsPresets" placeholder="elegir preset o escribir libre" style="flex:1;" onkeydown="if(event.key==='Enter')agregar()">
+              <button type="button" onclick="guardarObsPreset()" class="hbtn" title="Guardar el texto actual como preset">＋</button>
+            </div>
+            <datalist id="obsPresets"></datalist>
           </div>
         </div>
       </div>
@@ -450,6 +454,26 @@ async function cargarSelects(){
   const d = await (await fetch('/reparto/api?fecha='+fechaVal())).json();
   const selC = document.getElementById('pCiudad');
   selC.innerHTML = (d.ciudades||['Rosario']).map(c=>`<option ${c==='Rosario'?'selected':''}>${esc(c)}</option>`).join('');
+  cargarObsPresets();
+}
+
+// Presets de Observación: <datalist> que el operador puede ampliar con el botón +.
+async function cargarObsPresets(){
+  try {
+    const d = await (await fetch('/api/pedido/obs-presets')).json();
+    const dl = document.getElementById('obsPresets');
+    dl.innerHTML = (d.presets||[]).map(p => `<option value="${esc(p.texto)}">`).join('');
+  } catch(e){ /* silencioso */ }
+}
+
+async function guardarObsPreset(){
+  const texto = document.getElementById('pObservacion').value.trim();
+  if (!texto){ alert('Escribí una observación para guardarla como preset.'); return; }
+  if (texto.length > 160){ alert('Máx 160 caracteres.'); return; }
+  const r = await jpost('/api/pedido/obs-presets', { texto });
+  if (!r.ok){ alert('⚠️ '+(r.error||'no se pudo')); return; }
+  await cargarObsPresets();
+  showToast(r.reusado ? '✓ Ya existía, reactivado' : '✓ Guardado como preset');
 }
 
 async function agregar(){

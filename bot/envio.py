@@ -154,7 +154,7 @@ def eliminar_tramo(tramo_id):
 
 
 def guardar_zona(zona_id, nombre, monto, lat=None, lng=None, radio_km=None,
-                 poligono_texto=None):
+                 poligono_texto=None, activa=None):
     nombre = (nombre or '').strip()
     if not nombre:
         return {'ok': False, 'error': 'nombre vacío'}
@@ -168,6 +168,8 @@ def guardar_zona(zona_id, nombre, monto, lat=None, lng=None, radio_km=None,
             s.add(z)
         z.nombre = nombre
         z.monto = float(monto or 0)
+        if activa is not None:
+            z.activa = bool(activa)
         # Solo tocar el círculo si vino en la llamada (no pisarlo al editar nombre/monto).
         if lat is not None:
             z.lat = _f(lat)
@@ -178,8 +180,15 @@ def guardar_zona(zona_id, nombre, monto, lat=None, lng=None, radio_km=None,
         # Polígono GeoJSON (reemplaza el círculo para detección geográfica).
         if poligono_texto is not None:
             from services import reparto as _rep
-            parsed = _rep.parse_poligono(poligono_texto)
-            z.poligono = json.dumps(parsed) if parsed else None
+            texto = (poligono_texto or '').strip()
+            if texto:
+                parsed = _rep.parse_poligono(texto)
+                if not parsed:
+                    return {'ok': False,
+                            'error': 'No pude leer el polígono. Necesita al menos 3 puntos. Formato aceptado: una línea por punto como "lat, lng" (ej. -32.93, -60.72), o un GeoJSON pegado.'}
+                z.poligono = json.dumps(parsed)
+            else:
+                z.poligono = None
         s.commit()
         return {'ok': True, 'id': z.id}
 
@@ -229,11 +238,13 @@ def get_config():
             s.commit()
         return {'farmacia_lat': c.farmacia_lat, 'farmacia_lng': c.farmacia_lng,
                 'factor_cuadras': c.factor_cuadras or 1.3,
-                'metros_por_cuadra': c.metros_por_cuadra or 100}
+                'metros_por_cuadra': c.metros_por_cuadra or 100,
+                'alias_transferencia': c.alias_transferencia or ''}
 
 
 def guardar_config(farmacia_lat=None, farmacia_lng=None,
-                   factor_cuadras=None, metros_por_cuadra=None):
+                   factor_cuadras=None, metros_por_cuadra=None,
+                   alias_transferencia=None):
     """Actualiza solo los campos provistos (no pisa coords al editar el factor)."""
     with database.get_db() as s:
         c = s.query(database.EnvioConfig).first()
@@ -248,6 +259,8 @@ def guardar_config(farmacia_lat=None, farmacia_lng=None,
             c.factor_cuadras = _f(factor_cuadras)
         if _f(metros_por_cuadra):
             c.metros_por_cuadra = int(_f(metros_por_cuadra))
+        if alias_transferencia is not None:
+            c.alias_transferencia = (alias_transferencia or '').strip() or None
         c.actualizado_en = database.now_ar()
         s.commit()
         return {'ok': True}
@@ -282,16 +295,33 @@ def cuadras_desde_coords(lat, lng, cfg=None):
     return int(round((m / (cfg['metros_por_cuadra'] or 100)) * (cfg['factor_cuadras'] or 1.3)))
 
 
-def cotizar_por_coords(lat, lng):
-    """Cotiza desde un punto. Prioridad: zona por POLÍGONO
-    (point-in-polygon) → tramo por cuadras estimadas.
-    La zona nombrada (match tolerante por nombre) sigue pisando los tramos
-    también (se llama desde cotizar() en el path de localidad)."""
+def cotizar_por_coords(lat, lng, localidad_hint=None):
+    """Cotización principal (post-2026-06-12 simplificación). Estrategia:
+
+      1. POLÍGONO: si el punto cae en alguna zona con polígono activo
+         (ciudades externas tipo Funes/Roldán/Kentucky/Haras), tarifa fija
+         de esa zona. Cubre la mayoría de los casos "fuera de Rosario".
+      2. TRAMO POR CUADRAS: si no cae en polígono, calculamos cuadras
+         (haversine × factor) y buscamos el primer tramo con
+         `hasta_cuadras >= N`. Esto cubre todo Rosario (los tramos cargados
+         van de 14 a 70 cuadras + un catchall de 9999 → $X "a convenir local").
+      3. FALLBACK POR NOMBRE: si `localidad_hint` matchea una zona por
+         nombre (caso raro: el punto está lejos y el operador pasó la
+         ciudad). Sirve si Diego prefiere no cargar polígono pero sí tarifa.
+      4. A CONVENIR: si nada matchea (no debería pasar si hay catchall).
+
+    Notas:
+    - Rosario centro y Refinería se sacaron como zonas el 2026-06-12 (cubre
+      todo con tramos por cuadras).
+    - Si no hay coords de la farmacia configuradas, no se puede estimar
+      cuadras → devuelve error claro.
+    """
     lat, lng = _f(lat), _f(lng)
     if lat is None or lng is None:
         return {'monto': None, 'fuente': None, 'detalle': 'ubicación inválida'}
+
     with database.get_db() as s:
-        # 1) Zonas con polígono: point-in-polygon.
+        # ── 1) Polígonos primero (ciudades externas con tarifa fija) ────────
         from services import reparto as _rep
         zonas_poly = (s.query(database.EnvioZona)
                       .filter(database.EnvioZona.activa.is_(True),
@@ -305,15 +335,50 @@ def cotizar_por_coords(lat, lng):
             if _rep._punto_en_poligono(lat, lng, poly):
                 return {'monto': float(z.monto or 0), 'fuente': 'zona',
                         'detalle': z.nombre}
-    cu = cuadras_desde_coords(lat, lng)
-    if cu is None:
+
+        # ── 2) Tramo por cuadras (cubre Rosario) ───────────────────────────
+        # Distinguimos el "tope real" (último tramo normal, ej. 70 cuadras) del
+        # catchall (tramo con hasta_cuadras >= 1000, ej. 9999). Si el punto cae
+        # dentro del tope real, devolvemos tramo. Si está más lejos, primero
+        # intentamos match por localidad (Roldán/Funes/etc.) y solo entonces
+        # caemos al catchall.
+        cu = cuadras_desde_coords(lat, lng)
+        if cu is None:
+            return {'monto': None, 'fuente': None,
+                    'detalle': 'falta configurar la ubicación de la farmacia'}
+        tramos = (s.query(database.EnvioTramo)
+                  .order_by(database.EnvioTramo.hasta_cuadras.asc()).all())
+        tramos_normales = [t for t in tramos if t.hasta_cuadras < 1000]
+        catchall = next((t for t in tramos if t.hasta_cuadras >= 1000), None)
+        tope_real = max((t.hasta_cuadras for t in tramos_normales), default=0)
+
+        # 2a) Dentro del radio local → tramo normal.
+        if cu <= tope_real:
+            tr = next((t for t in tramos_normales if t.hasta_cuadras >= cu), None)
+            if tr:
+                return {'monto': float(tr.monto or 0), 'fuente': 'tramo',
+                        'detalle': f'~{cu} cuadras', 'cuadras': cu,
+                        'tramo_label': f'Hasta {int(tr.hasta_cuadras)} cuadras'}
+
+        # ── 3) Fuera del radio local: fallback por nombre ──────────────────
+        if cu > tope_real and localidad_hint:
+            n = _norm(localidad_hint)
+            zonas_n = (s.query(database.EnvioZona)
+                       .filter(database.EnvioZona.activa.is_(True))
+                       .order_by(database.EnvioZona.orden).all())
+            for z in zonas_n:
+                zn = _norm(z.nombre)
+                if zn and (zn in n or n in zn):
+                    return {'monto': float(z.monto or 0), 'fuente': 'zona',
+                            'detalle': z.nombre, 'cuadras': cu}
+
+        # ── 4) Catchall (si lo hay) o "a convenir" ─────────────────────────
+        if catchall:
+            return {'monto': float(catchall.monto or 0), 'fuente': 'tramo',
+                    'detalle': f'~{cu} cuadras (sin zona)', 'cuadras': cu,
+                    'tramo_label': 'Fuera de tarifa local'}
         return {'monto': None, 'fuente': None,
-                'detalle': 'falta configurar la ubicación de la farmacia'}
-    r = cotizar(cuadras=cu)
-    r['cuadras'] = cu
-    if r['monto'] is not None:
-        r['detalle'] = f'~{cu} cuadras'
-    return r
+                'detalle': 'a convenir', 'cuadras': cu}
 
 
 def _variantes_direccion(direccion):

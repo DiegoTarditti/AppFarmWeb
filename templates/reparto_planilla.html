@@ -86,6 +86,7 @@
     <button onclick="cambiarDia(0, '{{ hoy.strftime('%Y-%m-%d') }}')" style="font-weight:600;">Hoy</button>
   </div>
   <div style="flex:1"></div>
+  <a href="/config/envio" class="hbtn" title="Editar tarifas, zonas y tramos">⚙️ Tarifas de envío</a>
   <a href="/reparto?fecha={{ fecha.strftime('%Y-%m-%d') }}" class="hbtn">🗺️ Ver en reparto</a>
   <a href="/reparto" class="hbtn">← Volver</a>
 </div>
@@ -104,7 +105,7 @@
       <th style="width:100px;">Tomó</th>
       <th style="width:80px;">Importe</th>
       <th style="width:90px;">Forma pago</th>
-      <th style="width:70px;">Vuelto</th>
+      <th style="width:110px;">Vuelto</th>
       <th style="width:110px;">Producto</th>
       <th style="min-width:130px;">Observación</th>
       <th style="width:50px;">Receta</th>
@@ -130,9 +131,11 @@
         {% if con_turno_btns %}
         <span class="turno-switch">
           <span class="btn-turno {{ 'on' if p.turno == 'mañana' else '' }}"
-                onclick="setTurno({{ p.id }}, 'mañana')" title="Mañana">🌅</span>
+                onclick="setTurno({{ p.id }}, 'mañana')" title="Mañana">M</span>
           <span class="btn-turno {{ 'on' if p.turno == 'tarde' else '' }}"
-                onclick="setTurno({{ p.id }}, 'tarde')" title="Tarde">🌆</span>
+                onclick="setTurno({{ p.id }}, 'tarde')" title="Tarde">T</span>
+          <span class="btn-turno {{ 'on' if p.turno == 'noche' else '' }}"
+                onclick="setTurno({{ p.id }}, 'noche')" title="Noche">N</span>
         </span>
         {% endif %}
       </td>
@@ -147,6 +150,11 @@
           {% endif %}
           <a href="{{ _maps_url }}" target="_blank" rel="noopener" class="btn-maps"
              title="Abrir en Google Maps">📍</a>
+        {% endif %}
+        {% if p.zona_externa %}
+          <div style="color:var(--warn); font-size:11px; font-weight:700; margin-top:2px;">
+            ⚠ {{ p.zona_externa }}
+          </div>
         {% endif %}
       </td>
       <td style="font-size:11px; color:var(--muted);">
@@ -249,11 +257,8 @@
 {% if pedidos_sin_asignar %}
 <div class="turno-header" style="background:#7c4dff20; border-left:3px solid #a78bfa; padding-left:10px;">
   ⚪ Sin asignar ({{ pedidos_sin_asignar|length }} pedido{{ 's' if pedidos_sin_asignar|length != 1 }})
-  <span style="font-size:11px; font-weight:normal; color:var(--muted); margin-left:8px;">
-    — Asignalos con los botones 🌅 / 🌆 de cada fila.
-  </span>
 </div>
-{{ render_tabla(pedidos_sin_asignar, _off_pendientes, con_turno_btns=True) }}
+{{ render_tabla(pedidos_sin_asignar, _off_pendientes) }}
 {% endif %}
 
 {% set _off_sa = _off_pendientes + (pedidos_sin_asignar|length if pedidos_sin_asignar else 0) %}

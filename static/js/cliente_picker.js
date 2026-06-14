@@ -77,16 +77,20 @@
     const el = $('pDomCoords');
     if (!el) return;
     if (window._domLat != null && window._domLng != null){
-      const lat = Number(window._domLat).toFixed(6);
-      const lng = Number(window._domLng).toFixed(6);
+      // Mostramos 2 decimales (suficiente para reconocer la zona). Para Maps
+      // usamos las coords precisas (sin redondear) así el pin no se desplaza.
+      const latPrec = Number(window._domLat);
+      const lngPrec = Number(window._domLng);
+      const lat = latPrec.toFixed(2);
+      const lng = lngPrec.toFixed(2);
       const sem = semaforoGeo(window._domGeoAt);
       el.innerHTML = `
-        <div style="display:flex; align-items:center; gap:14px; flex-wrap:nowrap; white-space:nowrap;">
-          <span style="font-size:18px; font-weight:700; color:var(--accent); font-family:monospace;">📍 ${lat}, ${lng}</span>
-          <span style="font-size:18px; font-weight:600; color:var(--title);">${sem.label}${window._domGeoAt ? ' · '+fmtFechaGeo(window._domGeoAt) : ''}</span>
-          <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" rel="noopener"
-             style="font-size:14px; font-weight:700; color:#fff; background:#185FA5;
-                    padding:6px 14px; border-radius:8px; text-decoration:none;"
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:nowrap; white-space:nowrap;">
+          <span style="font-size:14px; font-weight:700; color:var(--accent); font-family:monospace;">📍 ${lat}, ${lng}</span>
+          <span style="font-size:14px; font-weight:600; color:var(--title);">${sem.label}${window._domGeoAt ? ' · '+fmtFechaGeo(window._domGeoAt) : ''}</span>
+          <a href="https://www.google.com/maps?q=${latPrec},${lngPrec}" target="_blank" rel="noopener"
+             style="font-size:11px; font-weight:700; color:#fff; background:#185FA5;
+                    padding:5px 12px; border-radius:8px; text-decoration:none;"
              title="Abrir en Google Maps">🗺️ Ver en mapa</a>
         </div>`;
       el.style.background = sem.bg;
@@ -171,7 +175,11 @@
   async function pickCli(ref, nombre, cid, oid){
     $('pCliente').value = nombre;
     $('resCli').style.display='none';
-    return loadCliente({cliente_id: cid, observer_id: oid});
+    await loadCliente({cliente_id: cid, observer_id: oid});
+    // Disparamos el callback SOLO en selección manual (este path) — loadCliente
+    // ya no lo dispara para evitar loops cuando los hosts (p.ej. /atencion)
+    // reaccionan al callback re-llamando a loadCliente.
+    if (callbacks.onClienteSelected) callbacks.onClienteSelected({cliente_id: cid, observer_id: oid});
   }
 
   // Carga ficha sin pasar por el autocomplete (entrada externa: deep-link
@@ -183,6 +191,7 @@
                               : `observer_id=${observer_id}`;
     const ficha = await (await fetch(`/api/clientes/ficha?${params}`)).json();
     if(ficha && !ficha.error){
+      _pintarOsBadge(ficha.obra_social);
       // Setear nombre solo si el input está vacío (pickCli lo setea explícito antes).
       if (!$('pCliente').value){
         const raw = ficha.raw || {};
@@ -235,9 +244,12 @@
             : '';
           return `<option value="${x.id}" data-lat="${x.lat||''}" data-lng="${x.lng||''}" data-loc="${esc(x.localidad||'')}" data-dir="${esc(x.direccion||'')}" data-piso="${esc(x.piso||'')}" data-depto="${esc(x.depto||'')}" data-ref="${esc(x.referencia||'')}">${esc(x.etiqueta)} — ${esc(x.direccion||'(sin dirección)')}${loc}${geoBadge}</option>`;
         }).join('');
-      $('btnEditarCli').style.display = cid ? 'inline-block' : 'none';
+      if ($('btnEditarCli')) $('btnEditarCli').style.display = cid ? 'inline-block' : 'none';
       if (ficha.domicilio && callbacks.onAddressChange) callbacks.onAddressChange();
-      if (callbacks.onClienteSelected) callbacks.onClienteSelected(ficha);
+      // NO disparamos onClienteSelected acá: este path es 'carga programática'
+      // (pickCli, deep-link, /atencion al abrir conv vinculada). Si el host
+      // reacciona al callback re-llamando a loadCliente, entramos en loop
+      // (titileo de campos visto el 2026-06-14). El disparo manual va en pickCli.
     }
   }
 
@@ -253,6 +265,8 @@
     _geoTmr = setTimeout(buscarGeoSugerencias, 350);
   }
 
+  function _norm(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim(); }
+
   async function buscarGeoSugerencias(){
     const q = $('pDir').value.trim();
     const loc = $('pCiudad').value;
@@ -260,10 +274,23 @@
     if (q.length < 3) return;
     try {
       const r = await (await fetch(`/api/clientes/geocodificar?q=${encodeURIComponent(q)}&loc=${encodeURIComponent(loc||'')}`)).json();
-      const sug = r.sugerencias || [];
+      let sug = r.sugerencias || [];
       if (!sug.length){ box.style.display='none'; return; }
+      // Whitelist de ciudades que servimos. Configurable por env
+      // ENVIO_CIUDADES_FILTRO (CSV); el template _cliente_picker.html la
+      // inyecta como window.ENVIO_CIUDADES_FILTRO. Fallback hardcoded si no.
+      const CIUDADES_OK = Array.isArray(window.ENVIO_CIUDADES_FILTRO) && window.ENVIO_CIUDADES_FILTRO.length
+        ? window.ENVIO_CIUDADES_FILTRO
+        : ['rosario', 'funes', 'roldan'];
+      let aviso = '';
+      const match = sug.filter(s => CIUDADES_OK.includes(_norm(s.localidad)));
+      if (match.length){
+        sug = match;
+      } else {
+        aviso = `<div class="muted2" style="padding:6px 9px; font-size:10px; background:rgba(239,159,39,.12);">⚠ Sin coincidencias en Rosario / Funes / Roldán. Mostramos otras:</div>`;
+      }
       box.style.display='block';
-      box.innerHTML = sug.map(s=>{
+      box.innerHTML = aviso + sug.map(s=>{
         return `<div class="it" onclick='ClientePicker.pickGeo(${JSON.stringify(s)})'>
           <b>${esc(s.direccion||s.nomenclatura)}</b>
           <span class="muted2" style="font-size:10px;"> · ${esc(s.localidad||'')}</span>
@@ -428,12 +455,28 @@
     };
   }
 
+  // Badge de OS al lado del label Cliente. Confirmada → tildecita; inferida → ~ con confianza.
+  function _pintarOsBadge(os){
+    const el = $('osBadge'); if (!el) return;
+    if (!os || !os.nombre){ el.style.display = 'none'; el.textContent = ''; return; }
+    if (os.fuente === 'inferida'){
+      const c = os.confidence_pct || os.confianza_pct || 0;
+      el.textContent = `🏥 ${os.nombre} ~${Math.round(c)}%`;
+      el.title = 'OS inferida del histórico (no confirmada manualmente).';
+    } else {
+      el.textContent = `🏥 ${os.nombre} ✓`;
+      el.title = 'OS confirmada por un operador.';
+    }
+    el.style.display = '';
+  }
+
   function clear(){
     ['pCliente','pDir','pPiso','pDepto','pRef'].forEach(i=>{
       const el = $(i); if (el) el.value = '';
     });
     $('pDom').innerHTML = '<option value="">— escribir dirección —</option>';
-    $('btnEditarCli').style.display = 'none';
+    if ($('btnEditarCli')) $('btnEditarCli').style.display = 'none';
+    _pintarOsBadge(null);
     window._cid = null;
     window._oid = null;
     window._doms = [];

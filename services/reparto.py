@@ -180,7 +180,11 @@ def _coords_de_geojson(data):
 
 def parse_poligono(texto):
     """Zona pegada: acepta GeoJSON (de geojson.io) o líneas 'lat, lng' (Google
-    Maps). Devuelve [[lat,lng], ...] o None si hay menos de 3 puntos."""
+    Maps). Devuelve [[lat,lng], ...] o None si hay menos de 3 puntos.
+
+    Auto-detecta si el operador pegó al revés ('lng, lat' — formato URL de
+    Google Maps / GeoJSON tradicional). Si el primer número está fuera del
+    rango válido de latitudes (-90, 90), hace swap automático."""
     texto = (texto or '').strip()
     if not texto:
         return None
@@ -202,7 +206,20 @@ def parse_poligono(texto):
                 pts.append([float(partes[0]), float(partes[1])])
             except ValueError:
                 continue
-    return pts if len(pts) >= 3 else None
+    if len(pts) < 3:
+        return None
+    # Auto-detección de orden invertido (lng,lat en vez de lat,lng).
+    # Caso típico: el operador copia coords desde la URL de Google Maps o desde
+    # GeoJSON (formato "lng,lat") en vez del click-derecho "lat,lng".
+    # Usamos rangos válidos de Argentina (cubre todo el país, no solo Rosario).
+    def _es_lat_ar(v):  # latitudes AR: aproximadamente -55 a -20
+        return -55 <= v <= -20
+    def _es_lng_ar(v):  # longitudes AR: aproximadamente -73 a -53
+        return -73 <= v <= -53
+    if (all(_es_lng_ar(p[0]) for p in pts)
+            and all(_es_lat_ar(p[1]) for p in pts)):
+        pts = [[p[1], p[0]] for p in pts]
+    return pts
 
 
 def _punto_en_poligono(lat, lng, poly):
