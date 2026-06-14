@@ -1,3 +1,4 @@
+{% from "_cliente_picker.html" import cliente_picker, cliente_picker_modales %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -324,6 +325,12 @@
       <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:0.5px solid;">
         <span class="muted" style="font-size:11px;">👤 Datos del cliente</span>
         <button onclick="toggleFicha()" class="hbtn" style="font-size:13px; padding:2px 9px; border-radius:7px;" title="Cerrar">✕</button>
+      </div>
+      {# Picker reusable (igual que /pedido/nuevo). Se inicializa una sola vez al
+         cargar la pantalla; los cambios se sincronizan con la conv abierta vía
+         callbacks (ver ClientePicker.init más abajo). #}
+      <div id="pickerWrap" style="padding:10px 12px; border-bottom:1px solid var(--border);">
+        {{ cliente_picker() }}
       </div>
       <div id="ficha" style="padding:16px 14px; font-size:11px;">
         <div class="muted">Abrí una conversación para ver al cliente.</div>
@@ -778,7 +785,11 @@ function abrirPedidoNuevo() {
 /* ── Ficha del cliente ── */
 let fichaData = null;
 async function cargarFicha() {
-  if (!convAbierta) { fichaData = null; osInferida = null; return; }
+  if (!convAbierta) {
+    fichaData = null; osInferida = null;
+    if (window.ClientePicker && ClientePicker.clear) ClientePicker.clear();
+    return;
+  }
   const r = await fetch(`/atencion/api/${convAbierta}/cliente`);
   fichaData = r.ok ? await r.json() : null;
   osInferida = null;
@@ -786,6 +797,16 @@ async function cargarFicha() {
   if (f && f.observer_id) {
     const osr = await (await fetch(`/atencion/api/clientes/${f.observer_id}/obra-social`)).json();
     if (osr && osr.tiene_os) osInferida = osr;
+  }
+  // Sincronizo el picker: si hay cliente vinculado, lo precargo (sin disparar
+  // el onClienteSelected — loadCliente no lo dispara, solo pickCli lo hace).
+  // Si no, limpio el picker para que el operador busque uno.
+  if (window.ClientePicker) {
+    if (f && (f.observer_id || f.cliente_id)) {
+      ClientePicker.loadCliente({observer_id: f.observer_id, cliente_id: f.cliente_id});
+    } else {
+      ClientePicker.clear();
+    }
   }
   renderFicha();
 }
@@ -1416,6 +1437,41 @@ setInterval(cargarBandeja, 5000);
 setInterval(() => refrescarChat(false), 4000);
 setInterval(heartbeat, 30000);
 setInterval(cargarEquipo, 12000);
+</script>
+
+{{ cliente_picker_modales() }}
+<script src="/static/js/cliente_picker.js"></script>
+<script>
+// Inicialización del cliente_picker para /atencion.
+// Hooks con la conversación abierta:
+//  - Al elegir cliente → vincula a la conv (POST /atencion/<id>/vincular-cliente).
+//  - Al limpiar (clear) → desvincula si había vínculo.
+// La sincronización inversa (cargar el cliente vinculado en el picker al cambiar
+// de conversación) se hace dentro de cargarFicha() — ver más arriba en este archivo.
+ClientePicker.init({
+  onClienteSelected: async function({observer_id, cliente_id}){
+    if (!convAbierta) return;
+    try {
+      await fetch(`/atencion/${convAbierta}/vincular-cliente`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({observer_id, cliente_id}),
+      });
+      // Recargo la ficha auxiliar (OS confirmada, historial, etc.)
+      if (typeof cargarFicha === 'function') cargarFicha();
+    } catch (e) { console.error('vincular-cliente fallo:', e); }
+  },
+  onClear: async function(){
+    if (!convAbierta) return;
+    // Si la conv ya tenía vínculo, lo soltamos también en backend.
+    if (fichaData && fichaData.ficha && fichaData.ficha.observer_id){
+      try {
+        await fetch(`/atencion/${convAbierta}/desvincular-cliente`, {method:'POST'});
+        if (typeof cargarFicha === 'function') cargarFicha();
+      } catch (e) { console.error('desvincular-cliente fallo:', e); }
+    }
+  },
+});
 </script>
 </body>
 </html>
