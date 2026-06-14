@@ -171,7 +171,11 @@
   async function pickCli(ref, nombre, cid, oid){
     $('pCliente').value = nombre;
     $('resCli').style.display='none';
-    return loadCliente({cliente_id: cid, observer_id: oid});
+    await loadCliente({cliente_id: cid, observer_id: oid});
+    // Disparamos el callback SOLO en selección manual (este path) — loadCliente
+    // ya no lo dispara para evitar loops cuando los hosts (p.ej. /atencion)
+    // reaccionan al callback re-llamando a loadCliente.
+    if (callbacks.onClienteSelected) callbacks.onClienteSelected({cliente_id: cid, observer_id: oid});
   }
 
   // Carga ficha sin pasar por el autocomplete (entrada externa: deep-link
@@ -236,9 +240,12 @@
             : '';
           return `<option value="${x.id}" data-lat="${x.lat||''}" data-lng="${x.lng||''}" data-loc="${esc(x.localidad||'')}" data-dir="${esc(x.direccion||'')}" data-piso="${esc(x.piso||'')}" data-depto="${esc(x.depto||'')}" data-ref="${esc(x.referencia||'')}">${esc(x.etiqueta)} — ${esc(x.direccion||'(sin dirección)')}${loc}${geoBadge}</option>`;
         }).join('');
-      $('btnEditarCli').style.display = cid ? 'inline-block' : 'none';
+      if ($('btnEditarCli')) $('btnEditarCli').style.display = cid ? 'inline-block' : 'none';
       if (ficha.domicilio && callbacks.onAddressChange) callbacks.onAddressChange();
-      if (callbacks.onClienteSelected) callbacks.onClienteSelected(ficha);
+      // NO disparamos onClienteSelected acá: este path es 'carga programática'
+      // (pickCli, deep-link, /atencion al abrir conv vinculada). Si el host
+      // reacciona al callback re-llamando a loadCliente, entramos en loop
+      // (titileo de campos visto el 2026-06-14). El disparo manual va en pickCli.
     }
   }
 
