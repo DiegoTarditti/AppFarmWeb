@@ -162,6 +162,7 @@
       <th style="width:75px;">Recibió</th>
       <th style="width:50px;">Pagado</th>
       <th style="width:90px;">WhatsApp</th>
+      <th style="width:30px;" title="Borrar pedido (fase de pruebas)"></th>
     </tr>
   </thead>
   <tbody>
@@ -217,13 +218,13 @@
         <span class="celda-valor">{{ '$ {:,.0f}'.format(p.importe) if p.importe is not none else '—' }}</span>
       </td>
       <td class="celda-editable" data-campo="forma_pago" data-tipo="select-forma_pago">
-        <span class="celda-valor">{{ p.forma_pago or '—' }}</span>
+        <span class="celda-valor" style="color:var(--warn); font-weight:600;">{{ p.forma_pago or '—' }}</span>
       </td>
       <td class="celda-editable" data-campo="vuelto" data-tipo="text">
         {# Si el vuelto es numérico, lo formateamos como $ con separador de miles. #}
         {% set _v = (p.vuelto or '').strip() %}
         {% set _vn = _v.replace('.','').replace(',','').replace('-','').replace(' ','') %}
-        <span class="celda-valor">
+        <span class="celda-valor" style="color:var(--warn); font-weight:600;">
           {% if _v and _vn.isdigit() %}
             $ {{ '{:,.0f}'.format(_v|float)|replace(',', '.') }}
           {% else %}
@@ -288,6 +289,13 @@
         {% else %}
           <button onclick="publicarPedido({{ p.id }}, this)" class="hbtn" style="font-size:10px; padding:2px 6px;" title="Publicar en grupo de WhatsApp">📤 Publicar</button>
         {% endif %}
+      </td>
+      <td style="text-align:center;">
+        {# Botón de borrar pedido. Pensado para fase de pruebas — el backend
+           ya hace cascade (s.delete(p) borra el pedido entero). #}
+        <button onclick="borrarPedido({{ p.id }}, {{ (p.cliente_nombre or 'sin cliente')|tojson }})"
+                class="hbtn" style="font-size:11px; padding:2px 5px; opacity:0.6;"
+                title="Borrar pedido (fase de pruebas)">🗑</button>
       </td>
     </tr>
     {% endfor %}
@@ -496,6 +504,18 @@ async function setTurno(pid, valor) {
     const d = await r.json();
     if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo cambiar turno')); return; }
     location.reload();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function borrarPedido(pid, nombre) {
+  if (!confirm(`Borrar pedido #${pid} (${nombre || 'sin cliente'})?\n\nEsto es irreversible.`)) return;
+  try {
+    const r = await fetch(`/reparto/pedido/${pid}/delete`, {method:'POST'});
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo borrar')); return; }
+    const fila = document.querySelector(`tr[data-pid="${pid}"]`);
+    if (fila) fila.remove();
+    else location.reload();
   } catch (e) { alert('Error: ' + e.message); }
 }
 
