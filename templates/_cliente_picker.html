@@ -41,7 +41,11 @@
     </div>
   </div>
   <div class="field" style="position:relative;">
-    <label>Dirección (calle y número)</label>
+    <label>Dirección (calle y número)
+      {# Mini-indicador del vínculo conv ↔ cliente. Lo pinta cliente_picker.js
+         (_pintarVinculoBadge) al final de loadCliente/limpia en clear(). #}
+      <span id="vinculoBadge" class="muted2" style="margin-left:8px; font-size:10px; font-weight:400;"></span>
+    </label>
     <div style="display:flex; gap:5px;">
       <input id="pDir" class="input" placeholder="ej: Av. Córdoba 3400" style="flex:1;" autocomplete="off" oninput="ClientePicker.onDirInput()" onkeydown="if(event.key==='Escape')document.getElementById('resGeo').style.display='none'">
       <button type="button" onclick="ClientePicker.buscarGeoSugerencias()" class="hbtn" title="Buscar dirección en mapa">📍</button>

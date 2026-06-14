@@ -187,10 +187,17 @@
   async function loadCliente({cliente_id, observer_id} = {}){
     window._oid = observer_id || null;
     window._cid = cliente_id || null;
+    _pintarVinculoBadge();
     const params = cliente_id ? `cliente_id=${cliente_id}`
                               : `observer_id=${observer_id}`;
     const ficha = await (await fetch(`/api/clientes/ficha?${params}`)).json();
     if(ficha && !ficha.error){
+      // La ficha local trae el cliente_id real (si en el load original solo
+      // venía observer_id, ahora podemos completarlo para el badge).
+      if (ficha.cliente_id && !window._cid){
+        window._cid = ficha.cliente_id;
+        _pintarVinculoBadge();
+      }
       _pintarOsBadge(ficha.obra_social);
       // Setear nombre solo si el input está vacío (pickCli lo setea explícito antes).
       if (!$('pCliente').value){
@@ -455,6 +462,27 @@
     };
   }
 
+  // Badge mini "linkeado a..." en la línea del label Dirección. Diego pidió
+  // tenerlo a la vista para chequear de un vistazo si la conv apunta a un
+  // cliente ObServer o a un lead local sin sync.
+  function _pintarVinculoBadge(){
+    const el = $('vinculoBadge'); if (!el) return;
+    const oid = window._oid, cid = window._cid;
+    if (oid){
+      el.textContent = `🔗 ObServer #${oid}`;
+      el.title = 'Vinculado a un cliente de ObServer. ID en la columna observer_id.';
+      el.style.color = '#10b981';
+    } else if (cid){
+      el.textContent = `📝 Local #${cid}`;
+      el.title = 'Cliente local (sin observer_id). Lead creado desde el panel o por DNI sin match en ObServer.';
+      el.style.color = '#eab308';
+    } else {
+      el.textContent = '— sin vincular —';
+      el.title = 'No hay cliente vinculado a esta conv. Buscalo arriba o tocá ＋ para alta.';
+      el.style.color = '';
+    }
+  }
+
   // Badge de OS al lado del label Cliente. Confirmada → tildecita; inferida → ~ con confianza.
   function _pintarOsBadge(os){
     const el = $('osBadge'); if (!el) return;
@@ -479,6 +507,7 @@
     _pintarOsBadge(null);
     window._cid = null;
     window._oid = null;
+    _pintarVinculoBadge();
     window._doms = [];
     window._domLat = null;
     window._domLng = null;
@@ -490,6 +519,10 @@
 
   function init(opts){
     Object.assign(callbacks, opts || {});
+
+    // Estado inicial del badge de vínculo: "sin vincular" (lo hosts que
+    // arrancan con un cliente cargado llaman loadCliente() y lo repintan).
+    _pintarVinculoBadge();
 
     // Auto-close dropdowns al clickear fuera (idempotente: solo una vez).
     if (!window._cpDocListener){
