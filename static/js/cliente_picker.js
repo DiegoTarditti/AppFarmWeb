@@ -94,7 +94,7 @@
              title="Abrir en Google Maps">🗺️ Ver en mapa</a>
         </div>`;
       el.style.background = sem.bg;
-      el.style.padding = '8px 10px';
+      el.style.padding = '4px 10px';
       el.style.borderRadius = '8px';
       el.style.marginTop = '4px';
     } else {
