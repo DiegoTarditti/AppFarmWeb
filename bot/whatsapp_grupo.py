@@ -65,6 +65,56 @@ def publicar_en_grupo(texto, chat_id=None, session=None):
     return {'ok': True, 'waha_msg_id': msg_id, 'raw': data}
 
 
+def normalizar_wa_id(raw):
+    """Convierte un wa_id 'crudo' a formato WAHA canónico '<num>@c.us'.
+    - Si ya viene con '@g.us' o '@c.us', lo deja igual.
+    - Si son dígitos puros, le agrega '@c.us'.
+    - None / vacío → None.
+    """
+    s = (raw or '').strip()
+    if not s:
+        return None
+    if s.endswith('@c.us') or s.endswith('@g.us'):
+        return s
+    digs = ''.join(ch for ch in s if ch.isdigit())
+    return f'{digs}@c.us' if digs else None
+
+
+def enviar_dm(wa_id, texto, session=None):
+    """Manda un mensaje directo (DM) a un wa_id puntual. Mismo plumbing que
+    publicar_en_grupo (WAHA /api/sendText), solo cambia el chatId.
+
+    Devuelve {ok, waha_msg_id?, error?}. No necesita matchear reply (los DMs
+    no se citan), pero devuelve el msg_id por si en el futuro queremos hilo.
+    """
+    chat = normalizar_wa_id(wa_id)
+    if not chat:
+        return {'ok': False, 'error': 'wa_id vacío o inválido'}
+    if not chat.endswith('@c.us'):
+        return {'ok': False, 'error': f'wa_id de DM debe terminar en @c.us (vino {chat})'}
+    sess = session or WAHA_SESSION
+    try:
+        r = requests.post(
+            f'{WAHA_URL}/api/sendText',
+            headers=_headers(),
+            json={'chatId': chat, 'text': texto, 'session': sess},
+            timeout=20,
+        )
+    except Exception as e:  # noqa: BLE001
+        log.exception('WAHA sendText DM falló')
+        return {'ok': False, 'error': str(e)}
+    if not r.ok:
+        return {'ok': False, 'error': f'HTTP {r.status_code}: {r.text[:200]}'}
+    data = r.json()
+    id_obj = data.get('id')
+    msg_id = ''
+    if isinstance(id_obj, dict):
+        msg_id = id_obj.get('_serialized') or id_obj.get('id') or ''
+    elif isinstance(id_obj, str):
+        msg_id = id_obj
+    return {'ok': True, 'waha_msg_id': msg_id, 'raw': data}
+
+
 FRASES_TOMA = [
     'tomo', 'voy', 'lo tomo', 'yo voy', 'voy yo', 'lo agarro', 'oktomo',
 ]
