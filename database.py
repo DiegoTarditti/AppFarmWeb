@@ -2651,6 +2651,10 @@ class BotConversacion(Base):
     tarjeta_marca = Column(String(20), nullable=True)
     tarjeta_nombre = Column(String(80), nullable=True)
     tarjeta_ult4 = Column(String(4), nullable=True)
+    # Costo de envío acordado durante el chat (cuando va por reparto). Se persiste
+    # para que el operador pueda calcular vuelto sin tener el modal abierto y se
+    # mantenga si re-abre la conv más tarde.
+    envio_costo = Column(DECIMAL(12, 2), nullable=True)
     pago_acordado_en = Column(DateTime, nullable=True)     # cuando guardó forma+link
     pago_confirmado_en = Column(DateTime, nullable=True)   # cuando llegó dato_pago
     creado_en = Column(DateTime, default=now_ar)
@@ -4616,6 +4620,9 @@ def _pg_add_columns(conn):
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS tarjeta_ult4 VARCHAR(4)",
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS pago_acordado_en TIMESTAMP",
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS pago_confirmado_en TIMESTAMP",
+        # Costo de envío acordado en el chat (Diego 2026-06-14: necesita verlo en el
+        # sidebar para calcular vuelto sin abrir el modal Cerrar TX).
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS envio_costo DECIMAL(12,2)",
         # Presencia de agentes en el panel de atención.
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_presencia VARCHAR(12) NOT NULL DEFAULT 'online'",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",

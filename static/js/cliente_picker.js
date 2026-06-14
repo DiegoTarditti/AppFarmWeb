@@ -199,12 +199,13 @@
         _pintarVinculoBadge();
       }
       _pintarOsBadge(ficha.obra_social);
-      // Setear nombre solo si el input está vacío (pickCli lo setea explícito antes).
-      if (!$('pCliente').value){
-        const raw = ficha.raw || {};
-        const visible = ficha.nombre || [raw.apellido, raw.nombre].filter(Boolean).join(', ');
-        if (visible) $('pCliente').value = visible;
-      }
+      // Antes solo seteábamos pCliente si el input venía vacío, suponiendo que
+      // pickCli lo hubiera precargado. Bug: al cambiar de chat en /atencion el
+      // input quedaba con el nombre del cliente anterior porque el guard nunca
+      // pisaba. Ahora SIEMPRE actualizamos al nombre canónico de la ficha.
+      const raw = ficha.raw || {};
+      const visible = ficha.nombre || [raw.apellido, raw.nombre].filter(Boolean).join(', ');
+      if (visible) $('pCliente').value = visible;
       const cid = window._cid;
       const dir = ficha.direccion || ficha.domicilio || '';
       const loc = ficha.localidad || ficha.ciudad || '';
