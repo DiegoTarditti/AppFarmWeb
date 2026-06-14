@@ -81,12 +81,12 @@
       const lng = Number(window._domLng).toFixed(6);
       const sem = semaforoGeo(window._domGeoAt);
       el.innerHTML = `
-        <div style="display:flex; align-items:center; gap:14px; flex-wrap:nowrap; white-space:nowrap;">
-          <span style="font-size:18px; font-weight:700; color:var(--accent); font-family:monospace;">📍 ${lat}, ${lng}</span>
-          <span style="font-size:18px; font-weight:600; color:var(--title);">${sem.label}${window._domGeoAt ? ' · '+fmtFechaGeo(window._domGeoAt) : ''}</span>
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:nowrap; white-space:nowrap;">
+          <span style="font-size:15px; font-weight:700; color:var(--accent); font-family:monospace;">📍 ${lat}, ${lng}</span>
+          <span style="font-size:15px; font-weight:600; color:var(--title);">${sem.label}${window._domGeoAt ? ' · '+fmtFechaGeo(window._domGeoAt) : ''}</span>
           <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" rel="noopener"
-             style="font-size:14px; font-weight:700; color:#fff; background:#185FA5;
-                    padding:6px 14px; border-radius:8px; text-decoration:none;"
+             style="font-size:12px; font-weight:700; color:#fff; background:#185FA5;
+                    padding:5px 12px; border-radius:8px; text-decoration:none;"
              title="Abrir en Google Maps">🗺️ Ver en mapa</a>
         </div>`;
       el.style.background = sem.bg;
