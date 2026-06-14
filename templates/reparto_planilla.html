@@ -118,6 +118,25 @@
                     color:var(--muted); }
   .dm-detail-back:hover { color:var(--title); }
   .dm-empty { padding:20px; text-align:center; color:var(--muted); font-size:11px; }
+
+  /* ── Modal genérico (cadetes) ────────────────────────────────────────── */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:100;
+                    align-items:center; justify-content:center; }
+  .modal-overlay.open { display:flex; }
+  .modal-card { background:var(--card); border:1px solid var(--border); border-radius:12px;
+                 padding:16px; min-width:420px; max-width:90vw; max-height:85vh; overflow:auto; }
+  .modal-card h3 { margin:0 0 12px; font-size:14px; color:var(--title); display:flex;
+                    justify-content:space-between; align-items:center; }
+  .modal-card .close { cursor:pointer; font-size:18px; color:var(--muted); }
+  .modal-card .close:hover { color:var(--title); }
+  .cad-row { display:flex; gap:8px; align-items:center; padding:6px 8px; border-bottom:1px solid var(--row-bd);
+              font-size:12px; }
+  .cad-row:last-child { border-bottom:none; }
+  .cad-row .nombre { flex:1; color:var(--txt); }
+  .cad-row.inactivo .nombre { color:var(--muted2); text-decoration:line-through; }
+  .cad-row .tel { color:var(--muted); font-size:10px; }
+  .cad-form { display:flex; gap:6px; margin-top:14px; padding-top:12px; border-top:1px solid var(--border); }
+  .cad-form input { flex:1; }
 </style>
 </head>
 <body>
@@ -132,6 +151,7 @@
     <button onclick="cambiarDia(0, '{{ hoy.strftime('%Y-%m-%d') }}')" style="font-weight:600;">Hoy</button>
   </div>
   <div style="flex:1"></div>
+  <button onclick="cadModalAbrir()" class="hbtn" title="Gestionar cadetes">🛵 Cadetes</button>
   <a href="/config/envio" class="hbtn" title="Editar tarifas, zonas y tramos">⚙️ Tarifas de envío</a>
   <a href="/reparto?fecha={{ fecha.strftime('%Y-%m-%d') }}" class="hbtn">🗺️ Ver en reparto</a>
   <a href="/reparto" class="hbtn">← Volver</a>
@@ -393,6 +413,19 @@
   </div>
 </aside>
 </div><!-- planilla-shell -->
+
+<!-- Modal: gestión de cadetes (alta/baja). Consume /cadetes/api, POST /cadetes, POST /cadetes/<id>/delete. -->
+<div id="cadModal" class="modal-overlay" onclick="if(event.target===this)cadModalCerrar()">
+  <div class="modal-card">
+    <h3>🛵 Cadetes <span class="close" onclick="cadModalCerrar()">✕</span></h3>
+    <div id="cadList"><div class="muted" style="font-size:11px; padding:8px;">cargando…</div></div>
+    <div class="cad-form">
+      <input id="cadNombre" class="input" placeholder="Nombre" onkeydown="if(event.key==='Enter')cadAgregar()">
+      <input id="cadTel" class="input" placeholder="Teléfono (opcional)" style="max-width:150px;" onkeydown="if(event.key==='Enter')cadAgregar()">
+      <button onclick="cadAgregar()" class="hbtn" style="font-weight:600;">＋ Agregar</button>
+    </div>
+  </div>
+</div>
 
 <script>
 function cambiarDia(delta, fechaStr) {
@@ -720,6 +753,64 @@ function chatIniciarPolling(){
   chatGrupoCargarPrimero();
   chatRefrescar();
   chatState.pollHandle = setInterval(chatRefrescar, 3000);
+}
+
+/* ── Modal gestión de cadetes ────────────────────────────────────────── */
+function cadModalAbrir(){
+  document.getElementById('cadModal').classList.add('open');
+  cadCargar();
+  setTimeout(()=>document.getElementById('cadNombre').focus(), 50);
+}
+function cadModalCerrar(){
+  document.getElementById('cadModal').classList.remove('open');
+}
+async function cadCargar(){
+  const cont = document.getElementById('cadList');
+  try {
+    const r = await fetch('/cadetes/api');
+    const d = await r.json();
+    const cs = d.cadetes || [];
+    if (!cs.length){ cont.innerHTML = '<div class="muted" style="font-size:11px; padding:8px;">sin cadetes.</div>'; return; }
+    cont.innerHTML = cs.map(c => `
+      <div class="cad-row ${c.activo ? '' : 'inactivo'}">
+        <span class="nombre">${esc(c.nombre)}${c.telefono ? ` <span class="tel">· ${esc(c.telefono)}</span>` : ''}</span>
+        ${c.zonas ? `<span class="muted2" style="font-size:9px;">${c.zonas} ruta${c.zonas>1?'s':''}</span>` : ''}
+        <button onclick="cadToggle(${c.id}, ${c.activo ? 'false' : 'true'})" class="hbtn" style="font-size:10px; padding:2px 7px;"
+                title="${c.activo ? 'Desactivar' : 'Reactivar'}">${c.activo ? '⏸' : '▶'}</button>
+        <button onclick="cadBorrar(${c.id}, '${esc(c.nombre)}')" class="hbtn" style="font-size:11px; padding:2px 6px; opacity:0.7;"
+                title="Borrar definitivamente">🗑</button>
+      </div>`).join('');
+  } catch (e) { cont.innerHTML = '<div class="muted">error: ' + e.message + '</div>'; }
+}
+async function cadAgregar(){
+  const nombre = document.getElementById('cadNombre').value.trim();
+  if (!nombre) { alert('Poné un nombre.'); return; }
+  const tel = document.getElementById('cadTel').value.trim() || null;
+  try {
+    const r = await fetch('/cadetes', {method:'POST', headers:{'Content-Type':'application/json'},
+                                       body: JSON.stringify({nombre, telefono: tel, activo: true})});
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo agregar')); return; }
+    document.getElementById('cadNombre').value = '';
+    document.getElementById('cadTel').value = '';
+    cadCargar();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+async function cadToggle(id, activo){
+  try {
+    await fetch('/cadetes', {method:'POST', headers:{'Content-Type':'application/json'},
+                              body: JSON.stringify({id, activo})});
+    cadCargar();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+async function cadBorrar(id, nombre){
+  if (!confirm(`Borrar cadete "${nombre}"?\n\nSe desvincula de sus rutas. Pedidos viejos que ya lo tenían asignado conservan el nombre pero pierden el link.`)) return;
+  try {
+    const r = await fetch(`/cadetes/${id}/delete`, {method:'POST'});
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo borrar')); return; }
+    cadCargar();
+  } catch (e) { alert('Error: ' + e.message); }
 }
 
 // Restaurar estado colapsado y arrancar polling si está abierto.
