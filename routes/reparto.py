@@ -655,6 +655,189 @@ def init_app(app):
         r = whatsapp_grupo.configurar_webhook(url_interno)
         return jsonify(r)
 
+    # ── Chat de reparto (panel en /reparto/planilla) ────────────────────────
+    # 5 endpoints que sirven la lista de conversaciones (grupo + DMs) y permiten
+    # mandar mensajes desde el panel sin salir de la planilla.
+
+    def _conv_grupo_or_none(s):
+        from bot import whatsapp_grupo as _wg
+        if not _wg.WAHA_GRUPO_ENVIOS:
+            return None
+        return (s.query(database.BotConversacion)
+                .filter_by(canal='whatsapp_grupo', canal_user_id=_wg.WAHA_GRUPO_ENVIOS)
+                .first())
+
+    def _msg_to_dict(m):
+        return {'id': m.id, 'origen': m.origen, 'texto': m.texto,
+                'creado_en': m.creado_en.isoformat() if m.creado_en else None}
+
+    @app.route('/api/reparto/chat/resumen')
+    @login_required
+    def api_reparto_chat_resumen():
+        """Listado para el panel: estado del grupo + DMs por cadete ordenados
+        por último mensaje. El frontend hace polling de este endpoint cada 3s."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        with database.get_db() as s:
+            grupo_info = None
+            grupo = _conv_grupo_or_none(s)
+            if grupo:
+                ult = (s.query(database.BotMensaje)
+                       .filter_by(conversacion_id=grupo.id)
+                       .order_by(database.BotMensaje.id.desc()).first())
+                grupo_info = {
+                    'conv_id': grupo.id,
+                    'ultimo': ult.texto[:80] if ult else '',
+                    'ultimo_en': ult.creado_en.isoformat() if (ult and ult.creado_en) else None,
+                    'ultimo_origen': ult.origen if ult else None,
+                }
+            # DMs: conversaciones con cadete_id NO NULL (los autovinculados o
+            # vinculados a mano). Limitamos a últimas 50 para que el polling
+            # no se infle si hay muchos cadetes inactivos.
+            convs = (s.query(database.BotConversacion)
+                     .filter(database.BotConversacion.cadete_id.isnot(None))
+                     .order_by(database.BotConversacion.ultimo_en.desc())
+                     .limit(50).all())
+            dms = []
+            for c in convs:
+                ult = (s.query(database.BotMensaje)
+                       .filter_by(conversacion_id=c.id)
+                       .order_by(database.BotMensaje.id.desc()).first())
+                cad = s.get(database.Cadete, c.cadete_id) if c.cadete_id else None
+                dms.append({
+                    'conv_id': c.id,
+                    'cadete_id': c.cadete_id,
+                    'nombre': cad.nombre if cad else (c.nombre_cliente or 'Cadete'),
+                    'ultimo': ult.texto[:80] if ult else '',
+                    'ultimo_en': ult.creado_en.isoformat() if (ult and ult.creado_en) else None,
+                    'ultimo_origen': ult.origen if ult else None,
+                })
+            return jsonify({'ok': True, 'grupo': grupo_info, 'dms': dms})
+
+    @app.route('/api/reparto/chat/grupo/mensajes')
+    @login_required
+    def api_reparto_chat_grupo_mensajes():
+        """Mensajes del grupo. ?desde_id=N → solo posteriores (para append
+        incremental en el polling). Sin desde_id → últimos 80."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        try:
+            desde_id = int(request.args.get('desde_id') or 0)
+        except (TypeError, ValueError):
+            desde_id = 0
+        with database.get_db() as s:
+            grupo = _conv_grupo_or_none(s)
+            if not grupo:
+                return jsonify({'ok': True, 'mensajes': [], 'conv_id': None})
+            q = s.query(database.BotMensaje).filter_by(conversacion_id=grupo.id)
+            if desde_id:
+                q = q.filter(database.BotMensaje.id > desde_id)
+            else:
+                q = q.order_by(database.BotMensaje.id.desc()).limit(80)
+            msgs = q.all()
+            if not desde_id:
+                msgs = sorted(msgs, key=lambda m: m.id)
+            return jsonify({'ok': True, 'conv_id': grupo.id,
+                            'mensajes': [_msg_to_dict(m) for m in msgs]})
+
+    @app.route('/api/reparto/chat/cadete/<int:cadete_id>/mensajes')
+    @login_required
+    def api_reparto_chat_cadete_mensajes(cadete_id):
+        """DM con un cadete puntual. Igual semántica que el de grupo."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        try:
+            desde_id = int(request.args.get('desde_id') or 0)
+        except (TypeError, ValueError):
+            desde_id = 0
+        with database.get_db() as s:
+            conv = (s.query(database.BotConversacion)
+                    .filter_by(cadete_id=cadete_id, canal='whatsapp')
+                    .order_by(database.BotConversacion.ultimo_en.desc())
+                    .first())
+            if not conv:
+                return jsonify({'ok': True, 'mensajes': [], 'conv_id': None})
+            q = s.query(database.BotMensaje).filter_by(conversacion_id=conv.id)
+            if desde_id:
+                q = q.filter(database.BotMensaje.id > desde_id)
+            else:
+                q = q.order_by(database.BotMensaje.id.desc()).limit(80)
+            msgs = q.all()
+            if not desde_id:
+                msgs = sorted(msgs, key=lambda m: m.id)
+            return jsonify({'ok': True, 'conv_id': conv.id,
+                            'mensajes': [_msg_to_dict(m) for m in msgs]})
+
+    @app.route('/api/reparto/chat/grupo/responder', methods=['POST'])
+    @login_required
+    def api_reparto_chat_grupo_responder():
+        """El operador escribe al grupo desde el panel. Manda por WAHA y
+        persiste como BotMensaje(origen='operador')."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        texto = ((request.json or {}).get('texto') or '').strip()
+        if not texto:
+            return jsonify({'ok': False, 'error': 'texto vacío'}), 400
+        from bot import whatsapp_grupo
+        r = whatsapp_grupo.publicar_en_grupo(texto)
+        if not r.get('ok'):
+            return jsonify({'ok': False, 'error': r.get('error') or 'fallo WAHA'}), 502
+        # Persistir el mensaje saliente.
+        with database.get_db() as s:
+            grupo = _conv_grupo_or_none(s)
+            if not grupo:
+                # Si el grupo aún no tiene conv (1er mensaje saliente nunca), crearla.
+                grupo = database.BotConversacion(
+                    canal='whatsapp_grupo',
+                    canal_user_id=whatsapp_grupo.WAHA_GRUPO_ENVIOS,
+                    nombre_cliente='Grupo de cadetes',
+                    estado_atencion='humano', nodo='reparto')
+                s.add(grupo); s.flush()
+            m = database.BotMensaje(conversacion_id=grupo.id, origen='operador', texto=texto)
+            s.add(m)
+            grupo.ultimo_en = database.now_ar()
+            grupo.operador_user_id = current_user.id
+            s.commit()
+            return jsonify({'ok': True, 'mensaje': _msg_to_dict(m)})
+
+    @app.route('/api/reparto/chat/cadete/<int:cadete_id>/responder', methods=['POST'])
+    @login_required
+    def api_reparto_chat_cadete_responder(cadete_id):
+        """El operador escribe a un cadete (DM). Manda por WAHA al wa_id del
+        cadete y persiste."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        texto = ((request.json or {}).get('texto') or '').strip()
+        if not texto:
+            return jsonify({'ok': False, 'error': 'texto vacío'}), 400
+        from bot import whatsapp_grupo
+        with database.get_db() as s:
+            cadete = s.get(database.Cadete, cadete_id)
+            if not cadete:
+                return jsonify({'ok': False, 'error': 'cadete no existe'}), 404
+            if not cadete.wa_id:
+                return jsonify({'ok': False, 'error': 'cadete sin wa_id (todavía no escribió o no se vinculó)'}), 400
+            r = whatsapp_grupo.enviar_dm(cadete.wa_id, texto)
+            if not r.get('ok'):
+                return jsonify({'ok': False, 'error': r.get('error') or 'fallo WAHA'}), 502
+            conv = (s.query(database.BotConversacion)
+                    .filter_by(cadete_id=cadete_id, canal='whatsapp')
+                    .order_by(database.BotConversacion.ultimo_en.desc())
+                    .first())
+            if not conv:
+                conv = database.BotConversacion(
+                    canal='whatsapp', canal_user_id=cadete.wa_id,
+                    nombre_cliente=cadete.nombre,
+                    estado_atencion='humano', nodo='reparto',
+                    cadete_id=cadete.id)
+                s.add(conv); s.flush()
+            m = database.BotMensaje(conversacion_id=conv.id, origen='operador', texto=texto)
+            s.add(m)
+            conv.ultimo_en = database.now_ar()
+            conv.operador_user_id = current_user.id
+            s.commit()
+            return jsonify({'ok': True, 'mensaje': _msg_to_dict(m)})
+
     @app.route('/reparto/pedido/<int:pid>/publicar', methods=['POST'])
     @login_required
     def reparto_pedido_publicar(pid):
