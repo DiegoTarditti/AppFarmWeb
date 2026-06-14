@@ -1357,7 +1357,7 @@ function txComputarPagado() {
   if (f === 'link_mp' || f === 'transferencia') return !!_txVal('txNroOp').trim();
   return false;
 }
-const ALIAS_FARMACIA = 'farmacia.badia.mp';  // TODO: traer de config
+const ALIAS_FARMACIA = {{ (alias_transferencia or '')|tojson }};
 function txStockChange() {
   document.getElementById('txDrogueria').style.display =
     document.getElementById('txStock').value === 'esperar' ? 'block' : 'none';

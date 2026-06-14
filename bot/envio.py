@@ -238,11 +238,13 @@ def get_config():
             s.commit()
         return {'farmacia_lat': c.farmacia_lat, 'farmacia_lng': c.farmacia_lng,
                 'factor_cuadras': c.factor_cuadras or 1.3,
-                'metros_por_cuadra': c.metros_por_cuadra or 100}
+                'metros_por_cuadra': c.metros_por_cuadra or 100,
+                'alias_transferencia': c.alias_transferencia or ''}
 
 
 def guardar_config(farmacia_lat=None, farmacia_lng=None,
-                   factor_cuadras=None, metros_por_cuadra=None):
+                   factor_cuadras=None, metros_por_cuadra=None,
+                   alias_transferencia=None):
     """Actualiza solo los campos provistos (no pisa coords al editar el factor)."""
     with database.get_db() as s:
         c = s.query(database.EnvioConfig).first()
@@ -257,6 +259,8 @@ def guardar_config(farmacia_lat=None, farmacia_lng=None,
             c.factor_cuadras = _f(factor_cuadras)
         if _f(metros_por_cuadra):
             c.metros_por_cuadra = int(_f(metros_por_cuadra))
+        if alias_transferencia is not None:
+            c.alias_transferencia = (alias_transferencia or '').strip() or None
         c.actualizado_en = database.now_ar()
         s.commit()
         return {'ok': True}

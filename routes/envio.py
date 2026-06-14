@@ -71,7 +71,8 @@ def init_app(app):
         return jsonify(envio.guardar_config(
             farmacia_lat=b.get('farmacia_lat'), farmacia_lng=b.get('farmacia_lng'),
             factor_cuadras=b.get('factor_cuadras'),
-            metros_por_cuadra=b.get('metros_por_cuadra')))
+            metros_por_cuadra=b.get('metros_por_cuadra'),
+            alias_transferencia=b.get('alias_transferencia')))
 
     @app.route('/config/envio/geolocalizar', methods=['POST'])
     @login_required

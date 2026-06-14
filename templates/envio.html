@@ -104,6 +104,14 @@
         </label>
       </div>
       <div class="muted" id="cfAviso" style="font-size:11px; margin-top:8px;"></div>
+      {# Alias para transferencias: se pega al chat cuando el operador elige
+         'Transferencia' como forma de pago en /atencion. #}
+      <div style="display:flex; gap:10px; align-items:flex-end; margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+        <label class="fl" style="flex:1;">Alias para transferencias (lo que se le manda al cliente)
+          <input id="cfAlias" class="input" style="width:100%;" placeholder="ej: farmacia.badia.mp">
+        </label>
+        <button onclick="guardarConfig()" class="hbtn hbtn-ok">Guardar alias</button>
+      </div>
     </div>
 
     <div class="grid2">
@@ -192,6 +200,7 @@ async function cargar(){
   document.getElementById('cfLng').value = c.farmacia_lng ?? '';
   document.getElementById('cfFactor').value = c.factor_cuadras ?? '';
   document.getElementById('cfMpc').value = c.metros_por_cuadra ?? '';
+  document.getElementById('cfAlias').value = c.alias_transferencia ?? '';
   document.getElementById('cfAviso').textContent = (c.farmacia_lat==null)
     ? '⚠️ Falta la ubicación de la farmacia: sin eso no se puede estimar cuadras desde el pin.'
     : 'Origen configurado ✓';
@@ -272,7 +281,8 @@ async function guardarConfig(){
     farmacia_lat: document.getElementById('cfLat').value,
     farmacia_lng: document.getElementById('cfLng').value,
     factor_cuadras: document.getElementById('cfFactor').value,
-    metros_por_cuadra: document.getElementById('cfMpc').value });
+    metros_por_cuadra: document.getElementById('cfMpc').value,
+    alias_transferencia: document.getElementById('cfAlias').value });
   cargar();
 }
 async function geoFarmacia(){

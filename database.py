@@ -616,6 +616,7 @@ class EnvioConfig(Base):
     farmacia_lng = Column(Float, nullable=True)
     factor_cuadras = Column(Float, nullable=False, default=1.3)
     metros_por_cuadra = Column(Integer, nullable=False, default=100)
+    alias_transferencia = Column(String(80), nullable=True)   # alias/CBU para pegar al chat
     actualizado_en = Column(DateTime, default=now_ar)
 
 
@@ -4630,6 +4631,7 @@ def _pg_add_columns(conn):
          "orden INTEGER NOT NULL DEFAULT 0, "
          "creado_en TIMESTAMP NOT NULL DEFAULT NOW())"),
         # Por las dudas que la tabla ya existiera con activo NOT NULL sin default.
+        "ALTER TABLE envio_config ADD COLUMN IF NOT EXISTS alias_transferencia VARCHAR(80)",
         "ALTER TABLE pedido_obs_presets ALTER COLUMN activo SET DEFAULT TRUE",
         "ALTER TABLE pedido_obs_presets ALTER COLUMN creado_en SET DEFAULT NOW()",
         # Seed inicial idempotente. Listo activo + creado_en explícitos por si la tabla
