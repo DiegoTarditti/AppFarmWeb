@@ -872,6 +872,24 @@ def init_app(app):
                 return jsonify({'ok': False, 'error': r.get('error') or 'sin respuesta WAHA'}), 502
             p.waha_msg_id = r.get('waha_msg_id')
             p.publicado_en = database.now_ar()
+            # Persistir el publish en la conv del grupo para que aparezca en el
+            # panel de /reparto/planilla (sino la timeline del grupo solo
+            # tendría lo que llega del webhook).
+            grupo = (s.query(database.BotConversacion)
+                     .filter_by(canal='whatsapp_grupo',
+                                canal_user_id=whatsapp_grupo.WAHA_GRUPO_ENVIOS)
+                     .first()) if whatsapp_grupo.WAHA_GRUPO_ENVIOS else None
+            if not grupo and whatsapp_grupo.WAHA_GRUPO_ENVIOS:
+                grupo = database.BotConversacion(
+                    canal='whatsapp_grupo',
+                    canal_user_id=whatsapp_grupo.WAHA_GRUPO_ENVIOS,
+                    nombre_cliente='Grupo de cadetes',
+                    estado_atencion='humano', nodo='reparto')
+                s.add(grupo); s.flush()
+            if grupo:
+                s.add(database.BotMensaje(conversacion_id=grupo.id,
+                                          origen='operador', texto=texto))
+                grupo.ultimo_en = database.now_ar()
             s.commit()
             return jsonify({'ok': True, 'waha_msg_id': p.waha_msg_id,
                             'publicado_en': p.publicado_en.isoformat()})
