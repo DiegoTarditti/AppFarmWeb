@@ -77,15 +77,19 @@
     const el = $('pDomCoords');
     if (!el) return;
     if (window._domLat != null && window._domLng != null){
-      const lat = Number(window._domLat).toFixed(6);
-      const lng = Number(window._domLng).toFixed(6);
+      // Mostramos 2 decimales (suficiente para reconocer la zona). Para Maps
+      // usamos las coords precisas (sin redondear) así el pin no se desplaza.
+      const latPrec = Number(window._domLat);
+      const lngPrec = Number(window._domLng);
+      const lat = latPrec.toFixed(2);
+      const lng = lngPrec.toFixed(2);
       const sem = semaforoGeo(window._domGeoAt);
       el.innerHTML = `
-        <div style="display:flex; align-items:center; gap:12px; flex-wrap:nowrap; white-space:nowrap;">
-          <span style="font-size:15px; font-weight:700; color:var(--accent); font-family:monospace;">📍 ${lat}, ${lng}</span>
-          <span style="font-size:15px; font-weight:600; color:var(--title);">${sem.label}${window._domGeoAt ? ' · '+fmtFechaGeo(window._domGeoAt) : ''}</span>
-          <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" rel="noopener"
-             style="font-size:12px; font-weight:700; color:#fff; background:#185FA5;
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:nowrap; white-space:nowrap;">
+          <span style="font-size:14px; font-weight:700; color:var(--accent); font-family:monospace;">📍 ${lat}, ${lng}</span>
+          <span style="font-size:14px; font-weight:600; color:var(--title);">${sem.label}${window._domGeoAt ? ' · '+fmtFechaGeo(window._domGeoAt) : ''}</span>
+          <a href="https://www.google.com/maps?q=${latPrec},${lngPrec}" target="_blank" rel="noopener"
+             style="font-size:11px; font-weight:700; color:#fff; background:#185FA5;
                     padding:5px 12px; border-radius:8px; text-decoration:none;"
              title="Abrir en Google Maps">🗺️ Ver en mapa</a>
         </div>`;

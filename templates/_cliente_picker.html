@@ -48,13 +48,18 @@
     </div>
     <div id="resGeo" class="res" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:5;"></div>
   </div>
-  <div class="field" style="flex:0 0 70px;">
-    <label>Piso</label>
-    <input id="pPiso" class="input" placeholder="ej: 1 / PB" style="width:100%;">
-  </div>
-  <div class="field" style="flex:0 0 70px;">
-    <label>Depto</label>
-    <input id="pDepto" class="input" placeholder="ej: B" style="width:100%;">
+  {# Piso + Depto van en la misma fila (son inputs chicos y se desperdicia ancho). #}
+  <div class="field" style="flex:0 0 160px;">
+    <div style="display:flex; gap:8px;">
+      <div style="flex:1; min-width:0;">
+        <label style="display:block;">Piso</label>
+        <input id="pPiso" class="input" placeholder="ej: 1 / PB" style="width:100%;">
+      </div>
+      <div style="flex:1; min-width:0;">
+        <label style="display:block;">Depto</label>
+        <input id="pDepto" class="input" placeholder="ej: B" style="width:100%;">
+      </div>
+    </div>
   </div>
   <div class="field" style="flex:1 1 200px;">
     <label>Referencia</label>
