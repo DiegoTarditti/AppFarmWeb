@@ -262,6 +262,17 @@
                   </select>
                 </div>
               </div>
+              <div id="txEnvioWrap" style="display:flex; gap:8px; align-items:flex-end;">
+                <div style="flex:1; min-width:0;">
+                  <label class="muted2" style="font-size:10px;">Domicilio de entrega</label>
+                  <select id="txDomicilio" onchange="txCotizarEnvio()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;"></select>
+                </div>
+                <div style="flex:0 0 120px;">
+                  <label class="muted2" style="font-size:10px;">Envío</label>
+                  <input id="txEnvio" type="number" min="0" oninput="txCalc()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                </div>
+              </div>
+              {# Stock + Sale por + Prioridad — fila compacta abajo de todo. #}
               <div style="display:flex; gap:8px;">
                 <div style="flex:1;">
                   <label class="muted2" style="font-size:10px;">¿Stock?</label>
@@ -280,24 +291,14 @@
                     <option value="retiro">Retiro</option>
                   </select>
                 </div>
-              </div>
-              <div id="txEnvioWrap" style="display:flex; gap:8px; align-items:flex-end;">
-                <div style="flex:1; min-width:0;">
-                  <label class="muted2" style="font-size:10px;">Domicilio de entrega</label>
-                  <select id="txDomicilio" onchange="txCotizarEnvio()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;"></select>
+                <div style="flex:1;">
+                  <label class="muted2" style="font-size:10px;">Prioridad</label>
+                  <select id="txPrioridad" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                    <option value="normal">Normal</option>
+                    <option value="alta">Alta</option>
+                    <option value="urgente">🚨 Urgente</option>
+                  </select>
                 </div>
-                <div style="flex:0 0 120px;">
-                  <label class="muted2" style="font-size:10px;">Envío</label>
-                  <input id="txEnvio" type="number" min="0" oninput="txCalc()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                </div>
-              </div>
-              <div>
-                <label class="muted2" style="font-size:10px;">Prioridad</label>
-                <select id="txPrioridad" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                  <option value="normal">Normal</option>
-                  <option value="alta">Alta</option>
-                  <option value="urgente">🚨 Urgente</option>
-                </select>
               </div>
               <div style="display:flex; justify-content:space-between; align-items:center; border-top:0.5px solid; padding-top:8px;">
                 <span class="muted2" style="font-size:11px;">A cobrar</span>
