@@ -2643,6 +2643,7 @@ class BotConversacion(Base):
     # cliente MIENTRAS sigue el chat, antes de abrir 'Cerrar transacción'.
     # Cuando finalmente cierra, el modal precarga estos campos.
     forma_pago_propuesta = Column(String(20), nullable=True)
+    total_acordado = Column(DECIMAL(12, 2), nullable=True)  # monto de la operación (de ObServer)
     link_mp = Column(Text, nullable=True)              # link MP que se le mandó al cliente
     paga_con = Column(DECIMAL(12, 2), nullable=True)   # efectivo: con cuánto paga
     dato_pago = Column(Text, nullable=True)            # nro de op MP / transferencia / cupón
@@ -4605,6 +4606,7 @@ def _pg_add_columns(conn):
         # ── Pago acordado durante el chat (Fase A.5) ─────────────────────────
         # El operador define forma_pago + manda link/alias antes de Cerrar TX.
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS forma_pago_propuesta VARCHAR(20)",
+        "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS total_acordado DECIMAL(12,2)",
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS link_mp TEXT",
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS paga_con DECIMAL(12,2)",
         "ALTER TABLE bot_conversaciones ADD COLUMN IF NOT EXISTS dato_pago TEXT",

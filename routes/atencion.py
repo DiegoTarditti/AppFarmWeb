@@ -212,8 +212,8 @@ def init_app(app):
     # MIENTRAS sigue chateando, antes del cierre de transacción. Acá se persiste
     # ese estado para que el modal 'Cerrar TX' lo precargue después.
 
-    _PAGO_FIELDS = ('forma_pago_propuesta', 'link_mp', 'paga_con', 'dato_pago',
-                    'tarjeta_marca', 'tarjeta_nombre', 'tarjeta_ult4')
+    _PAGO_FIELDS = ('forma_pago_propuesta', 'total_acordado', 'link_mp', 'paga_con',
+                    'dato_pago', 'tarjeta_marca', 'tarjeta_nombre', 'tarjeta_ult4')
 
     @app.route('/atencion/<int:conv_id>/pago')
     @login_required
@@ -224,6 +224,7 @@ def init_app(app):
                 return jsonify({'error': 'no existe'}), 404
             return jsonify({
                 'forma_pago_propuesta': conv.forma_pago_propuesta,
+                'total_acordado': float(conv.total_acordado) if conv.total_acordado is not None else None,
                 'link_mp': conv.link_mp,
                 'paga_con': float(conv.paga_con) if conv.paga_con is not None else None,
                 'dato_pago': conv.dato_pago,
@@ -246,7 +247,7 @@ def init_app(app):
             for k in _PAGO_FIELDS:
                 if k in body:
                     v = body[k]
-                    if k == 'paga_con' and v not in (None, ''):
+                    if k in ('paga_con', 'total_acordado') and v not in (None, ''):
                         try: v = float(v)
                         except (TypeError, ValueError): v = None
                     elif v in ('', 'null'):

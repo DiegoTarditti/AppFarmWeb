@@ -355,14 +355,24 @@
             <span id="pagoBadgeConf" class="tag-green" style="font-size:9px; padding:2px 7px; border-radius:8px; display:none;">pago confirmado ✓</span>
           </div>
         </div>
-        <select id="pgForma" onchange="pagoFormaChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-          <option value="">— forma de pago —</option>
-          <option value="link_mp">Link Mercado Pago</option>
-          <option value="transferencia">Transferencia</option>
-          <option value="efectivo">Efectivo</option>
-          <option value="tarjeta">Tarjeta de crédito</option>
-        </select>
+        <div style="display:flex; gap:6px; align-items:flex-end;">
+          <div style="flex:0 0 120px;">
+            <label class="muted2" style="font-size:10px; display:block;">Monto $</label>
+            <input id="pgMonto" type="number" min="0" step="0.01" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+          </div>
+          <div style="flex:1; min-width:0;">
+            <label class="muted2" style="font-size:10px; display:block;">Forma de pago</label>
+            <select id="pgForma" onchange="pagoFormaChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+              <option value="">— elegir —</option>
+              <option value="link_mp">Link Mercado Pago</option>
+              <option value="transferencia">Transferencia</option>
+              <option value="efectivo">Efectivo</option>
+              <option value="tarjeta">Tarjeta de crédito</option>
+            </select>
+          </div>
+        </div>
         <div id="pgExtra" style="margin-top:7px; display:flex; flex-direction:column; gap:6px;"></div>
+        <div id="pgVuelto" style="margin-top:6px; font-size:11px; color:var(--muted); display:none;"></div>
         <button onclick="guardarPagoAcordado()" class="hbtn hbtn-ok" style="width:100%; margin-top:8px; font-size:12px; padding:6px;">💾 Guardar</button>
       </div>
 
@@ -1286,6 +1296,9 @@ async function txPrecargarPago(){
   if (!sel) return;
   sel.value = _pagoState.forma_pago_propuesta;
   txFormaChange();
+  // Total (de ObServer) si ya lo cargamos en el sidebar:
+  const txTotal = document.getElementById('txTotal');
+  if (txTotal && _pagoState.total_acordado != null && !txTotal.value) txTotal.value = _pagoState.total_acordado;
   // Ahora los inputs condicionales existen — los lleno.
   const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
   set('txLink', _pagoState.link_mp);
@@ -1477,7 +1490,7 @@ function pagoFormaChange(){
     <button onclick="pagoPegarChat(ALIAS_FARMACIA)" class="hbtn" style="font-size:11px; padding:5px 9px; border-radius:8px;">📤 Mandar alias al chat</button>
     <input id="pgDato" placeholder="nro de comprobante (cuando confirme)" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
   else if (f === 'efectivo') h = `
-    <input id="pgPagaCon" type="number" min="0" placeholder="¿con cuánto paga? $" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
+    <input id="pgPagaCon" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="¿con cuánto paga? $" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
   else if (f === 'tarjeta') h = `
     <div style="display:flex; gap:6px;">
       <input id="pgUlt4" maxlength="4" placeholder="últ. 4" class="input" style="width:70px; border-radius:8px; padding:6px 9px; font-size:12px;">
@@ -1496,10 +1509,32 @@ function pagoFormaChange(){
     if (_pagoState.tarjeta_marca){ const m = document.getElementById('pgMarca'); if (m) m.value = _pagoState.tarjeta_marca; }
   }
 }
-function pagoPegarChat(texto){
-  if (!texto) return;
-  const ta = document.getElementById('mensajeInput') || document.getElementById('inputMensaje');
-  if (ta){ ta.value = texto; ta.focus(); }
+// Reusa el sender real del chat (POST /responder) — antes solo pegaba en un input
+// que no existe en este template y no llegaba al cliente.
+async function pagoPegarChat(texto){
+  if (!texto || !convAbierta) return;
+  await fetch(`/atencion/${convAbierta}/responder`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({texto}),
+  });
+  await refrescarChat(false);
+}
+
+// Vuelto = Monto operación - Paga con. Redondeo a billetes de $100 (floor).
+// Aparece solo si forma=efectivo y hay monto + paga_con.
+function pagoRecalcVuelto(){
+  const out = document.getElementById('pgVuelto');
+  if (!out) return;
+  const f = document.getElementById('pgForma').value;
+  const monto = parseFloat(document.getElementById('pgMonto').value) || 0;
+  const pagaInp = document.getElementById('pgPagaCon');
+  const paga = pagaInp ? (parseFloat(pagaInp.value) || 0) : 0;
+  if (f !== 'efectivo' || monto <= 0 || paga <= 0){ out.style.display = 'none'; return; }
+  const exacto = paga - monto;
+  const vuelto = exacto >= 0 ? Math.floor(exacto / 100) * 100 : exacto;
+  out.style.display = '';
+  out.innerHTML = `Vuelto: <b style="color:${vuelto >= 0 ? 'var(--accent)' : 'var(--warn)'};">$ ${vuelto.toLocaleString('es-AR')}</b>` +
+                  (exacto !== vuelto ? ` <span class="muted2" style="font-size:10px;">(exacto: $${exacto.toLocaleString('es-AR')})</span>` : '');
 }
 async function cargarPagoAcordado(){
   const card = document.getElementById('pagoCard');
@@ -1510,7 +1545,9 @@ async function cargarPagoAcordado(){
     _pagoState = await r.json();
     card.style.display = '';
     document.getElementById('pgForma').value = _pagoState.forma_pago_propuesta || '';
+    document.getElementById('pgMonto').value = _pagoState.total_acordado != null ? _pagoState.total_acordado : '';
     pagoFormaChange();
+    pagoRecalcVuelto();
     document.getElementById('pagoBadgeLink').style.display = _pagoState.pago_acordado_en ? '' : 'none';
     document.getElementById('pagoBadgeConf').style.display = _pagoState.pago_confirmado_en ? '' : 'none';
   } catch (e) { console.error('pago load:', e); }
@@ -1518,7 +1555,8 @@ async function cargarPagoAcordado(){
 async function guardarPagoAcordado(){
   if (!convAbierta) return;
   const f = document.getElementById('pgForma').value;
-  const body = { forma_pago_propuesta: f || null };
+  const body = { forma_pago_propuesta: f || null,
+                 total_acordado: document.getElementById('pgMonto').value || null };
   const get = id => { const el = document.getElementById(id); return el ? el.value : null; };
   if (f === 'link_mp'){ body.link_mp = get('pgLink'); body.dato_pago = get('pgDato'); }
   else if (f === 'transferencia'){ body.dato_pago = get('pgDato'); }
