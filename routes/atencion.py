@@ -334,10 +334,12 @@ def init_app(app):
                 envio = None
 
             # Vuelto recalculado server-side (no se confía del valor del cliente):
-            # solo aplica a efectivo. vuelto = pagaCon − (total + envío).
+            # solo aplica a efectivo. vuelto = pagaCon − total. El total viene
+            # del ticket de ObServer que YA incluye el envío (Diego 2026-06-14),
+            # por eso NO sumamos envío aca.
             vuelto_str = None
             if body.get('forma_pago') == 'efectivo' and paga_con is not None:
-                vuelto_str = str(int(round(paga_con - ((total or 0) + (envio or 0)))))
+                vuelto_str = str(int(round(paga_con - (total or 0))))
 
             # Teléfono (se muestra en la planilla): si el pedido vino del chat, en
             # WhatsApp el canal_user_id ES el teléfono; si no, de la ficha del cliente.

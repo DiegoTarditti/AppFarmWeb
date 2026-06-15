@@ -1357,13 +1357,12 @@ function txSalidaChange() {
 }
 function _txVal(id) { const e = document.getElementById(id); return e ? e.value : ''; }
 function txCalc() {
-  // Total y envío vienen de la card 'Pago acordado' (sidebar), no del modal.
+  // El TOTAL viene del ticket de ObServer que YA incluye el envio
+  // (Diego 2026-06-14: 'yo vuelco lo del ticket de ObServer que se hace con
+  // envio incluido'). NO sumar envio aca o lo cobramos doble.
   const total = parseFloat((document.getElementById('pgMonto')||{}).value) || 0;
-  const reparto = _txVal('txSalida') === 'reparto';
-  const envio = reparto ? (parseFloat((document.getElementById('pgEnvio')||{}).value) || 0) : 0;
-  const aCobrar = total + envio;
   const out = document.getElementById('txACobrar');
-  if (out) out.textContent = fmtPrecio(aCobrar);
+  if (out) out.textContent = fmtPrecio(total);
 }
 async function txPegarChat(t) {
   if (!t || !convAbierta) return;
@@ -1402,7 +1401,8 @@ async function txCerrar() {
     forma_pago: forma,
     paga_con: pgGet('pgPagaCon') || null,
     // El vuelto lo recalcula el backend (no se confía del cliente). Se manda igual de referencia.
-    vuelto: forma === 'efectivo' ? ((parseFloat(pgGet('pgPagaCon'))||0) - (total + envio)) : null,
+    // Total = importe del ticket ObServer (ya incluye envio) → no sumar envio.
+    vuelto: forma === 'efectivo' ? ((parseFloat(pgGet('pgPagaCon'))||0) - total) : null,
     link_mp: pgGet('pgLink') || null,
     dato_pago_mp: pgGet('pgDato') || null,
     tarjeta_ult4: pgGet('pgUlt4') || null,
@@ -1514,14 +1514,13 @@ function pagoRecalcVuelto(){
   const out = document.getElementById('pgVuelto');
   if (!out) return;
   const f = document.getElementById('pgForma').value;
+  // El MONTO viene del ticket de ObServer que YA incluye el envio
+  // (Diego 2026-06-14). NO sumar envio aca o lo cobramos doble.
   const monto = parseFloat(document.getElementById('pgMonto').value) || 0;
-  const envioEl = document.getElementById('pgEnvio');
-  const envio = envioEl ? (parseFloat(envioEl.value) || 0) : 0;
-  const totalACobrar = monto + envio;
   const pagaInp = document.getElementById('pgPagaCon');
   const paga = pagaInp ? (parseFloat(pagaInp.value) || 0) : 0;
-  if (f === 'efectivo' && totalACobrar > 0 && paga > 0){
-    const exacto = paga - totalACobrar;
+  if (f === 'efectivo' && monto > 0 && paga > 0){
+    const exacto = paga - monto;
     const vuelto = exacto >= 0 ? Math.floor(exacto / 100) * 100 : exacto;
     out.style.display = '';
     out.innerHTML = `Vuelto: <b style="color:${vuelto >= 0 ? 'var(--accent)' : 'var(--warn)'};">$ ${vuelto.toLocaleString('es-AR')}</b>` +

@@ -334,10 +334,11 @@ function onPagaConInput(){ _recalcularVuelto(); }
 function _recalcularVuelto(){
   if (document.getElementById('pFormaPago').value !== 'efectivo') return;
   const paga = parseFloat(document.getElementById('pPagaCon').value) || 0;
+  // El IMPORTE viene del ticket de ObServer que YA incluye el envio
+  // (Diego 2026-06-14). NO sumar envio aca o lo cobramos doble.
   const imp  = parseFloat(document.getElementById('pImporte').value)  || 0;
-  const env  = parseFloat(document.getElementById('pEnvio').value)    || 0;
   if (paga <= 0) { document.getElementById('pVuelto').value = ''; return; }
-  const exacto = paga - (imp + env);
+  const exacto = paga - imp;
   // Redondeo a billetes de $100 (floor): si exacto=1450 → vuelto=1400. Si paga
   // menos de lo que sale (exacto < 0), mantenemos el negativo para que el
   // operador lo vea (caso 'falta plata').
