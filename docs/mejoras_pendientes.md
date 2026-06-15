@@ -122,6 +122,45 @@ abstracción genérica de **Flow/state-machine** que reúna las 6 pantallas
 
 ---
 
+## ⏳ Pendiente — Cola de "Manuales / Retiros" en la bandeja de /atencion (2026-06-15)
+
+**Origen**: Diego, durante el refactor C de unificación de `/pedido/nuevo` con
+`/atencion`. Las convs creadas con `canal='manual'` (walk-in / mostrador) pueden
+servir como una **cola viva de pedidos manuales pendientes de retiro**.
+
+**Qué hacer**:
+- Pestaña nueva en la barra "Cola | Mías | Bot | Todas | **Manuales**".
+- Muestra convs `canal='manual'` con `estado_atencion != 'cerrada'`.
+- Botón "✓ Retirado" en la conv → cierra (`estado_atencion='cerrada'` o
+  similar) → desaparece de la cola.
+- Se conecta con el flujo "Retiro" del item anterior — cuando alguien arma un
+  pedido manual con destino=retiro, queda esperando en esta cola.
+
+**Side note**: cuando se implemente, NO filtrar `canal='manual'` de la bandeja
+sino agregar esta pestaña dedicada.
+
+---
+
+## ⏳ Pendiente — Flujo "Retiro" sin pasar por planilla de reparto (2026-06-14)
+
+**Origen**: Diego, mientras planificábamos consolidar `/pedido/nuevo` y `/atencion`
+en una sola pantalla (opción C). Observó que hoy cuando "Sale por" = **Retiro**
+(cliente vendrá a la farmacia a buscar), el pedido igual se vuelca en la planilla
+de reparto, donde no aporta — los cadetes no lo levantan, queda como "ruido".
+
+**Qué hacer**:
+- Si `destino == 'retiro'` → el pedido va a caja igual (para emisión fiscal),
+  pero NO aparece en `/reparto/planilla`.
+- Pantalla / sección nueva: **"Retiros pendientes"** donde el operador del
+  mostrador ve qué tiene que preparar.
+- Cuando el cliente llega, click en "Entregado" cierra el pedido.
+- Filtros sugeridos: por estado (preparado / esperando), por día.
+
+**Side note**: queda fuera del refactor C (consolidación de `/pedido/nuevo` →
+`/atencion`). Ese refactor preserva el campo "Sale por" tal cual está hoy.
+
+---
+
 ## 🤖 Bot asistente / Atención / Caja — pendientes (2026-06-05)
 
 Hecho: bot Telegram, handoff/panel `/atencion`, ficha cliente, alta lead, UI
