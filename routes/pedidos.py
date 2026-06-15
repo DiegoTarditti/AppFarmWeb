@@ -4,8 +4,13 @@ DEPRECADO (refactor C, 2026-06-15): /pedido/nuevo se unificó con /atencion. La
 ruta sigue existiendo como redirect a /atencion?modo=manual&new=1 para no
 romper links viejos (sidebar, bookmarks, deep-links con observer_id).
 
-El template templates/pedido_nuevo.html ya no se renderiza pero queda en el
-repo como referencia hasta la etapa 4 del refactor (cleanup).
+El template templates/pedido_nuevo.html se borró en la etapa 4.3 del refactor.
+Si necesitás recuperarlo: git log --all -- templates/pedido_nuevo.html.
+
+NOTA: el endpoint POST /reparto/pedido (en routes/reparto.py:490) NO se
+borró porque lo siguen usando los tests unitarios (tests/test_reparto.py).
+Si se decide borrarlo, hay que migrar los tests primero a usar
+/atencion/<conv>/cerrar-transaccion.
 """
 from flask import redirect, request
 from flask_login import current_user, login_required
