@@ -1632,6 +1632,16 @@ async function txCerrar() {
     // Cliente.notas al cerrar TX en lugar de tener un botón aparte (Diego
     // 2026-06-15: el botón 'Guardar notas' borraba el monto por reload).
     ficha_notas: ((document.getElementById('fichaNotas')||{}).value || ''),
+    // Datos del domicilio del picker (sin domicilio_id existente). Si vienen
+    // con lat/lng, el backend crea un DomicilioCliente nuevo así aparece en
+    // /clientes y en el dropdown de próx pedidos.
+    pick_direccion: ((document.getElementById('pDir')||{}).value || '').trim() || null,
+    pick_piso: ((document.getElementById('pPiso')||{}).value || '').trim() || null,
+    pick_depto: ((document.getElementById('pDepto')||{}).value || '').trim() || null,
+    pick_referencia: ((document.getElementById('pRef')||{}).value || '').trim() || null,
+    pick_localidad: ((document.getElementById('pCiudad')||{}).value || '').trim() || null,
+    pick_lat: window._domLat != null ? window._domLat : null,
+    pick_lng: window._domLng != null ? window._domLng : null,
   };
   // OS desde la card Detalle (al lado de Canal). Si está vacío, fallback al
   // input del modal (txOS) por compat.

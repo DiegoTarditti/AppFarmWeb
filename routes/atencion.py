@@ -347,6 +347,44 @@ def init_app(app):
                     if prov:
                         drogueria_id = prov.id
 
+        # Si NO vino domicilio_id pero SI vinieron pick_lat/lng del cliente_picker,
+        # creamos un DomicilioCliente nuevo y lo usamos. Así el cliente queda con
+        # su geo registrada en /clientes para próximas visitas (Diego 2026-06-15).
+        pick_lat = body.get('pick_lat')
+        pick_lng = body.get('pick_lng')
+        if (not body.get('domicilio_id')) and pick_lat and pick_lng and conv.cliente_id:
+            with database.get_db() as s:
+                # Dedupe por (cliente, dir, localidad, piso, depto): si el cliente
+                # ya tiene un domicilio con esos campos, actualizamos su geo;
+                # si no, lo creamos.
+                D = database.DomicilioCliente
+                pdir = (body.get('pick_direccion') or '').strip() or None
+                ploc = (body.get('pick_localidad') or '').strip() or None
+                ppiso = (body.get('pick_piso') or '').strip() or None
+                pdpto = (body.get('pick_depto') or '').strip() or None
+                pref = (body.get('pick_referencia') or '').strip() or None
+                existing = (s.query(D).filter(
+                    D.cliente_id == conv.cliente_id,
+                    D.direccion == pdir,
+                    D.localidad == ploc,
+                    D.piso == ppiso,
+                    D.depto == pdpto,
+                ).first())
+                if existing:
+                    existing.lat = float(pick_lat)
+                    existing.lng = float(pick_lng)
+                    existing.geo_actualizado_en = database.now_ar()
+                    s.commit()
+                    body['domicilio_id'] = existing.id
+                else:
+                    nuevo = D(cliente_id=conv.cliente_id, etiqueta='Casa',
+                              direccion=pdir, localidad=ploc, piso=ppiso,
+                              depto=pdpto, referencia=pref,
+                              lat=float(pick_lat), lng=float(pick_lng),
+                              geo_actualizado_en=database.now_ar())
+                    s.add(nuevo); s.commit()
+                    body['domicilio_id'] = nuevo.id
+
         # Datos del cliente y el domicilio ELEGIDO en el modal (cuando el cliente
         # tiene varias direcciones). Si no vino domicilio_id, cae al más reciente
         # (cliente con una sola dirección).
