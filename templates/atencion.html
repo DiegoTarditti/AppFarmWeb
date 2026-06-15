@@ -112,6 +112,14 @@
   /* Grid del picker apilado vertical para el sidebar (que es angosto vs /pedido/nuevo). */
   #pickerWrap .grid-cliente { display:grid; grid-template-columns:1fr; gap:5px; }
 
+  /* color-scheme:dark hace que los <option> hereden el dark theme del browser
+     en vez de mostrar fondo blanco. Diego 2026-06-15: el dropdown de Ciudad
+     mostraba 'Rosario' blanco sobre blanco al abrirlo. */
+  select.input, select { color-scheme: dark; }
+  /* Belt & suspenders: en algunos browsers el color-scheme no alcanza para los
+     options. Forzamos colores explicitos. */
+  .input option, select.input option { background-color: #2c2c39; color: #ececf0; }
+
   /* ── Modo manual (walk-in): solo sidebar derecho, sin bandeja ni chat ── */
   #grid3.modo-manual { grid-template-columns: 1fr !important; }
   #grid3.modo-manual #colBandeja { display: none !important; }
