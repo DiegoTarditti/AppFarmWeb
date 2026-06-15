@@ -40,8 +40,14 @@
             <option value="{{ os.os_id }}" {% if os_id == os.os_id %}selected{% endif %}>{{ os.nombre }} ({{ '{:,}'.format(os.n_clientes) }})</option>
             {% endfor %}
         </select>
+        <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer select-none px-2"
+               title="Mostrar solo clientes cuyo último domicilio tiene coordenadas georeferenciadas">
+            <input type="checkbox" name="domic_validado" value="1" {% if domic_validado %}checked{% endif %}
+                   class="rounded text-brand focus:ring-brand focus:ring-2">
+            <span>📍 Domic. validado</span>
+        </label>
         <button type="submit" class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-2 rounded-lg">Filtrar</button>
-        {% if q or grupo_id or localidad or os_id is not none %}
+        {% if q or grupo_id or localidad or os_id is not none or domic_validado %}
         <a href="{{ url_for('clientes_list') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">Limpiar</a>
         {% endif %}
     </form>
@@ -50,7 +56,7 @@
         <table class="w-full text-sm">
             <thead class="bg-[#f5f5f5] text-[10px] uppercase tracking-wide text-[#aaa]">
                 <tr>
-                    <th class="text-left px-3 py-2">Apellido y nombre</th>
+                    <th class="text-left px-3 py-2 w-56 min-w-[220px]">Apellido y nombre</th>
                     <th class="text-left px-3 py-2 w-32">Documento</th>
                     <th class="text-left px-3 py-2 w-40">Teléfono</th>
                     <th class="text-left px-3 py-2">Domicilio</th>
@@ -61,12 +67,13 @@
                     <th class="text-center px-3 py-2 w-16" title="Último chat (no walk-in)">💬</th>
                     <th class="text-center px-3 py-2 w-20" title="Último pedido">📦</th>
                     <th class="text-center px-3 py-2 w-12">Nota</th>
+                    <th class="text-center px-3 py-2 w-12" title="Editar">✏️</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-surface-border">
                 {% for c in clientes %}
                 <tr class="hover:bg-black/[0.02] cursor-pointer" onclick="window.location='{{ url_for('cliente_detail', observer_id=c.observer_id) }}'">
-                    <td class="px-3 py-2 text-[#1e1e1e] font-medium">{{ c.apellido_nombre }}</td>
+                    <td class="px-3 py-2 text-[#1e1e1e] font-medium whitespace-nowrap overflow-hidden text-ellipsis" title="{{ c.apellido_nombre }}">{{ c.apellido_nombre }}</td>
                     <td class="px-3 py-2 text-[11px] text-[#555] font-mono">{{ c.documento }}</td>
                     <td class="px-3 py-2 text-xs text-[#555]">{{ c.telefono }}</td>
                     <td class="px-3 py-2 text-xs text-[#888] truncate max-w-[300px]">{{ c.direccion }}</td>
@@ -74,16 +81,23 @@
                     <td class="px-3 py-2 text-xs text-[#555]">{{ c.grupo }}</td>
                     <td class="px-3 py-2 text-xs">
                         {% if c.os_inferida %}
-                        <span class="inline-flex items-center gap-1.5">
-                            <span class="text-[#555] truncate max-w-[140px]" title="{{ c.os_inferida.nombre }} · confianza {{ '%.0f'|format(c.os_inferida.confianza or 0) }}%">{{ c.os_inferida.nombre }}</span>
-                            {% if c.os_inferida.confianza and c.os_inferida.confianza >= 80 %}
-                            <span class="text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-100 text-emerald-800">{{ '%.0f'|format(c.os_inferida.confianza) }}%</span>
-                            {% elif c.os_inferida.confianza and c.os_inferida.confianza >= 50 %}
-                            <span class="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800">{{ '%.0f'|format(c.os_inferida.confianza) }}%</span>
+                            {% if c.os_inferida.fuente == 'confirmada' %}
+                            <span class="inline-flex items-center gap-1.5">
+                                <span class="text-[#1e1e1e] truncate max-w-[140px] font-medium" title="OS confirmada por un operador">{{ c.os_inferida.nombre }}</span>
+                                <span class="text-[9px] font-bold px-1 py-0.5 rounded bg-sky-100 text-sky-800" title="Confirmada en el chat">✓</span>
+                            </span>
                             {% else %}
-                            <span class="text-[9px] font-bold px-1 py-0.5 rounded bg-[#f0f0f0] text-[#888]">{{ '%.0f'|format(c.os_inferida.confianza or 0) }}%</span>
+                            <span class="inline-flex items-center gap-1.5">
+                                <span class="text-[#555] truncate max-w-[140px]" title="{{ c.os_inferida.nombre }} · confianza {{ '%.0f'|format(c.os_inferida.confianza or 0) }}%">{{ c.os_inferida.nombre }}</span>
+                                {% if c.os_inferida.confianza and c.os_inferida.confianza >= 80 %}
+                                <span class="text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-100 text-emerald-800">{{ '%.0f'|format(c.os_inferida.confianza) }}%</span>
+                                {% elif c.os_inferida.confianza and c.os_inferida.confianza >= 50 %}
+                                <span class="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800">{{ '%.0f'|format(c.os_inferida.confianza) }}%</span>
+                                {% else %}
+                                <span class="text-[9px] font-bold px-1 py-0.5 rounded bg-[#f0f0f0] text-[#888]">{{ '%.0f'|format(c.os_inferida.confianza or 0) }}%</span>
+                                {% endif %}
+                            </span>
                             {% endif %}
-                        </span>
                         {% else %}
                         <span class="text-[#bbb]">—</span>
                         {% endif %}
@@ -111,10 +125,15 @@
                     <td class="px-3 py-2 text-center">
                         {% if c.tiene_extension %}<span class="text-emerald-600" title="Tiene datos locales">●</span>{% endif %}
                     </td>
+                    <td class="px-3 py-2 text-center" onclick="event.stopPropagation()">
+                        <a href="{{ url_for('cliente_detail', observer_id=c.observer_id) }}"
+                           class="inline-block px-2 py-1 rounded hover:bg-[#f0f0f0] text-[#666]"
+                           title="Editar datos del cliente">✏️</a>
+                    </td>
                 </tr>
                 {% endfor %}
                 {% if not clientes %}
-                <tr><td colspan="11" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>
+                <tr><td colspan="12" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>
                 {% endif %}
             </tbody>
         </table>

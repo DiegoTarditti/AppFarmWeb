@@ -36,6 +36,8 @@ def init_app(app):
         grupo_id = request.args.get('grupo_id', type=int)
         localidad = (request.args.get('localidad') or '').strip()
         os_id = request.args.get('os_id', type=int)
+        # Filtro: solo clientes cuyo último domicilio tiene lat/lng cargada.
+        domic_validado = request.args.get('domic_validado') == '1'
         try:
             page = max(1, int(request.args.get('page', '1')))
         except ValueError:
@@ -45,6 +47,19 @@ def init_app(app):
 
         with database.get_db() as session:
             base = session.query(database.ObsCliente)
+            # Domicilio validado: limita a obs_clientes cuya extensión local
+            # tiene al menos un DomicilioCliente con coords. Aplica ANTES del
+            # query principal para que el conteo total / paginado sean correctos.
+            if domic_validado:
+                # scalar_subquery() evita el SAWarning de coerción a select().
+                sub_geo = (session.query(database.Cliente.observer_id)
+                           .join(database.DomicilioCliente,
+                                 database.DomicilioCliente.cliente_id == database.Cliente.id)
+                           .filter(database.Cliente.observer_id.isnot(None),
+                                   database.DomicilioCliente.lat.isnot(None),
+                                   database.DomicilioCliente.lng.isnot(None))
+                           .distinct())
+                base = base.filter(database.ObsCliente.observer_id.in_(sub_geo))
             if q:
                 from helpers import multi_token_filter
                 # Match exacto por DNI si el query es solo numérico (atajo).
@@ -146,24 +161,40 @@ def init_app(app):
                     if cid not in ultimo_pedido_map:
                         ultimo_pedido_map[cid] = (pid, fecha)
 
-            # OS principal inferida por cliente (con confianza)
-            os_inferida_map = {}
+            # OS principal: confirmada (en el chat por un operador) tiene
+            # prioridad sobre inferida (heurística del histórico de ventas).
+            os_inferida_map = {}     # cli_observer_id → {os_id, nombre, confianza, fuente='inferida'|'confirmada'}
             if obs_ids:
+                # 1. OS confirmadas — toman precedencia.
+                conf_rows = (session.query(database.ClienteOsConfirmada.cliente_observer_id,
+                                           database.ClienteOsConfirmada.obra_social_observer_id,
+                                           database.ClienteOsConfirmada.obra_social_nombre)
+                             .filter(database.ClienteOsConfirmada.cliente_observer_id.in_(obs_ids))
+                             .all())
+                for cli, os_obs, nombre in conf_rows:
+                    os_inferida_map[cli] = {
+                        'os_id': os_obs, 'nombre': nombre or f'OS#{os_obs}',
+                        'confianza': None, 'fuente': 'confirmada',
+                    }
+                # 2. OS inferidas — solo para los que NO tienen confirmada.
                 rows = (session.query(database.ClienteOsInferida.cliente_observer,
                                       database.ClienteOsInferida.obra_social_observer,
                                       database.ClienteOsInferida.confianza_pct)
                         .filter(database.ClienteOsInferida.cliente_observer.in_(obs_ids))
                         .filter(database.ClienteOsInferida.obra_social_observer.isnot(None))
                         .all())
-                os_ids_para_nombrar = {r[1] for r in rows}
+                os_ids_para_nombrar = {r[1] for r in rows if r[0] not in os_inferida_map}
                 os_nombres = dict(session.query(database.ObsObraSocial.observer_id,
                                                 database.ObsObraSocial.descripcion)
                                   .filter(database.ObsObraSocial.observer_id.in_(os_ids_para_nombrar)).all()) if os_ids_para_nombrar else {}
                 for cli, os_obs, conf in rows:
+                    if cli in os_inferida_map:
+                        continue   # ya tiene confirmada
                     os_inferida_map[cli] = {
                         'os_id': os_obs,
                         'nombre': os_nombres.get(os_obs, f'OS#{os_obs}'),
                         'confianza': float(conf) if conf is not None else None,
+                        'fuente': 'inferida',
                     }
 
             # Lista de grupos para el filtro
@@ -215,6 +246,7 @@ def init_app(app):
                                    obras_sociales=[{'os_id': r[0], 'nombre': r[1], 'n_clientes': r[2]}
                                                     for r in os_con_clientes],
                                    q=q, grupo_id=grupo_id, localidad=localidad, os_id=os_id,
+                                   domic_validado=domic_validado,
                                    page=page, last_page=last_page)
 
     @app.route('/clientes/stats')
