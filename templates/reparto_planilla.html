@@ -78,6 +78,10 @@
   .estado-paso.done { background:rgba(29,158,117,.55); color:#fff; }
   .estado-paso.actual { background:var(--accent); color:#fff;
                          box-shadow:0 0 6px rgba(29,158,117,.6); }
+  /* Override por paso: Pendiente actual va azul (Diego: para diferenciar
+     a primera vista los pedidos que todavia no salieron del flujo). */
+  .estado-paso.actual.paso-pendiente { background:#185FA5;
+                                         box-shadow:0 0 6px rgba(24,95,165,.6); }
   .estado-paso.alt-anulado { background:#5a2a2a; color:#F09595; }
   .estado-paso.alt-drog { background:var(--warn); color:#1a1a1a; }
   .estado-paso.alt-caja { background:#185FA5; color:#fff; }
@@ -305,7 +309,7 @@
               <span class="estado-paso alt-drog" title="Esperando droguería">D</span>
             {% endif %}
             {% for i in range(_orden|length) %}
-              <span class="estado-paso{% if i < _idx %} done{% elif i == _idx %} actual{% endif %}"
+              <span class="estado-paso{% if i < _idx %} done{% elif i == _idx %} actual paso-{{ _orden[i] }}{% endif %}"
                     title="{{ _nombres[i] }}">{{ _letras[i] }}</span>
             {% endfor %}
             {# anulado y en_caja van DESPUÉS: el primero es terminal alternativo,
