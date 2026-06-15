@@ -103,14 +103,16 @@
   .tag-blue { background:var(--tagb-bg); color:var(--tagb-tx); } .tag-green { background:var(--tagg-bg); color:var(--tagg-tx); }
   ::-webkit-scrollbar{ width:9px; } ::-webkit-scrollbar-thumb{ background:var(--hov); border-radius:9px; }
   /* Clases que necesita el componente _cliente_picker (sidebar de /atencion). */
-  #pickerWrap .field { display:flex; flex-direction:column; gap:3px; min-width:0; margin-bottom:8px; }
-  #pickerWrap .field label { font-size:11px; color:var(--muted); font-weight:600; margin-bottom:2px; }
+  #pickerWrap .field { display:flex; flex-direction:column; gap:2px; min-width:0; margin-bottom:0; }
+  #pickerWrap .field label { font-size:11px; color:var(--muted); font-weight:600; margin-bottom:1px; }
   #pickerWrap .muted2 { color:var(--muted2); }
   #pickerWrap .res { background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:4px; max-height:180px; overflow:auto; box-shadow:0 4px 14px rgba(0,0,0,.35); }
   #pickerWrap .res .it { padding:6px 9px; cursor:pointer; font-size:12px; border-bottom:1px solid var(--row-bd); }
   #pickerWrap .res .it:hover { background:var(--hov); }
   /* Grid del picker apilado vertical para el sidebar (que es angosto vs /pedido/nuevo). */
-  #pickerWrap .grid-cliente { display:grid; grid-template-columns:1fr; gap:6px; }
+  #pickerWrap .grid-cliente { display:grid; grid-template-columns:1fr; gap:5px; }
+  /* el segundo grid (Domicilio / coords) en el macro trae margin-top:10px inline; lo bajamos */
+  #pickerWrap .grid-cliente + .grid-cliente { margin-top:0 !important; }
 </style>
 </head>
 <body>
@@ -231,23 +233,12 @@
               <span class="muted" style="font-size:9px; margin-left:auto;">prototipo · la venta se carga en ObServer</span>
             </div>
             <div style="padding:11px 13px; display:flex; flex-direction:column; gap:10px; font-size:12px;">
-              <div style="display:flex; gap:8px; align-items:flex-end;">
-                <div style="flex:0 0 130px;">
-                  <label class="muted2" style="font-size:10px;">Total (ObServer)</label>
-                  <input id="txTotal" type="number" min="0" oninput="txCalc()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:13px;">
-                </div>
-                <div style="flex:1; min-width:0;">
-                  <label class="muted2" style="font-size:10px;">Forma de pago</label>
-                  <select id="txForma" onchange="txFormaChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                    <option value="">— elegir —</option>
-                    <option value="link_mp">Link Mercado Pago</option>
-                    <option value="transferencia">Transferencia</option>
-                    <option value="efectivo">Efectivo</option>
-                    <option value="tarjeta">Tarjeta de crédito</option>
-                  </select>
-                </div>
+              {# Total / Forma de pago / Paga con / Envío — todos viven en la card
+                 'Pago acordado' del sidebar (Diego 2026-06-14). El modal los lee
+                 vía txGetters. #}
+              <div class="muted2" style="font-size:10px; padding:4px 8px; background:rgba(255,255,255,.03); border-radius:6px;">
+                <span id="txResumenPago">Monto y forma de pago: cargalos arriba (card Pago acordado).</span>
               </div>
-              <div id="txFormaExtra" style="display:flex; flex-direction:column; gap:6px;"></div>
               <div style="display:flex; gap:8px;">
                 <div style="flex:1;">
                   <label class="muted2" style="font-size:10px;">Obra social (opcional)</label>
@@ -265,11 +256,7 @@
               <div id="txEnvioWrap" style="display:flex; gap:8px; align-items:flex-end;">
                 <div style="flex:1; min-width:0;">
                   <label class="muted2" style="font-size:10px;">Domicilio de entrega</label>
-                  <select id="txDomicilio" onchange="txCotizarEnvio()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;"></select>
-                </div>
-                <div style="flex:0 0 120px;">
-                  <label class="muted2" style="font-size:10px;">Envío</label>
-                  <input id="txEnvio" type="number" min="0" oninput="txCalc()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                  <select id="txDomicilio" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;"></select>
                 </div>
               </div>
               {# Stock + Sale por + Prioridad — fila compacta abajo de todo. #}
@@ -304,7 +291,7 @@
                 <span class="muted2" style="font-size:11px;">A cobrar</span>
                 <span id="txACobrar" class="total-amt" style="font-size:16px; font-weight:600;">$0</span>
               </div>
-              <div id="txVuelto" class="muted" style="font-size:11px; display:none;"></div>
+              {# txVuelto se quitó: el vuelto vive en pgVuelto (sidebar). #}
               <button onclick="txCerrar()" class="hbtn hbtn-ok" style="border-radius:9px; padding:8px; font-size:12px;">Cerrar y mandar a caja ▸</button>
             </div>
           </div>
@@ -335,19 +322,19 @@
 
     <!-- Ficha del cliente -->
     <div class="col-side" id="fichaCol" style="border-left:0.5px solid; overflow-y:auto; min-height:0;">
-      <div style="padding:8px 12px; border-bottom:0.5px solid;">
-        <span class="muted" style="font-size:11px;">👤 Datos del cliente</span>
-      </div>
+      {# Header "Datos del cliente" sacado (Diego 2026-06-14): el primer campo
+         del picker ya dice 'Cliente', no aporta y ocupa una línea vertical
+         valiosa en sidebar angosto. #}
       {# Picker reusable (igual que /pedido/nuevo). Se inicializa una sola vez al
          cargar la pantalla; los cambios se sincronizan con la conv abierta vía
          callbacks (ver ClientePicker.init más abajo). #}
-      <div id="pickerWrap" style="padding:10px 12px; border-bottom:1px solid var(--border);">
+      <div id="pickerWrap" style="padding:6px 12px 4px; border-bottom:1px solid var(--border);">
         {{ cliente_picker() }}
       </div>
 
       {# Card 'Pago' — forma de pago acordada durante el chat (Fase A.5). Persistida
          en BotConversacion. El modal 'Cerrar TX' la precarga al abrir. #}
-      <div id="pagoCard" style="padding:10px 12px; border-bottom:1px solid var(--border); display:none;">
+      <div id="pagoCard" style="padding:6px 12px 8px; border-bottom:1px solid var(--border); display:none;">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
           <span class="muted" style="font-size:11px;">💳 Pago acordado</span>
           <div style="display:flex; gap:4px;">
@@ -361,7 +348,13 @@
             <input id="pgMonto" type="number" min="0" step="0.01" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
           </div>
           <div style="flex:1; min-width:0;">
-            <label class="muted2" style="font-size:10px; display:block;">Forma de pago</label>
+            <label class="muted2" style="font-size:10px; display:block;">
+              Forma de pago
+              {# DNI del cliente vinculado: lo pintamos al lado del label en vez
+                 de en la ficha de abajo (Diego 2026-06-14) para que esté a la
+                 vista cuando estás cerrando la tx. #}
+              <span id="pgDniInfo" class="muted2" style="margin-left:8px; font-weight:400;"></span>
+            </label>
             <select id="pgForma" onchange="pagoFormaChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
               <option value="">— elegir —</option>
               <option value="link_mp">Link Mercado Pago</option>
@@ -373,7 +366,16 @@
         </div>
         <div id="pgExtra" style="margin-top:7px; display:flex; flex-direction:column; gap:6px;"></div>
         <div id="pgVuelto" style="margin-top:6px; font-size:11px; color:var(--muted); display:none;"></div>
-        <button onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="width:100%; margin-top:8px; font-size:13px; padding:8px; font-weight:600;">💳 Cerrar transacción</button>
+        {# Costo de envío + botón Cerrar tx side-by-side (Diego 2026-06-14: el operador
+           necesita el envío a la vista en el chat, sin abrir el modal). El botón es
+           más chico ahora para que entren ambos en la misma línea. #}
+        <div style="display:flex; gap:6px; align-items:flex-end; margin-top:8px;">
+          <div style="flex:0 0 110px;">
+            <label class="muted2" style="font-size:10px; display:block;">Envío $</label>
+            <input id="pgEnvio" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+          </div>
+          <button onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="flex:1; font-size:12px; padding:8px 6px; font-weight:600;">💳 Cerrar transacción</button>
+        </div>
       </div>
 
       <div id="ficha" style="padding:16px 14px; font-size:11px;">
@@ -873,6 +875,9 @@ function renderFicha() {
   if (extra) {
     extra.innerHTML = `${f.telefono ? '☎ '+esc(f.telefono)+' ' : ''}${badge}`;
   }
+  // DNI al lado del label 'Forma de pago' (Diego 2026-06-14: a la vista al cerrar tx).
+  const dniSlot = document.getElementById('pgDniInfo');
+  if (dniSlot) dniSlot.textContent = f.documento ? `DNI ${f.documento}` : '';
   const fila = (ic, lab, val) => val ? `
     <div><div class="muted" style="margin-bottom:2px;"><i class="ti ti-${ic}" style="font-size:12px; vertical-align:-1px; margin-right:5px"></i>${lab}</div><div class="txt">${esc(val)}</div></div>` : '';
   const osLabel = osInferida && osInferida.confirmada ? 'Obra social ✓' : 'Obra social inferida';
@@ -897,9 +902,9 @@ function renderFicha() {
          <button onclick="abrirEditarOS()" class="hbtn" style="font-size:10px; padding:3px 10px;">+ Asignar OS</button>
        </div>`;
   // Nombre, domicilio, teléfono y badge (al lado de Ciudad) viven en el picker
-  // de arriba. Acá solo info aux: DNI, notas y obra social.
+  // de arriba. DNI ahora va al lado de 'Forma de pago' en la card de pago.
+  // Acá solo info aux: notas y obra social.
   p.innerHTML = `
-    ${f.documento ? `<div style="font-size:11px; margin-bottom:8px;"><span class="muted">DNI</span> <span class="txt">${esc(f.documento)}</span></div>` : ''}
     <div class="bt" style="padding-top:10px; border-top:0.5px solid;">
       <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas del cliente <span class="muted2" style="font-size:9px; font-weight:normal;">(perdurables, NO por transacción)</span></div>
       <textarea id="fichaNotas" rows="3" class="${INP}" style="width:100%; border-radius:8px; padding:6px 9px; font-size:11px; margin-bottom:6px;">${esc(f.notas || '')}</textarea>
@@ -1287,28 +1292,28 @@ async function toggleCerrarTx() {
   }
 }
 
-// Precarga el modal con la forma de pago + link/dato que el operador ya acordó
-// durante el chat (card 'Pago' del sidebar). Si no hay nada acordado, el modal
-// se abre vacío como antes.
+// Precarga el modal con el resumen del pago acordado en el sidebar.
+// El modal ya no duplica Total/Forma/Paga con/Envío — solo muestra el resumen
+// arriba y recalcula 'A cobrar'.
 async function txPrecargarPago(){
   if (!_pagoState) await cargarPagoAcordado();
-  if (!_pagoState || !_pagoState.forma_pago_propuesta) return;
-  const sel = document.getElementById('txForma');
-  if (!sel) return;
-  sel.value = _pagoState.forma_pago_propuesta;
-  txFormaChange();
-  // Total (de ObServer) si ya lo cargamos en el sidebar:
-  const txTotal = document.getElementById('txTotal');
-  if (txTotal && _pagoState.total_acordado != null && !txTotal.value) txTotal.value = _pagoState.total_acordado;
-  // Ahora los inputs condicionales existen — los lleno.
-  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
-  set('txLink', _pagoState.link_mp);
-  set('txNroOp', _pagoState.dato_pago);
-  set('txPagaCon', _pagoState.paga_con);
-  set('txUlt4', _pagoState.tarjeta_ult4);
-  set('txTarjNombre', _pagoState.tarjeta_nombre);
-  if (_pagoState.tarjeta_marca){ const m = document.getElementById('txMarca'); if (m) m.value = _pagoState.tarjeta_marca; }
+  txActualizarResumen();
   if (typeof txCalc === 'function') txCalc();
+}
+function txActualizarResumen(){
+  const out = document.getElementById('txResumenPago');
+  if (!out) return;
+  const monto = parseFloat((document.getElementById('pgMonto')||{}).value) || 0;
+  const formaSel = (document.getElementById('pgForma')||{}).value || '';
+  const formas = { link_mp:'Link MP', transferencia:'Transferencia', efectivo:'Efectivo', tarjeta:'Tarjeta' };
+  if (!monto && !formaSel){
+    out.textContent = 'Monto y forma de pago: cargalos arriba (card Pago acordado).';
+    return;
+  }
+  const partes = [];
+  if (monto) partes.push(`<b>$${monto.toLocaleString('es-AR')}</b>`);
+  if (formaSel) partes.push(formas[formaSel] || formaSel);
+  out.innerHTML = '💳 ' + partes.join(' · ');
 }
 // Carga el dropdown de domicilios del cliente. Con varias direcciones, fuerza
 // elección explícita (no asume la primera) → el pedido sale a la dirección correcta.
@@ -1325,35 +1330,18 @@ async function txCargarDomicilios() {
   const opts = ds.map(d => `<option value="${d.id}">${esc((d.etiqueta ? d.etiqueta + ' — ' : '') + (d.direccion || 'ubicación 📍'))}</option>`).join('');
   sel.innerHTML = (ds.length > 1 ? '<option value="">— elegí el domicilio —</option>' : '') + opts;
 }
-function txFormaChange() {
-  const f = document.getElementById('txForma').value;
-  let h = '';
-  if (f === 'link_mp') h =
-    `<input id="txLink" placeholder="link MP" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">
-     <input id="txNroOp" placeholder="nro de operación MP — al pegarlo queda PAGADO" oninput="txCalc()" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
-  else if (f === 'transferencia') h =
-    `<input id="txNroOp" placeholder="nro / comprobante — al pegarlo queda PAGADO" oninput="txCalc()" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
-  else if (f === 'efectivo') h =
-    `<input id="txPagaCon" type="number" min="0" oninput="txCalc()" placeholder="¿con cuánto paga? $" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;">`;
-  else if (f === 'tarjeta') h =
-    `<div style="display:flex;gap:6px;">
-       <input id="txUlt4" maxlength="4" placeholder="últ. 4" class="input" style="width:70px;border-radius:8px;padding:6px 9px;font-size:12px;">
-       <input id="txTarjNombre" placeholder="titular" class="input" style="flex:1;border-radius:8px;padding:6px 9px;font-size:12px;">
-       <select id="txMarca" class="input" style="border-radius:8px;padding:6px 9px;font-size:12px;"><option>Visa</option><option>Master</option><option>Amex</option></select>
-     </div>`;
-  document.getElementById('txFormaExtra').innerHTML = h;
-  txCalc();
-}
-
-// Reglas de pagado según la forma de pago:
+// Reglas de pagado según la forma de pago acordada en el sidebar:
 //   efectivo → false (cobra el cadete al entregar).
 //   tarjeta  → true  (POS presencial, ya cobrado).
 //   link_mp / transferencia → true SOLO si el operador pegó el nro de comprobante
-//     (verificó manualmente en MP que el pago entró).
+//     en la card de Pago acordado (verificó manualmente en MP que entró).
 function txComputarPagado() {
-  const f = _txVal('txForma');
+  const f = (document.getElementById('pgForma')||{}).value || '';
   if (f === 'tarjeta') return true;
-  if (f === 'link_mp' || f === 'transferencia') return !!_txVal('txNroOp').trim();
+  if (f === 'link_mp' || f === 'transferencia'){
+    const dato = (document.getElementById('pgDato')||{}).value || '';
+    return !!dato.trim();
+  }
   return false;
 }
 const ALIAS_FARMACIA = {{ (alias_transferencia or '')|tojson }};
@@ -1362,25 +1350,20 @@ function txStockChange() {
     document.getElementById('txStock').value === 'esperar' ? 'block' : 'none';
 }
 function txSalidaChange() {
+  // Domicilio solo aparece si va por reparto.
   document.getElementById('txEnvioWrap').style.display =
     document.getElementById('txSalida').value === 'reparto' ? 'block' : 'none';
   txCalc();
 }
 function _txVal(id) { const e = document.getElementById(id); return e ? e.value : ''; }
 function txCalc() {
-  const total = parseFloat(_txVal('txTotal')) || 0;
+  // Total y envío vienen de la card 'Pago acordado' (sidebar), no del modal.
+  const total = parseFloat((document.getElementById('pgMonto')||{}).value) || 0;
   const reparto = _txVal('txSalida') === 'reparto';
-  const envio = reparto ? (parseFloat(_txVal('txEnvio')) || 0) : 0;
+  const envio = reparto ? (parseFloat((document.getElementById('pgEnvio')||{}).value) || 0) : 0;
   const aCobrar = total + envio;
-  document.getElementById('txACobrar').textContent = fmtPrecio(aCobrar);
-  const vDiv = document.getElementById('txVuelto');
-  if (_txVal('txForma') === 'efectivo') {
-    const pagaCon = parseFloat(_txVal('txPagaCon')) || 0;
-    const vuelto = pagaCon - aCobrar;
-    vDiv.style.display = 'block';
-    vDiv.textContent = pagaCon ? `Paga con ${fmtPrecio(pagaCon)} → vuelto ${fmtPrecio(vuelto)}` : '';
-    vDiv.style.color = vuelto < 0 ? '#ef4444' : '';
-  } else { vDiv.style.display = 'none'; }
+  const out = document.getElementById('txACobrar');
+  if (out) out.textContent = fmtPrecio(aCobrar);
 }
 async function txPegarChat(t) {
   if (!t || !convAbierta) return;
@@ -1399,26 +1382,15 @@ async function txCotizarEnvio() {
   alert('Cotización automática: pendiente de enganchar con /config/envio. Cargá el envío a mano por ahora.');
 }
 async function txCerrar() {
-  const total = parseFloat(_txVal('txTotal')) || 0;
-  if (!total) { alert('Cargá el total de ObServer.'); return; }
-  const forma = _txVal('txForma');
-  if (!forma) { alert('Elegí la forma de pago.'); return; }
-  // Validaciones por forma de pago: sin estos datos no se puede cerrar.
-  if ((forma === 'link_mp' || forma === 'transferencia') && !_txVal('txNroOp').trim()){
-    alert('Cargá el Nro de operación / comprobante de ' + (forma === 'link_mp' ? 'MP' : 'transferencia') + ' antes de cerrar.');
-    const el = document.getElementById('txNroOp'); if (el) el.focus();
-    return;
-  }
-  if (forma === 'efectivo' && (!_txVal('txPagaCon') || parseFloat(_txVal('txPagaCon')) <= 0)){
-    alert('Cargá con cuánto paga (efectivo).');
-    const el = document.getElementById('txPagaCon'); if (el) el.focus();
-    return;
-  }
-  if (forma === 'tarjeta'){
-    if (!_txVal('txUlt4').trim()){ alert('Cargá los últimos 4 dígitos de la tarjeta.'); return; }
-    if (!_txVal('txTarjNombre').trim()){ alert('Cargá el nombre del titular de la tarjeta.'); return; }
-  }
+  // Total / forma / paga_con / envío vienen del sidebar (card Pago acordado).
+  // guardarYCerrarTx() ya validó los mínimos antes de abrir el modal.
+  const pgGet = id => { const e = document.getElementById(id); return e ? (e.value || '') : ''; };
+  const total = parseFloat(pgGet('pgMonto')) || 0;
+  const forma = pgGet('pgForma');
+  if (!total) { alert('Cargá el monto en la card Pago acordado.'); return; }
+  if (!forma) { alert('Elegí la forma de pago en la card Pago acordado.'); return; }
   const reparto = _txVal('txSalida') === 'reparto';
+  const envio = reparto ? (parseFloat(pgGet('pgEnvio')) || 0) : 0;
   const domSel = document.getElementById('txDomicilio');
   // Si va por reparto y el cliente tiene VARIAS direcciones, exigir elegir cuál.
   if (reparto && domSel && Number(domSel.dataset.n || 0) > 1 && !domSel.value) {
@@ -1427,19 +1399,19 @@ async function txCerrar() {
   const payload = {
     total,
     domicilio_id: (domSel && domSel.value) ? Number(domSel.value) : null,
-    forma_pago: _txVal('txForma'),
-    paga_con: _txVal('txPagaCon') || null,
+    forma_pago: forma,
+    paga_con: pgGet('pgPagaCon') || null,
     // El vuelto lo recalcula el backend (no se confía del cliente). Se manda igual de referencia.
-    vuelto: _txVal('txForma') === 'efectivo' ? ((parseFloat(_txVal('txPagaCon'))||0) - (total + (reparto ? (parseFloat(_txVal('txEnvio'))||0) : 0))) : null,
-    link_mp: _txVal('txLink') || null,
-    dato_pago_mp: _txVal('txNroOp') || null,
-    tarjeta_ult4: _txVal('txUlt4') || null,
+    vuelto: forma === 'efectivo' ? ((parseFloat(pgGet('pgPagaCon'))||0) - (total + envio)) : null,
+    link_mp: pgGet('pgLink') || null,
+    dato_pago_mp: pgGet('pgDato') || null,
+    tarjeta_ult4: pgGet('pgUlt4') || null,
     obra_social: _txVal('txOS') || null,
     requiere_receta: _txVal('txReceta'),
     stock: _txVal('txStock'),
     drogueria: _txVal('txDrogueria') || null,
     destino: _txVal('txSalida'),
-    envio_costo: reparto ? (parseFloat(_txVal('txEnvio')) || 0) : 0,
+    envio_costo: envio,
     prioridad: _txVal('txPrioridad'),
     pagado: txComputarPagado(),
   };
@@ -1535,21 +1507,31 @@ async function pagoPegarChat(texto){
   await refrescarChat(false);
 }
 
-// Vuelto = Monto operación - Paga con. Redondeo a billetes de $100 (floor).
-// Aparece solo si forma=efectivo y hay monto + paga_con.
+// Vuelto = (Monto + Envío) - Paga con. Redondeo a billetes de $100 (floor).
+// Aparece solo si forma=efectivo y hay monto + paga_con. Si solo cambió el
+// envío también refrescamos el resumen del modal (si está abierto).
 function pagoRecalcVuelto(){
   const out = document.getElementById('pgVuelto');
   if (!out) return;
   const f = document.getElementById('pgForma').value;
   const monto = parseFloat(document.getElementById('pgMonto').value) || 0;
+  const envioEl = document.getElementById('pgEnvio');
+  const envio = envioEl ? (parseFloat(envioEl.value) || 0) : 0;
+  const totalACobrar = monto + envio;
   const pagaInp = document.getElementById('pgPagaCon');
   const paga = pagaInp ? (parseFloat(pagaInp.value) || 0) : 0;
-  if (f !== 'efectivo' || monto <= 0 || paga <= 0){ out.style.display = 'none'; return; }
-  const exacto = paga - monto;
-  const vuelto = exacto >= 0 ? Math.floor(exacto / 100) * 100 : exacto;
-  out.style.display = '';
-  out.innerHTML = `Vuelto: <b style="color:${vuelto >= 0 ? 'var(--accent)' : 'var(--warn)'};">$ ${vuelto.toLocaleString('es-AR')}</b>` +
-                  (exacto !== vuelto ? ` <span class="muted2" style="font-size:10px;">(exacto: $${exacto.toLocaleString('es-AR')})</span>` : '');
+  if (f === 'efectivo' && totalACobrar > 0 && paga > 0){
+    const exacto = paga - totalACobrar;
+    const vuelto = exacto >= 0 ? Math.floor(exacto / 100) * 100 : exacto;
+    out.style.display = '';
+    out.innerHTML = `Vuelto: <b style="color:${vuelto >= 0 ? 'var(--accent)' : 'var(--warn)'};">$ ${vuelto.toLocaleString('es-AR')}</b>` +
+                    (exacto !== vuelto ? ` <span class="muted2" style="font-size:10px;">(exacto: $${exacto.toLocaleString('es-AR')})</span>` : '');
+  } else {
+    out.style.display = 'none';
+  }
+  // Si el modal está abierto, refrescá el resumen y A cobrar.
+  if (typeof txCalc === 'function') txCalc();
+  if (typeof txActualizarResumen === 'function') txActualizarResumen();
 }
 async function cargarPagoAcordado(){
   const card = document.getElementById('pagoCard');
@@ -1561,6 +1543,8 @@ async function cargarPagoAcordado(){
     card.style.display = '';
     document.getElementById('pgForma').value = _pagoState.forma_pago_propuesta || '';
     document.getElementById('pgMonto').value = _pagoState.total_acordado != null ? _pagoState.total_acordado : '';
+    const envEl = document.getElementById('pgEnvio');
+    if (envEl) envEl.value = _pagoState.envio_costo != null ? _pagoState.envio_costo : '';
     pagoFormaChange();
     pagoRecalcVuelto();
     document.getElementById('pagoBadgeLink').style.display = _pagoState.pago_acordado_en ? '' : 'none';
@@ -1571,7 +1555,8 @@ async function guardarPagoAcordado(){
   if (!convAbierta) return;
   const f = document.getElementById('pgForma').value;
   const body = { forma_pago_propuesta: f || null,
-                 total_acordado: document.getElementById('pgMonto').value || null };
+                 total_acordado: document.getElementById('pgMonto').value || null,
+                 envio_costo: document.getElementById('pgEnvio').value || null };
   const get = id => { const el = document.getElementById(id); return el ? el.value : null; };
   if (f === 'link_mp'){ body.link_mp = get('pgLink'); body.dato_pago = get('pgDato'); }
   else if (f === 'transferencia'){ body.dato_pago = get('pgDato'); }
@@ -1637,12 +1622,38 @@ setInterval(cargarEquipo, 12000);
 <script src="/static/js/cliente_picker.js"></script>
 <script>
 // Inicialización del cliente_picker para /atencion.
+// Cotizador de envío automático: corre cuando el picker reporta cambio de
+// dirección (elegir domicilio del dropdown, geocode manual, etc.) — antes
+// estaba sin enganchar y el operador veía pgEnvio en cero (Diego 2026-06-14).
+async function cotizarEnvioAtencion(){
+  const inp = document.getElementById('pgEnvio');
+  if (!inp) return;
+  let url;
+  if (window._domLat != null && window._domLng != null){
+    url = `/config/envio/api/cotizar?lat=${window._domLat}&lng=${window._domLng}`;
+  } else {
+    const dir = (document.getElementById('pDir')||{}).value || '';
+    const ciu = (document.getElementById('pCiudad')||{}).value || '';
+    if (!dir.trim()) return;
+    url = `/config/envio/api/cotizar?direccion=${encodeURIComponent(dir)}&localidad=${encodeURIComponent(ciu)}`;
+  }
+  try {
+    const d = await (await fetch(url)).json();
+    if (d && d.monto != null){
+      inp.value = Number(d.monto).toFixed(2);
+      if (typeof pagoRecalcVuelto === 'function') pagoRecalcVuelto();
+    }
+  } catch (e) { console.error('cotizar envio:', e); }
+}
+
 // Hooks con la conversación abierta:
 //  - Al elegir cliente → vincula a la conv (POST /atencion/<id>/vincular-cliente).
+//  - Al cambiar de dirección/domicilio → cotiza el envío y lo escribe en pgEnvio.
 //  - Al limpiar (clear) → desvincula si había vínculo.
 // La sincronización inversa (cargar el cliente vinculado en el picker al cambiar
 // de conversación) se hace dentro de cargarFicha() — ver más arriba en este archivo.
 ClientePicker.init({
+  onAddressChange: cotizarEnvioAtencion,
   onClienteSelected: async function({observer_id, cliente_id}){
     if (!convAbierta) return;
     try {

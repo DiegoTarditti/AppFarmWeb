@@ -5,6 +5,7 @@ Carga manual: el operador agrega cada pedido (cliente + domicilio/dirección + n
 El motor de asignación vive en services/reparto.py.
 """
 import json
+import logging
 import os
 import uuid
 from datetime import datetime
@@ -16,6 +17,73 @@ import database
 from auth import tiene_perfil
 from bot import store
 from services import reparto
+
+log = logging.getLogger(__name__)
+
+
+def _persistir_mensaje_reparto(*, es_grupo, chat_id, wa_id_emisor, push_name, body, from_me):
+    """Persiste un mensaje del grupo de cadetes o un DM de cadete en
+    BotConversacion + BotMensaje. Si es de un cadete (DM o grupo) intenta
+    auto-vincular Cadete.wa_id por match de push_name.
+
+    Pensado para llamarse desde el webhook WAHA. No re-raise: si falla, loguea
+    y devuelve None (la persistencia no debe romper la lógica de toma).
+    """
+    from bot import whatsapp_grupo
+    with database.get_db() as s:
+        # Identificar el Cadete por wa_id (si ya lo tenemos vinculado).
+        cadete = None
+        if wa_id_emisor:
+            cadete = (s.query(database.Cadete)
+                      .filter(database.Cadete.wa_id == wa_id_emisor)
+                      .first())
+        # Si no hay vínculo previo pero el push_name apunta inequívoco a un
+        # cadete sin wa_id, autocompletar (silencio: 0 o 2+ matches → skip).
+        if not cadete and wa_id_emisor and push_name:
+            nombre_norm = ' '.join(push_name.lower().split())
+            from sqlalchemy import func as _func
+            candidatos = (s.query(database.Cadete)
+                          .filter(_func.lower(database.Cadete.nombre).like(f'%{nombre_norm}%'),
+                                  database.Cadete.wa_id.is_(None))
+                          .limit(2).all())
+            if len(candidatos) == 1:
+                cadete = candidatos[0]
+                cadete.wa_id = wa_id_emisor
+        # Get-or-create la conversación.
+        if es_grupo:
+            canal = 'whatsapp_grupo'
+            canal_user_id = whatsapp_grupo.WAHA_GRUPO_ENVIOS or (chat_id or 'grupo')
+            conv = (s.query(database.BotConversacion)
+                    .filter_by(canal=canal, canal_user_id=canal_user_id).first())
+            if not conv:
+                conv = database.BotConversacion(
+                    canal=canal, canal_user_id=canal_user_id,
+                    nombre_cliente='Grupo de cadetes',
+                    estado_atencion='humano', nodo='reparto')
+                s.add(conv); s.flush()
+        else:
+            # DM con un cadete particular.
+            if not wa_id_emisor:
+                return None
+            conv = (s.query(database.BotConversacion)
+                    .filter_by(canal='whatsapp', canal_user_id=wa_id_emisor).first())
+            if not conv:
+                conv = database.BotConversacion(
+                    canal='whatsapp', canal_user_id=wa_id_emisor,
+                    nombre_cliente=(cadete.nombre if cadete else push_name) or 'Cadete',
+                    estado_atencion='humano', nodo='reparto',
+                    cadete_id=(cadete.id if cadete else None))
+                s.add(conv); s.flush()
+            elif cadete and not conv.cadete_id:
+                conv.cadete_id = cadete.id
+        # Insertar el mensaje. fromMe ⇒ lo mandó el operador; else lo mandó un cadete.
+        # En el grupo, fromMe también puede ser el bot publicando un pedido — lo
+        # marcamos como 'operador' igualmente porque sale desde la farmacia.
+        origen = 'operador' if from_me else 'cliente'
+        s.add(database.BotMensaje(conversacion_id=conv.id, origen=origen, texto=body))
+        conv.ultimo_en = database.now_ar()
+        s.commit()
+        return conv.id
 
 _ROLES_OK = ('admin', 'dev', 'farmacia')
 # Perfiles que tocan rutas de /reparto/* (incluye las APIs internas que usa
@@ -474,9 +542,15 @@ def init_app(app):
 
     @app.route('/whatsapp/grupo/webhook', methods=['POST'])
     def reparto_whatsapp_grupo_webhook():
-        """Recibe eventos de WAHA. Si llega un reply al mensaje de un pedido
-        publicado y matchea una frase de toma, asigna el pedido y responde
-        en el grupo. Sin login: WAHA hace POST desde la red docker."""
+        """Recibe eventos de WAHA (grupo + DMs de cadetes).
+
+        Flujo:
+          1) Persiste TODO mensaje entrante (no solo "Tomo") en BotConversacion +
+             BotMensaje para que el panel de /reparto/planilla pueda mostrarlo.
+          2) Auto-vincula Cadete.wa_id si el push_name matchea inequivocamente.
+          3) Si es frase de toma con reply citando el msg del pedido → asigna.
+
+        Sin login: WAHA hace POST desde la red docker."""
         from bot import whatsapp_grupo
         payload = request.json or {}
         # Log temporal para diagnóstico
@@ -486,15 +560,38 @@ def init_app(app):
         msg = payload.get('payload') if 'payload' in payload else payload
         if not isinstance(msg, dict):
             return jsonify({'ok': True, 'ignored': 'no msg'})
-        # TEMP TEST: aceptar mensajes propios mientras pruebas vos solo en el grupo.
-        # En prod cambiar a: if msg.get('fromMe'): return jsonify({'ok': True, 'ignored': 'self'})
-        # if msg.get('fromMe'):
-        #     return jsonify({'ok': True, 'ignored': 'self'})
         # Texto
         body = (msg.get('body') or '').strip()
         if not body:
             return jsonify({'ok': True, 'ignored': 'empty'})
-        # Frase de toma?
+
+        # ── Paso 1: persistir el mensaje + auto-vincular wa_id ────────────────
+        push_name = (msg.get('notifyName') or msg.get('pushName')
+                     or (msg.get('_data') or {}).get('notifyName') or '')
+        chat_id = msg.get('from') or msg.get('chatId') or ''
+        # participant: en mensajes de grupo es el wa_id de quien escribió.
+        # En DMs (from = wa_id del cadete) participant suele venir vacío.
+        participant = (msg.get('participant') or msg.get('author')
+                       or (msg.get('_data') or {}).get('author') or '')
+        es_grupo = chat_id.endswith('@g.us') or chat_id == whatsapp_grupo.WAHA_GRUPO_ENVIOS
+        wa_id_emisor = whatsapp_grupo.normalizar_wa_id(participant if es_grupo else chat_id)
+        from_me = bool(msg.get('fromMe'))
+        try:
+            _persistir_mensaje_reparto(es_grupo=es_grupo, chat_id=chat_id,
+                                       wa_id_emisor=wa_id_emisor,
+                                       push_name=push_name, body=body,
+                                       from_me=from_me)
+        except Exception as e:  # noqa: BLE001 — la persistencia no debe romper el flujo de toma
+            log.exception('persistir mensaje reparto falló: %s', e)
+
+        # Si el mensaje es fromMe (lo mandó la farmacia desde WAHA), ya quedó
+        # persistido por el endpoint responder del panel — NO duplicar.
+        # Trade-off: si el operador escribe al grupo desde su celular físico
+        # (no desde el panel), ese msg no aparece en el historial del panel.
+        # Vivible: hoy todo sale por el panel.
+        if from_me:
+            return jsonify({'ok': True, 'ignored': 'self'})
+        # ── Paso 2: si no es frase de toma, listo (ya quedó persistido) ───────
         if not whatsapp_grupo.es_frase_de_toma(body):
             return jsonify({'ok': True, 'ignored': 'not_take_phrase'})
         # Reply citando? WAHA expone el ID del msg original en payload.replyTo.id
@@ -524,20 +621,18 @@ def init_app(app):
                 p = next((x for x in cand if x.waha_msg_id and (x.waha_msg_id in quoted_id or quoted_id in x.waha_msg_id)), None)
             if not p:
                 return jsonify({'ok': True, 'ignored': 'pedido_not_found', 'quoted_id': quoted_id})
-            # Anti-doble-toma: si ya está tomado, avisar
-            push_name = (msg.get('notifyName') or msg.get('pushName')
-                         or (msg.get('_data') or {}).get('notifyName')
-                         or msg.get('from') or 'alguien')
+            # Anti-doble-toma: si ya está tomado, avisar (push_name ya viene del paso 1)
+            push_name_toma = push_name or msg.get('from') or 'alguien'
             if p.tomado_por_wsap:
                 whatsapp_grupo.publicar_en_grupo(
                     f'⚠️ Pedido #{p.id} ya lo había tomado *{p.tomado_por_wsap}*.')
                 return jsonify({'ok': True, 'ignored': 'ya_tomado', 'pedido_id': p.id})
-            p.tomado_por_wsap = push_name[:80]
+            p.tomado_por_wsap = push_name_toma[:80]
             p.tomado_en = database.now_ar()
             # Match con tabla cadetes por nombre (case+espacios insensible).
             # Si encuentra → asigna cadete_id (queda visible en columna Cadete).
             from sqlalchemy import func as _func
-            nombre_norm = ' '.join(push_name.lower().split())
+            nombre_norm = ' '.join(push_name_toma.lower().split())
             cad = (s.query(database.Cadete)
                    .filter(_func.lower(database.Cadete.nombre).like(f'%{nombre_norm}%'))
                    .first())
@@ -547,8 +642,8 @@ def init_app(app):
             s.commit()
             extra = f' (cadete del sistema: {cad.nombre})' if cad else ' (sin match en cadetes)'
             whatsapp_grupo.publicar_en_grupo(
-                f'✅ Pedido #{p.id} tomado por *{push_name}*.{extra}')
-            return jsonify({'ok': True, 'pedido_id': p.id, 'tomado_por': push_name,
+                f'✅ Pedido #{p.id} tomado por *{push_name_toma}*.{extra}')
+            return jsonify({'ok': True, 'pedido_id': p.id, 'tomado_por': push_name_toma,
                             'cadete_id': cad.id if cad else None})
 
     @app.route('/whatsapp/grupo/setup-webhook', methods=['POST'])
@@ -562,6 +657,189 @@ def init_app(app):
         url_interno = 'http://web:5000/whatsapp/grupo/webhook'
         r = whatsapp_grupo.configurar_webhook(url_interno)
         return jsonify(r)
+
+    # ── Chat de reparto (panel en /reparto/planilla) ────────────────────────
+    # 5 endpoints que sirven la lista de conversaciones (grupo + DMs) y permiten
+    # mandar mensajes desde el panel sin salir de la planilla.
+
+    def _conv_grupo_or_none(s):
+        from bot import whatsapp_grupo as _wg
+        if not _wg.WAHA_GRUPO_ENVIOS:
+            return None
+        return (s.query(database.BotConversacion)
+                .filter_by(canal='whatsapp_grupo', canal_user_id=_wg.WAHA_GRUPO_ENVIOS)
+                .first())
+
+    def _msg_to_dict(m):
+        return {'id': m.id, 'origen': m.origen, 'texto': m.texto,
+                'creado_en': m.creado_en.isoformat() if m.creado_en else None}
+
+    @app.route('/api/reparto/chat/resumen')
+    @login_required
+    def api_reparto_chat_resumen():
+        """Listado para el panel: estado del grupo + DMs por cadete ordenados
+        por último mensaje. El frontend hace polling de este endpoint cada 3s."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        with database.get_db() as s:
+            grupo_info = None
+            grupo = _conv_grupo_or_none(s)
+            if grupo:
+                ult = (s.query(database.BotMensaje)
+                       .filter_by(conversacion_id=grupo.id)
+                       .order_by(database.BotMensaje.id.desc()).first())
+                grupo_info = {
+                    'conv_id': grupo.id,
+                    'ultimo': ult.texto[:80] if ult else '',
+                    'ultimo_en': ult.creado_en.isoformat() if (ult and ult.creado_en) else None,
+                    'ultimo_origen': ult.origen if ult else None,
+                }
+            # DMs: conversaciones con cadete_id NO NULL (los autovinculados o
+            # vinculados a mano). Limitamos a últimas 50 para que el polling
+            # no se infle si hay muchos cadetes inactivos.
+            convs = (s.query(database.BotConversacion)
+                     .filter(database.BotConversacion.cadete_id.isnot(None))
+                     .order_by(database.BotConversacion.ultimo_en.desc())
+                     .limit(50).all())
+            dms = []
+            for c in convs:
+                ult = (s.query(database.BotMensaje)
+                       .filter_by(conversacion_id=c.id)
+                       .order_by(database.BotMensaje.id.desc()).first())
+                cad = s.get(database.Cadete, c.cadete_id) if c.cadete_id else None
+                dms.append({
+                    'conv_id': c.id,
+                    'cadete_id': c.cadete_id,
+                    'nombre': cad.nombre if cad else (c.nombre_cliente or 'Cadete'),
+                    'ultimo': ult.texto[:80] if ult else '',
+                    'ultimo_en': ult.creado_en.isoformat() if (ult and ult.creado_en) else None,
+                    'ultimo_origen': ult.origen if ult else None,
+                })
+            return jsonify({'ok': True, 'grupo': grupo_info, 'dms': dms})
+
+    @app.route('/api/reparto/chat/grupo/mensajes')
+    @login_required
+    def api_reparto_chat_grupo_mensajes():
+        """Mensajes del grupo. ?desde_id=N → solo posteriores (para append
+        incremental en el polling). Sin desde_id → últimos 80."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        try:
+            desde_id = int(request.args.get('desde_id') or 0)
+        except (TypeError, ValueError):
+            desde_id = 0
+        with database.get_db() as s:
+            grupo = _conv_grupo_or_none(s)
+            if not grupo:
+                return jsonify({'ok': True, 'mensajes': [], 'conv_id': None})
+            q = s.query(database.BotMensaje).filter_by(conversacion_id=grupo.id)
+            if desde_id:
+                q = q.filter(database.BotMensaje.id > desde_id)
+            else:
+                q = q.order_by(database.BotMensaje.id.desc()).limit(80)
+            msgs = q.all()
+            if not desde_id:
+                msgs = sorted(msgs, key=lambda m: m.id)
+            return jsonify({'ok': True, 'conv_id': grupo.id,
+                            'mensajes': [_msg_to_dict(m) for m in msgs]})
+
+    @app.route('/api/reparto/chat/cadete/<int:cadete_id>/mensajes')
+    @login_required
+    def api_reparto_chat_cadete_mensajes(cadete_id):
+        """DM con un cadete puntual. Igual semántica que el de grupo."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        try:
+            desde_id = int(request.args.get('desde_id') or 0)
+        except (TypeError, ValueError):
+            desde_id = 0
+        with database.get_db() as s:
+            conv = (s.query(database.BotConversacion)
+                    .filter_by(cadete_id=cadete_id, canal='whatsapp')
+                    .order_by(database.BotConversacion.ultimo_en.desc())
+                    .first())
+            if not conv:
+                return jsonify({'ok': True, 'mensajes': [], 'conv_id': None})
+            q = s.query(database.BotMensaje).filter_by(conversacion_id=conv.id)
+            if desde_id:
+                q = q.filter(database.BotMensaje.id > desde_id)
+            else:
+                q = q.order_by(database.BotMensaje.id.desc()).limit(80)
+            msgs = q.all()
+            if not desde_id:
+                msgs = sorted(msgs, key=lambda m: m.id)
+            return jsonify({'ok': True, 'conv_id': conv.id,
+                            'mensajes': [_msg_to_dict(m) for m in msgs]})
+
+    @app.route('/api/reparto/chat/grupo/responder', methods=['POST'])
+    @login_required
+    def api_reparto_chat_grupo_responder():
+        """El operador escribe al grupo desde el panel. Manda por WAHA y
+        persiste como BotMensaje(origen='operador')."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        texto = ((request.json or {}).get('texto') or '').strip()
+        if not texto:
+            return jsonify({'ok': False, 'error': 'texto vacío'}), 400
+        from bot import whatsapp_grupo
+        r = whatsapp_grupo.publicar_en_grupo(texto)
+        if not r.get('ok'):
+            return jsonify({'ok': False, 'error': r.get('error') or 'fallo WAHA'}), 502
+        # Persistir el mensaje saliente.
+        with database.get_db() as s:
+            grupo = _conv_grupo_or_none(s)
+            if not grupo:
+                # Si el grupo aún no tiene conv (1er mensaje saliente nunca), crearla.
+                grupo = database.BotConversacion(
+                    canal='whatsapp_grupo',
+                    canal_user_id=whatsapp_grupo.WAHA_GRUPO_ENVIOS,
+                    nombre_cliente='Grupo de cadetes',
+                    estado_atencion='humano', nodo='reparto')
+                s.add(grupo); s.flush()
+            m = database.BotMensaje(conversacion_id=grupo.id, origen='operador', texto=texto)
+            s.add(m)
+            grupo.ultimo_en = database.now_ar()
+            grupo.operador_user_id = current_user.id
+            s.commit()
+            return jsonify({'ok': True, 'mensaje': _msg_to_dict(m)})
+
+    @app.route('/api/reparto/chat/cadete/<int:cadete_id>/responder', methods=['POST'])
+    @login_required
+    def api_reparto_chat_cadete_responder(cadete_id):
+        """El operador escribe a un cadete (DM). Manda por WAHA al wa_id del
+        cadete y persiste."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        texto = ((request.json or {}).get('texto') or '').strip()
+        if not texto:
+            return jsonify({'ok': False, 'error': 'texto vacío'}), 400
+        from bot import whatsapp_grupo
+        with database.get_db() as s:
+            cadete = s.get(database.Cadete, cadete_id)
+            if not cadete:
+                return jsonify({'ok': False, 'error': 'cadete no existe'}), 404
+            if not cadete.wa_id:
+                return jsonify({'ok': False, 'error': 'cadete sin wa_id (todavía no escribió o no se vinculó)'}), 400
+            r = whatsapp_grupo.enviar_dm(cadete.wa_id, texto)
+            if not r.get('ok'):
+                return jsonify({'ok': False, 'error': r.get('error') or 'fallo WAHA'}), 502
+            conv = (s.query(database.BotConversacion)
+                    .filter_by(cadete_id=cadete_id, canal='whatsapp')
+                    .order_by(database.BotConversacion.ultimo_en.desc())
+                    .first())
+            if not conv:
+                conv = database.BotConversacion(
+                    canal='whatsapp', canal_user_id=cadete.wa_id,
+                    nombre_cliente=cadete.nombre,
+                    estado_atencion='humano', nodo='reparto',
+                    cadete_id=cadete.id)
+                s.add(conv); s.flush()
+            m = database.BotMensaje(conversacion_id=conv.id, origen='operador', texto=texto)
+            s.add(m)
+            conv.ultimo_en = database.now_ar()
+            conv.operador_user_id = current_user.id
+            s.commit()
+            return jsonify({'ok': True, 'mensaje': _msg_to_dict(m)})
 
     @app.route('/reparto/pedido/<int:pid>/publicar', methods=['POST'])
     @login_required
@@ -597,6 +875,29 @@ def init_app(app):
                 return jsonify({'ok': False, 'error': r.get('error') or 'sin respuesta WAHA'}), 502
             p.waha_msg_id = r.get('waha_msg_id')
             p.publicado_en = database.now_ar()
+            # Avanzar el estado a 'publicado' solo si todavía no había salido
+            # del flujo pre-publicación. Republish de un pedido ya tomado /
+            # en_ruta no lo regresa al estado anterior.
+            if p.estado in ('pendiente', 'en_planilla', 'esperando_drog'):
+                p.estado = 'publicado'
+            # Persistir el publish en la conv del grupo para que aparezca en el
+            # panel de /reparto/planilla (sino la timeline del grupo solo
+            # tendría lo que llega del webhook).
+            grupo = (s.query(database.BotConversacion)
+                     .filter_by(canal='whatsapp_grupo',
+                                canal_user_id=whatsapp_grupo.WAHA_GRUPO_ENVIOS)
+                     .first()) if whatsapp_grupo.WAHA_GRUPO_ENVIOS else None
+            if not grupo and whatsapp_grupo.WAHA_GRUPO_ENVIOS:
+                grupo = database.BotConversacion(
+                    canal='whatsapp_grupo',
+                    canal_user_id=whatsapp_grupo.WAHA_GRUPO_ENVIOS,
+                    nombre_cliente='Grupo de cadetes',
+                    estado_atencion='humano', nodo='reparto')
+                s.add(grupo); s.flush()
+            if grupo:
+                s.add(database.BotMensaje(conversacion_id=grupo.id,
+                                          origen='operador', texto=texto))
+                grupo.ultimo_en = database.now_ar()
             s.commit()
             return jsonify({'ok': True, 'waha_msg_id': p.waha_msg_id,
                             'publicado_en': p.publicado_en.isoformat()})
@@ -676,12 +977,16 @@ def init_app(app):
     def reparto_eliminar(pid):
         if not _ok():
             return jsonify({'ok': False, 'error': 'sin permiso'}), 403
-        with database.get_db() as s:
-            p = s.get(database.PedidoReparto, pid)
-            if p:
-                s.delete(p)
-                s.commit()
-        return jsonify({'ok': True})
+        try:
+            with database.get_db() as s:
+                p = s.get(database.PedidoReparto, pid)
+                if p:
+                    s.delete(p)
+                    s.commit()
+            return jsonify({'ok': True})
+        except Exception as e:  # noqa: BLE001
+            log.exception('borrar pedido #%s fallo: %s', pid, e)
+            return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
     @app.route('/reparto/pedido/<int:pid>/ticket')
     @login_required
