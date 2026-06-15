@@ -644,17 +644,34 @@ def init_app(app):
     @app.route('/atencion/api/obras-sociales')
     @login_required
     def atencion_obras_sociales_lista():
-        """Lista global de OS con ventas en el último año."""
-        q = """
-            SELECT DISTINCT oos.observer_id, oos.descripcion
-            FROM obs_obras_sociales oos
-            JOIN obs_ventas_detalle ovd ON ovd.obra_social_observer = oos.observer_id
-            WHERE ovd.fecha_estadistica >= NOW() - INTERVAL '12 months'
-            ORDER BY oos.descripcion LIMIT 200
-        """
+        """Lista de OS:
+        - Sin ?q: top 200 con ventas en el último año (uso típico).
+        - Con ?q='swiss medical': multi-token search sobre toda la tabla
+          (case-insensitive, cada palabra debe estar en la descripción)."""
+        q_arg = (request.args.get('q') or '').strip()
+        if not q_arg:
+            sql = """
+                SELECT DISTINCT oos.observer_id, oos.descripcion
+                FROM obs_obras_sociales oos
+                JOIN obs_ventas_detalle ovd ON ovd.obra_social_observer = oos.observer_id
+                WHERE ovd.fecha_estadistica >= NOW() - INTERVAL '12 months'
+                ORDER BY oos.descripcion LIMIT 200
+            """
+            with database.get_db() as s:
+                rows = s.execute(database.text(sql)).fetchall()
+            return jsonify([{'observer_id': r[0], 'descripcion': r[1]} for r in rows])
+        # Multi-token search: cada palabra del query es un ilike sobre descripcion.
+        # Más permisivo que el endpoint global porque incluye OS sin ventas
+        # recientes (útil cuando el operador escribe el nombre exacto).
+        from helpers import multi_token_filter
         with database.get_db() as s:
-            rows = s.execute(database.text(q)).fetchall()
-        return jsonify([{'observer_id': r[0], 'descripcion': r[1]} for r in rows])
+            base = s.query(database.ObsObraSocial).filter(database.ObsObraSocial.fecha_baja.is_(None))
+            clausula = multi_token_filter(q_arg, database.ObsObraSocial.descripcion)
+            if clausula is not None:
+                base = base.filter(clausula)
+            rows = base.order_by(database.ObsObraSocial.descripcion).limit(20).all()
+            return jsonify([{'observer_id': r.observer_id, 'descripcion': r.descripcion}
+                            for r in rows])
 
     @app.route('/atencion/api/clientes/<int:observer_id>/obra-social', methods=['GET', 'POST'])
     @login_required
