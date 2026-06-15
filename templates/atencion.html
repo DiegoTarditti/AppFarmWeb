@@ -2008,7 +2008,8 @@ if (window.ATENCION_MODO === 'manual'){
     document.body.appendChild(_overlay);
     _overlay.appendChild(_modal);
     // Resetear estilos previos del modal: ahora hereda el centrado del overlay flex.
-    _modal.style.cssText = 'display:none; max-width:720px; width:100%; max-height:calc(100vh - 60px); overflow-y:auto;';
+    // background opaco para que NO se vea el sidebar de atras a traves.
+    _modal.style.cssText = 'display:none; max-width:720px; width:100%; max-height:calc(100vh - 60px); overflow-y:auto; background:var(--card); border:1px solid var(--border); border-radius:14px; box-shadow:0 10px 50px rgba(0,0,0,0.6);';
     // Override del toggleCerrarTx: mostrar/ocultar TAMBIEN el overlay.
     const _origToggle = window.toggleCerrarTx;
     window.toggleCerrarTx = async function(){
