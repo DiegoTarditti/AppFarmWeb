@@ -97,6 +97,20 @@
       el.style.padding = '4px 10px';
       el.style.borderRadius = '8px';
       el.style.marginTop = '4px';
+    } else if (window._geoRefStatus === 'no_match' || window._geoRefStatus === 'multiple'){
+      // Auto-georef no resolvió (0 o >1 coincidencias) → CTA visible.
+      const txt = window._geoRefStatus === 'multiple'
+        ? '⚠ Varias coincidencias — Identificar con Maps'
+        : '⚠ No encontrado — Identificar con Maps';
+      el.innerHTML = `
+        <button type="button" onclick="ClientePicker.buscarGeoSugerencias()"
+                style="background:rgba(239,159,39,0.18); color:#EF9F27; border:1px solid rgba(239,159,39,0.45);
+                       border-radius:8px; padding:6px 10px; font-size:11px; font-weight:600; cursor:pointer; width:100%; text-align:center;">
+          🗺️ ${txt}
+        </button>`;
+      el.style.background = 'transparent';
+      el.style.padding = '0';
+      el.style.marginTop = '0';
     } else {
       el.innerHTML = `<span class="muted2" style="font-size:11px;">sin geolocalización</span>`;
       el.style.background = 'transparent';
@@ -257,6 +271,13 @@
       if (!algunoConGeo && dir && callbacks.onAddressChange){
         setTimeout(callbacks.onAddressChange, 100);
       }
+      // Auto-georef: si no hay domicilio con coords guardadas, intentar resolver
+      // automaticamente con la direccion + ciudad limpias. Si encuentra UNA sola
+      // sugerencia en zona, la setea sola (badge verde). Si no, muestra CTA
+      // 'Identificar con Maps'. Diego 2026-06-15.
+      if (!algunoConGeo && $('pDir').value.trim()){
+        setTimeout(autoIntentarGeoref, 150);
+      }
       const sel = $('pDom');
       sel.innerHTML = '<option value="">— escribir dirección —</option>' +
         doms.map(x=>{
@@ -280,6 +301,7 @@
     window._domLat = null;
     window._domLng = null;
     window._domGeoAt = null;
+    window._geoRefStatus = null;
     renderDomCoords();
     clearTimeout(_geoTmr);
     const q = $('pDir').value.trim();
@@ -326,6 +348,35 @@
     } catch(e){ box.style.display='none'; }
   }
 
+  // Auto-georef silenciosa: corre tras cargar cliente para intentar resolver
+  // las coords con la direccion ya limpia. Si encuentra UNA sola sugerencia en
+  // zona, llama pickGeo (badge verde). Si encuentra varias o ninguna, marca
+  // window._geoRefStatus para que renderDomCoords pinte el CTA naranja.
+  async function autoIntentarGeoref(){
+    const dirEl = $('pDir');
+    if (!dirEl) return;
+    const dir = (dirEl.value || '').trim();
+    const loc = ($('pCiudad') || {}).value || '';
+    if (dir.length < 3) return;
+    const _normLoc = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const CIUDADES_OK = Array.isArray(window.ENVIO_CIUDADES_FILTRO) && window.ENVIO_CIUDADES_FILTRO.length
+      ? window.ENVIO_CIUDADES_FILTRO
+      : ['rosario', 'funes', 'roldan'];
+    try {
+      const r = await fetch(`/api/clientes/geocodificar?q=${encodeURIComponent(dir)}&loc=${encodeURIComponent(loc)}`);
+      if (!r.ok) return;
+      const d = await r.json();
+      const enZona = (d.sugerencias || []).filter(s => CIUDADES_OK.includes(_normLoc(s.localidad)));
+      if (enZona.length === 1){
+        window._geoRefStatus = null;
+        await pickGeo(enZona[0]);
+      } else {
+        window._geoRefStatus = enZona.length === 0 ? 'no_match' : 'multiple';
+        renderDomCoords();
+      }
+    } catch(e) { /* silencioso */ }
+  }
+
   async function pickGeo(s){
     // ANTES de pisar pDir con la dir limpia del geocoder, parsear el texto
     // que tenia el campo para rescatar piso/depto/ref que vinieron embebidos
@@ -361,6 +412,7 @@
     window._domLat = s.lat;
     window._domLng = s.lng;
     window._domGeoAt = new Date().toISOString();
+    window._geoRefStatus = null;   // ya hay coords, limpiar el flag del CTA
     renderDomCoords();
     $('resGeo').style.display='none';
     const domSel = $('pDom');
@@ -549,6 +601,7 @@
     window._domLat = null;
     window._domLng = null;
     window._domGeoAt = null;
+    window._geoRefStatus = null;
     actualizarDomDropdown([]);
     renderDomCoords();
     if (callbacks.onClear) callbacks.onClear();
