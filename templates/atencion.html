@@ -412,8 +412,9 @@
               <div id="dObsDrop" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:1000; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:3px; max-height:200px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
             </div>
           </div>
-          {# Canal: cómo entró el pedido. En modo chat normal queda 'atencion'; en
-             modo manual el operador elige (mostrador/teléfono/otros). #}
+          {# Canal: cómo entró el pedido. Default según modo: walk-in (modo=manual)
+             arranca en 'mostrador'; conversación de chat arranca en 'atencion'.
+             El operador puede cambiarlo. #}
           <div>
             <label class="muted2" style="font-size:10px; display:block;">Canal</label>
             <select id="dCanal" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
@@ -423,6 +424,14 @@
               <option value="otros">📨 Otros</option>
             </select>
           </div>
+          <script>
+            // Default por modo. Solo aplica si el select no fue tocado por el operador.
+            (function dCanalDefault(){
+              const sel = document.getElementById('dCanal');
+              if (!sel) return;
+              sel.value = (window.ATENCION_MODO === 'manual') ? 'mostrador' : 'atencion';
+            })();
+          </script>
         </div>
       </div>
 
