@@ -462,6 +462,16 @@ def _ficha_de_cliente(s, cliente_id):
         telefono = oc.telefono or c.telefono or ''
         direccion = oc.domicilio_direccion or ''
         localidad = oc.localidad or ''
+        # ObServer suele venir con la ciudad EMBEBIDA en el campo dirección como
+        # 'CALLE 6 C 4418 / FUNES'. Si el parser detecta una ciudad de la
+        # whitelist al final, la extraemos y limpiamos el campo dirección.
+        # La localidad parseada GANA sobre obs_clientes.localidad (que en general
+        # viene con la ciudad "default" de la farmacia, no la real del cliente).
+        from bot.direcciones import separar_direccion as _sep_dir
+        _parsed = _sep_dir(direccion)
+        if _parsed.get('localidad'):
+            direccion = _parsed['direccion'] or direccion
+            localidad = _parsed['localidad']
         domicilio = ', '.join(x for x in [direccion, localidad] if x)
         fuente = 'observer'
     else:
