@@ -454,6 +454,16 @@ def init_app(app):
                 prioridad=body.get('prioridad') or 'normal',
             )
             s.add(p)
+            # Notas del cliente (textarea de la ficha): se persisten al cerrar
+            # TX en vez de tener un botón aparte (Diego 2026-06-15: el botón
+            # 'Guardar notas' antiguo refrescaba toda la ficha y borraba el
+            # monto del form). Sólo persistir si el body trae ficha_notas (no
+            # tocar Cliente.notas si el operador no escribió nada).
+            ficha_notas_raw = body.get('ficha_notas')
+            if conv.cliente_id and ficha_notas_raw is not None:
+                cli = s.get(database.Cliente, conv.cliente_id)
+                if cli:
+                    cli.notas = ficha_notas_raw.strip() or None
             s.commit()
             return jsonify({'ok': True, 'pedido_id': p.id, 'estado': p.estado})
 

@@ -412,17 +412,26 @@
               <div id="dObsDrop" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:1000; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:3px; max-height:200px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
             </div>
           </div>
-          {# Canal: cómo entró el pedido. Default según modo: walk-in (modo=manual)
-             arranca en 'mostrador'; conversación de chat arranca en 'atencion'.
-             El operador puede cambiarlo. #}
-          <div>
-            <label class="muted2" style="font-size:10px; display:block;">Canal</label>
-            <select id="dCanal" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-              <option value="atencion">📱 Atención (chat)</option>
-              <option value="mostrador">🏪 Mostrador</option>
-              <option value="telefono">📞 Teléfono</option>
-              <option value="otros">📨 Otros</option>
-            </select>
+          {# Canal + Obra social en una sola fila. Canal: cómo entró el pedido
+             (default 'mostrador' en walk-in, 'atencion' en chat). OS: precargada
+             desde la ficha del cliente si la conoce (confirmada > inferida >=50%);
+             editable en el momento del pedido. #}
+          <div style="display:flex; gap:6px;">
+            <div style="flex:1; min-width:0;">
+              <label class="muted2" style="font-size:10px; display:block;">Canal</label>
+              <select id="dCanal" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                <option value="atencion">📱 Atención (chat)</option>
+                <option value="mostrador">🏪 Mostrador</option>
+                <option value="telefono">📞 Teléfono</option>
+                <option value="otros">📨 Otros</option>
+              </select>
+            </div>
+            <div style="flex:1; min-width:0;">
+              <label class="muted2" style="font-size:10px; display:block;">Obra social</label>
+              <input id="dObraSocial" placeholder="ej: PAMI · OSDE"
+                     class="input" autocomplete="off"
+                     style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+            </div>
           </div>
           <script>
             // Default por modo. Solo aplica si el select no fue tocado por el operador.
@@ -1007,6 +1016,13 @@ async function cargarFicha() {
   }
   renderFicha();
   if (typeof cargarPagoAcordado === 'function') cargarPagoAcordado();
+  // Precargar OS en la card Detalle del pedido (si el cliente ya tiene OS
+  // confirmada o inferida con confianza). El operador puede sobreescribirlo.
+  const dOs = document.getElementById('dObraSocial');
+  if (dOs && !dOs.value){
+    const nombreOs = (fichaData && fichaData.ficha && fichaData.ficha.obra_social && fichaData.ficha.obra_social.nombre) || '';
+    dOs.value = nombreOs;
+  }
   // El picker setea programáticamente pDir/pCiudad etc. y eso NO dispara input
   // events. Forzamos la actualización del preview tras un tick para asegurar
   // que ya estén pisados los valores.
@@ -1061,10 +1077,9 @@ function renderFicha() {
   // Acá solo info aux: notas y obra social.
   p.innerHTML = `
     <div class="bt" style="padding-top:10px; border-top:0.5px solid;">
-      <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas del cliente <span class="muted2" style="font-size:9px; font-weight:normal;">(perdurables, NO por transacción)</span></div>
+      <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas del cliente <span class="muted2" style="font-size:9px; font-weight:normal;">(perdurables — se guardan al cerrar TX)</span></div>
       <textarea id="fichaNotas" rows="3" class="${INP}" style="width:100%; border-radius:8px; padding:6px 9px; font-size:11px; margin-bottom:6px;">${esc(f.notas || '')}</textarea>
       <div style="display:flex; gap:6px;">
-        <button id="btnGuardarFicha" onclick="guardarFicha()" class="hbtn hbtn-ok" style="border-radius:8px; padding:5px 11px; font-size:11px;">Guardar notas</button>
         <button onclick="desvincularCliente()" class="hbtn" style="border-radius:8px; padding:5px 11px; font-size:11px;">Desvincular</button>
       </div>
     </div>
@@ -1578,7 +1593,15 @@ async function txCerrar() {
     canal: ((document.getElementById('dCanal')||{}).value || '').trim() || 'atencion',
     // Cupon tarjeta (cuando forma=tarjeta). El input pgCupon vive en pgExtra.
     cupon_tarjeta: ((document.getElementById('pgCupon')||{}).value || '').trim() || null,
+    // Notas del cliente (textarea de la ficha del sidebar). Se persisten en
+    // Cliente.notas al cerrar TX en lugar de tener un botón aparte (Diego
+    // 2026-06-15: el botón 'Guardar notas' borraba el monto por reload).
+    ficha_notas: ((document.getElementById('fichaNotas')||{}).value || ''),
   };
+  // OS desde la card Detalle (al lado de Canal). Si está vacío, fallback al
+  // input del modal (txOS) por compat.
+  const dOs = ((document.getElementById('dObraSocial')||{}).value || '').trim();
+  if (dOs) payload.obra_social = dOs;
   try {
     const r = await fetch(`/atencion/${convAbierta}/cerrar-transaccion`, {
       method: 'POST',
