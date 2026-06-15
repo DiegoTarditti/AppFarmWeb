@@ -394,17 +394,21 @@
                      style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
             </div>
             <div style="flex:1; position:relative;">
-              <label class="muted2" style="font-size:10px; display:block; display:flex; align-items:center; gap:6px;">
-                Observación
+              <label class="muted2" style="font-size:10px; display:flex; align-items:center; gap:6px;">
+                <span>Observación</span>
                 <span id="dRecetaBadge" style="font-size:9px; padding:2px 6px; border-radius:8px; background:rgba(29,158,117,.18); color:#1D9E75; font-weight:600;">🟢 Venta libre</span>
+                <button type="button" onclick="dGuardarObsPreset()" tabindex="-1"
+                        title="Guardar el texto actual como preset"
+                        style="margin-left:auto; background:transparent; border:1px solid var(--border); border-radius:6px; cursor:pointer; padding:1px 6px; font-size:10px; color:var(--muted);">＋</button>
               </label>
-              <input id="dObservacion" list="dObsPresets" placeholder="elegir o escribir"
-                     class="input"
-                     style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px; padding-right:22px;"
+              {# Sin list= y sin <datalist>: el browser estaba pisando con su
+                 dropdown nativo. Usamos solo el ▼ custom que muestra dObsDrop. #}
+              <input id="dObservacion" placeholder="elegir del ▼ o escribir libre"
+                     class="input" autocomplete="off"
+                     style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px; padding-right:24px;"
                      oninput="dActualizarRecetaBadge()">
               <button type="button" onclick="dToggleObs(event)" tabindex="-1"
-                      style="position:absolute; right:5px; top:62%; background:transparent; border:none; cursor:pointer; padding:2px 5px; font-size:10px; opacity:0.6; color:var(--muted);">▼</button>
-              <datalist id="dObsPresets"></datalist>
+                      style="position:absolute; right:5px; top:62%; background:transparent; border:none; cursor:pointer; padding:2px 5px; font-size:11px; opacity:0.7; color:var(--muted);">▼</button>
               <div id="dObsDrop" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:1000; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:3px; max-height:200px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
             </div>
           </div>
@@ -1753,6 +1757,23 @@ async function dToggleObs(ev){
   if (!_dObsPresets.length) await dCargarObsPresets();
   dPintarObsDrop();
   drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
+}
+// Guardar el texto actual del campo Observación como preset nuevo.
+async function dGuardarObsPreset(){
+  const texto = (document.getElementById('dObservacion').value || '').trim();
+  if (!texto){ alert('Escribí una observación primero.'); return; }
+  if (texto.length > 160){ alert('Máx 160 caracteres.'); return; }
+  try {
+    const r = await fetch('/api/pedido/obs-presets', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify({texto}),
+    });
+    const d = await r.json();
+    if (!d.ok){ alert('⚠️ ' + (d.error || 'no se pudo guardar')); return; }
+    await dCargarObsPresets();  // recargar para que aparezca en el ▼ próx vez
+    alert(d.reusado ? '✓ Ya existía como preset, reactivado.' : '✓ Guardado como preset.');
+  } catch(e){ alert('Error: ' + e.message); }
 }
 // Cerrar dropdown al clickear fuera (1 listener).
 if (!window._dObsDropListener){
