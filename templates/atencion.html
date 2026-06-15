@@ -119,6 +119,21 @@
   /* Belt & suspenders: en algunos browsers el color-scheme no alcanza para los
      options. Forzamos colores explicitos. */
   .input option, select.input option { background-color: #2c2c39; color: #ececf0; }
+  /* Fix del autofill de Chrome/Edge: el browser pinta los inputs con fondo
+     amarillo/blanco cuando autocomplete está activo. box-shadow inset gigante
+     fuerza el background dark. -webkit-text-fill-color asegura el texto claro. */
+  input.input:-webkit-autofill,
+  input.input:-webkit-autofill:hover,
+  input.input:-webkit-autofill:focus,
+  input.input:-webkit-autofill:active,
+  .input:-webkit-autofill,
+  .input:-webkit-autofill:hover,
+  .input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px #3a3a47 inset !important;
+    -webkit-text-fill-color: #ececf0 !important;
+    caret-color: #ececf0 !important;
+    transition: background-color 9999s ease-in-out 0s;
+  }
 
   /* ── Modo manual (walk-in): solo sidebar derecho, sin bandeja ni chat ── */
   #grid3.modo-manual { grid-template-columns: 1fr !important; }
