@@ -1,16 +1,13 @@
 """Pedidos — pantalla de alta manual (`/pedido/nuevo`).
 
-Conceptualmente es entrada al flujo de pedido, no de reparto. Se separó de
-`routes/reparto.py` para que `reparto.py` quede solo con lo del reparto del
-día (mapa, rutas, planilla, vista cadete).
+DEPRECADO (refactor C, 2026-06-15): /pedido/nuevo se unificó con /atencion. La
+ruta sigue existiendo como redirect a /atencion?modo=manual&new=1 para no
+romper links viejos (sidebar, bookmarks, deep-links con observer_id).
 
-Las APIs que consume esta pantalla (buscar-cliente, ficha cliente, domicilios,
-geocodificar, separar-direccion, crear pedido) todavía viven en `reparto.py`
-bajo el prefijo `/reparto/api/*` porque también las consume el mapa. Próximo
-paso: mover esas APIs a `/api/clientes/*` junto con el componente reusable
-`cliente_picker` (ver docs/mejoras_pendientes.md y docs/flujo_pedido_despacho.md).
+El template templates/pedido_nuevo.html ya no se renderiza pero queda en el
+repo como referencia hasta la etapa 4 del refactor (cleanup).
 """
-from flask import render_template
+from flask import redirect, request
 from flask_login import current_user, login_required
 
 from auth import tiene_perfil
@@ -31,4 +28,11 @@ def init_app(app):
     def pedido_nuevo():
         if not _ok():
             return 'Sin permiso', 403
-        return render_template('pedido_nuevo.html')
+        # Redirect a /atencion en modo manual. Preservamos observer_id si vino
+        # como deep-link (ej. desde un botón "→ Crear pedido para este cliente").
+        # El modo manual crea una BotConversacion stub y abre el panel simplificado.
+        observer_id = request.args.get('observer_id')
+        target = '/atencion?modo=manual&new=1'
+        if observer_id:
+            target += f'&observer_id={observer_id}'
+        return redirect(target)

@@ -114,16 +114,22 @@
 
   /* ── Modo manual (walk-in): solo sidebar derecho, sin bandeja ni chat ── */
   #grid3.modo-manual { grid-template-columns: 1fr !important; }
-  #grid3.modo-manual > .col-side:first-child { display: none; }   /* bandeja */
-  #grid3.modo-manual > .col-chat { display: none; }                /* chat */
+  #grid3.modo-manual #colBandeja { display: none !important; }
+  #grid3.modo-manual #colChat { display: none !important; }
   #grid3.modo-manual #fichaCol { border-left: none; max-width: 720px; margin: 0 auto;
                                   width: 100%; padding: 8px 16px 24px; }
   #grid3.modo-manual #pickerWrap { padding: 12px 12px 8px; }
+  /* En modo manual escondemos el header del cliente que viene de la chat-head
+     (que esta DENTRO de colChat → ya esta escondido). Pero el bloque del Reset
+     etc. del lado izquierdo del chat-head sigue ahi por si lo necesitamos. */
   /* el segundo grid (Domicilio / coords) en el macro trae margin-top:10px inline; lo bajamos */
   #pickerWrap .grid-cliente + .grid-cliente { margin-top:0 !important; }
 </style>
 </head>
 <body>
+{# Modo manual (walk-in: ?modo=manual). Disponible para toda la pagina. #}
+{% set _modo = modo or '' %}
+<script>window.ATENCION_MODO = {{ _modo|tojson }}; window.ATENCION_CONV_INICIAL = {{ (conv_inicial|int) if conv_inicial else 'null' }};</script>
 <div id="app" class="dark">
 
   <!-- ── Topbar ─────────────────────────────────────────────────────────── -->
@@ -167,16 +173,12 @@
     </div>
   </div>
 
-  {# Modo manual (walk-in: ?modo=manual) esconde bandeja + chat. Solo queda
-     el sidebar con cliente_picker + detalle + pago. Refactor C — etapa 2. #}
-  {% set _modo = modo or '' %}
-  <script>window.ATENCION_MODO = {{ _modo|tojson }}; window.ATENCION_CONV_INICIAL = {{ (conv_inicial|int) if conv_inicial else 'null' }};</script>
   <!-- ── 3 columnas (modo chat) / 1 columna (modo manual) ─────────────────── -->
   <div id="grid3" class="{% if _modo == 'manual' %}modo-manual{% endif %}"
        style="display:grid; grid-template-columns:300px 1fr 500px; flex:1; min-height:0;">
 
     <!-- Lista de conversaciones -->
-    <div class="col-side" style="border-right:0.5px solid; display:flex; flex-direction:column; min-height:0;">
+    <div id="colBandeja" class="col-side" style="border-right:0.5px solid; display:flex; flex-direction:column; min-height:0;">
       <div class="side-head" style="padding:9px 10px; display:flex; gap:6px; border-bottom:0.5px solid;">
         <button data-vista="sin_asignar" onclick="setVista('sin_asignar')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Cola <b id="cnt-sin_asignar">0</b></button>
         <button data-vista="mias" onclick="setVista('mias')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Mías <b id="cnt-mias">0</b></button>
@@ -189,7 +191,7 @@
     </div>
 
     <!-- Chat -->
-    <div class="col-chat" style="display:flex; flex-direction:column; min-height:0;">
+    <div id="colChat" class="col-chat" style="display:flex; flex-direction:column; min-height:0;">
       <div class="chat-head" style="padding:9px 16px; border-bottom:0.5px solid; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:50px;">
         <div id="chatHeadInner" class="muted" style="font-size:13px;">Elegí una conversación 👈</div>
         <div id="chatAcciones" style="display:none; align-items:center; gap:7px; flex-shrink:0;">

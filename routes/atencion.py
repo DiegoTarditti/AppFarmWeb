@@ -43,7 +43,16 @@ def init_app(app):
         nueva = request.args.get('new') == '1'
         if modo == 'manual' and nueva:
             import uuid as _uuid
+            observer_id = request.args.get('observer_id')
+            # Deep-link con observer_id: vincular la conv al cliente automaticamente.
+            cliente_id = None
+            try:
+                observer_id_int = int(observer_id) if observer_id else None
+            except (TypeError, ValueError):
+                observer_id_int = None
             with database.get_db() as s:
+                if observer_id_int:
+                    cliente_id = database.get_or_create_cliente(s, observer_id=observer_id_int)
                 conv = database.BotConversacion(
                     canal='manual',
                     canal_user_id=f'manual-{_uuid.uuid4().hex[:10]}',
@@ -51,6 +60,7 @@ def init_app(app):
                     estado_atencion='humano',
                     nodo='pedido',
                     operador_user_id=current_user.id,
+                    cliente_id=cliente_id,
                 )
                 s.add(conv); s.commit()
                 from flask import redirect
