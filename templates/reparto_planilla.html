@@ -167,7 +167,7 @@
       <th style="width:30px;">#</th>
       <th style="min-width:130px;">Cliente</th>
       <th style="min-width:160px;">Dirección</th>
-      <th style="min-width:110px;">Teléfono</th>
+      <th style="width:85px;">Teléfono</th>
       <th style="width:70px;">Envío $</th>
       <th style="width:100px;">Tomó</th>
       <th style="width:80px;">Importe</th>
@@ -181,7 +181,7 @@
       <th style="width:85px;">Cadete</th>
       <th style="width:75px;">Recibió</th>
       <th style="width:50px;">Pagado</th>
-      <th style="width:90px;">WhatsApp</th>
+      <th style="width:155px;">WhatsApp</th>
       <th style="width:30px;" title="Borrar pedido (fase de pruebas)"></th>
     </tr>
   </thead>
@@ -269,7 +269,7 @@
           {{ p.estado.replace('_', ' ') }}
         </button>
       </td>
-      <td class="celda-editable" data-campo="entregado_por" data-tipo="text">
+      <td class="celda-editable" data-campo="entregado_por" data-tipo="select-usuarios">
         <span class="celda-valor">{{ p.entregado_por or '—' }}</span>
       </td>
       <td class="celda-editable" data-campo="cadete_id" data-tipo="select-cadetes">
@@ -291,7 +291,8 @@
         {% elif p.publicado_en %}
           {# Timer SLA: 20 min warning, 40 min crítico (sin que ningún cadete lo tome).
              Formato del tiempo: <60m → "5m", <24h → "2.5h", sino "3d".
-             #N del pedido siempre visible para matchear con el msg del grupo. #}
+             #N del pedido siempre visible para matchear con el msg del grupo.
+             nowrap + display:inline-flex para que el ↻ NUNCA salte de linea. #}
           {% set _min = ((ahora - p.publicado_en).total_seconds() / 60) | int %}
           {% set _col = '#1D9E75' if _min < 20 else ('#EF9F27' if _min < 40 else '#EF4444') %}
           {% set _icon = '🟢' if _min < 20 else ('🟡' if _min < 40 else '🔴') %}
@@ -302,10 +303,12 @@
           {% else %}
             {% set _t = (_min // 1440) ~ 'd' %}
           {% endif %}
-          <span title="Pedido #{{ p.id }} · publicado {{ p.publicado_en.strftime('%d/%m %H:%M') }} — {{ _min }} min sin tomar" style="font-size:10px; color:{{ _col }}; font-weight:600;">
-            {{ _icon }} #{{ p.id }} · {{ _t }}
+          <span style="display:inline-flex; align-items:center; gap:5px; white-space:nowrap;">
+            <span title="Pedido #{{ p.id }} · publicado {{ p.publicado_en.strftime('%d/%m %H:%M') }} — {{ _min }} min sin tomar" style="font-size:13px; color:{{ _col }}; font-weight:700;">
+              {{ _icon }} #{{ p.id }} · {{ _t }}
+            </span>
+            <button onclick="publicarPedido({{ p.id }}, this)" class="hbtn" style="font-size:13px; padding:2px 6px;" title="Republicar">↻</button>
           </span>
-          <button onclick="publicarPedido({{ p.id }}, this)" class="hbtn" style="font-size:9px; padding:1px 4px; margin-left:3px;" title="Republicar">↻</button>
         {% else %}
           <button onclick="publicarPedido({{ p.id }}, this)" class="hbtn" style="font-size:10px; padding:2px 6px;" title="Publicar en grupo de WhatsApp">📤 Publicar</button>
         {% endif %}
