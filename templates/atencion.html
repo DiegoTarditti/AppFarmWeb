@@ -350,9 +350,8 @@
       </div>
 
       {# Card 'Detalle del pedido' — gaps que /pedido/nuevo tenía y /atencion no:
-         producto, nota/ítems, observación con presets. Se persisten al cerrar
-         la transacción. El producto puede sincronizarse con el carrito visible
-         en la columna del chat (cuando el operador agrega productos desde ahí). #}
+         producto, nota/ítems, observación con presets, canal. Se persisten al
+         cerrar la transacción. #}
       <div id="detalleCard" style="padding:6px 12px 8px; border-bottom:1px solid var(--border); display:none;">
         <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
           <span class="muted" style="font-size:11px;">📋 Detalle del pedido</span>
@@ -372,15 +371,30 @@
                      style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
             </div>
             <div style="flex:1; position:relative;">
-              <label class="muted2" style="font-size:10px; display:block;">Observación</label>
+              <label class="muted2" style="font-size:10px; display:block; display:flex; align-items:center; gap:6px;">
+                Observación
+                <span id="dRecetaBadge" style="font-size:9px; padding:2px 6px; border-radius:8px; background:rgba(29,158,117,.18); color:#1D9E75; font-weight:600;">🟢 Venta libre</span>
+              </label>
               <input id="dObservacion" list="dObsPresets" placeholder="elegir o escribir"
                      class="input"
-                     style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px; padding-right:22px;">
+                     style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px; padding-right:22px;"
+                     oninput="dActualizarRecetaBadge()">
               <button type="button" onclick="dToggleObs(event)" tabindex="-1"
                       style="position:absolute; right:5px; top:62%; background:transparent; border:none; cursor:pointer; padding:2px 5px; font-size:10px; opacity:0.6; color:var(--muted);">▼</button>
               <datalist id="dObsPresets"></datalist>
               <div id="dObsDrop" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:1000; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:3px; max-height:200px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
             </div>
+          </div>
+          {# Canal: cómo entró el pedido. En modo chat normal queda 'atencion'; en
+             modo manual el operador elige (mostrador/teléfono/otros). #}
+          <div>
+            <label class="muted2" style="font-size:10px; display:block;">Canal</label>
+            <select id="dCanal" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+              <option value="atencion">📱 Atención (chat)</option>
+              <option value="mostrador">🏪 Mostrador</option>
+              <option value="telefono">📞 Teléfono</option>
+              <option value="otros">📨 Otros</option>
+            </select>
           </div>
         </div>
       </div>
@@ -423,12 +437,20 @@
            necesita el envío a la vista en el chat, sin abrir el modal). El botón es
            más chico ahora para que entren ambos en la misma línea. #}
         <div style="display:flex; gap:6px; align-items:flex-end; margin-top:8px;">
-          <div style="flex:0 0 110px;">
-            <label class="muted2" style="font-size:10px; display:block;">Envío $</label>
+          <div style="flex:0 0 90px;">
+            <label class="muted2" style="font-size:10px; display:flex; align-items:center; gap:5px;">
+              Envío $
+              <span id="pgEnvioPill" style="display:none; font-size:8px; padding:1px 6px; border-radius:999px;"></span>
+            </label>
             <input id="pgEnvio" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+          </div>
+          <div style="flex:0 0 80px;">
+            <label class="muted2" style="font-size:10px; display:block;" title="Override manual de cuadras">o Cuadras</label>
+            <input id="pgCuadras" type="number" min="0" oninput="pgCuadrasInput()" placeholder="ej: 22" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;" title="Cotiza envío usando este número de cuadras">
           </div>
           <button onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="flex:1; font-size:12px; padding:8px 6px; font-weight:600;">💳 Cerrar transacción</button>
         </div>
+        <div id="pgEnvioInfo" class="muted2" style="font-size:10px; margin-top:3px; padding:0 2px;"></div>
       </div>
 
       <div id="ficha" style="padding:16px 14px; font-size:11px;">
@@ -1468,11 +1490,14 @@ async function txCerrar() {
     prioridad: _txVal('txPrioridad'),
     pagado: txComputarPagado(),
     // Detalle del pedido (card del sidebar, Diego 2026-06-14: antes /atencion
-    // no persistia producto / nota / observacion).
+    // no persistia producto / nota / observacion / canal / cupon_tarjeta).
     producto: ((document.getElementById('dProducto')||{}).value || '').trim() || null,
     producto_observer_id: window._dProductoObsId || null,
     nota: ((document.getElementById('dNota')||{}).value || '').trim() || null,
     observacion: ((document.getElementById('dObservacion')||{}).value || '').trim() || null,
+    canal: ((document.getElementById('dCanal')||{}).value || '').trim() || 'atencion',
+    // Cupon tarjeta (cuando forma=tarjeta). El input pgCupon vive en pgExtra.
+    cupon_tarjeta: ((document.getElementById('pgCupon')||{}).value || '').trim() || null,
   };
   try {
     const r = await fetch(`/atencion/${convAbierta}/cerrar-transaccion`, {
@@ -1542,7 +1567,8 @@ function pagoFormaChange(){
       <input id="pgUlt4" maxlength="4" placeholder="últ. 4" class="input" style="width:70px; border-radius:8px; padding:6px 9px; font-size:12px;">
       <input id="pgTarjNombre" placeholder="titular" class="input" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">
       <select id="pgMarca" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;"><option>Visa</option><option>Master</option><option>Amex</option><option>Naranja</option><option>Cabal</option></select>
-    </div>`;
+    </div>
+    <input id="pgCupon" placeholder="nro de cupón / comprobante" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
   document.getElementById('pgExtra').innerHTML = h;
   // Si tenemos estado previo, prellenamos los inputs nuevos.
   if (_pagoState){
@@ -1794,22 +1820,81 @@ setInterval(cargarEquipo, 12000);
 async function cotizarEnvioAtencion(){
   const inp = document.getElementById('pgEnvio');
   if (!inp) return;
+  // Override manual por cuadras tiene prioridad.
+  const cuaEl = document.getElementById('pgCuadras');
+  const cua = cuaEl ? (cuaEl.value || '').trim() : '';
+  const ciu = (document.getElementById('pCiudad')||{}).value || '';
   let url;
-  if (window._domLat != null && window._domLng != null){
+  if (cua){
+    url = `/config/envio/api/cotizar?cuadras=${encodeURIComponent(cua)}&localidad=${encodeURIComponent(ciu)}`;
+  } else if (window._domLat != null && window._domLng != null){
     url = `/config/envio/api/cotizar?lat=${window._domLat}&lng=${window._domLng}`;
   } else {
     const dir = (document.getElementById('pDir')||{}).value || '';
-    const ciu = (document.getElementById('pCiudad')||{}).value || '';
-    if (!dir.trim()) return;
+    if (!dir.trim()) { pgRenderEnvioInfo(null); return; }
     url = `/config/envio/api/cotizar?direccion=${encodeURIComponent(dir)}&localidad=${encodeURIComponent(ciu)}`;
   }
   try {
     const d = await (await fetch(url)).json();
     if (d && d.monto != null){
       inp.value = Number(d.monto).toFixed(2);
+      pgRenderEnvioInfo(d);
       if (typeof pagoRecalcVuelto === 'function') pagoRecalcVuelto();
+    } else {
+      pgRenderEnvioInfo({error: (d && d.detalle) || 'sin tarifa'});
     }
-  } catch (e) { console.error('cotizar envio:', e); }
+  } catch (e) {
+    console.error('cotizar envio:', e);
+    pgRenderEnvioInfo({error: 'error de red'});
+  }
+}
+function pgRenderEnvioInfo(d){
+  const pill = document.getElementById('pgEnvioPill');
+  const info = document.getElementById('pgEnvioInfo');
+  if (!pill || !info) return;
+  if (!d){
+    pill.style.display = 'none';
+    info.textContent = '';
+    return;
+  }
+  if (d.error){
+    pill.style.display = 'none';
+    info.textContent = '⚠ ' + d.error;
+    info.style.color = 'var(--warn)';
+    return;
+  }
+  pill.style.display = 'inline-block';
+  pill.textContent = d.fuente || '—';
+  pill.style.background = d.fuente === 'zona' ? '#185FA5' : 'var(--accent)';
+  pill.style.color = d.fuente === 'zona' ? '#fff' : 'var(--accent-ink)';
+  const partes = [];
+  if (d.tramo_label) partes.push(d.tramo_label);
+  if (d.detalle) partes.push(d.detalle);
+  if (d.cuadras != null) partes.push(`~${d.cuadras} cuadras`);
+  info.textContent = partes.join(' · ');
+  info.style.color = '';
+}
+let _pgCuaTimer = null;
+function pgCuadrasInput(){
+  clearTimeout(_pgCuaTimer);
+  _pgCuaTimer = setTimeout(cotizarEnvioAtencion, 400);
+}
+// Badge "🟢 Venta libre" / "🟡 Receta" según contenido de Observación.
+function dActualizarRecetaBadge(){
+  const badge = document.getElementById('dRecetaBadge');
+  if (!badge) return;
+  const t = ((document.getElementById('dObservacion')||{}).value || '').toLowerCase();
+  // Palabras clave que indican que el cliente debe traer algo (receta/autorización).
+  const tieneRec = /receta|autoriz|pami|crónic|pase|prescrip|firmad/i.test(t);
+  if (tieneRec){
+    badge.textContent = '🟡 Requiere papel';
+    badge.style.background = 'rgba(239,159,39,.2)';
+    badge.style.color = '#EF9F27';
+  } else {
+    badge.textContent = '🟢 Venta libre';
+    badge.style.background = 'rgba(29,158,117,.18)';
+    badge.style.color = '#1D9E75';
+  }
 }
 
 // Hooks con la conversación abierta:

@@ -395,7 +395,10 @@ def init_app(app):
                 paga_con=paga_con,
                 vuelto=vuelto_str,
                 link_mp=body.get('link_mp') or None,
-                dato_pago_mp=body.get('dato_pago_mp') or None,
+                # dato_pago_mp comparte campo entre nro op MP/transferencia y cupón
+                # de tarjeta (se diferencia por forma_pago). Si vienen ambos en el
+                # body (raro), prioriza dato_pago_mp.
+                dato_pago_mp=(body.get('dato_pago_mp') or body.get('cupon_tarjeta') or '').strip() or None,
                 tarjeta_ult4=body.get('tarjeta_ult4') or None,
                 tarjeta_nombre=body.get('tarjeta_nombre') or None,
                 tarjeta_marca=body.get('tarjeta_marca') or None,
@@ -408,6 +411,11 @@ def init_app(app):
                 producto_observer_id=body.get('producto_observer_id') or None,
                 nota=(body.get('nota') or '').strip() or None,
                 observacion=(body.get('observacion') or '').strip() or None,
+                # canal: cómo entró el pedido (atencion/mostrador/teléfono/otros).
+                # Lo guardamos en la columna 'canal' del PedidoReparto (reemplaza el
+                # 'atencion' hardcoded más abajo).
+                # cupon_tarjeta: nro de cupón/comprobante cuando forma=tarjeta.
+                # Se guarda en dato_pago_mp (campo unificado, lo diferenciás por forma_pago).
                 # ── Stock + destino ──
                 stock_status=body.get('stock') or None,
                 drogueria_id=drogueria_id,
@@ -423,7 +431,10 @@ def init_app(app):
                 # `pagado` solo registra que la plata ya entró (badge "cobrado" +
                 # "ticket fiscal pendiente" en la bandeja de caja).
                 estado='en_caja',
-                canal='atencion',
+                # canal: si vino en el body lo usamos (modo manual permite elegir
+                # mostrador/teléfono/otros); default 'atencion' para mantener
+                # backward compat con cierres anteriores.
+                canal=(body.get('canal') or '').strip() or 'atencion',
                 tomo=oper,
                 # turno: lo asigna el operador de planilla (entra NULL).
                 prioridad=body.get('prioridad') or 'normal',
