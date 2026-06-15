@@ -972,12 +972,16 @@ def init_app(app):
     def reparto_eliminar(pid):
         if not _ok():
             return jsonify({'ok': False, 'error': 'sin permiso'}), 403
-        with database.get_db() as s:
-            p = s.get(database.PedidoReparto, pid)
-            if p:
-                s.delete(p)
-                s.commit()
-        return jsonify({'ok': True})
+        try:
+            with database.get_db() as s:
+                p = s.get(database.PedidoReparto, pid)
+                if p:
+                    s.delete(p)
+                    s.commit()
+            return jsonify({'ok': True})
+        except Exception as e:  # noqa: BLE001
+            log.exception('borrar pedido #%s fallo: %s', pid, e)
+            return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
     @app.route('/reparto/pedido/<int:pid>/ticket')
     @login_required

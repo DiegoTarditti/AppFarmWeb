@@ -547,11 +547,10 @@ async function borrarPedido(pid, nombre) {
   if (!confirm(`Borrar pedido #${pid} (${nombre || 'sin cliente'})?\n\nEsto es irreversible.`)) return;
   try {
     const r = await fetch(`/reparto/pedido/${pid}/delete`, {method:'POST'});
-    const d = await r.json();
+    const d = await r.json().catch(()=>({ok:false, error:`HTTP ${r.status}`}));
     if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo borrar')); return; }
-    const fila = document.querySelector(`tr[data-pid="${pid}"]`);
-    if (fila) fila.remove();
-    else location.reload();
+    // Quito todas las filas con ese pid (puede aparecer en varias tablas/secciones).
+    document.querySelectorAll(`tr[data-pid="${pid}"]`).forEach(tr => tr.remove());
   } catch (e) { alert('Error: ' + e.message); }
 }
 
