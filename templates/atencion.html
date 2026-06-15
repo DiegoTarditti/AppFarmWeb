@@ -111,6 +111,14 @@
   #pickerWrap .res .it:hover { background:var(--hov); }
   /* Grid del picker apilado vertical para el sidebar (que es angosto vs /pedido/nuevo). */
   #pickerWrap .grid-cliente { display:grid; grid-template-columns:1fr; gap:5px; }
+
+  /* ── Modo manual (walk-in): solo sidebar derecho, sin bandeja ni chat ── */
+  #grid3.modo-manual { grid-template-columns: 1fr !important; }
+  #grid3.modo-manual > .col-side:first-child { display: none; }   /* bandeja */
+  #grid3.modo-manual > .col-chat { display: none; }                /* chat */
+  #grid3.modo-manual #fichaCol { border-left: none; max-width: 720px; margin: 0 auto;
+                                  width: 100%; padding: 8px 16px 24px; }
+  #grid3.modo-manual #pickerWrap { padding: 12px 12px 8px; }
   /* el segundo grid (Domicilio / coords) en el macro trae margin-top:10px inline; lo bajamos */
   #pickerWrap .grid-cliente + .grid-cliente { margin-top:0 !important; }
 </style>
@@ -122,10 +130,12 @@
   <div class="topbar" style="display:flex; align-items:center; justify-content:space-between; padding:10px 18px; border-bottom:0.5px solid; flex-shrink:0;">
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="logo" style="width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center;"><i class="ti ti-plus" style="font-size:18px"></i></div>
-      <span class="title" style="font-size:14px; font-weight:600;">Atención · Badia</span>
+      <span class="title" style="font-size:14px; font-weight:600;">
+        {% if _modo == 'manual' %}🛒 Pedido manual{% else %}Atención · Badia{% endif %}
+      </span>
     </div>
     <div style="display:flex; align-items:center; gap:16px;">
-      <select id="filtroLinea" onchange="cargarBandeja()" aria-label="Línea" class="input" style="border-radius:8px; padding:5px 10px; font-size:12px;">
+      <select id="filtroLinea" onchange="cargarBandeja()" aria-label="Línea" class="input" style="border-radius:8px; padding:5px 10px; font-size:12px;{% if _modo == 'manual' %} display:none;{% endif %}">
         <option value="">Todas las líneas</option>
         {% for l in lineas %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
       </select>
@@ -157,8 +167,13 @@
     </div>
   </div>
 
-  <!-- ── 3 columnas ─────────────────────────────────────────────────────── -->
-  <div id="grid3" style="display:grid; grid-template-columns:300px 1fr 500px; flex:1; min-height:0;">
+  {# Modo manual (walk-in: ?modo=manual) esconde bandeja + chat. Solo queda
+     el sidebar con cliente_picker + detalle + pago. Refactor C — etapa 2. #}
+  {% set _modo = modo or '' %}
+  <script>window.ATENCION_MODO = {{ _modo|tojson }}; window.ATENCION_CONV_INICIAL = {{ (conv_inicial|int) if conv_inicial else 'null' }};</script>
+  <!-- ── 3 columnas (modo chat) / 1 columna (modo manual) ─────────────────── -->
+  <div id="grid3" class="{% if _modo == 'manual' %}modo-manual{% endif %}"
+       style="display:grid; grid-template-columns:300px 1fr 500px; flex:1; min-height:0;">
 
     <!-- Lista de conversaciones -->
     <div class="col-side" style="border-right:0.5px solid; display:flex; flex-direction:column; min-height:0;">
@@ -1753,8 +1768,16 @@ cargarCiudades();
 cargarDrogActivas();
 heartbeat();
 cargarEquipo();
-setInterval(cargarBandeja, 5000);
-setInterval(() => refrescarChat(false), 4000);
+// En modo manual (walk-in) NO polleamos bandeja ni chat (no aplican).
+// Si vinimos con ?conv=N, abrimos esa conv automaticamente.
+if (window.ATENCION_MODO === 'manual'){
+  if (window.ATENCION_CONV_INICIAL){
+    setTimeout(() => abrirConv(window.ATENCION_CONV_INICIAL), 100);
+  }
+} else {
+  setInterval(cargarBandeja, 5000);
+  setInterval(() => refrescarChat(false), 4000);
+}
 setInterval(heartbeat, 30000);
 setInterval(cargarEquipo, 12000);
 </script>

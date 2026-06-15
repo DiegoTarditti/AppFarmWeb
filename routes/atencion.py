@@ -35,7 +35,28 @@ def init_app(app):
     @app.route('/atencion')
     @login_required
     def atencion_panel():
-        return render_template('atencion.html', lineas=store.lineas_distintas())
+        # Modo manual (walk-in): /atencion?modo=manual&new=1 crea una BotConversacion
+        # stub (sin chat WhatsApp/Telegram, solo para registrar el pedido) y abre el
+        # panel en modo simplificado (sin bandeja ni columna de chat).
+        # Refactor C — etapa 2: reemplaza /pedido/nuevo.
+        modo = (request.args.get('modo') or '').strip()
+        nueva = request.args.get('new') == '1'
+        if modo == 'manual' and nueva:
+            import uuid as _uuid
+            with database.get_db() as s:
+                conv = database.BotConversacion(
+                    canal='manual',
+                    canal_user_id=f'manual-{_uuid.uuid4().hex[:10]}',
+                    nombre_cliente='(walk-in)',
+                    estado_atencion='humano',
+                    nodo='pedido',
+                    operador_user_id=current_user.id,
+                )
+                s.add(conv); s.commit()
+                from flask import redirect
+                return redirect(f'/atencion?modo=manual&conv={conv.id}')
+        return render_template('atencion.html', lineas=store.lineas_distintas(),
+                               modo=modo, conv_inicial=request.args.get('conv'))
 
     @app.route('/atencion/api/conversaciones')
     @login_required
