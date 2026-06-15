@@ -1987,23 +1987,27 @@ cargarEquipo();
 // Si vinimos con ?conv=N, abrimos esa conv automaticamente.
 if (window.ATENCION_MODO === 'manual'){
   // El modal 'cerrarTxCard' vive dentro de colChat (escondida en modo manual).
-  // Lo movemos al body como overlay flotante para que sea accesible al cerrar TX.
+  // Lo movemos a un overlay oscuro fullscreen para que sea accesible al cerrar TX.
   const _modal = document.getElementById('cerrarTxCard');
   if (_modal){
-    document.body.appendChild(_modal);
-    _modal.style.position = 'fixed';
-    _modal.style.top = '20px';
-    _modal.style.left = '50%';
-    _modal.style.transform = 'translateX(-50%)';
-    _modal.style.zIndex = '9999';
-    _modal.style.maxWidth = '720px';
-    _modal.style.width = 'calc(100% - 40px)';
-    _modal.style.maxHeight = 'calc(100vh - 40px)';
-    _modal.style.overflowY = 'auto';
-    _modal.style.boxShadow = '0 10px 50px rgba(0,0,0,0.6)';
-    _modal.style.background = 'var(--card)';
-    _modal.style.border = '1px solid var(--border)';
-    _modal.style.borderRadius = '12px';
+    const _overlay = document.createElement('div');
+    _overlay.id = 'cerrarTxOverlay';
+    _overlay.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9998; align-items:flex-start; justify-content:center; padding:24px 20px; overflow-y:auto;';
+    _overlay.onclick = (e) => {
+      // Click fuera del card cierra el modal.
+      if (e.target === _overlay && typeof toggleCerrarTx === 'function') toggleCerrarTx();
+    };
+    document.body.appendChild(_overlay);
+    _overlay.appendChild(_modal);
+    // Resetear estilos previos del modal: ahora hereda el centrado del overlay flex.
+    _modal.style.cssText = 'display:none; max-width:720px; width:100%; max-height:calc(100vh - 60px); overflow-y:auto;';
+    // Override del toggleCerrarTx: mostrar/ocultar TAMBIEN el overlay.
+    const _origToggle = window.toggleCerrarTx;
+    window.toggleCerrarTx = async function(){
+      const abriendo = _modal.style.display === 'none';
+      _overlay.style.display = abriendo ? 'flex' : 'none';
+      await _origToggle();
+    };
   }
   if (window.ATENCION_CONV_INICIAL){
     setTimeout(() => abrirConv(window.ATENCION_CONV_INICIAL), 100);
