@@ -52,21 +52,35 @@
     </div>
     <div id="resGeo" class="res" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:5;"></div>
   </div>
-  {# Piso + Depto van en la misma fila (son inputs chicos y se desperdicia ancho). #}
+  {# Piso + Depto van en la misma fila (son inputs chicos y se desperdicia ancho).
+     Cada label tiene un mini-botón ✂ "tomar selección": selecciona texto en el
+     campo Dirección y al click el texto va al campo + se quita de Dirección. #}
   <div class="field" style="flex:0 0 160px;">
     <div style="display:flex; gap:8px;">
       <div style="flex:1; min-width:0;">
-        <label style="display:block;">Piso</label>
+        <label style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
+          <span>Piso</span>
+          <button type="button" onclick="ClientePicker.fieldPick('pPiso')" title="Tomar la selección del campo Dirección"
+                  style="background:none; border:none; cursor:pointer; padding:0 3px; font-size:11px; opacity:0.55;">✂</button>
+        </label>
         <input id="pPiso" class="input" placeholder="ej: 1 / PB" style="width:100%;">
       </div>
       <div style="flex:1; min-width:0;">
-        <label style="display:block;">Depto</label>
+        <label style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
+          <span>Depto</span>
+          <button type="button" onclick="ClientePicker.fieldPick('pDepto')" title="Tomar la selección del campo Dirección"
+                  style="background:none; border:none; cursor:pointer; padding:0 3px; font-size:11px; opacity:0.55;">✂</button>
+        </label>
         <input id="pDepto" class="input" placeholder="ej: B" style="width:100%;">
       </div>
     </div>
   </div>
   <div class="field" style="flex:1 1 200px;">
-    <label>Referencia</label>
+    <label style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
+      <span>Referencia</span>
+      <button type="button" onclick="ClientePicker.fieldPick('pRef')" title="Tomar la selección del campo Dirección"
+              style="background:none; border:none; cursor:pointer; padding:0 3px; font-size:11px; opacity:0.55;">✂</button>
+    </label>
     <input id="pRef" class="input" placeholder="monoblock 4, torre B, entre calles..." style="width:100%;">
   </div>
   <div class="field" style="flex:0 0 130px;">

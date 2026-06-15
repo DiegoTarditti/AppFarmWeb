@@ -312,7 +312,25 @@
     } catch(e){ box.style.display='none'; }
   }
 
-  function pickGeo(s){
+  async function pickGeo(s){
+    // ANTES de pisar pDir con la dir limpia del geocoder, parsear el texto
+    // que tenia el campo para rescatar piso/depto/ref que vinieron embebidos
+    // (Diego 2026-06-15: 'DONADO 976 BIS DP 2' → al elegir 'DONADO BIS 976'
+    // del dropdown se perdia el "DP 2"). Solo aplica si pPiso/pDepto/pRef
+    // están vacios (no sobrescribir si el operador ya cargo algo).
+    const _piso = $('pPiso'), _dpto = $('pDepto'), _ref = $('pRef');
+    const textoOrig = ($('pDir').value || '').trim();
+    if (textoOrig && (_piso || _dpto || _ref)
+        && !(_piso && _piso.value) && !(_dpto && _dpto.value) && !(_ref && _ref.value)){
+      try {
+        const r = await jpost('/api/clientes/separar-direccion', {texto: textoOrig});
+        if (r){
+          if (_piso && r.piso) _piso.value = r.piso;
+          if (_dpto && r.depto) _dpto.value = r.depto;
+          if (_ref && r.referencia) _ref.value = r.referencia;
+        }
+      } catch(e) { /* si falla, igual seguimos con el pick */ }
+    }
     $('pDir').value = s.direccion || s.nomenclatura;
     if (s.localidad){
       const selC = $('pCiudad');
@@ -541,6 +559,53 @@
     }
   }
 
+  // Field picker: el operador selecciona texto en el input Dirección
+  // (window.getSelection o input.selectionStart/End) y al click toma el texto
+  // y lo pone en el campo destino + lo quita de Dirección.
+  // Diego 2026-06-15: util para "DONADO 976 BIS DP 2" → selecciono "DP 2",
+  // toco ✂ Depto → pDepto="DP 2", pDir="DONADO 976 BIS".
+  function fieldPick(targetId){
+    const dirEl = $('pDir');
+    const tgt = $(targetId);
+    if (!dirEl || !tgt) return;
+    let texto = '';
+    let inicio = -1, fin = -1;
+    if (document.activeElement === dirEl
+        && dirEl.selectionStart != null
+        && dirEl.selectionStart !== dirEl.selectionEnd){
+      inicio = dirEl.selectionStart;
+      fin = dirEl.selectionEnd;
+      texto = dirEl.value.substring(inicio, fin);
+    } else {
+      // Fallback: selección "flotante" del documento (usuario seleccionó pero
+      // tocó el botón sin reclickear el input). Buscamos esa selección en pDir.
+      const sel = (window.getSelection && window.getSelection().toString()) || '';
+      const t = sel.trim();
+      if (t && dirEl.value.includes(t)){
+        texto = t;
+        inicio = dirEl.value.indexOf(t);
+        fin = inicio + t.length;
+      }
+    }
+    texto = (texto || '').trim();
+    if (!texto){
+      alert('Seleccioná primero el pedazo de texto en el campo Dirección.');
+      dirEl.focus();
+      return;
+    }
+    tgt.value = texto;
+    // Quitar el texto de Dirección y limpiar dobles espacios + separadores
+    // sueltos al borde.
+    if (inicio >= 0){
+      const nuevo = (dirEl.value.slice(0, inicio) + dirEl.value.slice(fin))
+        .replace(/\s+/g, ' ')
+        .replace(/^[\s,\-/]+|[\s,\-/]+$/g, '')
+        .trim();
+      dirEl.value = nuevo;
+    }
+    tgt.focus();
+  }
+
   window.ClientePicker = {
     init,
     getValues,
@@ -548,7 +613,7 @@
     loadCliente,
     // métodos expuestos para handlers onclick/oninput del macro:
     onClienteInput, buscarCli, pickCli,
-    onDirInput, buscarGeoSugerencias, pickGeo,
+    onDirInput, buscarGeoSugerencias, pickGeo, fieldPick,
     onDomChange,
     abrirNuevoCliente, cerrarModal, guardarNuevoCliente,
     abrirEditarCliente, guardarEditarCliente,
