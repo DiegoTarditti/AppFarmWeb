@@ -2020,10 +2020,13 @@ if (window.ATENCION_MODO === 'manual'){
       // Click fuera del card cierra el modal.
       if (e.target === _overlay && typeof toggleCerrarTx === 'function') toggleCerrarTx();
     };
-    document.body.appendChild(_overlay);
+    // Append a #app (no a body) para que las CSS vars del tema dark sigan
+    // resolviendose adentro del modal. var(--card), var(--hov), etc. estan
+    // declaradas en #app.dark; al mover al body se pierden.
+    (document.getElementById('app') || document.body).appendChild(_overlay);
     _overlay.appendChild(_modal);
     // Resetear estilos previos del modal: ahora hereda el centrado del overlay flex.
-    // background opaco para que NO se vea el sidebar de atras a traves.
+    // El overlay vive dentro de #app, así que var(--card) etc. siguen resolviéndose.
     _modal.style.cssText = 'display:none; max-width:720px; width:100%; max-height:calc(100vh - 60px); overflow-y:auto; background:var(--card); border:1px solid var(--border); border-radius:14px; box-shadow:0 10px 50px rgba(0,0,0,0.6);';
     // Override del toggleCerrarTx: mostrar/ocultar TAMBIEN el overlay.
     const _origToggle = window.toggleCerrarTx;
