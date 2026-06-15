@@ -66,8 +66,11 @@
   .badge-anulado   { background:#5a2a2a; color:#F09595; }
 
   /* ── Barra de progreso de estado (P-L-U-T-R-E) ────────────────────────── */
-  .estado-bar { display:inline-flex; gap:2px; cursor:pointer; padding:2px 0;
-                 background:none; border:none; }
+  .estado-bar { display:inline-flex; flex-direction:column; align-items:flex-start;
+                 gap:2px; cursor:pointer; padding:2px 0; background:none; border:none; }
+  .estado-bar .nombre { font-size:10px; color:var(--muted); font-weight:600;
+                         letter-spacing:0.3px; text-transform:lowercase; }
+  .estado-bar .pasos { display:inline-flex; gap:2px; }
   .estado-paso { display:inline-block; min-width:16px; height:18px; line-height:18px;
                  text-align:center; font-size:10px; font-weight:700; padding:0 3px;
                  background:var(--hov); color:var(--muted2); border-radius:3px;
@@ -288,18 +291,21 @@
         {% set _nombres = ['Pendiente', 'En planilla', 'Publicado', 'Tomado', 'En ruta', 'Entregado'] %}
         {% set _idx = _orden.index(p.estado) if p.estado in _orden else -1 %}
         <button class="estado-bar" onclick="avanzarEstado({{ p.id }}, '{{ p.estado }}')"
-                title="{{ p.estado.replace('_', ' ') }} — click para avanzar">
-          {% for i in range(_orden|length) %}
-            <span class="estado-paso{% if i < _idx %} done{% elif i == _idx %} actual{% endif %}"
-                  title="{{ _nombres[i] }}">{{ _letras[i] }}</span>
-          {% endfor %}
-          {% if p.estado == 'anulado' %}
-            <span class="estado-paso alt-anulado" title="Anulado">×</span>
-          {% elif p.estado == 'esperando_drog' %}
-            <span class="estado-paso alt-drog" title="Esperando droguería">D</span>
-          {% elif p.estado == 'en_caja' %}
-            <span class="estado-paso alt-caja" title="En caja">$</span>
-          {% endif %}
+                title="Click para avanzar al siguiente estado">
+          <span class="nombre">{{ p.estado.replace('_', ' ') }}</span>
+          <span class="pasos">
+            {% for i in range(_orden|length) %}
+              <span class="estado-paso{% if i < _idx %} done{% elif i == _idx %} actual{% endif %}"
+                    title="{{ _nombres[i] }}">{{ _letras[i] }}</span>
+            {% endfor %}
+            {% if p.estado == 'anulado' %}
+              <span class="estado-paso alt-anulado" title="Anulado">×</span>
+            {% elif p.estado == 'esperando_drog' %}
+              <span class="estado-paso alt-drog" title="Esperando droguería">D</span>
+            {% elif p.estado == 'en_caja' %}
+              <span class="estado-paso alt-caja" title="En caja">$</span>
+            {% endif %}
+          </span>
         </button>
       </td>
       <td class="celda-editable" data-campo="entregado_por" data-tipo="select-usuarios">
