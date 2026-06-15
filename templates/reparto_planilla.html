@@ -286,13 +286,18 @@
            Estados fuera del flujo principal (anulado, esperando_drog, en_caja)
            se muestran como un paso extra con icono/letra. Click avanza estado
            (misma logica que el badge viejo). #}
-        {% set _orden = ['pendiente', 'en_planilla', 'publicado', 'tomado', 'en_ruta', 'entregado'] %}
-        {% set _letras = ['P', 'L', 'U', 'T', 'R', 'E'] %}
-        {% set _nombres = ['Pendiente', 'En planilla', 'Publicado', 'Tomado', 'En ruta', 'Entregado'] %}
-        {% set _idx = _orden.index(p.estado) if p.estado in _orden else -1 %}
+        {# 'en_planilla' se quito de la barra (Diego 2026-06-14: redundante, si
+           se ve en la planilla ya está ahí). En DB el estado puede seguir siendo
+           'en_planilla' por compatibilidad; visualmente lo tratamos como
+           'pendiente' (paso P actual). #}
+        {% set _orden = ['pendiente', 'publicado', 'tomado', 'en_ruta', 'entregado'] %}
+        {% set _letras = ['P', 'U', 'T', 'R', 'E'] %}
+        {% set _nombres = ['Pendiente', 'Publicado', 'Tomado', 'En ruta', 'Entregado'] %}
+        {% set _estado_norm = 'pendiente' if p.estado == 'en_planilla' else p.estado %}
+        {% set _idx = _orden.index(_estado_norm) if _estado_norm in _orden else -1 %}
         <button class="estado-bar" onclick="avanzarEstado({{ p.id }}, '{{ p.estado }}')"
                 title="Click para avanzar al siguiente estado">
-          <span class="nombre">{{ p.estado.replace('_', ' ') }}</span>
+          <span class="nombre">{{ _estado_norm.replace('_', ' ') }}</span>
           <span class="pasos">
             {# esperando_drog va ANTES del flujo: es un estado pre-publicación
                (el pedido espera que llegue de la droguería para poder salir). #}
