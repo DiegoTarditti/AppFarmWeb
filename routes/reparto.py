@@ -21,6 +21,41 @@ from services import reparto
 log = logging.getLogger(__name__)
 
 
+def _notificar_cliente_pedido(s, pedido, nuevo_estado):
+    """Avisa al cliente del pedido (via WAHA DM) cuando entra a en_ruta o
+    entregado. No bloquea el commit si falla — loguea y sigue."""
+    if nuevo_estado not in ('en_ruta', 'entregado'):
+        return None
+    if not pedido.cliente_id:
+        return None
+    cli = s.get(database.Cliente, pedido.cliente_id)
+    if not cli:
+        return None
+    raw = (cli.whatsapp or cli.telefono or '').strip()
+    if not raw:
+        return None
+    from bot.whatsapp_grupo import enviar_dm, normalizar_wa_id
+    wa_id = normalizar_wa_id(raw)
+    if not wa_id:
+        return None
+    nombre = (cli.nombre or '').strip().split(' ')[0] or 'Cliente'
+    if nuevo_estado == 'en_ruta':
+        texto = (f'🛵 Hola {nombre}! Tu pedido ya salió a domicilio.\n'
+                 f'📍 {pedido.direccion or "tu dirección"}\n\n'
+                 f'En unos minutos pasa el repartidor.')
+    else:
+        texto = f'✅ Hola {nombre}! Tu pedido fue entregado. ¡Gracias por elegirnos!'
+    try:
+        r = enviar_dm(wa_id, texto)
+        if not r.get('ok'):
+            log.warning('notificar pedido #%s al cliente fallo: %s',
+                        pedido.id, r.get('error'))
+        return r
+    except Exception as e:  # noqa: BLE001
+        log.exception('notificar pedido #%s al cliente: %s', pedido.id, e)
+        return None
+
+
 def _persistir_mensaje_reparto(*, es_grupo, chat_id, wa_id_emisor, push_name, body, from_me):
     """Persiste un mensaje del grupo de cadetes o un DM de cadete en
     BotConversacion + BotMensaje. Si es de un cadete (DM o grupo) intenta
@@ -664,6 +699,7 @@ def init_app(app):
             if cad:
                 p.cadete_id = cad.id
                 p.estado = 'en_ruta'   # opcional: al tomar lo pasa a en_ruta
+                _notificar_cliente_pedido(s, p, 'en_ruta')
             s.commit()
             extra = f' (cadete del sistema: {cad.nombre})' if cad else ' (sin match en cadetes)'
             whatsapp_grupo.publicar_en_grupo(
@@ -1150,6 +1186,7 @@ def init_app(app):
             if not p or p.cadete_id != c.id:
                 return jsonify({'ok': False, 'error': 'no autorizado'}), 403
             p.estado = 'entregado'
+            _notificar_cliente_pedido(s, p, 'entregado')
             s.commit()
             return jsonify({'ok': True})
 
@@ -1274,5 +1311,8 @@ def init_app(app):
             else:
                 valor = (str(valor).strip() if valor else None)
             setattr(p, campo, valor)
+            # Avisar al cliente cuando el estado avanza a en_ruta o entregado.
+            if campo == 'estado':
+                _notificar_cliente_pedido(s, p, valor)
             s.commit()
             return jsonify({'ok': True})
