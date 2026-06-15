@@ -92,10 +92,59 @@ def init_app(app):
 
             # Detectar cuáles tienen extensión local (Cliente) ya cargada
             con_extension = set()
+            obs_to_cli = {}   # observer_id → cliente_id local (Cliente.id)
             if obs_ids:
-                con_extension = {oid for (oid,) in
-                                 session.query(database.Cliente.observer_id)
-                                 .filter(database.Cliente.observer_id.in_(obs_ids)).all()}
+                for cli_id, obs_id in (session.query(database.Cliente.id, database.Cliente.observer_id)
+                                       .filter(database.Cliente.observer_id.in_(obs_ids)).all()):
+                    con_extension.add(obs_id)
+                    obs_to_cli[obs_id] = cli_id
+
+            # Geo del último domicilio con coords + último chat + último pedido
+            # por cliente local. Se renderean como columnas extra (Diego 2026-06-15).
+            cli_ids = list(obs_to_cli.values())
+            geo_map = {}            # cli_id → (lat, lng)
+            ultima_conv_map = {}    # cli_id → conv_id (canal != 'manual')
+            ultimo_pedido_map = {}  # cli_id → (pedido_id, fecha)
+            if cli_ids:
+                # Último DomicilioCliente con lat/lng por cliente_id.
+                from sqlalchemy import func as __f
+                dom_rows = (session.query(database.DomicilioCliente.cliente_id,
+                                          database.DomicilioCliente.lat,
+                                          database.DomicilioCliente.lng,
+                                          database.DomicilioCliente.geo_actualizado_en)
+                            .filter(database.DomicilioCliente.cliente_id.in_(cli_ids),
+                                    database.DomicilioCliente.lat.isnot(None),
+                                    database.DomicilioCliente.lng.isnot(None))
+                            .order_by(database.DomicilioCliente.cliente_id,
+                                      database.DomicilioCliente.geo_actualizado_en.desc().nullslast())
+                            .all())
+                for cid, lat, lng, _ in dom_rows:
+                    if cid not in geo_map:
+                        geo_map[cid] = (float(lat), float(lng))
+                # Última BotConversacion no-manual por cliente_id.
+                conv_rows = (session.query(database.BotConversacion.cliente_id,
+                                           database.BotConversacion.id,
+                                           database.BotConversacion.ultimo_en)
+                             .filter(database.BotConversacion.cliente_id.in_(cli_ids),
+                                     database.BotConversacion.canal != 'manual')
+                             .order_by(database.BotConversacion.cliente_id,
+                                       database.BotConversacion.ultimo_en.desc().nullslast())
+                             .all())
+                for cid, conv_id, _ in conv_rows:
+                    if cid not in ultima_conv_map:
+                        ultima_conv_map[cid] = conv_id
+                # Último PedidoReparto por cliente_id.
+                ped_rows = (session.query(database.PedidoReparto.cliente_id,
+                                          database.PedidoReparto.id,
+                                          database.PedidoReparto.fecha)
+                            .filter(database.PedidoReparto.cliente_id.in_(cli_ids))
+                            .order_by(database.PedidoReparto.cliente_id,
+                                      database.PedidoReparto.fecha.desc(),
+                                      database.PedidoReparto.id.desc())
+                            .all())
+                for cid, pid, fecha in ped_rows:
+                    if cid not in ultimo_pedido_map:
+                        ultimo_pedido_map[cid] = (pid, fecha)
 
             # OS principal inferida por cliente (con confianza)
             os_inferida_map = {}
@@ -136,8 +185,12 @@ def init_app(app):
 
             clientes = []
             for c in clientes_raw:
+                cli_id = obs_to_cli.get(c.observer_id)
+                geo = geo_map.get(cli_id) if cli_id else None
+                ult_pedido = ultimo_pedido_map.get(cli_id) if cli_id else None
                 clientes.append({
                     'observer_id': c.observer_id,
+                    'cliente_id': cli_id,
                     'apellido_nombre': c.apellido_nombre,
                     'documento': (f'{c.documento_tipo} {c.documento_numero}'
                                    if c.documento_numero else ''),
@@ -147,6 +200,10 @@ def init_app(app):
                     'grupo': grupos_map.get(c.grupo_observer, ''),
                     'tiene_extension': c.observer_id in con_extension,
                     'os_inferida': os_inferida_map.get(c.observer_id),
+                    'geo': {'lat': geo[0], 'lng': geo[1]} if geo else None,
+                    'ultima_conv_id': ultima_conv_map.get(cli_id) if cli_id else None,
+                    'ultimo_pedido_id': ult_pedido[0] if ult_pedido else None,
+                    'ultimo_pedido_fecha': ult_pedido[1].strftime('%Y-%m-%d') if ult_pedido else None,
                 })
 
             last_page = max(1, (total + per_page - 1) // per_page)

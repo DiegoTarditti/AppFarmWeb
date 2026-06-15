@@ -146,7 +146,9 @@
         {% for l in lineas %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
       </select>
 
-      {# Botón 'Clientes' (modal) eliminado — el picker integrado en el sidebar ya cubre la búsqueda. #}
+      {# Acceso a la tabla maestra de clientes (Diego 2026-06-15). #}
+      <a href="/clientes" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;" title="Tabla maestra de clientes">👥 Clientes</a>
+
       {% if current_user.rol in ('admin', 'dev') %}
       <button onclick="abrirModalOperadores()" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Operadores</button>
       <a href="/atencion/respuestas-rapidas" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">⚡ RR</a>

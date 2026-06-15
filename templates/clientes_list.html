@@ -57,6 +57,9 @@
                     <th class="text-left px-3 py-2 w-32">Localidad</th>
                     <th class="text-left px-3 py-2 w-32">Grupo</th>
                     <th class="text-left px-3 py-2 w-44">OS principal</th>
+                    <th class="text-center px-3 py-2 w-12" title="Geo del último domicilio">📍</th>
+                    <th class="text-center px-3 py-2 w-16" title="Último chat (no walk-in)">💬</th>
+                    <th class="text-center px-3 py-2 w-20" title="Último pedido">📦</th>
                     <th class="text-center px-3 py-2 w-12">Nota</th>
                 </tr>
             </thead>
@@ -85,13 +88,33 @@
                         <span class="text-[#bbb]">—</span>
                         {% endif %}
                     </td>
+                    <td class="px-3 py-2 text-center" onclick="event.stopPropagation()">
+                        {% if c.geo %}
+                        <a href="https://www.google.com/maps?q={{ c.geo.lat }},{{ c.geo.lng }}" target="_blank" rel="noopener"
+                           title="lat {{ '%.4f'|format(c.geo.lat) }} · lng {{ '%.4f'|format(c.geo.lng) }} (último domicilio)"
+                           class="text-emerald-600">📍</a>
+                        {% else %}<span class="text-[#ccc]">—</span>{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-center" onclick="event.stopPropagation()">
+                        {% if c.ultima_conv_id %}
+                        <a href="/atencion?conv={{ c.ultima_conv_id }}" title="Abrir último chat en /atencion"
+                           class="text-blue-600 hover:underline text-[11px]">abrir</a>
+                        {% else %}<span class="text-[#ccc]">—</span>{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-center" onclick="event.stopPropagation()">
+                        {% if c.ultimo_pedido_id %}
+                        <a href="/reparto/planilla?fecha={{ c.ultimo_pedido_fecha }}"
+                           title="Ir a la planilla del {{ c.ultimo_pedido_fecha }} (pedido #{{ c.ultimo_pedido_id }})"
+                           class="text-blue-600 hover:underline text-[11px]">#{{ c.ultimo_pedido_id }}</a>
+                        {% else %}<span class="text-[#ccc]">—</span>{% endif %}
+                    </td>
                     <td class="px-3 py-2 text-center">
                         {% if c.tiene_extension %}<span class="text-emerald-600" title="Tiene datos locales">●</span>{% endif %}
                     </td>
                 </tr>
                 {% endfor %}
                 {% if not clientes %}
-                <tr><td colspan="8" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>
+                <tr><td colspan="11" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>
                 {% endif %}
             </tbody>
         </table>
