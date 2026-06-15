@@ -875,6 +875,11 @@ def init_app(app):
                 return jsonify({'ok': False, 'error': r.get('error') or 'sin respuesta WAHA'}), 502
             p.waha_msg_id = r.get('waha_msg_id')
             p.publicado_en = database.now_ar()
+            # Avanzar el estado a 'publicado' solo si todavía no había salido
+            # del flujo pre-publicación. Republish de un pedido ya tomado /
+            # en_ruta no lo regresa al estado anterior.
+            if p.estado in ('pendiente', 'en_planilla', 'esperando_drog'):
+                p.estado = 'publicado'
             # Persistir el publish en la conv del grupo para que aparezca en el
             # panel de /reparto/planilla (sino la timeline del grupo solo
             # tendría lo que llega del webhook).
