@@ -65,6 +65,20 @@
   .badge-entregado { background:var(--accent); color:var(--accent-ink); }
   .badge-anulado   { background:#5a2a2a; color:#F09595; }
 
+  /* ── Barra de progreso de estado (P-L-U-T-R-E) ────────────────────────── */
+  .estado-bar { display:inline-flex; gap:2px; cursor:pointer; padding:2px 0;
+                 background:none; border:none; }
+  .estado-paso { display:inline-block; min-width:16px; height:18px; line-height:18px;
+                 text-align:center; font-size:10px; font-weight:700; padding:0 3px;
+                 background:var(--hov); color:var(--muted2); border-radius:3px;
+                 transition:background 0.15s; }
+  .estado-paso.done { background:rgba(29,158,117,.55); color:#fff; }
+  .estado-paso.actual { background:var(--accent); color:var(--accent-ink);
+                         box-shadow:0 0 6px rgba(29,158,117,.6); }
+  .estado-paso.alt-anulado { background:#5a2a2a; color:#F09595; }
+  .estado-paso.alt-drog { background:var(--warn); color:#1a1a1a; }
+  .estado-paso.alt-caja { background:#185FA5; color:#fff; }
+
   /* Encabezados de turno */
   .turno-header { background:var(--card); color:var(--title); padding:8px 12px;
                   border-radius:8px 8px 0 0; font-weight:700; font-size:13px;
@@ -169,14 +183,14 @@
       <th style="min-width:160px;">Dirección</th>
       <th style="width:85px;">Teléfono</th>
       <th style="width:70px;">Envío $</th>
-      <th style="width:100px;">Tomó</th>
+      <th style="width:65px;">Tomó</th>
       <th style="width:80px;">Importe</th>
-      <th style="width:90px;">Forma pago</th>
-      <th style="width:110px;">Vuelto</th>
+      <th style="width:80px;">Forma pago</th>
+      <th style="width:90px;">Vuelto</th>
       <th style="width:110px;">Producto</th>
       <th style="min-width:130px;">Observación</th>
       <th style="width:50px;">Receta</th>
-      <th style="width:80px;">Estado</th>
+      <th style="width:130px;" title="Pendiente · pLanilla · pUblicado · Tomado · Ruta · Entregado">Estado</th>
       <th style="width:75px;">Entregó</th>
       <th style="width:85px;">Cadete</th>
       <th style="width:75px;">Recibió</th>
@@ -264,9 +278,28 @@
         </span>
       </td>
       <td>
-        <button class="badge-estado badge-{{ p.estado }}"
-                onclick="avanzarEstado({{ p.id }}, '{{ p.estado }}')">
-          {{ p.estado.replace('_', ' ') }}
+        {# Barra de progreso del estado. Flujo principal:
+             Pendiente → en pLanilla → pUblicado → Tomado → en Ruta → Entregado.
+           Estados fuera del flujo principal (anulado, esperando_drog, en_caja)
+           se muestran como un paso extra con icono/letra. Click avanza estado
+           (misma logica que el badge viejo). #}
+        {% set _orden = ['pendiente', 'en_planilla', 'publicado', 'tomado', 'en_ruta', 'entregado'] %}
+        {% set _letras = ['P', 'L', 'U', 'T', 'R', 'E'] %}
+        {% set _nombres = ['Pendiente', 'En planilla', 'Publicado', 'Tomado', 'En ruta', 'Entregado'] %}
+        {% set _idx = _orden.index(p.estado) if p.estado in _orden else -1 %}
+        <button class="estado-bar" onclick="avanzarEstado({{ p.id }}, '{{ p.estado }}')"
+                title="{{ p.estado.replace('_', ' ') }} — click para avanzar">
+          {% for i in range(_orden|length) %}
+            <span class="estado-paso{% if i < _idx %} done{% elif i == _idx %} actual{% endif %}"
+                  title="{{ _nombres[i] }}">{{ _letras[i] }}</span>
+          {% endfor %}
+          {% if p.estado == 'anulado' %}
+            <span class="estado-paso alt-anulado" title="Anulado">×</span>
+          {% elif p.estado == 'esperando_drog' %}
+            <span class="estado-paso alt-drog" title="Esperando droguería">D</span>
+          {% elif p.estado == 'en_caja' %}
+            <span class="estado-paso alt-caja" title="En caja">$</span>
+          {% endif %}
         </button>
       </td>
       <td class="celda-editable" data-campo="entregado_por" data-tipo="select-usuarios">
