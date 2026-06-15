@@ -97,16 +97,16 @@
       el.style.padding = '4px 10px';
       el.style.borderRadius = '8px';
       el.style.marginTop = '4px';
-    } else if (window._geoRefStatus === 'no_match' || window._geoRefStatus === 'multiple'){
-      // Auto-georef no resolvió (0 o >1 coincidencias) → CTA visible.
-      const txt = window._geoRefStatus === 'multiple'
-        ? '⚠ Varias coincidencias — Identificar con Maps'
-        : '⚠ No encontrado — Identificar con Maps';
+    } else if (window._geoRefStatus === 'pending'){
+      // Auto-georef no resolvio inequivocamente → CTA visible.
+      // No distinguimos 'no_match' vs 'multiple' porque para el operador es lo
+      // mismo (tiene que confirmar manual). Y los contadores no siempre coinciden
+      // con lo que muestra el dropdown despues por race conditions de loc.
       el.innerHTML = `
         <button type="button" onclick="ClientePicker.buscarGeoSugerencias()"
                 style="background:rgba(239,159,39,0.18); color:#EF9F27; border:1px solid rgba(239,159,39,0.45);
                        border-radius:8px; padding:6px 10px; font-size:11px; font-weight:600; cursor:pointer; width:100%; text-align:center;">
-          🗺️ ${txt}
+          🗺️ ⚠ Identificar con Maps
         </button>`;
       el.style.background = 'transparent';
       el.style.padding = '0';
@@ -371,7 +371,10 @@
         window._geoRefStatus = null;
         await pickGeo(enZona[0]);
       } else {
-        window._geoRefStatus = enZona.length === 0 ? 'no_match' : 'multiple';
+        // No resolvio sin ambiguedad (0 o >1) → CTA. No distinguimos por que
+        // los contadores no siempre coinciden con lo que mostraria el dropdown
+        // manual (depende del valor de pCiudad al momento de la query).
+        window._geoRefStatus = 'pending';
         renderDomCoords();
       }
     } catch(e) { /* silencioso */ }
