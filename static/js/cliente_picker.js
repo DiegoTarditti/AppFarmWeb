@@ -236,9 +236,26 @@
           }
         } catch(e) { /* ok, dejamos como está */ }
       }
-      const doms = ficha.domicilios||[];
-      window._doms = doms;
-      actualizarDomDropdown(doms);
+      // Filtro por ciudades servibles (ENVIO_CIUDADES_FILTRO inyectado por el
+       // template). Esconde domicilios fuera de zona del dropdown — los datos en
+       // ficha.domicilios SIGUEN existiendo en DB, solo no se ofrecen como opcion.
+       const CIUDADES_OK = Array.isArray(window.ENVIO_CIUDADES_FILTRO) && window.ENVIO_CIUDADES_FILTRO.length
+         ? window.ENVIO_CIUDADES_FILTRO
+         : ['rosario', 'funes', 'roldan'];
+       const _normLoc = s => (s||'').toString().toLowerCase().trim();
+       const todosDoms = ficha.domicilios || [];
+       const doms = todosDoms.filter(d => {
+         const loc = _normLoc(d.localidad);
+         return !loc || CIUDADES_OK.includes(loc);
+       });
+       const _ocultos = todosDoms.length - doms.length;
+       window._doms = doms;
+       actualizarDomDropdown(doms);
+       if (_ocultos > 0){
+         const cnt = $('pDomCount');
+         if (cnt) cnt.textContent = (cnt.textContent || '') +
+           ` · ${_ocultos} fuera de zona oculto${_ocultos>1?'s':''}`;
+       }
       const algunoConGeo = doms.some(x => x.lat != null && x.lng != null);
       if (!algunoConGeo && dir && callbacks.onAddressChange){
         setTimeout(callbacks.onAddressChange, 100);
