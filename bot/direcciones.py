@@ -40,7 +40,9 @@ _RE_PISO_ORD_LETRA = re.compile(
 )
 _RE_DEPTO_KW = re.compile(
     r'\s*'
-    r'\b(?:dto|dpto|depto|dep|departamento|uf)\s*'
+    # Orden importa: keywords largas primero para que 'dpto' no matchee como 'dp' + 'to'.
+    # 'dp' agregado por Diego 2026-06-15: 'DONADO 976 BIS DP 2' venía sin matchear.
+    r'\b(?:departamento|dpto|depto|dto|dep|dp|uf)\s*'
     r'[:.]?\s*'
     r'(?P<depto>[a-z0-9]+)\s*\.?\s*$',
     re.IGNORECASE

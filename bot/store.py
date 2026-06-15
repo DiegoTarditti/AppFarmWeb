@@ -462,16 +462,21 @@ def _ficha_de_cliente(s, cliente_id):
         telefono = oc.telefono or c.telefono or ''
         direccion = oc.domicilio_direccion or ''
         localidad = oc.localidad or ''
-        # ObServer suele venir con la ciudad EMBEBIDA en el campo dirección como
-        # 'CALLE 6 C 4418 / FUNES'. Si el parser detecta una ciudad de la
-        # whitelist al final, la extraemos y limpiamos el campo dirección.
-        # La localidad parseada GANA sobre obs_clientes.localidad (que en general
-        # viene con la ciudad "default" de la farmacia, no la real del cliente).
+        # ObServer suele venir con la ciudad EMBEBIDA en el campo dirección
+        # ('CALLE 6 C 4418 / FUNES') y también con piso/depto embebidos
+        # ('DONADO 976 BIS DP 2'). El parser extrae todo y limpia la dirección.
+        # La localidad parseada GANA sobre obs_clientes.localidad (que viene con
+        # la default de la farmacia, no la real del cliente).
         from bot.direcciones import separar_direccion as _sep_dir
         _parsed = _sep_dir(direccion)
+        _piso = _parsed.get('piso')
+        _depto = _parsed.get('depto')
+        _referencia = _parsed.get('referencia')
         if _parsed.get('localidad'):
-            direccion = _parsed['direccion'] or direccion
             localidad = _parsed['localidad']
+        if _piso or _depto or _referencia or _parsed.get('localidad'):
+            # Si el parser detectó algo, usa la dirección limpia.
+            direccion = _parsed['direccion'] or direccion
         domicilio = ', '.join(x for x in [direccion, localidad] if x)
         fuente = 'observer'
     else:
@@ -480,6 +485,7 @@ def _ficha_de_cliente(s, cliente_id):
         telefono = c.telefono or ''
         direccion = c.domicilio or ''
         localidad = c.ciudad or ''
+        _piso = _depto = _referencia = None
         domicilio = ', '.join(x for x in [direccion, localidad] if x)
         fuente = 'local'
     # Obra social del cliente: confirmada manualmente (gana) → inferida del histórico de
@@ -502,6 +508,9 @@ def _ficha_de_cliente(s, cliente_id):
         'nombre': nombre, 'documento': documento, 'telefono': telefono,
         'domicilio': domicilio,
         'direccion': direccion, 'localidad': localidad,
+        # Piso/depto/ref parseados del campo dirección de ObServer
+        # (Diego 2026-06-15: 'DONADO 976 BIS DP 2' → depto='2').
+        'piso': _piso, 'depto': _depto, 'referencia': _referencia,
         'notas': c.notas or '', 'tags': c.tags or '',
         'whatsapp': c.whatsapp or '', 'email': c.email or '',
         'obra_social': obra_social,

@@ -222,19 +222,33 @@
           selC.appendChild(opt);
         }
       }
-      const _dirEl = $('pDir');
-      if (_dirEl.value && (_dirEl.value.match(/(dto|dpto|depto|dep|departamento|uf|piso|pb|planta baja|monoblock|torre|entre|°|º)/i) || ficha.direccion != null)){
-        try {
-          const r = await jpost('/api/clientes/separar-direccion', {texto: _dirEl.value});
-          if (r && r.direccion){
-            _dirEl.value = r.direccion;
-            // pPiso/pDepto/pRef solo existen en hosts con bloque domicilio
-            // estructurado (pedido_nuevo). En /reparto solo hay pDir.
-            const _piso = $('pPiso');   if (_piso)  _piso.value  = r.piso || '';
-            const _dpto = $('pDepto');  if (_dpto)  _dpto.value  = r.depto || '';
-            const _ref  = $('pRef');    if (_ref)   _ref.value   = r.referencia || '';
-          }
-        } catch(e) { /* ok, dejamos como está */ }
+      // Si la ficha ya viene con piso/depto/referencia parseados desde el
+      // backend (caso ObServer con campos embebidos en domicilio), los usamos
+      // directo sin pegar otra vez a /api/clientes/separar-direccion.
+      // pPiso/pDepto/pRef solo existen en hosts con bloque domicilio
+      // estructurado (no en /reparto que solo tiene pDir).
+      const _piso = $('pPiso');
+      const _dpto = $('pDepto');
+      const _ref  = $('pRef');
+      if (ficha.piso || ficha.depto || ficha.referencia){
+        if (_piso) _piso.value = ficha.piso || '';
+        if (_dpto) _dpto.value = ficha.depto || '';
+        if (_ref)  _ref.value  = ficha.referencia || '';
+      } else {
+        // Fallback: la ficha no parseó nada (ej. cliente local viejo); seguimos
+        // pegando a /api/clientes/separar-direccion sobre el texto del input.
+        const _dirEl = $('pDir');
+        if (_dirEl.value && (_dirEl.value.match(/(dto|dpto|depto|dep|departamento|dp\b|uf|piso|pb|planta baja|monoblock|torre|entre|°|º)/i) || ficha.direccion != null)){
+          try {
+            const r = await jpost('/api/clientes/separar-direccion', {texto: _dirEl.value});
+            if (r && r.direccion){
+              _dirEl.value = r.direccion;
+              if (_piso) _piso.value = r.piso || '';
+              if (_dpto) _dpto.value = r.depto || '';
+              if (_ref)  _ref.value  = r.referencia || '';
+            }
+          } catch(e) { /* ok, dejamos como está */ }
+        }
       }
       const doms = ficha.domicilios||[];
       window._doms = doms;
