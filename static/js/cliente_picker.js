@@ -84,10 +84,15 @@
       const lat = latPrec.toFixed(2);
       const lng = lngPrec.toFixed(2);
       const sem = semaforoGeo(window._domGeoAt);
+      // Saco 'reciente' del badge (Diego 2026-06-15): el color del bg ya
+      // indica antigüedad (verde=reciente, naranja=>3m, rojo=>1año). Mantenemos
+      // la fecha si la tenemos para que sirva como referencia rápida.
+      const labelTxt = sem.label === 'reciente' ? '' : sem.label;
+      const tail = [labelTxt, window._domGeoAt ? fmtFechaGeo(window._domGeoAt) : ''].filter(Boolean).join(' · ');
       el.innerHTML = `
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:nowrap; white-space:nowrap;">
           <span style="font-size:14px; font-weight:700; color:var(--accent); font-family:monospace;">📍 ${lat}, ${lng}</span>
-          <span style="font-size:14px; font-weight:600; color:var(--title);">${sem.label}${window._domGeoAt ? ' · '+fmtFechaGeo(window._domGeoAt) : ''}</span>
+          ${tail ? `<span style="font-size:13px; font-weight:600; color:var(--title);">${tail}</span>` : ''}
           <a href="https://www.google.com/maps?q=${latPrec},${lngPrec}" target="_blank" rel="noopener"
              style="font-size:11px; font-weight:700; color:#fff; background:#185FA5;
                     padding:5px 12px; border-radius:8px; text-decoration:none;"

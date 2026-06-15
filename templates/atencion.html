@@ -507,21 +507,30 @@
         {# Costo de envío + botón Cerrar tx side-by-side (Diego 2026-06-14: el operador
            necesita el envío a la vista en el chat, sin abrir el modal). El botón es
            más chico ahora para que entren ambos en la misma línea. #}
-        <div style="display:flex; gap:6px; align-items:flex-end; margin-top:8px;">
-          <div style="flex:0 0 90px;">
+      </div>
+
+      {# Envío / Cuadras: van al lado del badge coords del cliente_picker. #}
+      <div id="envioCuadrasWrap" style="padding:0 12px 8px; display:none;">
+        <div style="display:flex; gap:6px; align-items:flex-end;">
+          <div style="flex:0 0 100px;">
             <label class="muted2" style="font-size:10px; display:flex; align-items:center; gap:5px;">
               Envío $
               <span id="pgEnvioPill" style="display:none; font-size:8px; padding:1px 6px; border-radius:999px;"></span>
             </label>
             <input id="pgEnvio" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
           </div>
-          <div style="flex:0 0 80px;">
+          <div style="flex:0 0 90px;">
             <label class="muted2" style="font-size:10px; display:block;" title="Override manual de cuadras">o Cuadras</label>
             <input id="pgCuadras" type="number" min="0" oninput="pgCuadrasInput()" placeholder="ej: 22" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;" title="Cotiza envío usando este número de cuadras">
           </div>
-          <button onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="flex:1; font-size:12px; padding:8px 6px; font-weight:600;">💳 Cerrar transacción</button>
+          <div id="pgEnvioInfo" class="muted2" style="font-size:10px; flex:1; min-width:0; line-height:1.3; padding-bottom:6px;"></div>
         </div>
-        <div id="pgEnvioInfo" class="muted2" style="font-size:10px; margin-top:3px; padding:0 2px;"></div>
+      </div>
+
+      {# Botón Cerrar TX — temporal aquí; se rodea con Stock/Sale por/Prioridad
+         en el commit siguiente. #}
+      <div id="cerrarTxBtnWrap" style="padding:0 12px 12px; display:none;">
+        <button onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="width:100%; font-size:12px; padding:10px 6px; font-weight:600;">💳 Cerrar transacción</button>
       </div>
 
       <div id="ficha" style="padding:16px 14px; font-size:11px;">
@@ -1749,14 +1758,20 @@ function pagoRecalcVuelto(){
 async function cargarPagoAcordado(){
   const card = document.getElementById('pagoCard');
   const detalle = document.getElementById('detalleCard');
+  const envCuad = document.getElementById('envioCuadrasWrap');
+  const cerrarBtn = document.getElementById('cerrarTxBtnWrap');
   if (!convAbierta){
     card.style.display = 'none';
     if (detalle) detalle.style.display = 'none';
+    if (envCuad) envCuad.style.display = 'none';
+    if (cerrarBtn) cerrarBtn.style.display = 'none';
     _pagoState = null;
     return;
   }
-  // Detalle del pedido siempre visible cuando hay conv abierta.
+  // Detalle del pedido + envío + botón cerrar TX siempre visibles cuando hay conv.
   if (detalle) detalle.style.display = '';
+  if (envCuad) envCuad.style.display = 'block';
+  if (cerrarBtn) cerrarBtn.style.display = 'block';
   try {
     const r = await fetch(`/atencion/${convAbierta}/pago`);
     if (!r.ok){ card.style.display = 'none'; return; }
