@@ -123,6 +123,9 @@ def _conv_dict(c, nombres=None, supervisado=False):
             'cliente_observer_id': c.cliente.observer_id if c.cliente else None,
             'tiene_encargo': bool(c.tiene_encargo),
             'supervisado': supervisado,
+            # Solo para convs walk-in (canal='manual'): si está seteado, ya se
+            # retiró → no aparece en la pestaña 'Manuales'.
+            'retirado_en': c.retirado_en.isoformat() if getattr(c, 'retirado_en', None) else None,
             'ultimo_en': c.ultimo_en.strftime('%d/%m %H:%M') if c.ultimo_en else ''}
 
 

@@ -179,11 +179,14 @@
 
     <!-- Lista de conversaciones -->
     <div id="colBandeja" class="col-side" style="border-right:0.5px solid; display:flex; flex-direction:column; min-height:0;">
-      <div class="side-head" style="padding:9px 10px; display:flex; gap:6px; border-bottom:0.5px solid;">
+      <div class="side-head" style="padding:9px 10px; display:flex; gap:6px; border-bottom:0.5px solid; flex-wrap:wrap;">
         <button data-vista="sin_asignar" onclick="setVista('sin_asignar')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Cola <b id="cnt-sin_asignar">0</b></button>
         <button data-vista="mias" onclick="setVista('mias')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Mías <b id="cnt-mias">0</b></button>
         <button data-vista="bot" onclick="setVista('bot')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Bot <b id="cnt-bot">0</b></button>
         <button data-vista="todas" onclick="setVista('todas')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Todas <b id="cnt-todas">0</b></button>
+        {# Pestaña 'Manuales' (walk-ins) — convs canal='manual' pendientes de
+           que el cliente venga a retirar. Botón "✓ Retirado" en la conv las cierra. #}
+        <button data-vista="manuales" onclick="setVista('manuales')" class="seg" style="flex:1 1 100%; padding:6px 3px; border-radius:7px; font-size:11px;">🛒 Manuales <b id="cnt-manuales">0</b></button>
       </div>
       <div id="bandeja" style="flex:1; overflow-y:auto; min-height:0;">
         <div class="muted" style="padding:16px; font-size:13px;">Cargando…</div>
@@ -339,6 +342,19 @@
 
     <!-- Ficha del cliente -->
     <div class="col-side" id="fichaCol" style="border-left:0.5px solid; overflow-y:auto; min-height:0;">
+      {# Card estado de retiro — solo para convs walk-in (canal='manual'). El
+         operador del mostrador la marca cuando el cliente vino a buscar. #}
+      <div id="retiroCard" style="display:none; padding:8px 12px; border-bottom:1px solid var(--border);
+                                    background:rgba(239,159,39,.08);">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <div>
+            <div style="font-size:11px; color:var(--warn); font-weight:600;">🛒 Pedido walk-in</div>
+            <div id="retiroEstado" class="muted" style="font-size:10px; margin-top:2px;">Pendiente de retiro</div>
+          </div>
+          <button id="btnMarcarRetirado" onclick="marcarRetirado()" class="hbtn hbtn-ok"
+                  style="font-size:11px; padding:5px 10px; border-radius:8px; font-weight:600;">✓ Retirado</button>
+        </div>
+      </div>
       {# Header "Datos del cliente" sacado (Diego 2026-06-14): el primer campo
          del picker ya dice 'Cliente', no aporta y ocupa una línea vertical
          valiosa en sidebar angosto. #}
@@ -608,19 +624,24 @@ function setVista(v) {
   renderBandeja();
 }
 function _filtrar(c) {
-  if (vista === 'sin_asignar') return c.filter(x => x.estado === 'cola');
-  if (vista === 'mias')        return c.filter(x => x.estado === 'humano' && x.operador_id === YO);
-  if (vista === 'bot')         return c.filter(x => x.estado === 'bot');
-  return c;
+  if (vista === 'sin_asignar') return c.filter(x => x.estado === 'cola' && x.canal !== 'manual');
+  if (vista === 'mias')        return c.filter(x => x.estado === 'humano' && x.operador_id === YO && x.canal !== 'manual');
+  if (vista === 'bot')         return c.filter(x => x.estado === 'bot' && x.canal !== 'manual');
+  if (vista === 'manuales')    return c.filter(x => x.canal === 'manual' && !x.retirado_en);
+  // 'todas' tambien excluye manuales (tienen su propia pestaña).
+  return c.filter(x => x.canal !== 'manual');
 }
 async function cargarBandeja() {
   const linea = document.getElementById('filtroLinea').value;
   const d = await (await fetch('/atencion/api/conversaciones?linea=' + encodeURIComponent(linea))).json();
   todasConvs = d.conversaciones || [];
-  document.getElementById('cnt-sin_asignar').textContent = todasConvs.filter(c => c.estado === 'cola').length;
-  document.getElementById('cnt-mias').textContent = todasConvs.filter(c => c.estado === 'humano' && c.operador_id === YO).length;
-  document.getElementById('cnt-bot').textContent = todasConvs.filter(c => c.estado === 'bot').length;
-  document.getElementById('cnt-todas').textContent = todasConvs.length;
+  const chat = todasConvs.filter(c => c.canal !== 'manual');
+  const manuales = todasConvs.filter(c => c.canal === 'manual' && !c.retirado_en);
+  document.getElementById('cnt-sin_asignar').textContent = chat.filter(c => c.estado === 'cola').length;
+  document.getElementById('cnt-mias').textContent = chat.filter(c => c.estado === 'humano' && c.operador_id === YO).length;
+  document.getElementById('cnt-bot').textContent = chat.filter(c => c.estado === 'bot').length;
+  document.getElementById('cnt-todas').textContent = chat.length;
+  document.getElementById('cnt-manuales').textContent = manuales.length;
   renderBandeja();
 }
 function renderBandeja() {
@@ -667,6 +688,41 @@ async function abrirConv(id) {
   document.getElementById('composer').style.display = 'block';
   document.getElementById('chatAcciones').style.display = 'flex';
   renderBandeja();
+  actualizarCardRetiro();
+}
+// Walk-ins: pinta el banner "🛒 Pedido walk-in · Pendiente de retiro" arriba
+// del cliente si la conv abierta es canal='manual'.
+function actualizarCardRetiro(){
+  const card = document.getElementById('retiroCard');
+  if (!card) return;
+  const conv = (todasConvs || []).find(c => c.id === convAbierta);
+  if (!conv || conv.canal !== 'manual'){
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  const est = document.getElementById('retiroEstado');
+  const btn = document.getElementById('btnMarcarRetirado');
+  if (conv.retirado_en){
+    est.textContent = '✓ Retirado el ' + new Date(conv.retirado_en).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+    est.style.color = 'var(--accent)';
+    if (btn) btn.style.display = 'none';
+  } else {
+    est.textContent = 'Pendiente de retiro';
+    est.style.color = '';
+    if (btn) btn.style.display = '';
+  }
+}
+async function marcarRetirado(){
+  if (!convAbierta) return;
+  if (!confirm('Marcar este pedido walk-in como retirado por el cliente?')) return;
+  try {
+    const r = await fetch(`/atencion/${convAbierta}/retirar`, {method:'POST'});
+    const d = await r.json();
+    if (!d.ok){ alert('⚠ ' + (d.error || 'no se pudo')); return; }
+    await cargarBandeja();   // refresca el contador 'manuales' + lista
+    actualizarCardRetiro();
+  } catch(e){ alert('Error: ' + e.message); }
 }
 async function refrescarChat(reset) {
   if (!convAbierta) return;

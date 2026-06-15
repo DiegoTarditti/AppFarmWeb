@@ -74,6 +74,20 @@ def init_app(app):
         linea = request.args.get('linea') or None
         return jsonify({'conversaciones': store.listar_conversaciones(linea)})
 
+    @app.route('/atencion/<int:conv_id>/retirar', methods=['POST'])
+    @login_required
+    def atencion_marcar_retirado(conv_id):
+        """Walk-in (canal='manual'): el cliente vino a retirar el pedido. Setea
+        BotConversacion.retirado_en → la conv desaparece de la pestaña 'Manuales'."""
+        with database.get_db() as s:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'ok': False, 'error': 'conv no existe'}), 404
+            conv.retirado_en = database.now_ar()
+            s.commit()
+            return jsonify({'ok': True,
+                            'retirado_en': conv.retirado_en.isoformat()})
+
     @app.route('/atencion/api/<int:conv_id>/mensajes')
     @login_required
     def atencion_mensajes(conv_id):
