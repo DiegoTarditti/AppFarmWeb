@@ -236,26 +236,9 @@
           }
         } catch(e) { /* ok, dejamos como está */ }
       }
-      // Filtro por ciudades servibles (ENVIO_CIUDADES_FILTRO inyectado por el
-       // template). Esconde domicilios fuera de zona del dropdown — los datos en
-       // ficha.domicilios SIGUEN existiendo en DB, solo no se ofrecen como opcion.
-       const CIUDADES_OK = Array.isArray(window.ENVIO_CIUDADES_FILTRO) && window.ENVIO_CIUDADES_FILTRO.length
-         ? window.ENVIO_CIUDADES_FILTRO
-         : ['rosario', 'funes', 'roldan'];
-       const _normLoc = s => (s||'').toString().toLowerCase().trim();
-       const todosDoms = ficha.domicilios || [];
-       const doms = todosDoms.filter(d => {
-         const loc = _normLoc(d.localidad);
-         return !loc || CIUDADES_OK.includes(loc);
-       });
-       const _ocultos = todosDoms.length - doms.length;
-       window._doms = doms;
-       actualizarDomDropdown(doms);
-       if (_ocultos > 0){
-         const cnt = $('pDomCount');
-         if (cnt) cnt.textContent = (cnt.textContent || '') +
-           ` · ${_ocultos} fuera de zona oculto${_ocultos>1?'s':''}`;
-       }
+      const doms = ficha.domicilios||[];
+      window._doms = doms;
+      actualizarDomDropdown(doms);
       const algunoConGeo = doms.some(x => x.lat != null && x.lng != null);
       if (!algunoConGeo && dir && callbacks.onAddressChange){
         setTimeout(callbacks.onAddressChange, 100);
@@ -307,15 +290,19 @@
       const CIUDADES_OK = Array.isArray(window.ENVIO_CIUDADES_FILTRO) && window.ENVIO_CIUDADES_FILTRO.length
         ? window.ENVIO_CIUDADES_FILTRO
         : ['rosario', 'funes', 'roldan'];
-      let aviso = '';
-      const match = sug.filter(s => CIUDADES_OK.includes(_norm(s.localidad)));
-      if (match.length){
-        sug = match;
-      } else {
-        aviso = `<div class="muted2" style="padding:6px 9px; font-size:10px; background:rgba(239,159,39,.12);">⚠ Sin coincidencias en Rosario / Funes / Roldán. Mostramos otras:</div>`;
+      // Modo ESTRICTO (Diego 2026-06-14): si ninguna sugerencia matchea la zona
+      // configurada, NO mostrar ninguna. Antes el comportamiento era 'fallback
+      // permisivo con aviso', pero confundia porque parecia que el filtro no
+      // estaba activo. Ahora hay 0 ruido — el operador refraseaa la busqueda.
+      sug = sug.filter(s => CIUDADES_OK.includes(_norm(s.localidad)));
+      if (!sug.length){
+        const zonas = CIUDADES_OK.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(' / ');
+        box.style.display='block';
+        box.innerHTML = `<div class="muted2" style="padding:8px 10px; font-size:11px; background:rgba(239,159,39,.15); color:#EF9F27;">⚠ No encontramos esa dirección en <b>${esc(zonas)}</b>. Probá con una variante (calle + altura + barrio).</div>`;
+        return;
       }
       box.style.display='block';
-      box.innerHTML = aviso + sug.map(s=>{
+      box.innerHTML = sug.map(s=>{
         return `<div class="it" onclick='ClientePicker.pickGeo(${JSON.stringify(s)})'>
           <b>${esc(s.direccion||s.nomenclatura)}</b>
           <span class="muted2" style="font-size:10px;"> · ${esc(s.localidad||'')}</span>
