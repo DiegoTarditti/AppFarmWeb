@@ -39,7 +39,13 @@ def _persistir_mensaje_reparto(*, es_grupo, chat_id, wa_id_emisor, push_name, bo
                       .first())
         # Si no hay vínculo previo pero el push_name apunta inequívoco a un
         # cadete sin wa_id, autocompletar (silencio: 0 o 2+ matches → skip).
-        if not cadete and wa_id_emisor and push_name:
+        # IMPORTANTE: solo auto-vincular si el wa_id_emisor es un numero real
+        # (@c.us). WhatsApp 2026+ usa LID (@lid) en grupos para anonimizar al
+        # participante — guardar el LID como wa_id no sirve para mandar DMs
+        # despues. Para grupos, ignorar el participant LID; el wa_id real lo
+        # carga el operador a mano desde el modal (telefono → wa_id @c.us).
+        if (not cadete and wa_id_emisor and push_name
+                and wa_id_emisor.endswith('@c.us')):
             nombre_norm = ' '.join(push_name.lower().split())
             from sqlalchemy import func as _func
             candidatos = (s.query(database.Cadete)
@@ -135,7 +141,8 @@ def _ruta_dict(r, cadetes=None):
 def _cadete_dict(c):
     return {'id': c.id, 'nombre': c.nombre, 'telefono': c.telefono or '',
             'tarifa_dia': float(c.tarifa_dia) if c.tarifa_dia is not None else None,
-            'activo': c.activo, 'token': c.token or ''}
+            'activo': c.activo, 'token': c.token or '',
+            'wa_id': c.wa_id or ''}
 
 
 def _mapa_cadetes(s):
@@ -312,6 +319,15 @@ def init_app(app):
                 c.nombre = nombre
             if 'telefono' in b:
                 c.telefono = (b.get('telefono') or '').strip() or None
+                # Auto-derivar wa_id desde el telefono si todavia no lo tenia.
+                # Permite mandar DMs desde el panel sin esperar a que el cadete
+                # escriba primero. Si el telefono se borra, el wa_id queda como
+                # estaba (puede haber sido vinculado por webhook).
+                if c.telefono and not c.wa_id:
+                    from bot.whatsapp_grupo import normalizar_wa_id
+                    c.wa_id = normalizar_wa_id(c.telefono)
+            if 'wa_id' in b:
+                c.wa_id = (b.get('wa_id') or '').strip() or None
             if 'tarifa_dia' in b:
                 try:
                     c.tarifa_dia = float(b['tarifa_dia']) if b.get('tarifa_dia') not in (None, '') else None

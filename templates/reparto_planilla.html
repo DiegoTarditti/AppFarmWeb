@@ -830,6 +830,9 @@ async function cadCargar(){
       <div class="cad-row ${c.activo ? '' : 'inactivo'}">
         <span class="nombre">${esc(c.nombre)}${c.telefono ? ` <span class="tel">· ${esc(c.telefono)}</span>` : ''}</span>
         ${c.zonas ? `<span class="muted2" style="font-size:9px;">${c.zonas} ruta${c.zonas>1?'s':''}</span>` : ''}
+        ${c.wa_id
+          ? `<button onclick="cadChat(${c.id}, '${esc(c.nombre)}')" class="hbtn" style="font-size:11px; padding:2px 6px;" title="Abrir chat con ${esc(c.nombre)}">💬</button>`
+          : `<span class="muted2" style="font-size:9px;" title="Sin wa_id — cargá un teléfono o esperá que escriba al grupo">sin chat</span>`}
         <button onclick="cadToggle(${c.id}, ${c.activo ? 'false' : 'true'})" class="hbtn" style="font-size:10px; padding:2px 7px;"
                 title="${c.activo ? 'Desactivar' : 'Reactivar'}">${c.activo ? '⏸' : '▶'}</button>
         <button onclick="cadBorrar(${c.id}, '${esc(c.nombre)}')" class="hbtn" style="font-size:11px; padding:2px 6px; opacity:0.7;"
@@ -858,6 +861,18 @@ async function cadToggle(id, activo){
     cadCargar();
   } catch (e) { alert('Error: ' + e.message); }
 }
+function cadChat(id, nombre){
+  // Cierra el modal de cadetes y abre el DM en el panel de chat de la derecha.
+  // Si el panel está colapsado, lo abre. Si la conversación no existe todavía,
+  // chatAbrirDm la crea visualmente (queda vacía) y al primer mensaje saliente
+  // el endpoint /responder crea la BotConversacion en DB.
+  cadModalCerrar();
+  const panel = document.getElementById('chatPanel');
+  if (panel.classList.contains('is-collapsed')) chatToggle();
+  // pequeño delay para asegurar que el panel ya está abierto antes de pintar
+  setTimeout(() => chatAbrirDm(id, nombre), 100);
+}
+
 async function cadBorrar(id, nombre){
   if (!confirm(`Borrar cadete "${nombre}"?\n\nSe desvincula de sus rutas. Pedidos viejos que ya lo tenían asignado conservan el nombre pero pierden el link.`)) return;
   try {
