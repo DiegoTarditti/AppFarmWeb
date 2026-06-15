@@ -477,38 +477,53 @@ async function cargarSelects(){
 let _obsPresets = [];
 async function cargarObsPresets(){
   try {
-    const d = await (await fetch('/api/pedido/obs-presets')).json();
-    _obsPresets = d.presets || [];
-    const dl = document.getElementById('obsPresets');
-    dl.innerHTML = _obsPresets.map(p => `<option value="${esc(p.texto)}">`).join('');
-    // Pintar el dropdown manual también. Uso data-attribute + delegation para
-    // evitar problemas de escape con onclick='...' cuando el preset tenga
-    // caracteres raros. color:var(--title) explicito por si el padre cambia.
-    const drop = document.getElementById('obsPresetsDrop');
-    if (drop){
-      if (!_obsPresets.length){
-        drop.innerHTML = `<div style="padding:10px; font-size:11px; color:var(--muted);">sin presets — usá ＋ para crear el primero</div>`;
-      } else {
-        drop.innerHTML = _obsPresets.map((p, i) =>
-          `<div class="obs-opt" data-idx="${i}"
-                style="padding:8px 12px; font-size:12px; cursor:pointer; color:var(--title);
-                       border-bottom:1px solid var(--row-bd); user-select:none;">${esc(p.texto)}</div>`).join('');
-        // Click handler una sola vez con delegation
-        drop.onclick = (e) => {
-          const item = e.target.closest('.obs-opt');
-          if (!item) return;
-          const idx = parseInt(item.dataset.idx, 10);
-          const preset = _obsPresets[idx];
-          if (preset) elegirObsPreset(preset.texto);
-        };
-      }
+    const r = await fetch('/api/pedido/obs-presets', {credentials: 'same-origin'});
+    const ct = r.headers.get('content-type') || '';
+    if (!r.ok || !ct.includes('json')){
+      const body = await r.text();
+      console.error('[obsPresets] respuesta inesperada:', r.status, ct, body.slice(0,150));
+      _obsPresets = [];
+      pintarObsDropdown();
+      return;
     }
-  } catch(e){ /* silencioso */ }
+    const d = await r.json();
+    _obsPresets = d.presets || [];
+    console.log('[obsPresets] cargados:', _obsPresets.length, _obsPresets);
+    const dl = document.getElementById('obsPresets');
+    if (dl) dl.innerHTML = _obsPresets.map(p => `<option value="${esc(p.texto)}">`).join('');
+    pintarObsDropdown();
+  } catch(e){ console.error('[obsPresets] fallo:', e); }
 }
-function toggleObsDropdown(ev){
+function pintarObsDropdown(){
+  const drop = document.getElementById('obsPresetsDrop');
+  if (!drop) { console.warn('[obsPresets] no hay #obsPresetsDrop'); return; }
+  if (!_obsPresets.length){
+    drop.innerHTML = '<div style="padding:10px;font-size:11px;color:#9c9ca4;">sin presets — usá ＋ para crear el primero</div>';
+    return;
+  }
+  drop.innerHTML = _obsPresets.map((p, i) =>
+    '<div class="obs-opt" data-idx="' + i + '" style="padding:8px 12px;font-size:12px;cursor:pointer;color:#fafafc;border-bottom:1px solid rgba(255,255,255,0.1);user-select:none;">' +
+    esc(p.texto) + '</div>'
+  ).join('');
+  drop.onclick = (e) => {
+    const item = e.target.closest('.obs-opt');
+    if (!item) return;
+    const idx = parseInt(item.dataset.idx, 10);
+    const preset = _obsPresets[idx];
+    if (preset) elegirObsPreset(preset.texto);
+  };
+}
+async function toggleObsDropdown(ev){
   if (ev) ev.stopPropagation();
   const drop = document.getElementById('obsPresetsDrop');
+  // Si esta vacio (todavia no cargo o se vacio), cargamos antes de abrir.
+  if (!_obsPresets.length){
+    await cargarObsPresets();
+  } else {
+    pintarObsDropdown();
+  }
   drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
+  console.log('[obsPresets] toggle a:', drop.style.display, 'items renderizados:', drop.querySelectorAll('.obs-opt').length);
 }
 function cerrarObsDropdown(){
   const drop = document.getElementById('obsPresetsDrop');
