@@ -233,7 +233,7 @@
 <script>
 window._oid = null;
 window._cid = null;
-function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&','<':'<','>':'>','"':'"'}[c])); }
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 async function jpost(u,b){ return (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json(); }
 function hoyISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function fechaVal(){ return hoyISO(); }
@@ -481,13 +481,27 @@ async function cargarObsPresets(){
     _obsPresets = d.presets || [];
     const dl = document.getElementById('obsPresets');
     dl.innerHTML = _obsPresets.map(p => `<option value="${esc(p.texto)}">`).join('');
-    // Pintar el dropdown manual también.
+    // Pintar el dropdown manual también. Uso data-attribute + delegation para
+    // evitar problemas de escape con onclick='...' cuando el preset tenga
+    // caracteres raros. color:var(--title) explicito por si el padre cambia.
     const drop = document.getElementById('obsPresetsDrop');
     if (drop){
-      drop.innerHTML = _obsPresets.length
-        ? _obsPresets.map(p => `<div class="obs-opt" onclick="elegirObsPreset('${esc(p.texto).replace(/'/g, "\\'")}')"
-              style="padding:7px 11px; font-size:12px; cursor:pointer; border-bottom:1px solid var(--row-bd);">${esc(p.texto)}</div>`).join('')
-        : `<div style="padding:10px; font-size:11px; color:var(--muted);">sin presets — usá ＋ para crear el primero</div>`;
+      if (!_obsPresets.length){
+        drop.innerHTML = `<div style="padding:10px; font-size:11px; color:var(--muted);">sin presets — usá ＋ para crear el primero</div>`;
+      } else {
+        drop.innerHTML = _obsPresets.map((p, i) =>
+          `<div class="obs-opt" data-idx="${i}"
+                style="padding:8px 12px; font-size:12px; cursor:pointer; color:var(--title);
+                       border-bottom:1px solid var(--row-bd); user-select:none;">${esc(p.texto)}</div>`).join('');
+        // Click handler una sola vez con delegation
+        drop.onclick = (e) => {
+          const item = e.target.closest('.obs-opt');
+          if (!item) return;
+          const idx = parseInt(item.dataset.idx, 10);
+          const preset = _obsPresets[idx];
+          if (preset) elegirObsPreset(preset.texto);
+        };
+      }
     }
   } catch(e){ /* silencioso */ }
 }
