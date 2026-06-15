@@ -74,8 +74,9 @@ PERFILES = {
         'url': '/pedido/nuevo',
         # hereda caja; '/api/clientes' y '/config/envio' los usa el cliente_picker
         # embebido en /pedido/nuevo (buscar cliente, ficha, cotizar envío).
-        'prefijos': ['/pedido/', '/reparto', '/api/reparto', '/caja',
-                     '/api/clientes', '/config/envio'],
+        # '/api/pedido/' incluye obs-presets (datalist + dropdown de Observación).
+        'prefijos': ['/pedido/', '/api/pedido/', '/reparto', '/api/reparto',
+                     '/caja', '/api/clientes', '/config/envio'],
     },
     'planilla_envios': {
         'label': 'Planilla Envíos', 'icono': '🛵',
