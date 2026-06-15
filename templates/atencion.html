@@ -332,6 +332,42 @@
         {{ cliente_picker() }}
       </div>
 
+      {# Card 'Detalle del pedido' — gaps que /pedido/nuevo tenía y /atencion no:
+         producto, nota/ítems, observación con presets. Se persisten al cerrar
+         la transacción. El producto puede sincronizarse con el carrito visible
+         en la columna del chat (cuando el operador agrega productos desde ahí). #}
+      <div id="detalleCard" style="padding:6px 12px 8px; border-bottom:1px solid var(--border); display:none;">
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+          <span class="muted" style="font-size:11px;">📋 Detalle del pedido</span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <div>
+            <label class="muted2" style="font-size:10px; display:block;">Producto</label>
+            <input id="dProducto" placeholder="buscar o escribir libre" class="input"
+                   style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;"
+                   oninput="dProductoInput()" autocomplete="off">
+            <div id="dProductoSug" class="muted2" style="display:none; background:var(--card); border:1px solid var(--border); border-radius:6px; margin-top:2px; max-height:140px; overflow-y:auto; font-size:11px;"></div>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <div style="flex:1;">
+              <label class="muted2" style="font-size:10px; display:block;">Nota / ítems</label>
+              <input id="dNota" placeholder="referencia" class="input"
+                     style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+            </div>
+            <div style="flex:1; position:relative;">
+              <label class="muted2" style="font-size:10px; display:block;">Observación</label>
+              <input id="dObservacion" list="dObsPresets" placeholder="elegir o escribir"
+                     class="input"
+                     style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px; padding-right:22px;">
+              <button type="button" onclick="dToggleObs(event)" tabindex="-1"
+                      style="position:absolute; right:5px; top:62%; background:transparent; border:none; cursor:pointer; padding:2px 5px; font-size:10px; opacity:0.6; color:var(--muted);">▼</button>
+              <datalist id="dObsPresets"></datalist>
+              <div id="dObsDrop" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:1000; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:3px; max-height:200px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {# Card 'Pago' — forma de pago acordada durante el chat (Fase A.5). Persistida
          en BotConversacion. El modal 'Cerrar TX' la precarga al abrir. #}
       <div id="pagoCard" style="padding:6px 12px 8px; border-bottom:1px solid var(--border); display:none;">
@@ -1414,6 +1450,12 @@ async function txCerrar() {
     envio_costo: envio,
     prioridad: _txVal('txPrioridad'),
     pagado: txComputarPagado(),
+    // Detalle del pedido (card del sidebar, Diego 2026-06-14: antes /atencion
+    // no persistia producto / nota / observacion).
+    producto: ((document.getElementById('dProducto')||{}).value || '').trim() || null,
+    producto_observer_id: window._dProductoObsId || null,
+    nota: ((document.getElementById('dNota')||{}).value || '').trim() || null,
+    observacion: ((document.getElementById('dObservacion')||{}).value || '').trim() || null,
   };
   try {
     const r = await fetch(`/atencion/${convAbierta}/cerrar-transaccion`, {
@@ -1534,7 +1576,15 @@ function pagoRecalcVuelto(){
 }
 async function cargarPagoAcordado(){
   const card = document.getElementById('pagoCard');
-  if (!convAbierta){ card.style.display = 'none'; _pagoState = null; return; }
+  const detalle = document.getElementById('detalleCard');
+  if (!convAbierta){
+    card.style.display = 'none';
+    if (detalle) detalle.style.display = 'none';
+    _pagoState = null;
+    return;
+  }
+  // Detalle del pedido siempre visible cuando hay conv abierta.
+  if (detalle) detalle.style.display = '';
   try {
     const r = await fetch(`/atencion/${convAbierta}/pago`);
     if (!r.ok){ card.style.display = 'none'; return; }
@@ -1550,6 +1600,98 @@ async function cargarPagoAcordado(){
     document.getElementById('pagoBadgeConf').style.display = _pagoState.pago_confirmado_en ? '' : 'none';
   } catch (e) { console.error('pago load:', e); }
 }
+
+/* ── Card "Detalle del pedido" (sidebar): producto + nota + observación ────
+   Gaps que /pedido/nuevo tenía y /atencion no. Persisten al cerrar TX. */
+let _dObsPresets = [];
+let _dProdTimer = null;
+async function dCargarObsPresets(){
+  try {
+    const r = await fetch('/api/pedido/obs-presets', {credentials:'same-origin'});
+    if (!r.ok) return;
+    const d = await r.json();
+    _dObsPresets = d.presets || [];
+    const dl = document.getElementById('dObsPresets');
+    if (dl) dl.innerHTML = _dObsPresets.map(p => `<option value="${esc(p.texto)}">`).join('');
+  } catch(e){ console.error('obs-presets:', e); }
+}
+function dPintarObsDrop(){
+  const drop = document.getElementById('dObsDrop');
+  if (!drop) return;
+  if (!_dObsPresets.length){
+    drop.innerHTML = '<div style="padding:10px;font-size:11px;color:#9c9ca4;">sin presets</div>';
+    return;
+  }
+  drop.innerHTML = _dObsPresets.map((p, i) =>
+    '<div class="d-obs-opt" data-idx="' + i + '" style="padding:7px 11px;font-size:12px;cursor:pointer;color:#fafafc;border-bottom:1px solid rgba(255,255,255,0.1);">' +
+    esc(p.texto) + '</div>'
+  ).join('');
+  drop.onclick = (e) => {
+    const item = e.target.closest('.d-obs-opt');
+    if (!item) return;
+    const idx = parseInt(item.dataset.idx, 10);
+    const preset = _dObsPresets[idx];
+    if (preset){
+      document.getElementById('dObservacion').value = preset.texto;
+      drop.style.display = 'none';
+    }
+  };
+}
+async function dToggleObs(ev){
+  if (ev) ev.stopPropagation();
+  const drop = document.getElementById('dObsDrop');
+  if (!_dObsPresets.length) await dCargarObsPresets();
+  dPintarObsDrop();
+  drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
+}
+// Cerrar dropdown al clickear fuera (1 listener).
+if (!window._dObsDropListener){
+  document.addEventListener('click', (e) => {
+    const drop = document.getElementById('dObsDrop');
+    if (drop && drop.style.display !== 'none'
+        && !e.target.closest('#dObsDrop')
+        && !e.target.closest('button[onclick*="dToggleObs"]')){
+      drop.style.display = 'none';
+    }
+  });
+  window._dObsDropListener = true;
+}
+// Buscador de producto autocomplete (sugiere; el operador puede dejar texto libre).
+function dProductoInput(){
+  clearTimeout(_dProdTimer);
+  _dProdTimer = setTimeout(dBuscarProducto, 280);
+}
+async function dBuscarProducto(){
+  const q = document.getElementById('dProducto').value.trim();
+  const box = document.getElementById('dProductoSug');
+  if (q.length < 2){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  try {
+    const r = await fetch('/atencion/api/productos/buscar?q=' + encodeURIComponent(q));
+    if (!r.ok){ box.style.display = 'none'; return; }
+    const d = await r.json();
+    const ps = (d.productos || []).slice(0, 8);
+    if (!ps.length){ box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.innerHTML = ps.map((p, i) =>
+      `<div class="d-prod-opt" data-idx="${i}" style="padding:6px 9px; cursor:pointer; border-bottom:1px solid rgba(255,255,255,0.08);">
+        <div style="color:var(--title);">${esc(p.nombre)}</div>
+        <div class="muted2" style="font-size:10px;">obs:${p.observer_id} · stock ${p.stock}</div>
+      </div>`).join('');
+    window._dProductoCache = ps;
+    box.onclick = (e) => {
+      const it = e.target.closest('.d-prod-opt');
+      if (!it) return;
+      const p = window._dProductoCache[parseInt(it.dataset.idx, 10)];
+      if (p){
+        document.getElementById('dProducto').value = p.nombre;
+        window._dProductoObsId = p.observer_id || null;
+        box.style.display = 'none';
+      }
+    };
+    box.style.display = 'block';
+  } catch(e){ box.style.display = 'none'; }
+}
+// Cargar presets al iniciar la pantalla (idempotente).
+dCargarObsPresets();
 async function guardarPagoAcordado(){
   if (!convAbierta) return;
   const f = document.getElementById('pgForma').value;

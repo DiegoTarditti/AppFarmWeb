@@ -372,6 +372,11 @@ def init_app(app):
                 obra_social=body.get('obra_social') or None,
                 receta_estado=body.get('requiere_receta') or None,
                 requiere_firma=bool(body.get('requiere_firma') or False),
+                # ── Detalle del pedido (Diego 2026-06-14) ──
+                producto=(body.get('producto') or '').strip() or None,
+                producto_observer_id=body.get('producto_observer_id') or None,
+                nota=(body.get('nota') or '').strip() or None,
+                observacion=(body.get('observacion') or '').strip() or None,
                 # ── Stock + destino ──
                 stock_status=body.get('stock') or None,
                 drogueria_id=drogueria_id,
