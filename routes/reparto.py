@@ -62,19 +62,22 @@ def _persistir_mensaje_reparto(*, es_grupo, chat_id, wa_id_emisor, push_name, bo
                     estado_atencion='humano', nodo='reparto')
                 s.add(conv); s.flush()
         else:
-            # DM con un cadete particular.
-            if not wa_id_emisor:
+            # DM con un cadete particular. PRIVACIDAD: solo persistimos DMs si
+            # el remitente es un cadete reconocido. WAHA recibe webhooks de TODOS
+            # los DMs al numero vinculado (incluidos chats personales del operador
+            # con familiares, amigos, etc.) — sin este guard quedarian todos en DB.
+            if not wa_id_emisor or not cadete:
                 return None
             conv = (s.query(database.BotConversacion)
                     .filter_by(canal='whatsapp', canal_user_id=wa_id_emisor).first())
             if not conv:
                 conv = database.BotConversacion(
                     canal='whatsapp', canal_user_id=wa_id_emisor,
-                    nombre_cliente=(cadete.nombre if cadete else push_name) or 'Cadete',
+                    nombre_cliente=cadete.nombre,
                     estado_atencion='humano', nodo='reparto',
-                    cadete_id=(cadete.id if cadete else None))
+                    cadete_id=cadete.id)
                 s.add(conv); s.flush()
-            elif cadete and not conv.cadete_id:
+            elif not conv.cadete_id:
                 conv.cadete_id = cadete.id
         # Insertar el mensaje. fromMe ⇒ lo mandó el operador; else lo mandó un cadete.
         # En el grupo, fromMe también puede ser el bot publicando un pedido — lo
@@ -573,7 +576,13 @@ def init_app(app):
         # En DMs (from = wa_id del cadete) participant suele venir vacío.
         participant = (msg.get('participant') or msg.get('author')
                        or (msg.get('_data') or {}).get('author') or '')
-        es_grupo = chat_id.endswith('@g.us') or chat_id == whatsapp_grupo.WAHA_GRUPO_ENVIOS
+        es_grupo = chat_id.endswith('@g.us')
+        # Si es un grupo, debe ser EXACTAMENTE el grupo de reparto configurado.
+        # WAHA dispara webhooks por TODOS los grupos del numero vinculado
+        # (incluye grupos personales del operador). Sin este filtro entraban
+        # mensajes de cualquier lado al panel del grupo de cadetes.
+        if es_grupo and chat_id != whatsapp_grupo.WAHA_GRUPO_ENVIOS:
+            return jsonify({'ok': True, 'ignored': 'other_group'})
         wa_id_emisor = whatsapp_grupo.normalizar_wa_id(participant if es_grupo else chat_id)
         from_me = bool(msg.get('fromMe'))
         try:
