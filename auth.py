@@ -68,7 +68,9 @@ PERFILES = {
         # hereda caja; '/api/clientes' y '/config/envio' los usa el cliente_picker
         # embebido en /atencion (buscar cliente, ficha, cotizar envío).
         # '/clientes' = pantalla maestra de listado/detalle de clientes (Diego 2026-06-15).
-        'prefijos': ['/atencion', '/caja', '/clientes', '/api/clientes', '/config/envio'],
+        # '/api/proveedores' = dropdown de droguerías en el modal Cerrar TX.
+        'prefijos': ['/atencion', '/caja', '/clientes', '/api/clientes',
+                     '/api/proveedores', '/config/envio'],
     },
     'pedido_manual': {
         'label': 'Pedido Manual', 'icono': '🛒',
@@ -77,8 +79,10 @@ PERFILES = {
         # embebido en /pedido/nuevo (buscar cliente, ficha, cotizar envío).
         # '/api/pedido/' incluye obs-presets (datalist + dropdown de Observación).
         # '/clientes' = pantalla maestra de listado/detalle de clientes (Diego 2026-06-15).
+        # '/api/proveedores' = dropdown de droguerías en el modal Cerrar TX.
         'prefijos': ['/pedido/', '/api/pedido/', '/reparto', '/api/reparto',
-                     '/caja', '/clientes', '/api/clientes', '/config/envio'],
+                     '/caja', '/clientes', '/api/clientes', '/api/proveedores',
+                     '/config/envio'],
     },
     'planilla_envios': {
         'label': 'Planilla Envíos', 'icono': '🛵',
