@@ -1745,7 +1745,11 @@ async function cargarPagoAcordado(){
     if (envEl) envEl.value = _pagoState.envio_costo != null ? _pagoState.envio_costo : '';
     pagoFormaChange();
     pagoRecalcVuelto();
-    document.getElementById('pagoBadgeLink').style.display = _pagoState.pago_acordado_en ? '' : 'none';
+    // Badge 'link enviado' SOLO cuando la forma de pago es link_mp Y se acordó
+    // (Diego 2026-06-15: aparecía en efectivo/tarjeta también, era engañoso).
+    const _badgeLink = document.getElementById('pagoBadgeLink');
+    const esLinkMp = (_pagoState.forma_pago_propuesta === 'link_mp');
+    _badgeLink.style.display = (_pagoState.pago_acordado_en && esLinkMp) ? '' : 'none';
     document.getElementById('pagoBadgeConf').style.display = _pagoState.pago_confirmado_en ? '' : 'none';
   } catch (e) { console.error('pago load:', e); }
 }
