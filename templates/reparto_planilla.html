@@ -294,14 +294,19 @@
                 title="Click para avanzar al siguiente estado">
           <span class="nombre">{{ p.estado.replace('_', ' ') }}</span>
           <span class="pasos">
+            {# esperando_drog va ANTES del flujo: es un estado pre-publicación
+               (el pedido espera que llegue de la droguería para poder salir). #}
+            {% if p.estado == 'esperando_drog' %}
+              <span class="estado-paso alt-drog" title="Esperando droguería">D</span>
+            {% endif %}
             {% for i in range(_orden|length) %}
               <span class="estado-paso{% if i < _idx %} done{% elif i == _idx %} actual{% endif %}"
                     title="{{ _nombres[i] }}">{{ _letras[i] }}</span>
             {% endfor %}
+            {# anulado y en_caja van DESPUÉS: el primero es terminal alternativo,
+               el segundo una bifurcación lateral hacia caja. #}
             {% if p.estado == 'anulado' %}
               <span class="estado-paso alt-anulado" title="Anulado">×</span>
-            {% elif p.estado == 'esperando_drog' %}
-              <span class="estado-paso alt-drog" title="Esperando droguería">D</span>
             {% elif p.estado == 'en_caja' %}
               <span class="estado-paso alt-caja" title="En caja">$</span>
             {% endif %}
