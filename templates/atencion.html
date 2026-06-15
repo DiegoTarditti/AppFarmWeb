@@ -1986,6 +1986,25 @@ cargarEquipo();
 // En modo manual (walk-in) NO polleamos bandeja ni chat (no aplican).
 // Si vinimos con ?conv=N, abrimos esa conv automaticamente.
 if (window.ATENCION_MODO === 'manual'){
+  // El modal 'cerrarTxCard' vive dentro de colChat (escondida en modo manual).
+  // Lo movemos al body como overlay flotante para que sea accesible al cerrar TX.
+  const _modal = document.getElementById('cerrarTxCard');
+  if (_modal){
+    document.body.appendChild(_modal);
+    _modal.style.position = 'fixed';
+    _modal.style.top = '20px';
+    _modal.style.left = '50%';
+    _modal.style.transform = 'translateX(-50%)';
+    _modal.style.zIndex = '9999';
+    _modal.style.maxWidth = '720px';
+    _modal.style.width = 'calc(100% - 40px)';
+    _modal.style.maxHeight = 'calc(100vh - 40px)';
+    _modal.style.overflowY = 'auto';
+    _modal.style.boxShadow = '0 10px 50px rgba(0,0,0,0.6)';
+    _modal.style.background = 'var(--card)';
+    _modal.style.border = '1px solid var(--border)';
+    _modal.style.borderRadius = '12px';
+  }
   if (window.ATENCION_CONV_INICIAL){
     setTimeout(() => abrirConv(window.ATENCION_CONV_INICIAL), 100);
   }
