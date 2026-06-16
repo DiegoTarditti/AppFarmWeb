@@ -80,7 +80,11 @@ PERFILES = {
         # '/api/pedido/' incluye obs-presets (datalist + dropdown de Observación).
         # '/clientes' = pantalla maestra de listado/detalle de clientes (Diego 2026-06-15).
         # '/api/proveedores' = dropdown de droguerías en el modal Cerrar TX.
+        # '/atencion' = /pedido/nuevo ahora redirige a /atencion?modo=manual
+        # (refactor C); el operador necesita acceso a todos los endpoints de
+        # esa pantalla (cerrar-transaccion, vincular-cliente, etc.).
         'prefijos': ['/pedido/', '/api/pedido/', '/reparto', '/api/reparto',
+                     '/atencion',
                      '/caja', '/clientes', '/api/clientes', '/api/proveedores',
                      '/config/envio'],
     },
