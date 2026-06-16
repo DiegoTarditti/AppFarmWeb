@@ -352,7 +352,14 @@ def init_app(app):
         # su geo registrada en /clientes para próximas visitas (Diego 2026-06-15).
         pick_lat = body.get('pick_lat')
         pick_lng = body.get('pick_lng')
-        if (not body.get('domicilio_id')) and pick_lat and pick_lng and conv.cliente_id:
+        # Resolver cliente_id sin abrir el bloque grande (que viene más abajo y
+        # ahí también se carga conv para el resto del flujo).
+        _conv_cli_id = None
+        if (not body.get('domicilio_id')) and pick_lat and pick_lng:
+            with database.get_db() as _s:
+                _conv_tmp = _s.get(database.BotConversacion, conv_id)
+                _conv_cli_id = _conv_tmp.cliente_id if _conv_tmp else None
+        if (not body.get('domicilio_id')) and pick_lat and pick_lng and _conv_cli_id:
             with database.get_db() as s:
                 # Dedupe por (cliente, dir, localidad, piso, depto): si el cliente
                 # ya tiene un domicilio con esos campos, actualizamos su geo;
@@ -364,7 +371,7 @@ def init_app(app):
                 pdpto = (body.get('pick_depto') or '').strip() or None
                 pref = (body.get('pick_referencia') or '').strip() or None
                 existing = (s.query(D).filter(
-                    D.cliente_id == conv.cliente_id,
+                    D.cliente_id == _conv_cli_id,
                     D.direccion == pdir,
                     D.localidad == ploc,
                     D.piso == ppiso,
@@ -377,7 +384,7 @@ def init_app(app):
                     s.commit()
                     body['domicilio_id'] = existing.id
                 else:
-                    nuevo = D(cliente_id=conv.cliente_id, etiqueta='Casa',
+                    nuevo = D(cliente_id=_conv_cli_id, etiqueta='Casa',
                               direccion=pdir, localidad=ploc, piso=ppiso,
                               depto=pdpto, referencia=pref,
                               lat=float(pick_lat), lng=float(pick_lng),
