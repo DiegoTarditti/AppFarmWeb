@@ -390,6 +390,23 @@
         {{ cliente_picker() }}
       </div>
 
+      <div id="envioCuadrasWrap" style="padding:0 12px 8px; display:none;">
+        <div style="display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap;">
+          <div style="flex:0 0 120px;">
+            <label class="muted2" style="font-size:10px; display:flex; align-items:center; gap:5px;">
+              Envío $
+              <span id="pgEnvioPill" style="display:none; font-size:8px; padding:1px 6px; border-radius:999px;"></span>
+            </label>
+            <input id="pgEnvio" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+          </div>
+          <div style="flex:0 0 90px;">
+            <label class="muted2" style="font-size:10px; display:block;" title="Override manual de cuadras">o Cuadras</label>
+            <input id="pgCuadras" type="number" min="0" oninput="pgCuadrasInput()" placeholder="ej: 22" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;" title="Cotiza envío usando este número de cuadras">
+          </div>
+          <div id="pgEnvioInfo" class="muted2" style="font-size:10px; flex:1; min-width:0; line-height:1.3; padding-bottom:6px;"></div>
+        </div>
+      </div>
+
       {# Card 'Detalle del pedido' — gaps que /pedido/nuevo tenía y /atencion no:
          producto, nota/ítems, observación con presets, canal. Se persisten al
          cerrar la transacción. #}
@@ -403,37 +420,37 @@
                 title="Cómo va a salir el domicilio en el ticket de envío"></span>
         </div>
         <div style="display:flex; flex-direction:column; gap:6px;">
-          <div>
-            <label class="muted2" style="font-size:10px; display:block;">Producto</label>
-            <input id="dProducto" placeholder="buscar o escribir libre" class="input"
-                   style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;"
-                   oninput="dProductoInput()" autocomplete="off">
-            <div id="dProductoSug" class="muted2" style="display:none; background:var(--card); border:1px solid var(--border); border-radius:6px; margin-top:2px; max-height:140px; overflow-y:auto; font-size:11px;"></div>
-          </div>
-          <div style="display:flex; gap:6px;">
-            <div style="flex:1;">
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:180px;">
+              <label class="muted2" style="font-size:10px; display:block;">Producto</label>
+              <input id="dProducto" placeholder="buscar o escribir libre" class="input"
+                     style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;"
+                     oninput="dProductoInput()" autocomplete="off">
+              <div id="dProductoSug" class="muted2" style="display:none; background:var(--card); border:1px solid var(--border); border-radius:6px; margin-top:2px; max-height:140px; overflow-y:auto; font-size:11px;"></div>
+            </div>
+            <div style="flex:1; min-width:180px;">
               <label class="muted2" style="font-size:10px; display:block;">Nota / ítems</label>
               <input id="dNota" placeholder="referencia" class="input"
                      style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
             </div>
-            <div style="flex:1; position:relative;">
-              <label class="muted2" style="font-size:10px; display:flex; align-items:center; gap:6px;">
-                <span>Observación</span>
-                <span id="dRecetaBadge" style="font-size:9px; padding:2px 6px; border-radius:8px; background:rgba(29,158,117,.18); color:#1D9E75; font-weight:600;">🟢 Venta libre</span>
-                <button type="button" onclick="dGuardarObsPreset()" tabindex="-1"
-                        title="Guardar el texto actual como preset"
-                        style="margin-left:auto; background:transparent; border:1px solid var(--border); border-radius:6px; cursor:pointer; padding:1px 6px; font-size:10px; color:var(--muted);">＋</button>
-              </label>
-              {# Sin list= y sin <datalist>: el browser estaba pisando con su
-                 dropdown nativo. Usamos solo el ▼ custom que muestra dObsDrop. #}
-              <input id="dObservacion" placeholder="elegir del ▼ o escribir libre"
-                     class="input" autocomplete="off"
-                     style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px; padding-right:24px;"
-                     oninput="dActualizarRecetaBadge()">
-              <button type="button" onclick="dToggleObs(event)" tabindex="-1"
-                      style="position:absolute; right:5px; top:62%; background:transparent; border:none; cursor:pointer; padding:2px 5px; font-size:11px; opacity:0.7; color:var(--muted);">▼</button>
-              <div id="dObsDrop" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:1000; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:3px; max-height:200px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
-            </div>
+          </div>
+          <div style="position:relative;">
+            <label class="muted2" style="font-size:10px; display:flex; align-items:center; gap:6px;">
+              <span>Observación</span>
+              <span id="dRecetaBadge" style="font-size:9px; padding:2px 6px; border-radius:8px; background:rgba(29,158,117,.18); color:#1D9E75; font-weight:600;">🟢 Venta libre</span>
+              <button type="button" onclick="dGuardarObsPreset()" tabindex="-1"
+                      title="Guardar el texto actual como preset"
+                      style="margin-left:auto; background:transparent; border:1px solid var(--border); border-radius:6px; cursor:pointer; padding:1px 6px; font-size:10px; color:var(--muted);">＋</button>
+            </label>
+            {# Sin list= y sin <datalist>: el browser estaba pisando con su
+               dropdown nativo. Usamos solo el ▼ custom que muestra dObsDrop. #}
+            <input id="dObservacion" placeholder="elegir del ▼ o escribir libre"
+                   class="input" autocomplete="off"
+                   style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px; padding-right:24px;"
+                   oninput="dActualizarRecetaBadge()">
+            <button type="button" onclick="dToggleObs(event)" tabindex="-1"
+                    style="position:absolute; right:5px; top:62%; background:transparent; border:none; cursor:pointer; padding:2px 5px; font-size:11px; opacity:0.7; color:var(--muted);">▼</button>
+            <div id="dObsDrop" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:1000; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:3px; max-height:200px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
           </div>
           {# Canal + Obra social en una sola fila. Canal: cómo entró el pedido
              (default 'mostrador' en walk-in, 'atencion' en chat). OS: precargada
@@ -473,6 +490,9 @@
       {# Card 'Pago' — forma de pago acordada durante el chat (Fase A.5). Persistida
          en BotConversacion. El modal 'Cerrar TX' la precarga al abrir. #}
       <div id="pagoCard" style="padding:6px 12px 8px; border-bottom:1px solid var(--border); display:none;">
+        {# Header con badges (Diego 2026-06-15: Copilot los había borrado al
+           reorganizar la card en una sola fila). pagoBadgeLink solo aparece
+           cuando forma=link_mp y se acordó; pagoBadgeConf cuando dato_pago. #}
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
           <span class="muted" style="font-size:11px;">💳 Pago acordado</span>
           <div style="display:flex; gap:4px;">
@@ -480,12 +500,12 @@
             <span id="pagoBadgeConf" class="tag-green" style="font-size:9px; padding:2px 7px; border-radius:8px; display:none;">pago confirmado ✓</span>
           </div>
         </div>
-        <div style="display:flex; gap:6px; align-items:flex-end;">
+        <div style="display:flex; align-items:flex-end; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
           <div style="flex:0 0 120px;">
             <label class="muted2" style="font-size:10px; display:block;">Monto $</label>
             <input id="pgMonto" type="number" min="0" step="0.01" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
           </div>
-          <div style="flex:1; min-width:0;">
+          <div style="flex:0 0 180px; min-width:160px;">
             <label class="muted2" style="font-size:10px; display:block;">
               Forma de pago
               {# DNI del cliente vinculado: lo pintamos al lado del label en vez
@@ -501,30 +521,14 @@
               <option value="tarjeta">Tarjeta de crédito</option>
             </select>
           </div>
+          <div id="pgExtra" style="flex:1; min-width:160px; display:flex; flex-wrap:wrap; gap:6px;"></div>
+          <div id="pgVuelto" style="flex:0 0 180px; font-size:11px; color:var(--muted); display:none; text-align:right;"></div>
         </div>
-        <div id="pgExtra" style="margin-top:7px; display:flex; flex-direction:column; gap:6px;"></div>
-        <div id="pgVuelto" style="margin-top:6px; font-size:11px; color:var(--muted); display:none;"></div>
+        {# Campos extra según forma: link, comprobante, paga con, cupón, etc. #}
+        <div id="pgExtraFields" style="display:none;"></div>
         {# Costo de envío + botón Cerrar tx side-by-side (Diego 2026-06-14: el operador
            necesita el envío a la vista en el chat, sin abrir el modal). El botón es
            más chico ahora para que entren ambos en la misma línea. #}
-      </div>
-
-      {# Envío / Cuadras: van al lado del badge coords del cliente_picker. #}
-      <div id="envioCuadrasWrap" style="padding:0 12px 8px; display:none;">
-        <div style="display:flex; gap:6px; align-items:flex-end;">
-          <div style="flex:0 0 100px;">
-            <label class="muted2" style="font-size:10px; display:flex; align-items:center; gap:5px;">
-              Envío $
-              <span id="pgEnvioPill" style="display:none; font-size:8px; padding:1px 6px; border-radius:999px;"></span>
-            </label>
-            <input id="pgEnvio" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-          </div>
-          <div style="flex:0 0 90px;">
-            <label class="muted2" style="font-size:10px; display:block;" title="Override manual de cuadras">o Cuadras</label>
-            <input id="pgCuadras" type="number" min="0" oninput="pgCuadrasInput()" placeholder="ej: 22" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;" title="Cotiza envío usando este número de cuadras">
-          </div>
-          <div id="pgEnvioInfo" class="muted2" style="font-size:10px; flex:1; min-width:0; line-height:1.3; padding-bottom:6px;"></div>
-        </div>
       </div>
 
       {# Botón Cerrar TX — temporal aquí; se rodea con Stock/Sale por/Prioridad
@@ -1086,30 +1090,9 @@ function renderFicha() {
   if (dniSlot) dniSlot.textContent = f.documento ? `DNI ${f.documento}` : '';
   const fila = (ic, lab, val) => val ? `
     <div><div class="muted" style="margin-bottom:2px;"><i class="ti ti-${ic}" style="font-size:12px; vertical-align:-1px; margin-right:5px"></i>${lab}</div><div class="txt">${esc(val)}</div></div>` : '';
-  const osLabel = osInferida && osInferida.confirmada ? 'Obra social ✓' : 'Obra social inferida';
-  const osConf  = osInferida && osInferida.confirmada
-    ? `<span style="color:#4ade80; font-size:9px;">Confirmada por ${esc(osInferida.confirmado_por||'operador')}</span>`
-    : (osInferida && osInferida.confianza_pct != null
-        ? `<span class="muted2" style="font-size:9px;">Confianza: ${osInferida.confianza_pct}%${osInferida.confianza_pct < 50 ? ' ⚠️' : ''}</span>`
-        : '');
-
-  const osHtml = osInferida && osInferida.tiene_os
-    ? `<div class="bt" style="margin-top:10px; padding-top:10px; border-top:0.5px solid;">
-         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
-           <div class="muted" style="font-size:10px;">${osLabel}</div>
-           <button onclick="abrirEditarOS()" class="hbtn" style="font-size:10px; padding:2px 7px;">✏️</button>
-         </div>
-         <div class="title" style="font-size:12px;" id="os-nombre-display">${esc(osInferida.obra_social_nombre)}</div>
-         <div style="margin-top:2px;">${osConf}</div>
-         <div class="muted" style="font-size:9px; margin-top:4px;">Al buscar productos se mostrará el precio estimado con esta OS</div>
-       </div>`
-    : `<div class="bt" style="margin-top:10px; padding-top:10px; border-top:0.5px solid;">
-         <div class="muted" style="font-size:10px; margin-bottom:4px;">Obra social</div>
-         <button onclick="abrirEditarOS()" class="hbtn" style="font-size:10px; padding:3px 10px;">+ Asignar OS</button>
-       </div>`;
   // Nombre, domicilio, teléfono y badge (al lado de Ciudad) viven en el picker
   // de arriba. DNI ahora va al lado de 'Forma de pago' en la card de pago.
-  // Acá solo info aux: notas y obra social.
+  // Acá solo info aux: notas del cliente.
   p.innerHTML = `
     <div class="bt" style="padding-top:10px; border-top:0.5px solid;">
       <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas del cliente <span class="muted2" style="font-size:9px; font-weight:normal;">(perdurables — se guardan al cerrar TX)</span></div>
@@ -1117,8 +1100,7 @@ function renderFicha() {
       <div style="display:flex; gap:6px;">
         <button onclick="desvincularCliente()" class="hbtn" style="border-radius:8px; padding:5px 11px; font-size:11px;">Desvincular</button>
       </div>
-    </div>
-    ${osHtml}`;
+    </div>`;
   cargarDomicilios();
 }
 
