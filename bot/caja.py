@@ -161,7 +161,9 @@ def proximo_estado_cobrado(destino, stock_status):
       - destino='retiro'  → 'para_retiro'    (queda guardado para que venga).
       - default           → 'para_retiro'    (conservador, lo retomamos a mano).
     """
-    if stock_status == 'esperar':
+    # Aceptamos 'falta' como sinónimo legacy de 'esperar' (form viejo lo mandaba
+    # con ese label hasta el 2026-06-16; valor canónico es 'esperar').
+    if stock_status in ('esperar', 'falta'):
         return 'esperando_drog'
     if destino == 'reparto':
         return 'en_planilla'
@@ -213,7 +215,7 @@ def listar_bandeja(name, limit=100):
             q = q.filter(P.estado.in_(('en_planilla', 'publicado')))
         elif name == 'drogueria':
             # Esperando ingreso de droguería (cualquier estado activo).
-            q = q.filter(P.stock_status == 'esperar',
+            q = q.filter(P.stock_status.in_(('esperar', 'falta')),
                          P.estado.notin_(('entregado', 'anulado')))
         else:
             return []

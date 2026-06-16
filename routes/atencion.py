@@ -65,8 +65,14 @@ def init_app(app):
                 s.add(conv); s.commit()
                 from flask import redirect
                 return redirect(f'/atencion?modo=manual&conv={conv.id}')
-        return render_template('atencion.html', lineas=store.lineas_distintas(),
-                               modo=modo, conv_inicial=request.args.get('conv'))
+        from flask import make_response
+        resp = make_response(render_template(
+            'atencion.html', lineas=store.lineas_distintas(),
+            modo=modo, conv_inicial=request.args.get('conv')))
+        # El JS de cerrar-transaccion va embebido en este HTML; si el browser cachea
+        # la respuesta, los fixes nuevos no llegan al operador hasta hard-reload.
+        resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        return resp
 
     @app.route('/atencion/api/conversaciones')
     @login_required
@@ -324,6 +330,84 @@ def init_app(app):
             conv_id, items, current_user.id,
             cliente_nombre=ficha['nombre'] if ficha else None))
 
+    @app.route('/atencion/api/cerrados-hoy')
+    @login_required
+    def atencion_cerrados_hoy():
+        """Pedidos cerrados HOY por el operador actual.
+        Sirve para la pestaña 'Cerrados hoy' del panel: permite reabrir y
+        corregir un pedido recién cerrado (vuelto mal, monto, forma de pago, etc).
+        """
+        from sqlalchemy import desc
+        oper = (getattr(current_user, 'nombre_completo', None)
+                or getattr(current_user, 'username', None) or 'operador')
+        with database.get_db() as s:
+            hoy = database.now_ar().date()
+            P = database.PedidoReparto
+            q = (s.query(P)
+                 .filter(P.fecha == hoy, P.tomo == oper)
+                 .order_by(desc(P.id))
+                 .limit(50)
+                 .all())
+            return jsonify({'pedidos': [{
+                'id': p.id,
+                'creado_hora': p.creado_en.strftime('%H:%M') if p.creado_en else None,
+                'cliente_nombre': p.cliente_nombre,
+                'direccion': p.direccion,
+                'producto': (p.producto or '')[:40],
+                'forma_pago': p.forma_pago,
+                'importe': float(p.importe) if p.importe is not None else None,
+                'vuelto': p.vuelto,
+                'estado': p.estado,
+                'pagado': bool(p.pagado),
+            } for p in q]})
+
+    @app.route('/atencion/api/pedido/<int:pedido_id>/hidratar')
+    @login_required
+    def atencion_pedido_hidratar(pedido_id):
+        """Devuelve los campos de un PedidoReparto en formato listo para llenar
+        el form de 'Cerrar transacción'. El frontend hace fetch y pinta los inputs."""
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pedido_id)
+            if not p:
+                return jsonify({'ok': False, 'error': 'pedido no existe'}), 404
+            return jsonify({'ok': True, 'pedido': {
+                'id': p.id,
+                'conv_id': None,  # PedidoReparto no guarda conv_id; el reabrir se hace stand-alone
+                'cliente_id': p.cliente_id,
+                'cliente_nombre': p.cliente_nombre,
+                'telefono': p.telefono,
+                'direccion': p.direccion,
+                'piso': p.piso,
+                'depto': p.depto,
+                'referencia': p.referencia,
+                'localidad': p.localidad,
+                'lat': float(p.lat) if p.lat is not None else None,
+                'lng': float(p.lng) if p.lng is not None else None,
+                'total': float(p.importe) if p.importe is not None else None,
+                'forma_pago': p.forma_pago,
+                'paga_con': float(p.paga_con) if p.paga_con is not None else None,
+                'vuelto': p.vuelto,
+                'envio_costo': float(p.envio_costo) if p.envio_costo is not None else None,
+                'link_mp': p.link_mp,
+                'dato_pago_mp': p.dato_pago_mp,
+                'tarjeta_ult4': p.tarjeta_ult4,
+                'tarjeta_nombre': p.tarjeta_nombre,
+                'tarjeta_marca': p.tarjeta_marca,
+                'obra_social': p.obra_social,
+                'requiere_receta': p.receta_estado,
+                'requiere_firma': bool(p.requiere_firma),
+                'producto': p.producto,
+                'producto_observer_id': p.producto_observer_id,
+                'nota': p.nota,
+                'observacion': p.observacion,
+                'stock': p.stock_status,
+                'drogueria_id': p.drogueria_id,
+                'destino': p.destino,
+                'pagado': bool(p.pagado),
+                'canal': p.canal,
+                'prioridad': p.prioridad,
+            }})
+
     @app.route('/atencion/<int:conv_id>/cerrar-transaccion', methods=['POST'])
     @login_required
     def atencion_cerrar_transaccion(conv_id):
@@ -332,6 +416,24 @@ def init_app(app):
         campos de pago/cobertura/destino y lo deja en estado='en_caja' para que
         el cajero lo cobre fiscalmente en ObServer y lo despache."""
         body = request.json or {}
+
+        # Validación defensiva: si el operador armó pago en efectivo (paga_con > 0)
+        # pero el form no mandó 'total', el frontend está con JS cacheado viejo
+        # (faltaba `total: total || null` en el payload hasta el 2026-06-15).
+        # Sin esto el backend leía total=None y el vuelto salía igual al paga_con.
+        try:
+            _total_in = float(body.get('total') or 0)
+        except (TypeError, ValueError):
+            _total_in = 0
+        try:
+            _paga_in = float(body.get('paga_con') or 0)
+        except (TypeError, ValueError):
+            _paga_in = 0
+        if _paga_in > 0 and _total_in <= 0:
+            return jsonify({
+                'ok': False,
+                'error': 'Falta el Monto del pedido. Refrescá la página (Ctrl+Shift+R) y cargalo de nuevo.'
+            }), 400
 
         # Resolver drogueria_id (puede venir como id numérico o nombre).
         drogueria_id = None
@@ -436,8 +538,7 @@ def init_app(app):
             telefono = (ficha.get('telefono') if ficha else None) or \
                 (conv.canal_user_id if conv.canal == 'whatsapp' else None)
 
-            p = database.PedidoReparto(
-                fecha=database.now_ar().date(),
+            data = dict(
                 cliente_id=conv.cliente_id,
                 cliente_nombre=(ficha['nombre'] if ficha else None) or conv.nombre_cliente,
                 telefono=telefono,
@@ -500,7 +601,26 @@ def init_app(app):
                 # turno: lo asigna el operador de planilla (entra NULL).
                 prioridad=body.get('prioridad') or 'normal',
             )
-            s.add(p)
+
+            # Reabrir un pedido existente (corregir vuelto/monto/forma/etc.) vs
+            # crear uno nuevo. Si llega pedido_id, UPDATE de campos editables
+            # (no pisamos fecha ni creado_en para preservar la historia).
+            pedido_existente_id = body.get('pedido_id')
+            if pedido_existente_id:
+                p = s.get(database.PedidoReparto, int(pedido_existente_id))
+                if not p:
+                    return jsonify({'ok': False, 'error': 'pedido no existe'}), 404
+                # Preservar campos del flujo original (no rebajar estado ni cambiar
+                # dueño): el operador puede estar solo corrigiendo monto/dirección.
+                NO_PISAR_EN_UPDATE = {'estado', 'tomo'}
+                for k, v in data.items():
+                    if k in NO_PISAR_EN_UPDATE:
+                        continue
+                    setattr(p, k, v)
+            else:
+                data['fecha'] = database.now_ar().date()
+                p = database.PedidoReparto(**data)
+                s.add(p)
             # Notas del cliente (textarea de la ficha): se persisten al cerrar
             # TX en vez de tener un botón aparte (Diego 2026-06-15: el botón
             # 'Guardar notas' antiguo refrescaba toda la ficha y borraba el

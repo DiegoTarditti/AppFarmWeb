@@ -1374,6 +1374,10 @@ def init_app(app):
                             database.PedidoReparto.id).all())
             cadetes = {c.id: c.nombre for c in
                        s.query(database.Cadete).all()}
+            # Para mostrar el nombre (abreviado) en la barra de estado cuando el
+            # pedido está 'esperando_drog'.
+            droguerias = {p.id: p.razon_social
+                          for p in s.query(database.Provider).all()}
             usuarios = s.query(database.Usuario).filter(
                 database.Usuario.activo.is_(True)).order_by(
                 database.Usuario.nombre_completo).all()
@@ -1429,6 +1433,7 @@ def init_app(app):
                                pedidos_manana=manana,
                                pedidos_tarde=tarde,
                                cadetes=cadetes,
+                               droguerias=droguerias,
                                usuarios=usuarios_list)
 
     @app.route('/api/reparto/pedido/<int:pid>/actualizar', methods=['POST'])

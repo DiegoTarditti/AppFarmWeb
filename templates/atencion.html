@@ -212,6 +212,9 @@
         {# Pestaña 'Manuales' (walk-ins) — convs canal='manual' pendientes de
            que el cliente venga a retirar. Botón "✓ Retirado" en la conv las cierra. #}
         <button data-vista="manuales" onclick="setVista('manuales')" class="seg" style="flex:1 1 100%; padding:6px 3px; border-radius:7px; font-size:11px;">🛒 Manuales <b id="cnt-manuales">0</b></button>
+        {# Pestaña 'Cerrados hoy' — PedidoReparto que cerró el operador hoy.
+           Click en "Reabrir" hidrata el sidebar derecho para corregir y guardar UPDATE. #}
+        <button data-vista="cerrados" onclick="setVista('cerrados')" class="seg" style="flex:1 1 100%; padding:6px 3px; border-radius:7px; font-size:11px;">🧾 Cerrados hoy <b id="cnt-cerrados">0</b></button>
       </div>
       <div id="bandeja" style="flex:1; overflow-y:auto; min-height:0;">
         <div class="muted" style="padding:16px; font-size:13px;">Cargando…</div>
@@ -484,7 +487,7 @@
             <label class="muted2" style="font-size:10px; display:block;">¿Stock?</label>
             <select id="dStock" class="input" onchange="dStockChange()" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
               <option value="ok">OK</option>
-              <option value="falta">Falta</option>
+              <option value="esperar">Falta</option>
             </select>
           </div>
           <div id="dDrogueriaWrap" style="flex:1.6 1 140px; min-width:0; display:none;">
@@ -509,7 +512,7 @@
             </select>
           </div>
         </div>
-        <button onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="width:100%; font-size:12px; padding:10px 6px; font-weight:600;">💳 Cerrar transacción</button>
+        <button id="btnCerrarTx" onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="width:100%; font-size:12px; padding:10px 6px; font-weight:600;">💳 Cerrar transacción</button>
       </div>
 
       <div id="ficha" style="padding:16px 14px; font-size:11px;">
@@ -664,6 +667,7 @@ function heartbeat() { fetch('/atencion/heartbeat', {method: 'POST'}).catch(() =
 function setVista(v) {
   vista = v;
   document.querySelectorAll('.seg').forEach(b => b.classList.toggle('on', b.dataset.vista === v));
+  if (v === 'cerrados') { cargarCerradosHoy(); return; }
   renderBandeja();
 }
 function _filtrar(c) {
@@ -717,6 +721,88 @@ function renderBandeja() {
       ${c.supervisado ? '<div style="font-size:9px; color:#f59e0b; margin-top:3px;">📢 supervisor avisado</div>' : ''}
     </div>`;
   }).join('');
+}
+
+/* ── Cerrados hoy ── lista los PedidoReparto que cerró el operador hoy,
+   para reabrir y corregir (vuelto mal, monto, forma de pago, etc.). */
+let pedidoEditando = null;  // id del PedidoReparto que se está editando (UPDATE en vez de INSERT)
+async function cargarCerradosHoy() {
+  const box = document.getElementById('bandeja');
+  box.innerHTML = '<div class="muted" style="padding:16px; font-size:13px;">Cargando…</div>';
+  let d;
+  try { d = await (await fetch('/atencion/api/cerrados-hoy')).json(); }
+  catch(e){ box.innerHTML = '<div class="muted" style="padding:16px;">Error de red.</div>'; return; }
+  const ps = d.pedidos || [];
+  document.getElementById('cnt-cerrados').textContent = ps.length;
+  if (!ps.length){ box.innerHTML = '<div class="muted" style="padding:16px; font-size:13px;">No cerraste nada hoy ✨</div>'; return; }
+  box.innerHTML = ps.map(p => {
+    const editando = (pedidoEditando === p.id);
+    const monto = (p.importe != null) ? `$ ${Math.round(p.importe).toLocaleString('es-AR')}` : '—';
+    const forma = p.forma_pago ? `<span class="muted" style="font-size:10px;">${esc(p.forma_pago)}</span>` : '';
+    const pag   = p.pagado ? '<span style="font-size:9px; color:#16a34a;">✓ cobrado</span>' : '';
+    return `
+    <div class="conv ${editando ? 'conv-active' : ''}" style="margin:${editando ? '7px' : '0'}; padding:9px 12px; ${editando ? 'border-radius:8px;' : 'border-bottom:0.5px solid;'}">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+        <span class="${editando ? 'title' : 'txt'}" style="font-size:13px; font-weight:${editando ? 600 : 400}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">#${p.id} · ${esc(p.cliente_nombre || '—')}</span>
+        <span class="muted" style="font-size:10px;">${esc(p.creado_hora || '')}</span>
+      </div>
+      <div class="muted" style="font-size:11px; margin-bottom:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(p.producto || '—')}</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+        <span style="font-size:11px;">${monto} ${forma} ${pag}</span>
+        <button onclick="reabrirPedido(${p.id})" class="hbtn" style="font-size:10px; padding:3px 8px; border-radius:6px;">✏️ Reabrir</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function reabrirPedido(id){
+  let d;
+  try { d = await (await fetch('/atencion/api/pedido/' + id + '/hidratar')).json(); }
+  catch(e){ alert('Error cargando pedido'); return; }
+  if (!d.ok){ alert(d.error || 'Error'); return; }
+  pedidoEditando = id;
+  const p = d.pedido;
+  // Hidratar el sidebar derecho. IDs del form: pg* (pago) + d* (detalle/destino).
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  setVal('pgMonto', p.total != null ? p.total : '');
+  setVal('pgPagaCon', p.paga_con != null ? p.paga_con : '');
+  setVal('pgEnvio', p.envio_costo != null ? p.envio_costo : '');
+  setVal('pgForma', p.forma_pago || '');
+  setVal('pgLink', p.link_mp || '');
+  setVal('pgDato', p.dato_pago_mp || '');
+  setVal('pgUlt4', p.tarjeta_ult4 || '');
+  setVal('pgTarjNombre', p.tarjeta_nombre || '');
+  setVal('pgMarca', p.tarjeta_marca || '');
+  setVal('dProducto', p.producto || '');
+  setVal('dNota', p.nota || '');
+  setVal('dObservacion', p.observacion || '');
+  setVal('dStock', p.stock || '');
+  setVal('dDrogueria', p.drogueria_id || '');
+  setVal('dSalida', p.destino || '');
+  setVal('dPrioridad', p.prioridad || 'normal');
+  setVal('dObraSocial', p.obra_social || '');
+  setVal('dReceta', p.requiere_receta || '');
+  setVal('dCanal', p.canal || '');
+  // Pulsar handlers visuales si existen
+  try { if (typeof dStockChange === 'function') dStockChange(); } catch(e){}
+  try { if (typeof actualizarCardRetiro === 'function') actualizarCardRetiro(); } catch(e){}
+  // Marcar visualmente que estamos editando
+  const btn = document.getElementById('btnCerrarTx');
+  if (btn) btn.textContent = '💾 Guardar cambios #' + id;
+  // Refrescar lista (highlight)
+  cargarCerradosHoy();
+}
+
+// Limpia el form lateral después de cerrar (INSERT o UPDATE) para que el
+// operador pueda arrancar otro pedido sin valores fantasma.
+function vaciarFormCierre(){
+  ['pgMonto','pgPagaCon','pgEnvio','pgForma','pgLink','pgDato','pgUlt4','pgTarjNombre','pgMarca','pgCupon',
+   'dProducto','dNota','dObservacion','dStock','dDrogueria','dSalida','dPrioridad','dObraSocial','dReceta','dCanal']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  pedidoEditando = null;
+  const btn = document.getElementById('btnCerrarTx');
+  if (btn) btn.textContent = '💳 Cerrar transacción';
+  try { if (typeof dStockChange === 'function') dStockChange(); } catch(e){}
+  try { if (typeof actualizarCardRetiro === 'function') actualizarCardRetiro(); } catch(e){}
 }
 
 /* ── Chat ── */
@@ -1819,7 +1905,7 @@ async function guardarYCerrarTx(){
     if (!get('pgTarjNombre')){ alert('Cargá el nombre del titular.'); return; }
   }
   const stock = get('dStock');
-  if (stock === 'falta' && !get('dDrogueria')){
+  if (stock === 'esperar' && !get('dDrogueria')){
     alert('Elegí una droguería para pedir.'); document.getElementById('dDrogueria').focus(); return;
   }
   // Persistir el pago acordado (BotConversacion) y cerrar la TX directo —
@@ -1878,6 +1964,9 @@ async function cerrarTxDirecto(){
     pick_localidad: get('pCiudad') || null,
     pick_lat: window._domLat != null ? window._domLat : null,
     pick_lng: window._domLng != null ? window._domLng : null,
+    // Si estamos editando un pedido cerrado (botón "Reabrir" desde la pestaña
+    // "Cerrados hoy"), el backend hace UPDATE en vez de INSERT.
+    pedido_id: (typeof pedidoEditando !== 'undefined' && pedidoEditando) ? pedidoEditando : null,
   };
   try {
     const r = await fetch(`/atencion/${convAbierta}/cerrar-transaccion`, {
@@ -1886,9 +1975,13 @@ async function cerrarTxDirecto(){
     });
     const d = await r.json();
     if (!d.ok){ alert('Error al cerrar: ' + (d.error || 'desconocido')); return; }
-    alert(`✅ Transacción cerrada · Pedido #${d.pedido_id} → ${d.estado}`);
+    const accion = payload.pedido_id ? 'actualizado' : 'cerrado';
+    alert(`✅ Pedido #${d.pedido_id} ${accion} → ${d.estado}`);
+    vaciarFormCierre();
     if (typeof refrescarBandeja === 'function') refrescarBandeja();
     if (typeof cargarBandeja === 'function') cargarBandeja();
+    // Si la vista activa es 'cerrados hoy', refrescar la lista para que se vea el cambio.
+    if (vista === 'cerrados' && typeof cargarCerradosHoy === 'function') cargarCerradosHoy();
   } catch(e){ alert('Error de red: ' + e.message); }
 }
 
@@ -1896,7 +1989,7 @@ async function cerrarTxDirecto(){
 async function dStockChange(){
   const wrap = document.getElementById('dDrogueriaWrap');
   if (!wrap) return;
-  const falta = document.getElementById('dStock').value === 'falta';
+  const falta = document.getElementById('dStock').value === 'esperar';
   wrap.style.display = falta ? 'block' : 'none';
   if (falta){
     const sel = document.getElementById('dDrogueria');

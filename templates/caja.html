@@ -273,7 +273,6 @@ function pedidoCard(p) {
     p.destino === 'reparto' ? '<span class="badge" style="background:#1d9e75; color:#06241a;">🛵 reparto</span>'
       : p.destino === 'retiro' ? '<span class="badge" style="background:#ec4899; color:#3b0a23;">🛍️ retiro</span>' : '',
     p.pagado ? '<span class="badge" style="background:#1d9e75; color:#06241a;">💵 cobrado</span>' : '',
-    (tabActiva === 'por_cobrar') ? '<span class="badge" style="background:var(--warn); color:#1a1206;">🧾 ticket fiscal pendiente</span>' : '',
   ].filter(Boolean).join(' ');
   const direccion = [p.direccion, p.piso && 'P.'+p.piso, p.depto && 'D.'+p.depto].filter(Boolean).join(' · ');
   const datoMp = p.dato_pago_mp ? `<div class="row"><span class="muted">📋 Dato pago MP</span><span style="font-family:monospace;">${esc(p.dato_pago_mp)}</span></div>` : '';
