@@ -1091,65 +1091,80 @@ def init_app(app):
                 obra_social=p.obra_social or '', cadete=cadete_nom,
             )
 
-        # 80mm wide, alto fluido según contenido. Margen interno 4mm.
+        # 80mm wide, alto fluido según contenido. Margen interno 5mm.
+        # Más aire que la versión anterior (Diego 2026-06-16): los textos no
+        # tocan las líneas separadoras, y un bloque grande de firma al final.
         W = 80 * MM
-        margin = 4 * MM
+        margin = 5 * MM
         usable = W - 2 * margin
         # Estimación de líneas para calcular alto del PDF.
-        n_lines_est = 22 + len(data['producto']) // 28 + len(data['observacion']) // 28
-        H = (15 + n_lines_est * 4.5) * MM
+        n_lines_est = 24 + len(data['producto']) // 34 + len(data['observacion']) // 34
+        H = (35 + n_lines_est * 5.2) * MM
         buf = BytesIO()
         c = canvas.Canvas(buf, pagesize=(W, H))
         y = H - margin
-        def line(txt='', size=8, bold=False, sep=False):
+        # Espaciado vertical entre líneas (más generoso).
+        def line(txt='', size=8, bold=False, sep=False, spacer=False):
             nonlocal y
             if sep:
-                y -= 1.5 * MM
+                y -= 2.5 * MM
+                c.setLineWidth(0.3)
                 c.line(margin, y, W - margin, y)
+                y -= 3 * MM
+                return
+            if spacer:
                 y -= 2 * MM
                 return
             c.setFont('Courier-Bold' if bold else 'Courier', size)
-            for chunk in [(txt or '')[i:i+32] for i in range(0, max(1, len(txt or '')), 32)]:
+            # Wrap a 34 caracteres (cabe cómodo en 80mm con Courier 8pt).
+            txt = txt or ''
+            chunks = [txt[i:i+34] for i in range(0, max(1, len(txt)), 34)] if txt else ['']
+            for chunk in chunks:
                 c.drawString(margin, y, chunk)
-                y -= (size + 1.5) * 0.45 * MM
+                y -= (size * 0.42 + 1.6) * MM
         # Header
-        line(f'FARMACIA BADIA', size=10, bold=True)
-        line(f'PEDIDO #{data["id"]}  ·  {data["fecha"]}', size=9, bold=True)
+        line('FARMACIA BADIA', size=11, bold=True)
+        line(f'PEDIDO #{data["id"]}   {data["fecha"]}', size=9, bold=True)
         line(sep=True)
         # Cliente / dirección
         line(f'Cliente: {data["cliente"]}', bold=True)
         if data['telefono']:
-            line(f'Tel: {data["telefono"]}')
-        line(f'Direc.: {data["direccion"]}')
+            line(f'Tel:     {data["telefono"]}')
+        line(f'Direc:   {data["direccion"]}')
         if data['piso'] or data['depto']:
             extras = ' '.join(filter(None, [
                 f'Piso {data["piso"]}' if data['piso'] else '',
                 f'Dpto {data["depto"]}' if data['depto'] else '',
             ]))
-            line(f'  {extras}')
+            line(f'         {extras}')
         if data['referencia']:
-            line(f'Ref.: {data["referencia"]}')
+            line(f'Ref:     {data["referencia"]}')
         line(sep=True)
         # Producto
         if data['producto']:
-            line('PRODUCTO:', bold=True)
+            line('PRODUCTO', bold=True)
+            line(spacer=True)
             line(data['producto'])
         if data['observacion']:
+            line(spacer=True)
             line(f'OBS: {data["observacion"]}', bold=True)
         if data['receta_pendiente']:
+            line(spacer=True)
             line('!! RECETA PENDIENTE !!', bold=True)
         line(sep=True)
         # Pago
         if data['pagado']:
             line(f'PAGADO ({data["forma_pago"]})', bold=True)
         else:
-            line('A COBRAR:', bold=True)
-            if data['producto_monto'] is not None:
+            line('A COBRAR', bold=True)
+            line(spacer=True)
+            if data['producto_monto'] is not None and data['producto_monto'] > 0:
                 line(f'  Producto: $ {data["producto_monto"]:,.0f}'.replace(',', '.'))
             if data['envio'] is not None and data['envio'] > 0:
                 line(f'  Envio:    $ {data["envio"]:,.0f}'.replace(',', '.'))
             if data['cobrar'] is not None:
-                line(f'  TOTAL:    $ {data["cobrar"]:,.0f}'.replace(',', '.'), size=10, bold=True)
+                line(f'  TOTAL:    $ {data["cobrar"]:,.0f}'.replace(',', '.'), size=11, bold=True)
+            line(spacer=True)
             line(f'  Forma:    {data["forma_pago"] or "—"}')
             if data['paga_con'] is not None:
                 line(f'  Paga con: $ {data["paga_con"]:,.0f}'.replace(',', '.'))
@@ -1161,8 +1176,17 @@ def init_app(app):
             line(f'OS: {data["obra_social"]}')
         if data['cadete']:
             line(f'Cadete: {data["cadete"]}')
-        line(sep=True)
-        line('Firma cliente: _______________', size=7)
+        if data['obra_social'] or data['cadete']:
+            line(sep=True)
+        # Espacio AMPLIO para firma del cliente (Diego 2026-06-16).
+        line('Firma del cliente:', size=8)
+        y -= 14 * MM   # espacio en blanco para firmar
+        c.setLineWidth(0.4)
+        c.line(margin, y, W - margin, y)
+        y -= 4 * MM
+        line('Aclaración y DNI:', size=7)
+        y -= 10 * MM
+        c.line(margin, y, W - margin, y)
         c.showPage(); c.save()
         from flask import Response
         return Response(buf.getvalue(), mimetype='application/pdf',
