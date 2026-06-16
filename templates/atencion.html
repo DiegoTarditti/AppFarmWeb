@@ -464,11 +464,11 @@
               <option value="tarjeta">Tarjeta de crédito</option>
             </select>
           </div>
-          <div id="pgExtra" style="flex:1; min-width:160px; display:flex; flex-wrap:wrap; gap:6px;"></div>
-          <div id="pgVuelto" style="flex:0 0 180px; font-size:11px; color:var(--muted); display:none; text-align:right;"></div>
+          {# pgExtra: campos dinamicos segun forma de pago. En efectivo incluye
+             pgPagaCon + pgVuelto inline (Diego 2026-06-15: vuelto a la derecha
+             de 'cuanto paga'). #}
+          <div id="pgExtra" style="flex:1; min-width:160px; display:flex; flex-wrap:wrap; gap:6px; align-items:flex-end;"></div>
         </div>
-        {# Campos extra según forma: link, comprobante, paga con, cupón, etc. #}
-        <div id="pgExtraFields" style="display:none;"></div>
         {# Costo de envío + botón Cerrar tx side-by-side (Diego 2026-06-14: el operador
            necesita el envío a la vista en el chat, sin abrir el modal). El botón es
            más chico ahora para que entren ambos en la misma línea. #}
@@ -1499,7 +1499,14 @@ function pagoFormaChange(){
     <button onclick="pagoPegarChat(ALIAS_FARMACIA)" class="hbtn" style="font-size:11px; padding:5px 9px; border-radius:8px;">📤 Mandar alias al chat</button>
     <input id="pgDato" placeholder="nro de comprobante (cuando confirme)" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
   else if (f === 'efectivo') h = `
-    <input id="pgPagaCon" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="¿con cuánto paga? $" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
+    <div style="flex:1; min-width:140px;">
+      <label class="muted2" style="font-size:10px; display:block;">Paga con $</label>
+      <input id="pgPagaCon" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+    </div>
+    <div style="flex:0 0 130px; padding-bottom:6px;">
+      <div class="muted2" style="font-size:10px;">Vuelto</div>
+      <div id="pgVuelto" style="font-size:13px; font-weight:600; line-height:1.2; color:var(--muted);">—</div>
+    </div>`;
   else if (f === 'tarjeta') h = `
     <div style="display:flex; gap:6px;">
       <input id="pgUlt4" maxlength="4" placeholder="últ. 4" class="input" style="width:70px; border-radius:8px; padding:6px 9px; font-size:12px;">
@@ -1535,7 +1542,7 @@ async function pagoPegarChat(texto){
 // envío también refrescamos el resumen del modal (si está abierto).
 function pagoRecalcVuelto(){
   const out = document.getElementById('pgVuelto');
-  if (!out) return;
+  if (!out) return;   // pgVuelto solo existe cuando forma=efectivo (lo crea pagoFormaChange)
   const f = document.getElementById('pgForma').value;
   // El MONTO viene del ticket de ObServer que YA incluye el envio
   // (Diego 2026-06-14). NO sumar envio aca o lo cobramos doble.
@@ -1545,11 +1552,13 @@ function pagoRecalcVuelto(){
   if (f === 'efectivo' && monto > 0 && paga > 0){
     const exacto = paga - monto;
     const vuelto = exacto >= 0 ? Math.floor(exacto / 100) * 100 : exacto;
-    out.style.display = '';
-    out.innerHTML = `Vuelto: <b style="color:${vuelto >= 0 ? 'var(--accent)' : 'var(--warn)'};">$ ${vuelto.toLocaleString('es-AR')}</b>` +
-                    (exacto !== vuelto ? ` <span class="muted2" style="font-size:10px;">(exacto: $${exacto.toLocaleString('es-AR')})</span>` : '');
+    const color = vuelto >= 0 ? 'var(--accent)' : 'var(--warn)';
+    out.style.color = color;
+    out.innerHTML = `$ ${vuelto.toLocaleString('es-AR')}` +
+                    (exacto !== vuelto ? `<span class="muted2" style="font-size:9px; display:block;">exacto: $${exacto.toLocaleString('es-AR')}</span>` : '');
   } else {
-    out.style.display = 'none';
+    out.style.color = 'var(--muted)';
+    out.textContent = '—';
   }
   // Si el modal está abierto, refrescá el resumen y A cobrar.
   if (typeof txCalc === 'function') txCalc();
