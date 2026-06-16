@@ -269,78 +269,10 @@
           </div>
         </div>
 
-        <!-- Cerrar transacción (Fase A — prototipo, sin persistencia aún) -->
-        <div id="cerrarTxCard" style="display:none; margin:10px 14px 0;">
-          <div class="card" style="border:1px solid; border-radius:14px; overflow:hidden;">
-            <div class="card-head" style="padding:8px 13px; display:flex; align-items:center; gap:9px; border-bottom:0.5px solid;">
-              <div class="card-ic" style="width:24px; height:24px; border-radius:7px; display:flex; align-items:center; justify-content:center;">💳</div>
-              <span class="txt" style="font-size:11px;">Cerrar transacción</span>
-              <span class="muted" style="font-size:9px; margin-left:auto;">prototipo · la venta se carga en ObServer</span>
-            </div>
-            <div style="padding:11px 13px; display:flex; flex-direction:column; gap:10px; font-size:12px;">
-              {# Total / Forma de pago / Paga con / Envío — todos viven en la card
-                 'Pago acordado' del sidebar (Diego 2026-06-14). El modal los lee
-                 vía txGetters. #}
-              <div class="muted2" style="font-size:10px; padding:4px 8px; background:rgba(255,255,255,.03); border-radius:6px;">
-                <span id="txResumenPago">Monto y forma de pago: cargalos arriba (card Pago acordado).</span>
-              </div>
-              <div style="display:flex; gap:8px;">
-                <div style="flex:1;">
-                  <label class="muted2" style="font-size:10px;">Obra social (opcional)</label>
-                  <input id="txOS" placeholder="ej: PAMI" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                </div>
-                <div style="flex:1;">
-                  <label class="muted2" style="font-size:10px;">Receta</label>
-                  <select id="txReceta" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                    <option value="no">No requiere</option>
-                    <option value="pendiente">Pendiente</option>
-                    <option value="recibida">Recibida</option>
-                  </select>
-                </div>
-              </div>
-              <div id="txEnvioWrap" style="display:flex; gap:8px; align-items:flex-end;">
-                <div style="flex:1; min-width:0;">
-                  <label class="muted2" style="font-size:10px;">Domicilio de entrega</label>
-                  <select id="txDomicilio" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;"></select>
-                </div>
-              </div>
-              {# Stock + Sale por + Prioridad — fila compacta abajo de todo. #}
-              <div style="display:flex; gap:8px;">
-                <div style="flex:1;">
-                  <label class="muted2" style="font-size:10px;">¿Stock?</label>
-                  <select id="txStock" onchange="txStockChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                    <option value="hay">Sí, hay</option>
-                    <option value="esperar">Esperar droguería</option>
-                  </select>
-                  <select id="txDrogueria" style="display:none; width:100%; margin-top:5px; border-radius:8px; padding:6px 9px; font-size:12px;" class="input">
-                    <option value="">— elegir droguería —</option>
-                  </select>
-                </div>
-                <div style="flex:1;">
-                  <label class="muted2" style="font-size:10px;">¿Sale por?</label>
-                  <select id="txSalida" onchange="txSalidaChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                    <option value="reparto">Reparto</option>
-                    <option value="retiro">Retiro</option>
-                  </select>
-                </div>
-                <div style="flex:1;">
-                  <label class="muted2" style="font-size:10px;">Prioridad</label>
-                  <select id="txPrioridad" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                    <option value="normal">Normal</option>
-                    <option value="alta">Alta</option>
-                    <option value="urgente">🚨 Urgente</option>
-                  </select>
-                </div>
-              </div>
-              <div style="display:flex; justify-content:space-between; align-items:center; border-top:0.5px solid; padding-top:8px;">
-                <span class="muted2" style="font-size:11px;">A cobrar</span>
-                <span id="txACobrar" class="total-amt" style="font-size:16px; font-weight:600;">$0</span>
-              </div>
-              {# txVuelto se quitó: el vuelto vive en pgVuelto (sidebar). #}
-              <button onclick="txCerrar()" class="hbtn hbtn-ok" style="border-radius:9px; padding:8px; font-size:12px;">Cerrar y mandar a caja ▸</button>
-            </div>
-          </div>
-        </div>
+        {# Modal Cerrar transacción ELIMINADO (Diego 2026-06-15: refactor C
+           etapa 3/3). Todos los campos (Stock, Sale por, Prioridad, Receta,
+           OS) ahora viven en el sidebar. guardarYCerrarTx llama a
+           cerrarTxDirecto que hace POST sin abrir modal. #}
 
         <!-- Popup buscador de productos -->
         <div id="searchPop" class="search-pop" style="display:none; margin:10px 14px 0; border:0.5px solid; border-radius:12px; overflow:hidden;">
@@ -367,17 +299,30 @@
 
     <!-- Ficha del cliente -->
     <div class="col-side" id="fichaCol" style="border-left:0.5px solid; overflow-y:auto; min-height:0;">
-      {# Card estado de retiro — solo para convs walk-in (canal='manual'). El
-         operador del mostrador la marca cuando el cliente vino a buscar. #}
+      {# Card header walk-in + Canal en la misma línea (Diego 2026-06-15). El
+         badge 'Pendiente de retiro' + botón '✓ Retirado' solo aparecen si
+         destino del pedido = retiro (dSalida === 'retiro'); para reparto
+         los marca el cadete desde la planilla. #}
       <div id="retiroCard" style="display:none; padding:8px 12px; border-bottom:1px solid var(--border);
                                     background:rgba(239,159,39,.08);">
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-          <div>
-            <div style="font-size:11px; color:var(--warn); font-weight:600;">🛒 Pedido walk-in</div>
-            <div id="retiroEstado" class="muted" style="font-size:10px; margin-top:2px;">Pendiente de retiro</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div style="flex:0 0 auto; font-size:11px; color:var(--warn); font-weight:600;">🛒 Pedido walk-in</div>
+          {# Canal sale del detalleCard y se monta acá (al lado del título walk-in).
+             En modo chat (sin retiroCard visible) Canal sigue existiendo en el DOM
+             pero hidden; default='atencion'. #}
+          <div style="flex:1; min-width:0;">
+            <select id="dCanal" class="input" style="width:100%; border-radius:8px; padding:4px 8px; font-size:11px;">
+              <option value="atencion">📱 Atención (chat)</option>
+              <option value="mostrador">🏪 Mostrador</option>
+              <option value="telefono">📞 Teléfono</option>
+              <option value="otros">📨 Otros</option>
+            </select>
           </div>
-          <button id="btnMarcarRetirado" onclick="marcarRetirado()" class="hbtn hbtn-ok"
-                  style="font-size:11px; padding:5px 10px; border-radius:8px; font-weight:600;">✓ Retirado</button>
+          <div id="retiroEstadoWrap" style="display:none; flex:0 0 auto; align-items:center; gap:6px;">
+            <span id="retiroEstado" class="muted" style="font-size:10px;">Pendiente de retiro</span>
+            <button id="btnMarcarRetirado" onclick="marcarRetirado()" class="hbtn hbtn-ok"
+                    style="font-size:11px; padding:5px 10px; border-radius:8px; font-weight:600;">✓ Retirado</button>
+          </div>
         </div>
       </div>
       {# Header "Datos del cliente" sacado (Diego 2026-06-14): el primer campo
@@ -452,21 +397,11 @@
                     style="position:absolute; right:5px; top:62%; background:transparent; border:none; cursor:pointer; padding:2px 5px; font-size:11px; opacity:0.7; color:var(--muted);">▼</button>
             <div id="dObsDrop" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:1000; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:3px; max-height:200px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
           </div>
-          {# Canal + Obra social en una sola fila. Canal: cómo entró el pedido
-             (default 'mostrador' en walk-in, 'atencion' en chat). OS: precargada
-             desde la ficha del cliente si la conoce (confirmada > inferida >=50%);
-             editable en el momento del pedido. #}
+          {# Obra social + Receta en una sola fila (Diego 2026-06-15). Canal
+             SUBIDO al header del retiroCard. OS precargada de la ficha si la
+             conoce (confirmada > inferida >=50%). #}
           <div style="display:flex; gap:6px;">
-            <div style="flex:1; min-width:0;">
-              <label class="muted2" style="font-size:10px; display:block;">Canal</label>
-              <select id="dCanal" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                <option value="atencion">📱 Atención (chat)</option>
-                <option value="mostrador">🏪 Mostrador</option>
-                <option value="telefono">📞 Teléfono</option>
-                <option value="otros">📨 Otros</option>
-              </select>
-            </div>
-            <div style="flex:1; min-width:0; position:relative;">
+            <div style="flex:2; min-width:0; position:relative;">
               <label class="muted2" style="font-size:10px; display:block;">Obra social</label>
               <input id="dObraSocial" placeholder="ej: pami · swiss medical"
                      class="input" autocomplete="off"
@@ -474,6 +409,14 @@
                      oninput="dObraSocialInput()" onfocus="dObraSocialInput()"
                      onblur="setTimeout(()=>{const b=document.getElementById('dObraSocialSug'); if(b) b.style.display='none';}, 180)">
               <div id="dObraSocialSug" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:1000; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:2px; max-height:200px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
+            </div>
+            <div style="flex:1; min-width:0;">
+              <label class="muted2" style="font-size:10px; display:block;">Receta</label>
+              <select id="dReceta" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                <option value="">No requiere</option>
+                <option value="con">Con receta</option>
+                <option value="pendiente">Pendiente</option>
+              </select>
             </div>
           </div>
           <script>
@@ -531,9 +474,39 @@
            más chico ahora para que entren ambos en la misma línea. #}
       </div>
 
-      {# Botón Cerrar TX — temporal aquí; se rodea con Stock/Sale por/Prioridad
-         en el commit siguiente. #}
+      {# Stock + Sale por + Prioridad + Cerrar TX (Diego 2026-06-15). Reemplaza
+         lo que estaba en el modal cerrarTxCard (borrado más abajo). #}
       <div id="cerrarTxBtnWrap" style="padding:0 12px 12px; display:none;">
+        <div style="display:flex; gap:6px; margin-bottom:8px;">
+          <div style="flex:1; min-width:0;">
+            <label class="muted2" style="font-size:10px; display:block;">¿Stock?</label>
+            <select id="dStock" class="input" onchange="dStockChange()" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+              <option value="ok">OK · en stock</option>
+              <option value="falta">Falta · pedir</option>
+            </select>
+          </div>
+          <div id="dDrogueriaWrap" style="flex:1; min-width:0; display:none;">
+            <label class="muted2" style="font-size:10px; display:block;">Droguería</label>
+            <select id="dDrogueria" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+              <option value="">— elegir —</option>
+            </select>
+          </div>
+          <div style="flex:1; min-width:0;">
+            <label class="muted2" style="font-size:10px; display:block;">Sale por</label>
+            <select id="dSalida" class="input" onchange="dSalidaChange()" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+              <option value="reparto">🛵 Reparto</option>
+              <option value="retiro">🏪 Retiro</option>
+            </select>
+          </div>
+          <div style="flex:1; min-width:0;">
+            <label class="muted2" style="font-size:10px; display:block;">Prioridad</label>
+            <select id="dPrioridad" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+              <option value="normal">🟢 Normal</option>
+              <option value="urgente">🔴 Urgente</option>
+              <option value="programado">🕐 Programado</option>
+            </select>
+          </div>
+        </div>
         <button onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="width:100%; font-size:12px; padding:10px 6px; font-weight:600;">💳 Cerrar transacción</button>
       </div>
 
@@ -764,20 +737,30 @@ function actualizarCardRetiro(){
   const card = document.getElementById('retiroCard');
   if (!card) return;
   const conv = (todasConvs || []).find(c => c.id === convAbierta);
+  // Walk-in: card visible (con Canal + título). Chat normal: card oculta.
   if (!conv || conv.canal !== 'manual'){
     card.style.display = 'none';
     return;
   }
   card.style.display = 'block';
+  // El estado de retiro (badge + botón) solo se renderiza si destino=retiro.
+  // dSalidaChange ya esconde/muestra retiroEstadoWrap según el select dSalida.
+  const wrap = document.getElementById('retiroEstadoWrap');
   const est = document.getElementById('retiroEstado');
   const btn = document.getElementById('btnMarcarRetirado');
+  const dSalida = (document.getElementById('dSalida')||{}).value || '';
+  if (wrap) wrap.style.display = (dSalida === 'retiro') ? 'inline-flex' : 'none';
   if (conv.retirado_en){
-    est.textContent = '✓ Retirado el ' + new Date(conv.retirado_en).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
-    est.style.color = 'var(--accent)';
+    if (est){
+      est.textContent = '✓ Retirado el ' + new Date(conv.retirado_en).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+      est.style.color = 'var(--accent)';
+    }
     if (btn) btn.style.display = 'none';
   } else {
-    est.textContent = 'Pendiente de retiro';
-    est.style.color = '';
+    if (est){
+      est.textContent = 'Pendiente de retiro';
+      est.style.color = '';
+    }
     if (btn) btn.style.display = '';
   }
 }
@@ -1466,186 +1449,11 @@ async function confirmarPedidoCaja() {
   alert('✅ Pedido enviado a caja (#' + d.id + ' · ' + fmtPrecio(d.total) + ').');
 }
 
-/* ── Cerrar transacción (Fase A — prototipo, sin persistencia: las columnas del
-      pedido las agrega Cline; acá solo la UI + lógica client-side) ── */
-async function toggleCerrarTx() {
-  if (!convAbierta) return;
-  const c = document.getElementById('cerrarTxCard');
-  const abriendo = c.style.display === 'none';
-  c.style.display = abriendo ? 'block' : 'none';
-  if (abriendo) {
-    await txCargarDomicilios();
-    await txPrecargarPago();
-  }
-}
-
-// Precarga el modal con el resumen del pago acordado en el sidebar.
-// El modal ya no duplica Total/Forma/Paga con/Envío — solo muestra el resumen
-// arriba y recalcula 'A cobrar'.
-async function txPrecargarPago(){
-  if (!_pagoState) await cargarPagoAcordado();
-  txActualizarResumen();
-  if (typeof txCalc === 'function') txCalc();
-}
-function txActualizarResumen(){
-  const out = document.getElementById('txResumenPago');
-  if (!out) return;
-  const monto = parseFloat((document.getElementById('pgMonto')||{}).value) || 0;
-  const formaSel = (document.getElementById('pgForma')||{}).value || '';
-  const formas = { link_mp:'Link MP', transferencia:'Transferencia', efectivo:'Efectivo', tarjeta:'Tarjeta' };
-  if (!monto && !formaSel){
-    out.textContent = 'Monto y forma de pago: cargalos arriba (card Pago acordado).';
-    return;
-  }
-  const partes = [];
-  if (monto) partes.push(`<b>$${monto.toLocaleString('es-AR')}</b>`);
-  if (formaSel) partes.push(formas[formaSel] || formaSel);
-  out.innerHTML = '💳 ' + partes.join(' · ');
-}
-// Carga el dropdown de domicilios del cliente. Con varias direcciones, fuerza
-// elección explícita (no asume la primera) → el pedido sale a la dirección correcta.
-async function txCargarDomicilios() {
-  const sel = document.getElementById('txDomicilio');
-  if (!sel) return;
-  let ds = [];
-  try { ds = (await (await fetch(`/atencion/api/${convAbierta}/domicilios`)).json()).domicilios || []; } catch (e) {}
-  sel.dataset.n = ds.length;
-  if (!ds.length) {
-    sel.innerHTML = '<option value="">(sin domicilio cargado)</option>';
-    return;
-  }
-  const opts = ds.map(d => `<option value="${d.id}">${esc((d.etiqueta ? d.etiqueta + ' — ' : '') + (d.direccion || 'ubicación 📍'))}</option>`).join('');
-  sel.innerHTML = (ds.length > 1 ? '<option value="">— elegí el domicilio —</option>' : '') + opts;
-}
-// Reglas de pagado según la forma de pago acordada en el sidebar:
-//   efectivo → false (cobra el cadete al entregar).
-//   tarjeta  → true  (POS presencial, ya cobrado).
-//   link_mp / transferencia → true SOLO si el operador pegó el nro de comprobante
-//     en la card de Pago acordado (verificó manualmente en MP que entró).
-function txComputarPagado() {
-  const f = (document.getElementById('pgForma')||{}).value || '';
-  if (f === 'tarjeta') return true;
-  if (f === 'link_mp' || f === 'transferencia'){
-    const dato = (document.getElementById('pgDato')||{}).value || '';
-    return !!dato.trim();
-  }
-  return false;
-}
+/* Modal Cerrar TX + sus funciones ELIMINADAS (Diego 2026-06-15: refactor C
+   etapa 3/3). Reemplazadas por guardarYCerrarTx + cerrarTxDirecto que viven
+   más abajo. Sale por / Stock / Droguería / Prioridad / Receta migraron al
+   sidebar. */
 const ALIAS_FARMACIA = {{ (alias_transferencia or '')|tojson }};
-function txStockChange() {
-  document.getElementById('txDrogueria').style.display =
-    document.getElementById('txStock').value === 'esperar' ? 'block' : 'none';
-}
-function txSalidaChange() {
-  // Domicilio solo aparece si va por reparto.
-  document.getElementById('txEnvioWrap').style.display =
-    document.getElementById('txSalida').value === 'reparto' ? 'block' : 'none';
-  txCalc();
-}
-function _txVal(id) { const e = document.getElementById(id); return e ? e.value : ''; }
-function txCalc() {
-  // El TOTAL viene del ticket de ObServer que YA incluye el envio
-  // (Diego 2026-06-14: 'yo vuelco lo del ticket de ObServer que se hace con
-  // envio incluido'). NO sumar envio aca o lo cobramos doble.
-  const total = parseFloat((document.getElementById('pgMonto')||{}).value) || 0;
-  const out = document.getElementById('txACobrar');
-  if (out) out.textContent = fmtPrecio(total);
-}
-async function txPegarChat(t) {
-  if (!t || !convAbierta) return;
-  await fetch(`/atencion/${convAbierta}/responder`, {
-    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto: t})
-  });
-  await refrescarChat(false);
-}
-async function txCotizarEnvio() {
-  try {
-    const doms = (await (await fetch(`/atencion/api/${convAbierta}/domicilios`)).json()).domicilios || [];
-    if (!doms.length) { alert('El cliente no tiene domicilio cargado todavía.'); return; }
-  } catch(e) {}
-  // TODO: enganchar con la cotización de /config/envio (Cline namespacing). Por
-  // ahora se carga el envío a mano.
-  alert('Cotización automática: pendiente de enganchar con /config/envio. Cargá el envío a mano por ahora.');
-}
-async function txCerrar() {
-  // Total / forma / paga_con / envío vienen del sidebar (card Pago acordado).
-  // guardarYCerrarTx() ya validó los mínimos antes de abrir el modal.
-  const pgGet = id => { const e = document.getElementById(id); return e ? (e.value || '') : ''; };
-  const total = parseFloat(pgGet('pgMonto')) || 0;
-  const forma = pgGet('pgForma');
-  if (!total) { alert('Cargá el monto en la card Pago acordado.'); return; }
-  if (!forma) { alert('Elegí la forma de pago en la card Pago acordado.'); return; }
-  const reparto = _txVal('txSalida') === 'reparto';
-  const envio = reparto ? (parseFloat(pgGet('pgEnvio')) || 0) : 0;
-  const domSel = document.getElementById('txDomicilio');
-  // Si va por reparto y el cliente tiene VARIAS direcciones, exigir elegir cuál.
-  if (reparto && domSel && Number(domSel.dataset.n || 0) > 1 && !domSel.value) {
-    alert('El cliente tiene varias direcciones — elegí a cuál va el envío.'); return;
-  }
-  const payload = {
-    total,
-    domicilio_id: (domSel && domSel.value) ? Number(domSel.value) : null,
-    forma_pago: forma,
-    paga_con: pgGet('pgPagaCon') || null,
-    // El vuelto lo recalcula el backend (no se confía del cliente). Se manda igual de referencia.
-    // Total = importe del ticket ObServer (ya incluye envio) → no sumar envio.
-    vuelto: forma === 'efectivo' ? ((parseFloat(pgGet('pgPagaCon'))||0) - total) : null,
-    link_mp: pgGet('pgLink') || null,
-    dato_pago_mp: pgGet('pgDato') || null,
-    tarjeta_ult4: pgGet('pgUlt4') || null,
-    obra_social: _txVal('txOS') || null,
-    requiere_receta: _txVal('txReceta'),
-    stock: _txVal('txStock'),
-    drogueria: _txVal('txDrogueria') || null,
-    destino: _txVal('txSalida'),
-    envio_costo: envio,
-    prioridad: _txVal('txPrioridad'),
-    pagado: txComputarPagado(),
-    // Detalle del pedido (card del sidebar, Diego 2026-06-14: antes /atencion
-    // no persistia producto / nota / observacion / canal / cupon_tarjeta).
-    producto: ((document.getElementById('dProducto')||{}).value || '').trim() || null,
-    producto_observer_id: window._dProductoObsId || null,
-    nota: ((document.getElementById('dNota')||{}).value || '').trim() || null,
-    observacion: ((document.getElementById('dObservacion')||{}).value || '').trim() || null,
-    canal: ((document.getElementById('dCanal')||{}).value || '').trim() || 'atencion',
-    // Cupon tarjeta (cuando forma=tarjeta). El input pgCupon vive en pgExtra.
-    cupon_tarjeta: ((document.getElementById('pgCupon')||{}).value || '').trim() || null,
-    // Notas del cliente (textarea de la ficha del sidebar). Se persisten en
-    // Cliente.notas al cerrar TX en lugar de tener un botón aparte (Diego
-    // 2026-06-15: el botón 'Guardar notas' borraba el monto por reload).
-    ficha_notas: ((document.getElementById('fichaNotas')||{}).value || ''),
-    // Datos del domicilio del picker (sin domicilio_id existente). Si vienen
-    // con lat/lng, el backend crea un DomicilioCliente nuevo así aparece en
-    // /clientes y en el dropdown de próx pedidos.
-    pick_direccion: ((document.getElementById('pDir')||{}).value || '').trim() || null,
-    pick_piso: ((document.getElementById('pPiso')||{}).value || '').trim() || null,
-    pick_depto: ((document.getElementById('pDepto')||{}).value || '').trim() || null,
-    pick_referencia: ((document.getElementById('pRef')||{}).value || '').trim() || null,
-    pick_localidad: ((document.getElementById('pCiudad')||{}).value || '').trim() || null,
-    pick_lat: window._domLat != null ? window._domLat : null,
-    pick_lng: window._domLng != null ? window._domLng : null,
-  };
-  // OS desde la card Detalle (al lado de Canal). Si está vacío, fallback al
-  // input del modal (txOS) por compat.
-  const dOs = ((document.getElementById('dObraSocial')||{}).value || '').trim();
-  if (dOs) payload.obra_social = dOs;
-  try {
-    const r = await fetch(`/atencion/${convAbierta}/cerrar-transaccion`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const d = await r.json();
-    if (!d.ok) { alert('Error al cerrar: ' + (d.error || 'desconocido')); return; }
-    alert(`✅ Transacción cerrada · Pedido #${d.pedido_id} → ${d.estado}`);
-    // Cerrar el modal y volver a la bandeja.
-    const modal = document.getElementById('txModal');
-    if (modal) modal.style.display = 'none';
-    if (typeof refrescarBandeja === 'function') refrescarBandeja();
-  } catch (e) {
-    alert('Error de red: ' + e.message);
-  }
-}
 
 function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
@@ -1972,11 +1780,6 @@ async function guardarPagoAcordado(){
     body: JSON.stringify(body),
   });
   await cargarPagoAcordado();
-  // Si el modal Cerrar TX está visible, re-precargar con el estado nuevo.
-  const modal = document.getElementById('cerrarTxCard');
-  if (modal && modal.style.display !== 'none' && typeof txPrecargarPago === 'function') {
-    await txPrecargarPago();
-  }
 }
 
 // Guarda el pago + abre/refresca el modal Cerrar TX con todo precargado.
@@ -1986,13 +1789,13 @@ async function guardarYCerrarTx(){
   if (!monto){ alert('Cargá el monto de la operación.'); document.getElementById('pgMonto').focus(); return; }
   const forma = document.getElementById('pgForma').value;
   if (!forma){ alert('Elegí la forma de pago.'); document.getElementById('pgForma').focus(); return; }
-  // Validaciones por forma — bloqueantes acá también para no perder tiempo abriendo el modal.
   const get = id => { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; };
+  // Validaciones por forma
   if (forma === 'link_mp' && !get('pgLink')){
     alert('Pegá el link de MP que le mandaste al cliente.'); document.getElementById('pgLink').focus(); return;
   }
   if ((forma === 'link_mp' || forma === 'transferencia') && !get('pgDato')){
-    alert('Cargá el nro de operación / comprobante (se obtiene de MP cuando entra el pago).');
+    alert('Cargá el nro de operación / comprobante.');
     document.getElementById('pgDato').focus(); return;
   }
   if (forma === 'efectivo' && (!get('pgPagaCon') || parseFloat(get('pgPagaCon')) <= 0)){
@@ -2002,11 +1805,104 @@ async function guardarYCerrarTx(){
     if (!get('pgUlt4')){ alert('Cargá los últimos 4 de la tarjeta.'); return; }
     if (!get('pgTarjNombre')){ alert('Cargá el nombre del titular.'); return; }
   }
-  await guardarPagoAcordado();
-  const modal = document.getElementById('cerrarTxCard');
-  if (modal && modal.style.display === 'none' && typeof toggleCerrarTx === 'function'){
-    toggleCerrarTx();   // abre el modal (este ya llama txPrecargarPago al abrir)
+  const stock = get('dStock');
+  if (stock === 'falta' && !get('dDrogueria')){
+    alert('Elegí una droguería para pedir.'); document.getElementById('dDrogueria').focus(); return;
   }
+  // Persistir el pago acordado (BotConversacion) y cerrar la TX directo —
+  // ya no abrimos modal (Diego 2026-06-15: refactor C / etapa 3/3).
+  await guardarPagoAcordado();
+  await cerrarTxDirecto();
+}
+
+// Construye el payload y hace POST a /atencion/<conv>/cerrar-transaccion.
+// Reemplaza al txCerrar() viejo del modal.
+async function cerrarTxDirecto(){
+  if (!convAbierta) return;
+  const get = id => { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; };
+  const formaPg = get('pgForma');
+  const envio = parseFloat(get('pgEnvio')) || 0;
+  const total = parseFloat(get('pgMonto')) || 0;
+  const pagaCon = parseFloat(get('pgPagaCon')) || 0;
+  // El backend recalcula vuelto server-side; lo mandamos de referencia.
+  const vueltoCalc = formaPg === 'efectivo' ? (pagaCon - total) : null;
+  const stock = get('dStock');
+  // 'pagado' = true si forma de pago ya está confirmada (link con dato_pago,
+  // transferencia con comprobante, tarjeta presencial, efectivo no por sí solo).
+  const datoPg = get('pgDato');
+  const pagado = (formaPg === 'tarjeta')
+    || ((formaPg === 'link_mp' || formaPg === 'transferencia') && !!datoPg);
+  const payload = {
+    forma_pago: formaPg || null,
+    paga_con: pagaCon || null,
+    vuelto: vueltoCalc,
+    link_mp: get('pgLink') || null,
+    dato_pago_mp: datoPg || null,
+    tarjeta_ult4: get('pgUlt4') || null,
+    tarjeta_nombre: get('pgTarjNombre') || null,
+    tarjeta_marca: get('pgMarca') || null,
+    obra_social: get('dObraSocial') || null,
+    requiere_receta: get('dReceta') || null,
+    stock: stock || null,
+    drogueria: get('dDrogueria') || null,
+    destino: get('dSalida') || 'reparto',
+    envio_costo: envio || null,
+    prioridad: get('dPrioridad') || 'normal',
+    pagado,
+    producto: get('dProducto') || null,
+    producto_observer_id: window._dProductoObsId || null,
+    nota: get('dNota') || null,
+    observacion: get('dObservacion') || null,
+    canal: get('dCanal') || 'atencion',
+    cupon_tarjeta: get('pgCupon') || null,
+    ficha_notas: ((document.getElementById('fichaNotas')||{}).value || ''),
+    // Pick del cliente_picker (lat/lng/dir limpios) por si no hay domicilio_id
+    pick_direccion: get('pDir') || null,
+    pick_piso: get('pPiso') || null,
+    pick_depto: get('pDepto') || null,
+    pick_referencia: get('pRef') || null,
+    pick_localidad: get('pCiudad') || null,
+    pick_lat: window._domLat != null ? window._domLat : null,
+    pick_lng: window._domLng != null ? window._domLng : null,
+  };
+  try {
+    const r = await fetch(`/atencion/${convAbierta}/cerrar-transaccion`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (!d.ok){ alert('Error al cerrar: ' + (d.error || 'desconocido')); return; }
+    alert(`✅ Transacción cerrada · Pedido #${d.pedido_id} → ${d.estado}`);
+    if (typeof refrescarBandeja === 'function') refrescarBandeja();
+    if (typeof cargarBandeja === 'function') cargarBandeja();
+  } catch(e){ alert('Error de red: ' + e.message); }
+}
+
+// Stock = falta → mostrar dropdown de droguería + cargar opciones la primera vez.
+async function dStockChange(){
+  const wrap = document.getElementById('dDrogueriaWrap');
+  if (!wrap) return;
+  const falta = document.getElementById('dStock').value === 'falta';
+  wrap.style.display = falta ? 'block' : 'none';
+  if (falta){
+    const sel = document.getElementById('dDrogueria');
+    if (sel && sel.options.length <= 1){
+      try {
+        const r = await fetch('/api/proveedores/drog-activas');
+        if (!r.ok) return;
+        const d = await r.json();
+        sel.innerHTML = '<option value="">— elegir —</option>' +
+          (d.drog || []).map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('');
+      } catch(e){ /* silencioso */ }
+    }
+  }
+}
+
+// Sale por = retiro → mostrar el banner 'Pendiente de retiro' + botón Retirado.
+function dSalidaChange(){
+  // Delegamos a actualizarCardRetiro que ya tiene la lógica completa (lee
+  // convAbierta + canal + dSalida + retirado_en).
+  if (typeof actualizarCardRetiro === 'function') actualizarCardRetiro();
 }
 
 cargarCiudades();
@@ -2016,33 +1912,9 @@ cargarEquipo();
 // En modo manual (walk-in) NO polleamos bandeja ni chat (no aplican).
 // Si vinimos con ?conv=N, abrimos esa conv automaticamente.
 if (window.ATENCION_MODO === 'manual'){
-  // El modal 'cerrarTxCard' vive dentro de colChat (escondida en modo manual).
-  // Lo movemos a un overlay oscuro fullscreen para que sea accesible al cerrar TX.
-  const _modal = document.getElementById('cerrarTxCard');
-  if (_modal){
-    const _overlay = document.createElement('div');
-    _overlay.id = 'cerrarTxOverlay';
-    _overlay.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9998; align-items:flex-start; justify-content:center; padding:24px 20px; overflow-y:auto;';
-    _overlay.onclick = (e) => {
-      // Click fuera del card cierra el modal.
-      if (e.target === _overlay && typeof toggleCerrarTx === 'function') toggleCerrarTx();
-    };
-    // Append a #app (no a body) para que las CSS vars del tema dark sigan
-    // resolviendose adentro del modal. var(--card), var(--hov), etc. estan
-    // declaradas en #app.dark; al mover al body se pierden.
-    (document.getElementById('app') || document.body).appendChild(_overlay);
-    _overlay.appendChild(_modal);
-    // Resetear estilos previos del modal: ahora hereda el centrado del overlay flex.
-    // El overlay vive dentro de #app, así que var(--card) etc. siguen resolviéndose.
-    _modal.style.cssText = 'display:none; max-width:720px; width:100%; max-height:calc(100vh - 60px); overflow-y:auto; background:var(--card); border:1px solid var(--border); border-radius:14px; box-shadow:0 10px 50px rgba(0,0,0,0.6);';
-    // Override del toggleCerrarTx: mostrar/ocultar TAMBIEN el overlay.
-    const _origToggle = window.toggleCerrarTx;
-    window.toggleCerrarTx = async function(){
-      const abriendo = _modal.style.display === 'none';
-      _overlay.style.display = abriendo ? 'flex' : 'none';
-      await _origToggle();
-    };
-  }
+  // El modal cerrarTxCard ya no existe (refactor C etapa 3/3, Diego 2026-06-15);
+  // todos los campos viven en el sidebar. Esta sección quedó solo para abrir
+  // automáticamente la conv inicial cuando entramos en modo manual.
   if (window.ATENCION_CONV_INICIAL){
     setTimeout(() => abrirConv(window.ATENCION_CONV_INICIAL), 100);
   }
