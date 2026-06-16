@@ -1078,13 +1078,15 @@ function renderFicha() {
   // Nombre, domicilio, teléfono y badge (al lado de Ciudad) viven en el picker
   // de arriba. DNI ahora va al lado de 'Forma de pago' en la card de pago.
   // Acá solo info aux: notas del cliente.
+  // Línea separadora arriba ELIMINADA (la fina border-top); botón Desvincular
+  // subido a la misma línea del label de notas (Diego 2026-06-15).
   p.innerHTML = `
-    <div class="bt" style="padding-top:10px; border-top:0.5px solid;">
-      <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas del cliente <span class="muted2" style="font-size:9px; font-weight:normal;">(perdurables — se guardan al cerrar TX)</span></div>
-      <textarea id="fichaNotas" rows="3" class="${INP}" style="width:100%; border-radius:8px; padding:6px 9px; font-size:11px; margin-bottom:6px;">${esc(f.notas || '')}</textarea>
-      <div style="display:flex; gap:6px;">
-        <button onclick="desvincularCliente()" class="hbtn" style="border-radius:8px; padding:5px 11px; font-size:11px;">Desvincular</button>
+    <div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+        <div class="muted" style="font-size:10px; min-width:0;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas del cliente <span class="muted2" style="font-size:9px; font-weight:normal;">(se guardan al cerrar TX)</span></div>
+        <button onclick="desvincularCliente()" class="hbtn" style="border-radius:8px; padding:4px 10px; font-size:10px; flex-shrink:0;">Desvincular</button>
       </div>
+      <textarea id="fichaNotas" rows="2" class="${INP}" style="width:100%; border-radius:8px; padding:6px 9px; font-size:11px;">${esc(f.notas || '')}</textarea>
     </div>`;
   cargarDomicilios();
 }
