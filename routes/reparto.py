@@ -1074,9 +1074,13 @@ def init_app(app):
                          .filter(database.RutaReparto.cadete_id.isnot(None)).all()}
             ef_id = reparto.cadete_efectivo_id(p, rutas_cad)
             cadete_nom = cad.get(ef_id, '') if ef_id else ''
-            producto_monto = float(p.total_paciente) if p.total_paciente is not None else None
+            # total_paciente YA incluye el envío (el operador carga el total con
+            # envío). El producto se deriva: producto = total - envío.
+            total_monto = float(p.total_paciente) if p.total_paciente is not None else None
             envio_v = float(p.envio_costo) if p.envio_costo is not None else None
-            cobrar = None if p.pagado else round((producto_monto or 0) + (envio_v or 0), 2)
+            producto_monto = (round((total_monto or 0) - (envio_v or 0), 2)
+                              if total_monto is not None else None)
+            cobrar = None if p.pagado else total_monto
             paga_con = float(p.paga_con) if p.paga_con is not None else None
             fecha = p.creado_en.strftime('%d/%m %H:%M') if p.creado_en else ''
             data = dict(
@@ -1088,8 +1092,8 @@ def init_app(app):
                 receta_pendiente=(p.receta_estado == 'pendiente')
                                   or (p.receta_estado is None and bool(p.requiere_receta)),
                 pagado=bool(p.pagado), forma_pago=p.forma_pago or '',
-                producto_monto=producto_monto, envio=envio_v, cobrar=cobrar,
-                paga_con=paga_con, vuelto=p.vuelto or '',
+                producto_monto=producto_monto, envio=envio_v, total=total_monto,
+                cobrar=cobrar, paga_con=paga_con, vuelto=p.vuelto or '',
                 obra_social=p.obra_social or '', cadete=cadete_nom,
             )
 
@@ -1162,11 +1166,11 @@ def init_app(app):
         line(spacer=True)
         prod_v = data['producto_monto'] or 0
         env_v = data['envio'] or 0
+        total_v = data['total'] or 0       # total cargado (ya incluye envío)
         if prod_v > 0:
             line(f'  Producto: $ {prod_v:,.0f}'.replace(',', '.'))
         if env_v > 0:
             line(f'  Envio:    $ {env_v:,.0f}'.replace(',', '.'))
-        total_v = round(prod_v + env_v, 2)
         if total_v > 0:
             line(f'  TOTAL:    $ {total_v:,.0f}'.replace(',', '.'), size=11, bold=True)
         line(spacer=True)
@@ -1221,11 +1225,13 @@ def init_app(app):
             rutas_cad = {r.id: r.cadete_id for r in s.query(database.RutaReparto)
                          .filter(database.RutaReparto.cadete_id.isnot(None)).all()}
             ef_id = reparto.cadete_efectivo_id(p, rutas_cad)
-            producto_monto = float(p.total_paciente) if p.total_paciente is not None else None
+            # total_paciente YA incluye el envío (el operador carga el total).
+            # Producto = total - envío. Si ya está pagado, el cadete no cobra.
+            total_monto = float(p.total_paciente) if p.total_paciente is not None else None
             envio = float(p.envio_costo) if p.envio_costo is not None else None
-            # Cobrar = producto + envío (mismo criterio que el vuelto de atención).
-            # Si ya está pagado, el cadete no cobra nada.
-            cobrar = None if p.pagado else round((producto_monto or 0) + (envio or 0), 2)
+            producto_monto = (round((total_monto or 0) - (envio or 0), 2)
+                              if total_monto is not None else None)
+            cobrar = None if p.pagado else total_monto
             return jsonify({
                 'id': p.id,
                 'fecha': p.creado_en.strftime('%d/%m %H:%M') if p.creado_en else '',
@@ -1242,6 +1248,7 @@ def init_app(app):
                 'forma_pago': p.forma_pago or '',
                 'producto_monto': producto_monto,
                 'envio': envio,
+                'total': total_monto,
                 'cobrar': cobrar,
                 'paga_con': float(p.paga_con) if p.paga_con is not None else None,
                 'vuelto': p.vuelto or '',

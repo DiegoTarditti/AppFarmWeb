@@ -446,8 +446,8 @@ def test_ticket_data(client):
             cliente_nombre='María González', telefono='341-555-1234',
             direccion='Av. Córdoba 3400', piso='3', depto='B',
             observacion='recetas 3, TRAER PANTUS', receta_estado='pendiente',
-            total_paciente=12500, envio_costo=500, pagado=False,
-            forma_pago='efectivo', paga_con=15000, vuelto='2000')
+            total_paciente=15500, envio_costo=3500, pagado=False,
+            forma_pago='efectivo', paga_con=20000, vuelto='4500')
         s.add(p)
         s.commit()
         pid = p.id
@@ -455,8 +455,12 @@ def test_ticket_data(client):
     assert d['cliente'] == 'María González'
     assert d['telefono'] == '341-555-1234'
     assert d['receta_pendiente'] is True
-    assert d['cobrar'] == 13000      # producto 12500 + envío 500
-    assert d['vuelto'] == '2000'
+    # total_paciente YA incluye el envío: producto = total - envío.
+    assert d['total'] == 15500
+    assert d['envio'] == 3500
+    assert d['producto_monto'] == 12000   # 15500 - 3500
+    assert d['cobrar'] == 15500           # cadete cobra el total (incluye envío)
+    assert d['vuelto'] == '4500'
 
 
 def test_ticket_data_pagado_no_cobra(client):
