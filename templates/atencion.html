@@ -1846,6 +1846,7 @@ async function cerrarTxDirecto(){
   const pagado = (formaPg === 'tarjeta')
     || ((formaPg === 'link_mp' || formaPg === 'transferencia') && !!datoPg);
   const payload = {
+    total: total || null,   // <-- Diego 2026-06-15: estaba ausente, backend lo leía como 0
     forma_pago: formaPg || null,
     paga_con: pagaCon || null,
     vuelto: vueltoCalc,
