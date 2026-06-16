@@ -1152,18 +1152,25 @@ def init_app(app):
             line(spacer=True)
             line('!! RECETA PENDIENTE !!', bold=True)
         line(sep=True)
-        # Pago
+        # Pago: SIEMPRE desglosamos Producto + Envío + Total, y al final
+        # indicamos si está pagado (cadete solo entrega) o lo cobra el cadete.
+        line('IMPORTES', bold=True)
+        line(spacer=True)
+        prod_v = data['producto_monto'] or 0
+        env_v = data['envio'] or 0
+        if prod_v > 0:
+            line(f'  Producto: $ {prod_v:,.0f}'.replace(',', '.'))
+        if env_v > 0:
+            line(f'  Envio:    $ {env_v:,.0f}'.replace(',', '.'))
+        total_v = round(prod_v + env_v, 2)
+        if total_v > 0:
+            line(f'  TOTAL:    $ {total_v:,.0f}'.replace(',', '.'), size=11, bold=True)
+        line(spacer=True)
         if data['pagado']:
-            line(f'PAGADO ({data["forma_pago"]})', bold=True)
+            line(f'>> PAGADO ({data["forma_pago"] or "—"}) <<', bold=True)
+            line('   no cobrar en entrega', size=7)
         else:
-            line('A COBRAR', bold=True)
-            line(spacer=True)
-            if data['producto_monto'] is not None and data['producto_monto'] > 0:
-                line(f'  Producto: $ {data["producto_monto"]:,.0f}'.replace(',', '.'))
-            if data['envio'] is not None and data['envio'] > 0:
-                line(f'  Envio:    $ {data["envio"]:,.0f}'.replace(',', '.'))
-            if data['cobrar'] is not None:
-                line(f'  TOTAL:    $ {data["cobrar"]:,.0f}'.replace(',', '.'), size=11, bold=True)
+            line('>> COBRA CADETE <<', bold=True)
             line(spacer=True)
             line(f'  Forma:    {data["forma_pago"] or "—"}')
             if data['paga_con'] is not None:
