@@ -1049,6 +1049,125 @@ def init_app(app):
             log.exception('borrar pedido #%s fallo: %s', pid, e)
             return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
+    @app.route('/reparto/pedido/<int:pid>/ticket-pdf')
+    @login_required
+    def reparto_ticket_pdf(pid):
+        """PDF del ticket del cadete (formato 80mm de ancho) para imprimir desde
+        el browser. Diego 2026-06-16: prefirió PDF en vez de impresión directa
+        ESC/POS por DockerPanel — la impresión la dispara desde Windows.
+
+        Genera con reportlab usando un width de 80mm y fuente Courier monoespaciada.
+        Incluye todo lo que el cadete necesita para entregar."""
+        if not _ok():
+            return 'sin permiso', 403
+        from io import BytesIO
+        from reportlab.lib.pagesizes import mm
+        from reportlab.lib.units import mm as MM
+        from reportlab.pdfgen import canvas
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pid)
+            if not p:
+                return 'pedido no existe', 404
+            cad = _mapa_cadetes(s)
+            rutas_cad = {r.id: r.cadete_id for r in s.query(database.RutaReparto)
+                         .filter(database.RutaReparto.cadete_id.isnot(None)).all()}
+            ef_id = reparto.cadete_efectivo_id(p, rutas_cad)
+            cadete_nom = cad.get(ef_id, '') if ef_id else ''
+            producto_monto = float(p.total_paciente) if p.total_paciente is not None else None
+            envio_v = float(p.envio_costo) if p.envio_costo is not None else None
+            cobrar = None if p.pagado else round((producto_monto or 0) + (envio_v or 0), 2)
+            paga_con = float(p.paga_con) if p.paga_con is not None else None
+            fecha = p.creado_en.strftime('%d/%m %H:%M') if p.creado_en else ''
+            data = dict(
+                id=p.id, fecha=fecha, cliente=p.cliente_nombre or '',
+                telefono=p.telefono or '', direccion=p.direccion or '',
+                piso=p.piso or '', depto=p.depto or '', referencia=p.referencia or '',
+                observacion=p.observacion or '', producto=p.producto or '',
+                receta_pendiente=(p.receta_estado == 'pendiente')
+                                  or (p.receta_estado is None and bool(p.requiere_receta)),
+                pagado=bool(p.pagado), forma_pago=p.forma_pago or '',
+                producto_monto=producto_monto, envio=envio_v, cobrar=cobrar,
+                paga_con=paga_con, vuelto=p.vuelto or '',
+                obra_social=p.obra_social or '', cadete=cadete_nom,
+            )
+
+        # 80mm wide, alto fluido según contenido. Margen interno 4mm.
+        W = 80 * MM
+        margin = 4 * MM
+        usable = W - 2 * margin
+        # Estimación de líneas para calcular alto del PDF.
+        n_lines_est = 22 + len(data['producto']) // 28 + len(data['observacion']) // 28
+        H = (15 + n_lines_est * 4.5) * MM
+        buf = BytesIO()
+        c = canvas.Canvas(buf, pagesize=(W, H))
+        y = H - margin
+        def line(txt='', size=8, bold=False, sep=False):
+            nonlocal y
+            if sep:
+                y -= 1.5 * MM
+                c.line(margin, y, W - margin, y)
+                y -= 2 * MM
+                return
+            c.setFont('Courier-Bold' if bold else 'Courier', size)
+            for chunk in [(txt or '')[i:i+32] for i in range(0, max(1, len(txt or '')), 32)]:
+                c.drawString(margin, y, chunk)
+                y -= (size + 1.5) * 0.45 * MM
+        # Header
+        line(f'FARMACIA BADIA', size=10, bold=True)
+        line(f'PEDIDO #{data["id"]}  ·  {data["fecha"]}', size=9, bold=True)
+        line(sep=True)
+        # Cliente / dirección
+        line(f'Cliente: {data["cliente"]}', bold=True)
+        if data['telefono']:
+            line(f'Tel: {data["telefono"]}')
+        line(f'Direc.: {data["direccion"]}')
+        if data['piso'] or data['depto']:
+            extras = ' '.join(filter(None, [
+                f'Piso {data["piso"]}' if data['piso'] else '',
+                f'Dpto {data["depto"]}' if data['depto'] else '',
+            ]))
+            line(f'  {extras}')
+        if data['referencia']:
+            line(f'Ref.: {data["referencia"]}')
+        line(sep=True)
+        # Producto
+        if data['producto']:
+            line('PRODUCTO:', bold=True)
+            line(data['producto'])
+        if data['observacion']:
+            line(f'OBS: {data["observacion"]}', bold=True)
+        if data['receta_pendiente']:
+            line('!! RECETA PENDIENTE !!', bold=True)
+        line(sep=True)
+        # Pago
+        if data['pagado']:
+            line(f'PAGADO ({data["forma_pago"]})', bold=True)
+        else:
+            line('A COBRAR:', bold=True)
+            if data['producto_monto'] is not None:
+                line(f'  Producto: $ {data["producto_monto"]:,.0f}'.replace(',', '.'))
+            if data['envio'] is not None and data['envio'] > 0:
+                line(f'  Envio:    $ {data["envio"]:,.0f}'.replace(',', '.'))
+            if data['cobrar'] is not None:
+                line(f'  TOTAL:    $ {data["cobrar"]:,.0f}'.replace(',', '.'), size=10, bold=True)
+            line(f'  Forma:    {data["forma_pago"] or "—"}')
+            if data['paga_con'] is not None:
+                line(f'  Paga con: $ {data["paga_con"]:,.0f}'.replace(',', '.'))
+            if data['vuelto']:
+                line(f'  Vuelto:   $ {data["vuelto"]}', bold=True)
+        line(sep=True)
+        # Cobertura / cadete
+        if data['obra_social']:
+            line(f'OS: {data["obra_social"]}')
+        if data['cadete']:
+            line(f'Cadete: {data["cadete"]}')
+        line(sep=True)
+        line('Firma cliente: _______________', size=7)
+        c.showPage(); c.save()
+        from flask import Response
+        return Response(buf.getvalue(), mimetype='application/pdf',
+                        headers={'Content-Disposition': f'inline; filename=ticket-pedido-{pid}.pdf'})
+
     @app.route('/reparto/pedido/<int:pid>/ticket')
     @login_required
     def reparto_ticket_data(pid):

@@ -281,8 +281,13 @@ function pedidoCard(p) {
   // Acción de caja solo en la bandeja "Por cobrar". El botón emite el ticket
   // fiscal y despacha; si el operador ya cobró, no se vuelve a cobrar.
   const txtAccion = p.pagado ? '🧾 Emitir ticket fiscal' : '✓ Cobrar + ticket fiscal';
+  // Botón ticket cadete PDF al lado del Cobrar (Diego 2026-06-16) — abre en
+  // nueva pestaña y desde ahí lo imprime con Ctrl+P de Windows.
   const accion = (tabActiva === 'por_cobrar')
-    ? `<div style="margin-top:8px;"><button onclick="cobrarPedido(${p.id})" class="hbtn hbtn-ok" style="width:100%;">${txtAccion}</button></div>`
+    ? `<div style="display:flex; gap:6px; margin-top:8px;">
+         <button onclick="cobrarPedido(${p.id})" class="hbtn hbtn-ok" style="flex:1;">${txtAccion}</button>
+         <a href="/reparto/pedido/${p.id}/ticket-pdf" target="_blank" rel="noopener" class="hbtn" style="display:inline-flex; align-items:center; padding:8px 12px;" title="Abrir ticket cadete (PDF 80mm)">🖨️</a>
+       </div>`
     : '';
   // Despachado (bandeja cadetes): imprimir el ticket que se lleva el cadete (térmica 80mm).
   const accionCadete = (tabActiva === 'cadetes')
