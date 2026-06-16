@@ -478,27 +478,29 @@
          lo que estaba en el modal cerrarTxCard (borrado más abajo). #}
       <div id="cerrarTxBtnWrap" style="padding:0 12px 12px; display:none;">
         <div style="display:flex; gap:6px; margin-bottom:8px;">
-          <div style="flex:1; min-width:0;">
+          {# Anchos (Diego 2026-06-15): Stock -30%, Droguería más grande (cuando
+             aparece), Sale por -20%, Prioridad igual. #}
+          <div style="flex:0.7 1 60px; min-width:0;">
             <label class="muted2" style="font-size:10px; display:block;">¿Stock?</label>
             <select id="dStock" class="input" onchange="dStockChange()" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-              <option value="ok">OK · en stock</option>
-              <option value="falta">Falta · pedir</option>
+              <option value="ok">OK</option>
+              <option value="falta">Falta</option>
             </select>
           </div>
-          <div id="dDrogueriaWrap" style="flex:1; min-width:0; display:none;">
+          <div id="dDrogueriaWrap" style="flex:1.6 1 140px; min-width:0; display:none;">
             <label class="muted2" style="font-size:10px; display:block;">Droguería</label>
             <select id="dDrogueria" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
               <option value="">— elegir —</option>
             </select>
           </div>
-          <div style="flex:1; min-width:0;">
+          <div style="flex:0.8 1 80px; min-width:0;">
             <label class="muted2" style="font-size:10px; display:block;">Sale por</label>
             <select id="dSalida" class="input" onchange="dSalidaChange()" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
               <option value="reparto">🛵 Reparto</option>
               <option value="retiro">🏪 Retiro</option>
             </select>
           </div>
-          <div style="flex:1; min-width:0;">
+          <div style="flex:1 1 90px; min-width:0;">
             <label class="muted2" style="font-size:10px; display:block;">Prioridad</label>
             <select id="dPrioridad" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
               <option value="normal">🟢 Normal</option>
