@@ -1061,6 +1061,7 @@ def init_app(app):
         if not _ok():
             return 'sin permiso', 403
         from io import BytesIO
+
         from reportlab.lib.pagesizes import mm
         from reportlab.lib.units import mm as MM
         from reportlab.pdfgen import canvas
