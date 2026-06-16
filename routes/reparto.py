@@ -1081,6 +1081,7 @@ def init_app(app):
             data = dict(
                 id=p.id, fecha=fecha, cliente=p.cliente_nombre or '',
                 telefono=p.telefono or '', direccion=p.direccion or '',
+                localidad=p.localidad or '',
                 piso=p.piso or '', depto=p.depto or '', referencia=p.referencia or '',
                 observacion=p.observacion or '', producto=p.producto or '',
                 receta_pendiente=(p.receta_estado == 'pendiente')
@@ -1137,6 +1138,8 @@ def init_app(app):
                 f'Dpto {data["depto"]}' if data['depto'] else '',
             ]))
             line(f'         {extras}')
+        if data['localidad']:
+            line(f'Ciudad:  {data["localidad"]}', bold=True)
         if data['referencia']:
             line(f'Ref:     {data["referencia"]}')
         line(sep=True)

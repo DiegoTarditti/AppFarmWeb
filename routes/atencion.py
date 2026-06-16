@@ -445,6 +445,8 @@ def init_app(app):
                 piso=dom.get('piso'),
                 depto=dom.get('depto'),
                 referencia=dom.get('referencia'),
+                # Localidad: prioridad al DomicilioCliente; fallback al pick del picker.
+                localidad=dom.get('localidad') or (body.get('pick_localidad') or '').strip() or None,
                 lat=dom.get('lat'),
                 lng=dom.get('lng'),
                 # ── Pago ──

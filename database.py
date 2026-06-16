@@ -711,6 +711,9 @@ class PedidoReparto(Base):
     piso = Column(String(20), nullable=True)
     depto = Column(String(20), nullable=True)
     referencia = Column(String(200), nullable=True)
+    # Localidad (Diego 2026-06-16: lo necesita el ticket cadete para que
+    # sepa la ciudad sin tener que abrir Maps).
+    localidad = Column(String(80), nullable=True)
     # WhatsApp publicación + tomado por cadete
     waha_msg_id = Column(String(120), nullable=True, index=True)
     publicado_en = Column(DateTime, nullable=True)
@@ -4717,6 +4720,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS piso VARCHAR(20)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS depto VARCHAR(20)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS referencia VARCHAR(200)",
+        # Diego 2026-06-16: localidad para el ticket cadete.
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS localidad VARCHAR(80)",
         # ── Cerrar transacción (Fase A — docs/fase_a_transaccion.md) ─────────
         # Captura pago + cobertura + destino + stock desde /atencion antes de
         # mandar a caja. Solo agregar columnas (no romper datos existentes).
