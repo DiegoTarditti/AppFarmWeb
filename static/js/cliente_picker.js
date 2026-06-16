@@ -372,13 +372,20 @@
       if (!r.ok) return;
       const d = await r.json();
       const enZona = (d.sugerencias || []).filter(s => CIUDADES_OK.includes(_normLoc(s.localidad)));
-      if (enZona.length === 1){
+      // Si una sugerencia matchea EXACTO el texto del operador (case+espacios
+      // insensible), gana sobre el resto. Útil cuando el geocoder devuelve
+      // 'SOLIS 565' + 'SOLIS BIS 565' para input 'SOLIS 565' (Diego 2026-06-15).
+      const normTxt = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+      const dirNorm = normTxt(dir);
+      const exact = enZona.find(s => normTxt(s.direccion || s.nomenclatura) === dirNorm);
+      if (exact){
+        window._geoRefStatus = null;
+        await pickGeo(exact);
+      } else if (enZona.length === 1){
         window._geoRefStatus = null;
         await pickGeo(enZona[0]);
       } else {
-        // No resolvio sin ambiguedad (0 o >1) → CTA. No distinguimos por que
-        // los contadores no siempre coinciden con lo que mostraria el dropdown
-        // manual (depende del valor de pCiudad al momento de la query).
+        // 0 o >1 sin exact match → CTA naranja para que el operador elija.
         window._geoRefStatus = 'pending';
         renderDomCoords();
       }
