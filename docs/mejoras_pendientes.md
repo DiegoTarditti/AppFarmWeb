@@ -122,47 +122,12 @@ abstracción genérica de **Flow/state-machine** que reúna las 6 pantallas
 
 ---
 
-## ⏳ Pendiente — Pantalla `/clientes` con tabla maestra + parser de localidad (2026-06-15)
+## ✅ Pantalla `/clientes` + parser de localidad + auto-presetear ciudad (2026-06-15)
 
-**Origen**: Diego, durante el repaso end-to-end del refactor C. Notó que cuando
-se carga un cliente desde ObServer cuya dirección viene como "CALLE 6 C 4418 /
-FUNES", la app mantiene "Rosario" en el dropdown de Ciudad (default) — no
-extrae "Funes" del string.
-
-**Tres mejoras relacionadas**:
-
-1. **Pantalla `/clientes`**: listado paginado con filtro de búsqueda (mismo
-   motor que `cliente_picker`). Columnas: nombre, observer_id, teléfono, DNI,
-   OS confirmada/inferida, cant. domicilios, cant. pedidos. Click en fila →
-   detalle + lista de domicilios + último pedido. Botón en el home + en el
-   topbar de las pantallas operativas.
-
-2. **Parser de localidad en `separar_direccion`** (`bot/direcciones.py`): hoy
-   solo extrae piso/depto/referencia. Agregar regla para `" / CIUDAD"` al
-   final del string (patrón típico de ObServer AR). Devolver
-   `{direccion, piso, depto, referencia, localidad}`.
-
-   **Whitelist a usar**: la misma `ENVIO_CIUDADES_FILTRO` (default
-   `rosario,funes,roldan`, configurable por env var). Sin hardcodear nada
-   nuevo — si Diego cambia la env var, el parser sigue funcionando.
-
-   Ejemplos típicos del campo `domicilio_direccion` de ObServer:
-   - `CALLE 6 C 4418 / FUNES` → direccion='CALLE 6 C 4418', localidad='FUNES'
-   - `SAN LORENZO 7556 / ROSARIO` → direccion='SAN LORENZO 7556', localidad='ROSARIO'
-   - `BV. ROLDÁN 1234 / ROLDÁN` → direccion='BV. ROLDÁN 1234', localidad='ROLDÁN'
-
-   Implementación: regex `/\s*/\s*([A-ZÁÉÍÓÚÑ\s]+)\s*$` + match
-   case-insensitive contra la whitelist (sin tildes para tolerar "Roldán"
-   vs "ROLDAN").
-
-3. **Auto-presetear ciudad + geocoder en `cliente_picker`**: cuando
-   `separar_direccion` devuelve `localidad`, el JS debe:
-   - Setear el dropdown de Ciudad a esa localidad.
-   - Disparar la geocodificación con la dirección limpia + localidad
-     extraída → mejor accuracy del georef.
-
-**Side note**: las 3 se pueden hacer en commits separados. La 1 es la más
-grande (pantalla nueva). 2-3 son chicos (parser + un par de líneas de JS).
+Las 3 mejoras anotadas en este bloque ya están implementadas:
+- Pantalla `/clientes` (commit `6c5f2bd`).
+- Parser de localidad en `separar_direccion` (commit `44ad2d0`).
+- Auto-presetear ciudad y geocoder en `cliente_picker` (commit `44ad2d0`).
 
 ---
 
