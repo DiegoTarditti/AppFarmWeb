@@ -6,9 +6,14 @@
 <title>Planilla de reparto · {{ fecha.strftime('%d/%m/%Y') }}</title>
 <style>
   :root {
-    --bg:#22222d; --surface:#2c2c39; --card:#272732; --txt:#ececf0; --title:#fafafc;
-    --muted:#9c9ca4; --muted2:#7a7a82; --border:rgba(255,255,255,0.14); --accent:#1D9E75;
-    --accent-ink:#06241a; --row-bd:rgba(255,255,255,0.10); --hov:#3a3a47; --warn:#EF9F27;
+    /* Theme cream-mint (Diego 2026-06-17). Fondo crema-papel + tabla casi blanca
+       + accent menta. Texto oscuro para contraste WCAG AA. */
+    --bg:#EDE6CF; --surface:#FCFBF7; --card:#FFFFFF; --txt:#1C1817; --title:#0A0908;
+    --muted:#4F4A3F; --muted2:#6C6759; --border:#D8D0B6; --accent:#10B981;
+    --accent-ink:#064E3B; --accent-soft:#E8F8EF;
+    --row-bd:#EDE6CF; --hov:#DCFCE7; --zebra:#F5EFD9;
+    --warn:#B45309; --warn-soft:#FCEFCA; --info:#1E40AF; --danger:#B91C1C;
+    --header-bg:#C6F2D9; --header-txt:#064E3B;
     --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   }
   * { box-sizing:border-box; }
@@ -18,13 +23,16 @@
   .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
   .logo .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
   .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border);
-           background:var(--hov); color:var(--txt); cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:4px; }
-  .hbtn:hover { background:var(--surface); color:var(--title); }
-  .input { background:var(--hov); color:var(--txt); border:1px solid var(--border); border-radius:8px; padding:5px 9px; font-size:13px; }
+           background:var(--surface); color:var(--txt); cursor:pointer; text-decoration:none;
+           display:inline-flex; align-items:center; gap:4px; }
+  .hbtn:hover { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+  .input { background:var(--surface); color:var(--txt); border:1px solid var(--border);
+           border-radius:8px; padding:5px 9px; font-size:13px; }
   .wrap { padding:16px; overflow-x:auto; }
   .nav-fecha { display:flex; align-items:center; gap:8px; }
-  .nav-fecha button { padding:3px 10px; border-radius:6px; border:1px solid var(--border); background:var(--hov); color:var(--txt); cursor:pointer; font-size:13px; }
-  .nav-fecha button:hover { background:var(--surface); }
+  .nav-fecha button { padding:3px 10px; border-radius:6px; border:1px solid var(--border);
+                      background:var(--surface); color:var(--txt); cursor:pointer; font-size:13px; }
+  .nav-fecha button:hover { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
 
   /* Tabla */
   /* Botón Maps al lado de la dirección. Píldora chiquita con pin. */
@@ -33,22 +41,32 @@
               color:var(--accent); border:1px solid rgba(29,158,117,.35); cursor:pointer; }
   .btn-maps:hover { background:var(--accent); color:var(--accent-ink); }
   /* Botones para asignar turno (al lado del cliente). El activo se ve filled. */
-  .turno-switch { display:inline-flex; gap:3px; margin-left:6px; }
-  .btn-turno { display:inline-flex; padding:0 4px; font-size:13px; cursor:pointer;
-                border-radius:999px; border:1px solid transparent; opacity:.45;
-                transition: opacity .15s, background .15s; line-height:1.4; }
-  .btn-turno:hover { opacity:1; }
-  .btn-turno.on { opacity:1; background:rgba(239,159,39,.2); border-color:rgba(239,159,39,.5); }
-  .planilla-table { width:100%; border-collapse:collapse; font-size:12px; }
-  .planilla-table th { background:var(--surface); color:var(--title); font-weight:600; padding:8px 6px;
-                       text-align:left; border-bottom:1px solid var(--border); white-space:nowrap;
+  /* Pills de turno (M/T/N): círculos chiquitos coloreados por turno cuando activos,
+     gris suave cuando inactivos. Click toggle el turno del pedido. */
+  .turno-switch { display:inline-flex; gap:3px; margin-left:6px; vertical-align:middle; }
+  .btn-turno { width:18px; height:18px; line-height:16px; text-align:center; font-size:10px;
+                font-weight:700; border-radius:50%; cursor:pointer; user-select:none;
+                border:1px solid var(--border); background:var(--surface); color:var(--muted2);
+                transition: all .12s; }
+  .btn-turno:hover { color:var(--title); border-color:var(--muted); }
+  .btn-turno[title="Mañana"].on { background:#DBEAFE; color:#1E40AF; border-color:#3B82F6; }
+  .btn-turno[title="Tarde"].on  { background:#FEE4C7; color:#9A3412; border-color:#F97316; }
+  .btn-turno[title="Noche"].on  { background:#EDE9FE; color:#5B21B6; border-color:#8B5CF6; }
+  .planilla-table { width:100%; border-collapse:collapse; font-size:12px;
+                    background:var(--card); border:1px solid var(--border); }
+  .planilla-table th { background:var(--header-bg); color:var(--header-txt); font-weight:700;
+                       padding:8px 6px; text-align:left; border-bottom:2px solid var(--accent);
+                       white-space:nowrap; font-size:11px; text-transform:uppercase; letter-spacing:.3px;
                        position:sticky; top:0; z-index:1; }
-  .planilla-table td { padding:5px 6px; border-bottom:1px solid var(--row-bd); vertical-align:middle; }
-  /* Zebra: filas pares un poco más claras para mejorar legibilidad sobre el dark theme. */
-  .planilla-table tbody tr:nth-child(even) td { background:rgba(255,255,255,0.06); }
+  .planilla-table th + th { border-left:1px solid rgba(16,185,129,.25); }
+  .planilla-table td { padding:6px 6px; border-bottom:1px solid var(--row-bd); vertical-align:middle;
+                       color:var(--txt); }
+  .planilla-table td + td { border-left:1px solid var(--row-bd); }
+  /* Zebra: filas pares con tono crema un pelín más oscuro que la tabla base. */
+  .planilla-table tbody tr:nth-child(even) td { background:var(--zebra); }
   .planilla-table tr:hover td { background:var(--hov); }
   .planilla-table tr.fila-entregado { opacity:.5; }
-  .planilla-table tr.fila-receta td:first-child { border-left:2px solid #DC2626; }
+  .planilla-table tr.fila-receta td:first-child { border-left:2px solid var(--danger); }
   .planilla-table tr.fila-anulado { opacity:.3; text-decoration:line-through; }
 
   /* Celdas editables */
@@ -73,23 +91,24 @@
   .estado-bar .pasos { display:inline-flex; gap:2px; }
   .estado-paso { display:inline-block; min-width:16px; height:18px; line-height:18px;
                  text-align:center; font-size:10px; font-weight:700; padding:0 3px;
-                 background:var(--hov); color:var(--muted2); border-radius:3px;
+                 background:var(--row-bd); color:var(--muted2); border-radius:3px;
                  transition:background 0.15s; }
-  .estado-paso.done { background:rgba(29,158,117,.55); color:#fff; }
+  .estado-paso.done { background:rgba(16,185,129,.28); color:var(--accent-ink); }
   .estado-paso.actual { background:var(--accent); color:#fff;
-                         box-shadow:0 0 6px rgba(29,158,117,.6); }
+                         box-shadow:0 0 0 2px rgba(16,185,129,.25); }
   /* Override por paso: Pendiente actual va azul (Diego: para diferenciar
      a primera vista los pedidos que todavia no salieron del flujo). */
   .estado-paso.actual.paso-pendiente { background:#185FA5;
                                          box-shadow:0 0 6px rgba(24,95,165,.6); }
-  .estado-paso.alt-anulado { background:#5a2a2a; color:#F09595; }
-  .estado-paso.alt-drog { background:var(--warn); color:#1a1a1a; }
-  .estado-paso.alt-caja { background:#185FA5; color:#fff; }
+  .estado-paso.alt-anulado { background:#FEE2E2; color:#991B1B; }
+  .estado-paso.alt-drog { background:#F97316; color:#fff; }
+  .estado-paso.alt-caja { background:var(--info); color:#fff; }
 
   /* Encabezados de turno */
-  .turno-header { background:var(--card); color:var(--title); padding:8px 12px;
+  .turno-header { background:var(--header-bg); color:var(--header-txt); padding:9px 13px;
                   border-radius:8px 8px 0 0; font-weight:700; font-size:13px;
-                  margin-top:16px; border:1px solid var(--border); border-bottom:none; }
+                  margin-top:16px; border:1px solid var(--accent); border-bottom:none;
+                  letter-spacing:.2px; }
 
   .muted { color:var(--muted); }
   .sin-pedidos { text-align:center; padding:40px; color:var(--muted); }
@@ -97,9 +116,18 @@
   /* ── Panel colapsable de chat de reparto (Grupo cadetes + DMs) ────────── */
   .planilla-shell { display:flex; align-items:stretch; min-height:calc(100vh - 50px); }
   .wrap { flex:1; min-width:0; }   /* deja respirar al aside lateral */
-  .chat-panel { flex:0 0 360px; background:var(--surface); border-left:1px solid var(--border);
-                display:flex; flex-direction:column; transition:flex-basis 0.18s ease;
-                overflow:hidden; }
+  /* Chat panel: queda en dark mode dentro del shell claro (las burbujas se leen
+     mejor sobre fondo oscuro, patrón WhatsApp/Telegram). Override scoped de
+     variables — los hijos del panel heredan estos valores en vez de los del tema. */
+  .chat-panel {
+    --surface:#22222d; --card:#272732; --border:rgba(255,255,255,.14);
+    --row-bd:rgba(255,255,255,.10); --hov:#3a3a47;
+    --txt:#ececf0; --title:#fafafc; --muted:#9c9ca4; --muted2:#7a7a82;
+    flex:0 0 360px; background:var(--surface); color:var(--txt);
+    border-left:1px solid var(--border);
+    display:flex; flex-direction:column; transition:flex-basis 0.18s ease;
+    overflow:hidden;
+  }
   .chat-panel.is-collapsed { flex:0 0 40px; }
   .chat-head { display:flex; align-items:center; gap:8px; padding:8px 10px;
                border-bottom:1px solid var(--border); cursor:pointer; user-select:none; }

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Mock B · Chat verde musgo medio</title>
+<style>
+  :root {
+    --bg:#EDE6CF; --surface:#FCFBF7; --card:#FFFFFF;
+    --txt:#1C1817; --title:#0A0908; --muted:#4F4A3F; --muted2:#6C6759;
+    --border:#D8D0B6; --accent:#10B981; --accent-ink:#064E3B; --accent-soft:#E8F8EF;
+    --zebra:#F5EFD9; --hov:#DCFCE7;
+    --header-bg:#C6F2D9; --header-txt:#064E3B;
+    /* Chat: verde musgo medio (entre crema y dark, paleta sage) */
+    --chat-bg:#5C7A6A;
+    --chat-side:#6B8978;
+    --chat-border:rgba(255,255,255,.15);
+    --chat-txt:#F1F4F1; --chat-title:#FFFFFF; --chat-muted:#C8D4CB; --chat-muted2:#A8B8AB;
+    --bub-in:#FCFBF7; --bub-in-tx:#1C1817;
+    --bub-me:#10B981; --bub-me-tx:#FFFFFF;
+    --bub-bot:#E8F8EF; --bub-bot-tx:#064E3B;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(--txt); font-family:var(--font); font-size:13px; }
+  .app { height:100vh; display:flex; flex-direction:column; }
+  .topbar { height:50px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:12px; padding:0 18px; }
+  .logo-pill { width:30px; height:30px; border-radius:8px; background:var(--accent); color:#fff;
+               display:flex; align-items:center; justify-content:center; font-weight:700; }
+  .title { font-weight:700; color:var(--title); }
+  .hbtn { padding:5px 11px; border-radius:8px; border:1px solid var(--border); background:var(--surface);
+          color:var(--txt); cursor:pointer; font-size:12px; }
+  .hbtn:hover { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+
+  .grid3 { display:grid; grid-template-columns:300px 1fr 380px; flex:1; min-height:0; }
+
+  /* Sidebar izquierdo (bandeja) — cream */
+  .col-side { background:var(--surface); border-right:1px solid var(--border);
+              display:flex; flex-direction:column; min-height:0; }
+  .side-head { padding:10px; display:flex; gap:6px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .seg { flex:1; padding:6px 4px; border-radius:7px; font-size:11px; font-weight:600; cursor:pointer;
+         border:1px solid var(--border); background:var(--card); color:var(--txt); }
+  .seg.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .seg.fullw { flex:1 1 100%; }
+  .bandeja { flex:1; overflow-y:auto; }
+  .conv { padding:11px 13px; border-bottom:1px solid var(--border); cursor:pointer; }
+  .conv:hover { background:var(--accent-soft); }
+  .conv.active { background:var(--accent-soft); border-left:3px solid var(--accent); }
+  .conv .nm { color:var(--title); font-weight:600; font-size:13px; }
+  .conv .ln { color:var(--muted); font-size:11px; margin-top:2px; }
+  .conv .badge { display:inline-block; padding:1px 7px; border-radius:999px; background:var(--accent-soft);
+                 color:var(--accent-ink); font-size:10px; font-weight:600; margin-top:4px; }
+  .conv .time { color:var(--muted2); font-size:10px; float:right; }
+
+  /* Chat (centro) — verde forest */
+  .col-chat { background:var(--chat-bg); color:var(--chat-txt); display:flex; flex-direction:column; min-height:0; }
+  .chat-head { padding:10px 16px; border-bottom:1px solid var(--chat-border); background:var(--chat-side);
+               color:var(--chat-title); font-size:13px; display:flex; align-items:center; gap:10px; min-height:50px; }
+  .chat-head .nm { font-weight:600; }
+  .chat-head .actions { margin-left:auto; display:flex; gap:6px; }
+  .chat-head .actions button { padding:5px 9px; font-size:12px; border-radius:7px;
+                               border:1px solid var(--chat-border); background:rgba(255,255,255,.06);
+                               color:var(--chat-txt); cursor:pointer; }
+  .chat-head .actions button:hover { background:rgba(255,255,255,.12); }
+  .chat-head .actions .pri { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .chat-msgs { flex:1; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:11px; }
+  .daypill { align-self:center; background:var(--chat-side); color:var(--chat-muted); padding:4px 12px;
+             border-radius:999px; font-size:11px; }
+  .bub { max-width:65%; padding:9px 13px; border-radius:13px; font-size:13px; line-height:1.4; word-break:break-word; }
+  .bub .meta { display:block; font-size:10px; opacity:.65; margin-top:4px; }
+  .bub.in { background:var(--bub-in); color:var(--bub-in-tx); align-self:flex-start; border-bottom-left-radius:4px; }
+  .bub.me { background:var(--bub-me); color:var(--bub-me-tx); align-self:flex-end; border-bottom-right-radius:4px; }
+  .bub.bot { background:var(--bub-bot); color:var(--bub-bot-tx); align-self:flex-start; border-bottom-left-radius:4px; }
+  .composer { padding:11px 14px; background:var(--chat-side); border-top:1px solid var(--chat-border);
+              display:flex; gap:8px; align-items:center; }
+  .composer input { flex:1; padding:9px 13px; border-radius:9px; border:1px solid var(--chat-border);
+                    background:rgba(255,255,255,.06); color:var(--chat-txt); font-size:13px; font-family:inherit; }
+  .composer input::placeholder { color:var(--chat-muted2); }
+  .composer .send { padding:9px 16px; border-radius:9px; background:var(--accent); color:#fff;
+                    font-weight:600; border:none; cursor:pointer; }
+
+  /* Sidebar derecho (cliente + cierre) — cream */
+  .col-right { background:var(--surface); border-left:1px solid var(--border); padding:14px;
+               overflow-y:auto; }
+  .field { margin-bottom:11px; }
+  .field label { display:block; font-size:11px; color:var(--muted); margin-bottom:4px; font-weight:600; }
+  .field input { width:100%; padding:7px 10px; border-radius:7px; border:1px solid var(--border);
+                 background:var(--card); color:var(--txt); font-size:13px; font-family:inherit; }
+  .field input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px rgba(16,185,129,.18); }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="topbar">
+    <div class="logo-pill">+</div>
+    <span class="title">Atención · Badia</span>
+    <div style="flex:1"></div>
+    <button class="hbtn">Todas las líneas ▾</button>
+    <button class="hbtn">👥 Clientes</button>
+    <button class="hbtn">☀ Claro</button>
+  </div>
+
+  <div class="grid3">
+    <!-- bandeja -->
+    <div class="col-side">
+      <div class="side-head">
+        <button class="seg on">Cola <b>1</b></button>
+        <button class="seg">Mías <b>5</b></button>
+        <button class="seg">Bot <b>1</b></button>
+        <button class="seg">Todas <b>7</b></button>
+        <button class="seg fullw">🛒 Manuales <b>2</b></button>
+        <button class="seg fullw">🧾 Cerrados hoy <b>0</b></button>
+      </div>
+      <div class="bandeja">
+        <div class="conv active">
+          <span class="time">07/06 21:40</span>
+          <div class="nm">Rocio</div>
+          <div class="ln">Telegram</div>
+          <span class="badge">cola</span>
+          <div style="font-size:9px; color:#f59e0b; margin-top:3px;">📢 supervisor avisado</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- chat -->
+    <div class="col-chat">
+      <div class="chat-head">
+        <div class="nm">Rocio</div>
+        <span style="color:var(--chat-muted);">· Telegram</span>
+        <div class="actions">
+          <button class="pri">💳</button>
+          <button>Tomar</button>
+          <button>Transferir</button>
+          <button>A la cola</button>
+        </div>
+      </div>
+      <div class="chat-msgs">
+        <div class="daypill">Hoy</div>
+        <div class="bub bot">🤖 Hola! Soy el bot de Farmacia Badia. ¿En qué te puedo ayudar?<span class="meta">21:38</span></div>
+        <div class="bub in">Hola, necesito ibuprofeno 600 por 10<span class="meta">21:39</span></div>
+        <div class="bub bot">Te derivo con un operador, un momento por favor.<span class="meta">21:39</span></div>
+        <div class="bub in">Dale, gracias!<span class="meta">21:40</span></div>
+        <div class="daypill">— Conv. en cola —</div>
+      </div>
+      <div class="composer">
+        <input type="text" placeholder="Escribí un mensaje…">
+        <button class="send">Enviar ▸</button>
+      </div>
+    </div>
+
+    <!-- cliente -->
+    <div class="col-right">
+      <div class="field">
+        <label>Cliente</label>
+        <input type="text" placeholder="Buscar (multi-palabra)">
+      </div>
+      <div class="field">
+        <label>Dirección (calle y número) <span style="color:var(--muted2); font-weight:400;">— sin vincular —</span></label>
+        <input type="text" placeholder="ej: Av. Córdoba 3400">
+      </div>
+      <div class="row2">
+        <div class="field"><label>Piso</label><input placeholder="ej: 1 / PB"></div>
+        <div class="field"><label>Depto</label><input placeholder="ej: B"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Referencia</label><input placeholder="monoblock 4, torre B, entre calles..."></div>
+        <div class="field"><label>Ciudad</label><input value="Rosario"></div>
+      </div>
+      <p style="color:var(--muted); font-size:12px; margin-top:18px;">Abrí una conversación para ver al cliente.</p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

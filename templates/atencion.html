@@ -35,21 +35,86 @@
     --alert-bg:#2a1812; --alert-tx:#F0997B; --tagb-bg:#1f1d2e; --tagb-tx:#AFA9EC; --tagg-bg:#102a22; --tagg-tx:#5DCAA5;
     --theme-bd:rgba(255,255,255,0.15); --active-bd:#D85A30;
   }
+  /* Theme cream-mint (Diego 2026-06-17): shell crema-papel + tabla casi blanca + accent
+     menta. Texto oscuro para contraste WCAG AA. Misma paleta que /reparto/planilla.
+     El chat (col-chat + composer) tiene override scoped a dark al final del bloque. */
   #app.light {
-    --bg:#dbe5e6; --bd:#b8c8c9; --topbar:#cdd9da; --side:#d2dedf; --chat:#dde7e8;
-    --title:#1f3a36; --txt:#2c3e3b; --muted:#6f807d; --muted2:#5f6e6b; --accent:#0F6E56; --accenttxt:#0F6E56;
-    --logo-bg:#0F6E56; --logo-tx:#E1F5EE; --me-bg:#0F6E56; --me-tx:#E1F5EE; --dot-bd:#cdd9da;
-    --bubin:#eef4f4; --bubin-tx:#2c3e3b; --bubbot:#dceaf5; --bubbot-tx:#0c447c; --bot:#185FA5;
-    --card:#eef4f4; --card-bd:#5DCAA5; --cardhead-bd:#d0dcdc; --cardic:#d6efe6; --cardic-tx:#0F6E56;
-    --row-bd:#dde7e7; --total-bg:#e2eeed; --total:#0F6E56; --qm:#d8e3e3; --qm-tx:#5f6e6b; --qp:#d6efe6; --qp-tx:#0F6E56;
-    --pop:#eef4f4; --pop-bd:#c2d0d1; --caret:#0F6E56; --rx-bg:#f6dada; --rx-tx:#a32d2d;
-    --prod-bg:#d6efe6; --prod-bd:#5DCAA5; --prod-tx:#0F6E56; --clip-bg:#e2eeed; --clip-tx:#5f6e6b;
-    --input:#eef4f4; --input-tx:#2c3e3b; --send-bg:#0F6E56; --send-tx:#E1F5EE;
-    --badge-bg:#0F6E56; --badge-tx:#E1F5EE; --day-bg:#cdd9da; --hov:#dbe8e8; --menu:#eef4f4; --menu-tx:#2c3e3b;
-    --busy:#BA7517; --busytx:#854F0B; --busyav:#185FA5; --busyav-tx:#E6F1FB; --away:#888780; --awaytx:#5f6e6b; --awayav:#a8b4b5; --awayav-tx:#5a6664;
-    --alert-bg:#f6e0d6; --alert-tx:#993c1d; --tagb-bg:#dceaf5; --tagb-tx:#0c447c; --tagg-bg:#d6efe6; --tagg-tx:#0F6E56;
-    --theme-bd:#b8c8c9; --active-bd:#D85A30;
+    --bg:#EDE6CF; --bd:#D8D0B6; --topbar:#FCFBF7; --side:#FCFBF7; --chat:#1B3A2E;
+    --title:#0A0908; --txt:#1C1817; --muted:#4F4A3F; --muted2:#6C6759;
+    --accent:#10B981; --accenttxt:#047857;
+    --logo-bg:#10B981; --logo-tx:#FFFFFF; --me-bg:#10B981; --me-tx:#FFFFFF; --dot-bd:#FCFBF7;
+    /* --bubin/--bubbot: usados por .seg (botones bandeja) y .conv-active. En light
+       les damos tono crema para que se vean como pills sobre el sidebar cream. El
+       chat los override con tonos forest scoped en #colChat. */
+    --bubin:#E0D8BD; --bubin-tx:#1C1817; --bubbot:#E8F8EF; --bubbot-tx:#064E3B; --bot:#10B981;
+    --card:#FFFFFF; --card-bd:#10B981; --cardhead-bd:#D8D0B6; --cardic:#E8F8EF; --cardic-tx:#064E3B;
+    --row-bd:#EDE6CF; --total-bg:#F5EFD9; --total:#064E3B; --qm:#F3F4F6; --qm-tx:#4F4A3F; --qp:#E8F8EF; --qp-tx:#064E3B;
+    --pop:#FFFFFF; --pop-bd:#D8D0B6; --caret:#10B981; --rx-bg:#FEE2E2; --rx-tx:#991B1B;
+    --prod-bg:#E8F8EF; --prod-bd:#10B981; --prod-tx:#064E3B; --clip-bg:#F3F4F6; --clip-tx:#4F4A3F;
+    --input:#FFFFFF; --input-tx:#1C1817; --send-bg:#10B981; --send-tx:#FFFFFF;
+    --badge-bg:#10B981; --badge-tx:#FFFFFF; --day-bg:#F5EFD9; --hov:#DCFCE7; --menu:#FFFFFF; --menu-tx:#1C1817;
+    --busy:#B45309; --busytx:#B45309; --busyav:#10B981; --busyav-tx:#FFFFFF;
+    --away:#6C6759; --awaytx:#4F4A3F; --awayav:#D8D0B6; --awayav-tx:#4F4A3F;
+    --alert-bg:#FCEFCA; --alert-tx:#B45309; --tagb-bg:#DBEAFE; --tagb-tx:#1E40AF; --tagg-bg:#E8F8EF; --tagg-tx:#064E3B;
+    --theme-bd:#D8D0B6; --active-bd:#F97316;
   }
+  /* Chat queda dark dentro del shell claro (B&Diego 2026-06-17): override scoped de
+     las variables que tocan al chat. Los componentes adentro de #colChat usan estos
+     valores y NO los de #app.light. */
+  #app.light #colChat {
+    /* Forest green theme para el chat — mismo verde que el shell pero más oscuro,
+       paleta consistente sin saltos a dark fuerte. */
+    --side:#234A3A; --bd:rgba(255,255,255,0.10);
+    --title:#F2F5F2; --txt:#E5EAE6; --muted:#9BB5A7; --muted2:#7A9888;
+    --bubin:#2D5444; --bubin-tx:#F2F5F2;
+    --bubbot:#3D6555; --bubbot-tx:#E5EAE6; --bot:#5DCAA5;
+    --me-bg:#10B981; --me-tx:#FFFFFF;
+    --day-bg:#234A3A; --hov:#2D5444; --row-bd:rgba(255,255,255,0.06);
+    --input:#234A3A; --input-tx:#E5EAE6;
+    --send-bg:#10B981; --send-tx:#FFFFFF;
+    --pop:#234A3A; --pop-bd:rgba(255,255,255,0.12);
+    --rx-bg:#4A2828; --rx-tx:#FCA5A5;
+    --card:#234A3A; --card-bd:#10B981; --cardhead-bd:rgba(255,255,255,0.08);
+    --cardic:#10302A; --cardic-tx:#5DCAA5;
+    --prod-bg:#10302A; --prod-bd:#10B981; --prod-tx:#A7F3D0;
+    --clip-bg:#234A3A; --clip-tx:#9BB5A7;
+    --total-bg:#10302A; --total:#F2F5F2;
+    --qm:#234A3A; --qm-tx:#9BB5A7; --qp:#2D5444; --qp-tx:#A7F3D0;
+    --alert-bg:#3D2812; --alert-tx:#FCD34D;
+    --tagb-bg:#2D5444; --tagb-tx:#A7F3D0; --tagg-bg:#10302A; --tagg-tx:#5DCAA5;
+    background:var(--chat); color:var(--txt);
+  }
+  /* Sidebar derecho (ficha del cliente + form de cierre): crema más oscuro para
+     que los inputs blancos resalten. */
+  #app.light #fichaCol { background:#E0D8BD; border-left-color:#C5BCA0; }
+  /* Conv abierta en la bandeja: border-left verde sólido + fondo accent-soft. */
+  #app.light .conv-active { background:var(--accent-soft) !important;
+                             border:1px solid var(--accent-soft) !important;
+                             border-left:3px solid var(--accent) !important; }
+  /* Lista de convs (#bandeja) verde menta muy clarito para diferenciar del head con
+     botones .seg crema y dar identidad al área de "clientes atendidos". */
+  #app.light #bandeja { background:#D1FAE5; }
+  #app.light #bandeja .conv { background:transparent; }
+  #app.light #bandeja .conv:hover { background:#A7F3D0; }
+  /* Dropdowns custom (sugerencias OS, presets observ., droguerías): hover destaca
+     el item; texto var(--txt) hereda el theme actual. */
+  .d-os-opt:hover, .d-obs-opt:hover { background:var(--hov); }
+  /* Botones del shell (lupa, ＋, ✏️, 📍) — en light el --bubin queda igual que el
+     sidebar y se vuelven invisibles. Forzamos blanco con border crema visible. */
+  #app.light .hbtn { background:var(--card); border:1px solid #C5BCA0; color:var(--txt); }
+  #app.light .hbtn:hover { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+  /* Botones de acción (CTA) preservan su color sólido en light (más específico). */
+  #app.light .hbtn.hbtn-ok { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #app.light .hbtn.hbtn-ok:hover { background:#047857; color:#fff; border-color:#047857; }
+  #app.light .hbtn.hbtn-info { background:#2563eb; color:#fff; border-color:#2563eb; }
+  #app.light .hbtn.hbtn-info:hover { background:#1E40AF; color:#fff; border-color:#1E40AF; }
+  /* Excepción: dentro del chat (forest), .hbtn sigue con su background dark heredado */
+  #app.light #colChat .hbtn { background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.15); color:var(--txt); }
+  #app.light #colChat .hbtn:hover { background:rgba(255,255,255,.12); color:#fff; }
+  /* Botones inline ✂ (campos Piso/Depto/Referencia) — opacity 0.55 los hacía
+     casi invisibles sobre crema. Subimos opacity + accent color para que destaquen. */
+  #app.light button[onclick*="fieldPick"] { opacity:.85 !important; color:var(--accent); }
+  #app.light button[onclick*="fieldPick"]:hover { opacity:1 !important; }
 
   /* ── Mapeo de clases a tokens ── */
   #app { background:var(--bg); color:var(--txt); }
@@ -97,7 +162,9 @@
   .hbtn { border:0.5px solid var(--bd); background:var(--bubin); color:var(--txt); cursor:pointer; }
   .hbtn:hover { background:var(--hov); }
   .hbtn-ok { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .hbtn-ok:hover { background:#047857; color:#fff; border-color:#047857; }
   .hbtn-info { background:#2563eb; color:#fff; border-color:#2563eb; }
+  .hbtn-info:hover { background:#1E40AF; color:#fff; border-color:#1E40AF; }
   .bt { border-color:var(--bd); }
   .alert { background:var(--alert-bg); color:var(--alert-tx); }
   .tag-blue { background:var(--tagb-bg); color:var(--tagb-tx); } .tag-green { background:var(--tagg-bg); color:var(--tagg-tx); }
@@ -112,26 +179,29 @@
   /* Grid del picker apilado vertical para el sidebar (que es angosto vs /pedido/nuevo). */
   #pickerWrap .grid-cliente { display:grid; grid-template-columns:1fr; gap:5px; }
 
-  /* color-scheme:dark hace que los <option> hereden el dark theme del browser
-     en vez de mostrar fondo blanco. Diego 2026-06-15: el dropdown de Ciudad
-     mostraba 'Rosario' blanco sobre blanco al abrirlo. */
-  select.input, select { color-scheme: dark; }
-  /* Belt & suspenders: en algunos browsers el color-scheme no alcanza para los
-     options. Forzamos colores explicitos. */
-  .input option, select.input option { background-color: #2c2c39; color: #ececf0; }
-  /* Fix del autofill de Chrome/Edge: el browser pinta los inputs con fondo
-     amarillo/blanco cuando autocomplete está activo. box-shadow inset gigante
-     fuerza el background dark. -webkit-text-fill-color asegura el texto claro. */
-  input.input:-webkit-autofill,
-  input.input:-webkit-autofill:hover,
-  input.input:-webkit-autofill:focus,
-  input.input:-webkit-autofill:active,
-  .input:-webkit-autofill,
-  .input:-webkit-autofill:hover,
-  .input:-webkit-autofill:focus {
+  /* color-scheme: el browser dibuja los chrome del select (arrow, scrollbar) según
+     el modo. En dark va dark; en light (cream) va light para que las options se
+     vean blanco sobre texto oscuro. */
+  #app.dark select.input, #app.dark select { color-scheme: dark; }
+  #app.dark .input option, #app.dark select.input option { background-color: #2c2c39; color: #ececf0; }
+  #app.light select.input, #app.light select { color-scheme: light; }
+  #app.light .input option, #app.light select.input option { background-color: #FFFFFF; color: #1C1817; }
+  /* Fix del autofill de Chrome/Edge: el browser pinta los inputs con su default
+     amarillo/blanco. Forzamos el bg al color del input según el theme. */
+  #app.dark input.input:-webkit-autofill, #app.dark input.input:-webkit-autofill:hover,
+  #app.dark input.input:-webkit-autofill:focus, #app.dark input.input:-webkit-autofill:active,
+  #app.dark .input:-webkit-autofill, #app.dark .input:-webkit-autofill:hover, #app.dark .input:-webkit-autofill:focus {
     -webkit-box-shadow: 0 0 0 1000px #3a3a47 inset !important;
     -webkit-text-fill-color: #ececf0 !important;
     caret-color: #ececf0 !important;
+    transition: background-color 9999s ease-in-out 0s;
+  }
+  #app.light input.input:-webkit-autofill, #app.light input.input:-webkit-autofill:hover,
+  #app.light input.input:-webkit-autofill:focus, #app.light input.input:-webkit-autofill:active,
+  #app.light .input:-webkit-autofill, #app.light .input:-webkit-autofill:hover, #app.light .input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px #FFFFFF inset !important;
+    -webkit-text-fill-color: #1C1817 !important;
+    caret-color: #10B981 !important;
     transition: background-color 9999s ease-in-out 0s;
   }
 
@@ -610,7 +680,7 @@ const osPrecioCache = {};
 /* ── Tema (claro/oscuro) ── */
 (function(){
   const app = document.getElementById('app');
-  const saved = localStorage.getItem('atencion-theme') || 'dark';
+  const saved = localStorage.getItem('atencion-theme-v2') || 'light';
   setTheme(saved);
   document.getElementById('theme-btn').addEventListener('click', () =>
     setTheme(app.classList.contains('dark') ? 'light' : 'dark'));
@@ -618,7 +688,7 @@ const osPrecioCache = {};
     app.className = t;
     document.getElementById('theme-icon').className = 'ti ' + (t === 'dark' ? 'ti-moon' : 'ti-sun');
     document.getElementById('theme-text').textContent = t === 'dark' ? 'Oscuro' : 'Claro';
-    localStorage.setItem('atencion-theme', t);
+    localStorage.setItem('atencion-theme-v2', t);
   }
 })();
 
@@ -1709,11 +1779,11 @@ function dPintarObsDrop(){
   const drop = document.getElementById('dObsDrop');
   if (!drop) return;
   if (!_dObsPresets.length){
-    drop.innerHTML = '<div style="padding:10px;font-size:11px;color:#9c9ca4;">sin presets</div>';
+    drop.innerHTML = '<div style="padding:10px;font-size:11px;color:var(--muted);">sin presets</div>';
     return;
   }
   drop.innerHTML = _dObsPresets.map((p, i) =>
-    '<div class="d-obs-opt" data-idx="' + i + '" style="padding:7px 11px;font-size:12px;cursor:pointer;color:#fafafc;border-bottom:1px solid rgba(255,255,255,0.1);">' +
+    '<div class="d-obs-opt" data-idx="' + i + '" style="padding:7px 11px;font-size:12px;cursor:pointer;color:var(--txt);border-bottom:1px solid var(--bd);">' +
     esc(p.texto) + '</div>'
   ).join('');
   drop.onclick = (e) => {
@@ -1751,7 +1821,7 @@ async function dBuscarObraSocial(){
     if (!ds.length){ box.style.display = 'none'; box.innerHTML = ''; return; }
     box.innerHTML = ds.slice(0, 12).map(o =>
       `<div class="d-os-opt" data-nombre="${esc(o.descripcion)}"
-            style="padding:6px 10px; cursor:pointer; font-size:12px; color:#fafafc; border-bottom:1px solid rgba(255,255,255,0.08);">
+            style="padding:6px 10px; cursor:pointer; font-size:12px; color:var(--txt); border-bottom:1px solid var(--bd);">
          ${esc(o.descripcion)}
        </div>`).join('');
     box.onclick = (e) => {

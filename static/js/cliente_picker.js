@@ -68,9 +68,9 @@
     const ahora = new Date();
     const ts = new Date(iso);
     const meses = (ahora - ts) / (1000*60*60*24*30.4);
-    if (meses < 3)  return {bg:'rgba(29,158,117,0.22)', label:'reciente'};
-    if (meses < 12) return {bg:'rgba(239,159,39,0.22)', label:'>3 meses'};
-    return                  {bg:'rgba(220,90,40,0.28)', label:'>1 año'};
+    if (meses < 3)  return {bg:'rgba(16,185,129,0.28)', label:'reciente'};
+    if (meses < 12) return {bg:'rgba(180,83,9,0.22)',   label:'>3 meses'};
+    return                  {bg:'rgba(185,28,28,0.22)',  label:'>1 año'};
   }
 
   function renderDomCoords(){
@@ -91,8 +91,8 @@
       const tail = [labelTxt, window._domGeoAt ? fmtFechaGeo(window._domGeoAt) : ''].filter(Boolean).join(' · ');
       el.innerHTML = `
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:nowrap; white-space:nowrap;">
-          <span style="font-size:14px; font-weight:700; color:var(--accent); font-family:monospace;">📍 ${lat}, ${lng}</span>
-          ${tail ? `<span style="font-size:13px; font-weight:600; color:var(--title);">${tail}</span>` : ''}
+          <span style="font-size:14px; font-weight:700; color:#064E3B; font-family:monospace;">📍 ${lat}, ${lng}</span>
+          ${tail ? `<span style="font-size:13px; font-weight:600; color:#0A0908;">${tail}</span>` : ''}
           <a href="https://www.google.com/maps?q=${latPrec},${lngPrec}" target="_blank" rel="noopener"
              style="font-size:11px; font-weight:700; color:#fff; background:#185FA5;
                     padding:5px 12px; border-radius:8px; text-decoration:none;"
