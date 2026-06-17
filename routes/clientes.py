@@ -36,6 +36,8 @@ def init_app(app):
         grupo_id = request.args.get('grupo_id', type=int)
         localidad = (request.args.get('localidad') or '').strip()
         os_id = request.args.get('os_id', type=int)
+        # Filtro: solo clientes cuyo último domicilio tiene lat/lng cargada.
+        domic_validado = request.args.get('domic_validado') == '1'
         try:
             page = max(1, int(request.args.get('page', '1')))
         except ValueError:
@@ -45,6 +47,19 @@ def init_app(app):
 
         with database.get_db() as session:
             base = session.query(database.ObsCliente)
+            # Domicilio validado: limita a obs_clientes cuya extensión local
+            # tiene al menos un DomicilioCliente con coords. Aplica ANTES del
+            # query principal para que el conteo total / paginado sean correctos.
+            if domic_validado:
+                # scalar_subquery() evita el SAWarning de coerción a select().
+                sub_geo = (session.query(database.Cliente.observer_id)
+                           .join(database.DomicilioCliente,
+                                 database.DomicilioCliente.cliente_id == database.Cliente.id)
+                           .filter(database.Cliente.observer_id.isnot(None),
+                                   database.DomicilioCliente.lat.isnot(None),
+                                   database.DomicilioCliente.lng.isnot(None))
+                           .distinct())
+                base = base.filter(database.ObsCliente.observer_id.in_(sub_geo))
             if q:
                 from helpers import multi_token_filter
                 # Match exacto por DNI si el query es solo numérico (atajo).
@@ -92,29 +107,94 @@ def init_app(app):
 
             # Detectar cuáles tienen extensión local (Cliente) ya cargada
             con_extension = set()
+            obs_to_cli = {}   # observer_id → cliente_id local (Cliente.id)
             if obs_ids:
-                con_extension = {oid for (oid,) in
-                                 session.query(database.Cliente.observer_id)
-                                 .filter(database.Cliente.observer_id.in_(obs_ids)).all()}
+                for cli_id, obs_id in (session.query(database.Cliente.id, database.Cliente.observer_id)
+                                       .filter(database.Cliente.observer_id.in_(obs_ids)).all()):
+                    con_extension.add(obs_id)
+                    obs_to_cli[obs_id] = cli_id
 
-            # OS principal inferida por cliente (con confianza)
-            os_inferida_map = {}
+            # Geo del último domicilio con coords + último chat + último pedido
+            # por cliente local. Se renderean como columnas extra (Diego 2026-06-15).
+            cli_ids = list(obs_to_cli.values())
+            geo_map = {}            # cli_id → (lat, lng)
+            ultima_conv_map = {}    # cli_id → conv_id (canal != 'manual')
+            ultimo_pedido_map = {}  # cli_id → (pedido_id, fecha)
+            if cli_ids:
+                # Último DomicilioCliente con lat/lng por cliente_id.
+                from sqlalchemy import func as __f
+                dom_rows = (session.query(database.DomicilioCliente.cliente_id,
+                                          database.DomicilioCliente.lat,
+                                          database.DomicilioCliente.lng,
+                                          database.DomicilioCliente.geo_actualizado_en)
+                            .filter(database.DomicilioCliente.cliente_id.in_(cli_ids),
+                                    database.DomicilioCliente.lat.isnot(None),
+                                    database.DomicilioCliente.lng.isnot(None))
+                            .order_by(database.DomicilioCliente.cliente_id,
+                                      database.DomicilioCliente.geo_actualizado_en.desc().nullslast())
+                            .all())
+                for cid, lat, lng, _ in dom_rows:
+                    if cid not in geo_map:
+                        geo_map[cid] = (float(lat), float(lng))
+                # Última BotConversacion no-manual por cliente_id.
+                conv_rows = (session.query(database.BotConversacion.cliente_id,
+                                           database.BotConversacion.id,
+                                           database.BotConversacion.ultimo_en)
+                             .filter(database.BotConversacion.cliente_id.in_(cli_ids),
+                                     database.BotConversacion.canal != 'manual')
+                             .order_by(database.BotConversacion.cliente_id,
+                                       database.BotConversacion.ultimo_en.desc().nullslast())
+                             .all())
+                for cid, conv_id, _ in conv_rows:
+                    if cid not in ultima_conv_map:
+                        ultima_conv_map[cid] = conv_id
+                # Último PedidoReparto por cliente_id.
+                ped_rows = (session.query(database.PedidoReparto.cliente_id,
+                                          database.PedidoReparto.id,
+                                          database.PedidoReparto.fecha)
+                            .filter(database.PedidoReparto.cliente_id.in_(cli_ids))
+                            .order_by(database.PedidoReparto.cliente_id,
+                                      database.PedidoReparto.fecha.desc(),
+                                      database.PedidoReparto.id.desc())
+                            .all())
+                for cid, pid, fecha in ped_rows:
+                    if cid not in ultimo_pedido_map:
+                        ultimo_pedido_map[cid] = (pid, fecha)
+
+            # OS principal: confirmada (en el chat por un operador) tiene
+            # prioridad sobre inferida (heurística del histórico de ventas).
+            os_inferida_map = {}     # cli_observer_id → {os_id, nombre, confianza, fuente='inferida'|'confirmada'}
             if obs_ids:
+                # 1. OS confirmadas — toman precedencia.
+                conf_rows = (session.query(database.ClienteOsConfirmada.cliente_observer_id,
+                                           database.ClienteOsConfirmada.obra_social_observer_id,
+                                           database.ClienteOsConfirmada.obra_social_nombre)
+                             .filter(database.ClienteOsConfirmada.cliente_observer_id.in_(obs_ids))
+                             .all())
+                for cli, os_obs, nombre in conf_rows:
+                    os_inferida_map[cli] = {
+                        'os_id': os_obs, 'nombre': nombre or f'OS#{os_obs}',
+                        'confianza': None, 'fuente': 'confirmada',
+                    }
+                # 2. OS inferidas — solo para los que NO tienen confirmada.
                 rows = (session.query(database.ClienteOsInferida.cliente_observer,
                                       database.ClienteOsInferida.obra_social_observer,
                                       database.ClienteOsInferida.confianza_pct)
                         .filter(database.ClienteOsInferida.cliente_observer.in_(obs_ids))
                         .filter(database.ClienteOsInferida.obra_social_observer.isnot(None))
                         .all())
-                os_ids_para_nombrar = {r[1] for r in rows}
+                os_ids_para_nombrar = {r[1] for r in rows if r[0] not in os_inferida_map}
                 os_nombres = dict(session.query(database.ObsObraSocial.observer_id,
                                                 database.ObsObraSocial.descripcion)
                                   .filter(database.ObsObraSocial.observer_id.in_(os_ids_para_nombrar)).all()) if os_ids_para_nombrar else {}
                 for cli, os_obs, conf in rows:
+                    if cli in os_inferida_map:
+                        continue   # ya tiene confirmada
                     os_inferida_map[cli] = {
                         'os_id': os_obs,
                         'nombre': os_nombres.get(os_obs, f'OS#{os_obs}'),
                         'confianza': float(conf) if conf is not None else None,
+                        'fuente': 'inferida',
                     }
 
             # Lista de grupos para el filtro
@@ -136,8 +216,12 @@ def init_app(app):
 
             clientes = []
             for c in clientes_raw:
+                cli_id = obs_to_cli.get(c.observer_id)
+                geo = geo_map.get(cli_id) if cli_id else None
+                ult_pedido = ultimo_pedido_map.get(cli_id) if cli_id else None
                 clientes.append({
                     'observer_id': c.observer_id,
+                    'cliente_id': cli_id,
                     'apellido_nombre': c.apellido_nombre,
                     'documento': (f'{c.documento_tipo} {c.documento_numero}'
                                    if c.documento_numero else ''),
@@ -147,6 +231,10 @@ def init_app(app):
                     'grupo': grupos_map.get(c.grupo_observer, ''),
                     'tiene_extension': c.observer_id in con_extension,
                     'os_inferida': os_inferida_map.get(c.observer_id),
+                    'geo': {'lat': geo[0], 'lng': geo[1]} if geo else None,
+                    'ultima_conv_id': ultima_conv_map.get(cli_id) if cli_id else None,
+                    'ultimo_pedido_id': ult_pedido[0] if ult_pedido else None,
+                    'ultimo_pedido_fecha': ult_pedido[1].strftime('%Y-%m-%d') if ult_pedido else None,
                 })
 
             last_page = max(1, (total + per_page - 1) // per_page)
@@ -158,6 +246,7 @@ def init_app(app):
                                    obras_sociales=[{'os_id': r[0], 'nombre': r[1], 'n_clientes': r[2]}
                                                     for r in os_con_clientes],
                                    q=q, grupo_id=grupo_id, localidad=localidad, os_id=os_id,
+                                   domic_validado=domic_validado,
                                    page=page, last_page=last_page)
 
     @app.route('/clientes/stats')

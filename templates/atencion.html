@@ -35,21 +35,86 @@
     --alert-bg:#2a1812; --alert-tx:#F0997B; --tagb-bg:#1f1d2e; --tagb-tx:#AFA9EC; --tagg-bg:#102a22; --tagg-tx:#5DCAA5;
     --theme-bd:rgba(255,255,255,0.15); --active-bd:#D85A30;
   }
+  /* Theme cream-mint (Diego 2026-06-17): shell crema-papel + tabla casi blanca + accent
+     menta. Texto oscuro para contraste WCAG AA. Misma paleta que /reparto/planilla.
+     El chat (col-chat + composer) tiene override scoped a dark al final del bloque. */
   #app.light {
-    --bg:#dbe5e6; --bd:#b8c8c9; --topbar:#cdd9da; --side:#d2dedf; --chat:#dde7e8;
-    --title:#1f3a36; --txt:#2c3e3b; --muted:#6f807d; --muted2:#5f6e6b; --accent:#0F6E56; --accenttxt:#0F6E56;
-    --logo-bg:#0F6E56; --logo-tx:#E1F5EE; --me-bg:#0F6E56; --me-tx:#E1F5EE; --dot-bd:#cdd9da;
-    --bubin:#eef4f4; --bubin-tx:#2c3e3b; --bubbot:#dceaf5; --bubbot-tx:#0c447c; --bot:#185FA5;
-    --card:#eef4f4; --card-bd:#5DCAA5; --cardhead-bd:#d0dcdc; --cardic:#d6efe6; --cardic-tx:#0F6E56;
-    --row-bd:#dde7e7; --total-bg:#e2eeed; --total:#0F6E56; --qm:#d8e3e3; --qm-tx:#5f6e6b; --qp:#d6efe6; --qp-tx:#0F6E56;
-    --pop:#eef4f4; --pop-bd:#c2d0d1; --caret:#0F6E56; --rx-bg:#f6dada; --rx-tx:#a32d2d;
-    --prod-bg:#d6efe6; --prod-bd:#5DCAA5; --prod-tx:#0F6E56; --clip-bg:#e2eeed; --clip-tx:#5f6e6b;
-    --input:#eef4f4; --input-tx:#2c3e3b; --send-bg:#0F6E56; --send-tx:#E1F5EE;
-    --badge-bg:#0F6E56; --badge-tx:#E1F5EE; --day-bg:#cdd9da; --hov:#dbe8e8; --menu:#eef4f4; --menu-tx:#2c3e3b;
-    --busy:#BA7517; --busytx:#854F0B; --busyav:#185FA5; --busyav-tx:#E6F1FB; --away:#888780; --awaytx:#5f6e6b; --awayav:#a8b4b5; --awayav-tx:#5a6664;
-    --alert-bg:#f6e0d6; --alert-tx:#993c1d; --tagb-bg:#dceaf5; --tagb-tx:#0c447c; --tagg-bg:#d6efe6; --tagg-tx:#0F6E56;
-    --theme-bd:#b8c8c9; --active-bd:#D85A30;
+    --bg:#EDE6CF; --bd:#D8D0B6; --topbar:#FCFBF7; --side:#FCFBF7; --chat:#1B3A2E;
+    --title:#0A0908; --txt:#1C1817; --muted:#4F4A3F; --muted2:#6C6759;
+    --accent:#10B981; --accenttxt:#047857;
+    --logo-bg:#10B981; --logo-tx:#FFFFFF; --me-bg:#10B981; --me-tx:#FFFFFF; --dot-bd:#FCFBF7;
+    /* --bubin/--bubbot: usados por .seg (botones bandeja) y .conv-active. En light
+       les damos tono crema para que se vean como pills sobre el sidebar cream. El
+       chat los override con tonos forest scoped en #colChat. */
+    --bubin:#E0D8BD; --bubin-tx:#1C1817; --bubbot:#E8F8EF; --bubbot-tx:#064E3B; --bot:#10B981;
+    --card:#FFFFFF; --card-bd:#10B981; --cardhead-bd:#D8D0B6; --cardic:#E8F8EF; --cardic-tx:#064E3B;
+    --row-bd:#EDE6CF; --total-bg:#F5EFD9; --total:#064E3B; --qm:#F3F4F6; --qm-tx:#4F4A3F; --qp:#E8F8EF; --qp-tx:#064E3B;
+    --pop:#FFFFFF; --pop-bd:#D8D0B6; --caret:#10B981; --rx-bg:#FEE2E2; --rx-tx:#991B1B;
+    --prod-bg:#E8F8EF; --prod-bd:#10B981; --prod-tx:#064E3B; --clip-bg:#F3F4F6; --clip-tx:#4F4A3F;
+    --input:#FFFFFF; --input-tx:#1C1817; --send-bg:#10B981; --send-tx:#FFFFFF;
+    --badge-bg:#10B981; --badge-tx:#FFFFFF; --day-bg:#F5EFD9; --hov:#DCFCE7; --menu:#FFFFFF; --menu-tx:#1C1817;
+    --busy:#B45309; --busytx:#B45309; --busyav:#10B981; --busyav-tx:#FFFFFF;
+    --away:#6C6759; --awaytx:#4F4A3F; --awayav:#D8D0B6; --awayav-tx:#4F4A3F;
+    --alert-bg:#FCEFCA; --alert-tx:#B45309; --tagb-bg:#DBEAFE; --tagb-tx:#1E40AF; --tagg-bg:#E8F8EF; --tagg-tx:#064E3B;
+    --theme-bd:#D8D0B6; --active-bd:#F97316;
   }
+  /* Chat queda dark dentro del shell claro (B&Diego 2026-06-17): override scoped de
+     las variables que tocan al chat. Los componentes adentro de #colChat usan estos
+     valores y NO los de #app.light. */
+  #app.light #colChat {
+    /* Forest green theme para el chat — mismo verde que el shell pero más oscuro,
+       paleta consistente sin saltos a dark fuerte. */
+    --side:#234A3A; --bd:rgba(255,255,255,0.10);
+    --title:#F2F5F2; --txt:#E5EAE6; --muted:#9BB5A7; --muted2:#7A9888;
+    --bubin:#2D5444; --bubin-tx:#F2F5F2;
+    --bubbot:#3D6555; --bubbot-tx:#E5EAE6; --bot:#5DCAA5;
+    --me-bg:#10B981; --me-tx:#FFFFFF;
+    --day-bg:#234A3A; --hov:#2D5444; --row-bd:rgba(255,255,255,0.06);
+    --input:#234A3A; --input-tx:#E5EAE6;
+    --send-bg:#10B981; --send-tx:#FFFFFF;
+    --pop:#234A3A; --pop-bd:rgba(255,255,255,0.12);
+    --rx-bg:#4A2828; --rx-tx:#FCA5A5;
+    --card:#234A3A; --card-bd:#10B981; --cardhead-bd:rgba(255,255,255,0.08);
+    --cardic:#10302A; --cardic-tx:#5DCAA5;
+    --prod-bg:#10302A; --prod-bd:#10B981; --prod-tx:#A7F3D0;
+    --clip-bg:#234A3A; --clip-tx:#9BB5A7;
+    --total-bg:#10302A; --total:#F2F5F2;
+    --qm:#234A3A; --qm-tx:#9BB5A7; --qp:#2D5444; --qp-tx:#A7F3D0;
+    --alert-bg:#3D2812; --alert-tx:#FCD34D;
+    --tagb-bg:#2D5444; --tagb-tx:#A7F3D0; --tagg-bg:#10302A; --tagg-tx:#5DCAA5;
+    background:var(--chat); color:var(--txt);
+  }
+  /* Sidebar derecho (ficha del cliente + form de cierre): crema más oscuro para
+     que los inputs blancos resalten. */
+  #app.light #fichaCol { background:#E0D8BD; border-left-color:#C5BCA0; }
+  /* Conv abierta en la bandeja: border-left verde sólido + fondo accent-soft. */
+  #app.light .conv-active { background:var(--accent-soft) !important;
+                             border:1px solid var(--accent-soft) !important;
+                             border-left:3px solid var(--accent) !important; }
+  /* Lista de convs (#bandeja) verde menta muy clarito para diferenciar del head con
+     botones .seg crema y dar identidad al área de "clientes atendidos". */
+  #app.light #bandeja { background:#D1FAE5; }
+  #app.light #bandeja .conv { background:transparent; }
+  #app.light #bandeja .conv:hover { background:#A7F3D0; }
+  /* Dropdowns custom (sugerencias OS, presets observ., droguerías): hover destaca
+     el item; texto var(--txt) hereda el theme actual. */
+  .d-os-opt:hover, .d-obs-opt:hover { background:var(--hov); }
+  /* Botones del shell (lupa, ＋, ✏️, 📍) — en light el --bubin queda igual que el
+     sidebar y se vuelven invisibles. Forzamos blanco con border crema visible. */
+  #app.light .hbtn { background:var(--card); border:1px solid #C5BCA0; color:var(--txt); }
+  #app.light .hbtn:hover { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+  /* Botones de acción (CTA) preservan su color sólido en light (más específico). */
+  #app.light .hbtn.hbtn-ok { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #app.light .hbtn.hbtn-ok:hover { background:#047857; color:#fff; border-color:#047857; }
+  #app.light .hbtn.hbtn-info { background:#2563eb; color:#fff; border-color:#2563eb; }
+  #app.light .hbtn.hbtn-info:hover { background:#1E40AF; color:#fff; border-color:#1E40AF; }
+  /* Excepción: dentro del chat (forest), .hbtn sigue con su background dark heredado */
+  #app.light #colChat .hbtn { background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.15); color:var(--txt); }
+  #app.light #colChat .hbtn:hover { background:rgba(255,255,255,.12); color:#fff; }
+  /* Botones inline ✂ (campos Piso/Depto/Referencia) — opacity 0.55 los hacía
+     casi invisibles sobre crema. Subimos opacity + accent color para que destaquen. */
+  #app.light button[onclick*="fieldPick"] { opacity:.85 !important; color:var(--accent); }
+  #app.light button[onclick*="fieldPick"]:hover { opacity:1 !important; }
 
   /* ── Mapeo de clases a tokens ── */
   #app { background:var(--bg); color:var(--txt); }
@@ -97,7 +162,9 @@
   .hbtn { border:0.5px solid var(--bd); background:var(--bubin); color:var(--txt); cursor:pointer; }
   .hbtn:hover { background:var(--hov); }
   .hbtn-ok { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .hbtn-ok:hover { background:#047857; color:#fff; border-color:#047857; }
   .hbtn-info { background:#2563eb; color:#fff; border-color:#2563eb; }
+  .hbtn-info:hover { background:#1E40AF; color:#fff; border-color:#1E40AF; }
   .bt { border-color:var(--bd); }
   .alert { background:var(--alert-bg); color:var(--alert-tx); }
   .tag-blue { background:var(--tagb-bg); color:var(--tagb-tx); } .tag-green { background:var(--tagg-bg); color:var(--tagg-tx); }
@@ -111,26 +178,70 @@
   #pickerWrap .res .it:hover { background:var(--hov); }
   /* Grid del picker apilado vertical para el sidebar (que es angosto vs /pedido/nuevo). */
   #pickerWrap .grid-cliente { display:grid; grid-template-columns:1fr; gap:5px; }
+
+  /* color-scheme: el browser dibuja los chrome del select (arrow, scrollbar) según
+     el modo. En dark va dark; en light (cream) va light para que las options se
+     vean blanco sobre texto oscuro. */
+  #app.dark select.input, #app.dark select { color-scheme: dark; }
+  #app.dark .input option, #app.dark select.input option { background-color: #2c2c39; color: #ececf0; }
+  #app.light select.input, #app.light select { color-scheme: light; }
+  #app.light .input option, #app.light select.input option { background-color: #FFFFFF; color: #1C1817; }
+  /* Fix del autofill de Chrome/Edge: el browser pinta los inputs con su default
+     amarillo/blanco. Forzamos el bg al color del input según el theme. */
+  #app.dark input.input:-webkit-autofill, #app.dark input.input:-webkit-autofill:hover,
+  #app.dark input.input:-webkit-autofill:focus, #app.dark input.input:-webkit-autofill:active,
+  #app.dark .input:-webkit-autofill, #app.dark .input:-webkit-autofill:hover, #app.dark .input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px #3a3a47 inset !important;
+    -webkit-text-fill-color: #ececf0 !important;
+    caret-color: #ececf0 !important;
+    transition: background-color 9999s ease-in-out 0s;
+  }
+  #app.light input.input:-webkit-autofill, #app.light input.input:-webkit-autofill:hover,
+  #app.light input.input:-webkit-autofill:focus, #app.light input.input:-webkit-autofill:active,
+  #app.light .input:-webkit-autofill, #app.light .input:-webkit-autofill:hover, #app.light .input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px #FFFFFF inset !important;
+    -webkit-text-fill-color: #1C1817 !important;
+    caret-color: #10B981 !important;
+    transition: background-color 9999s ease-in-out 0s;
+  }
+
+  /* ── Modo manual (walk-in): solo sidebar derecho, sin bandeja ni chat ── */
+  #grid3.modo-manual { grid-template-columns: 1fr !important; }
+  #grid3.modo-manual #colBandeja { display: none !important; }
+  #grid3.modo-manual #colChat { display: none !important; }
+  #grid3.modo-manual #fichaCol { border-left: none; max-width: 720px; margin: 0 auto;
+                                  width: 100%; padding: 8px 16px 24px; }
+  #grid3.modo-manual #pickerWrap { padding: 12px 12px 8px; }
+  /* En modo manual escondemos el header del cliente que viene de la chat-head
+     (que esta DENTRO de colChat → ya esta escondido). Pero el bloque del Reset
+     etc. del lado izquierdo del chat-head sigue ahi por si lo necesitamos. */
   /* el segundo grid (Domicilio / coords) en el macro trae margin-top:10px inline; lo bajamos */
   #pickerWrap .grid-cliente + .grid-cliente { margin-top:0 !important; }
 </style>
 </head>
 <body>
+{# Modo manual (walk-in: ?modo=manual). Disponible para toda la pagina. #}
+{% set _modo = modo or '' %}
+<script>window.ATENCION_MODO = {{ _modo|tojson }}; window.ATENCION_CONV_INICIAL = {{ (conv_inicial|int) if conv_inicial else 'null' }};</script>
 <div id="app" class="dark">
 
   <!-- ── Topbar ─────────────────────────────────────────────────────────── -->
   <div class="topbar" style="display:flex; align-items:center; justify-content:space-between; padding:10px 18px; border-bottom:0.5px solid; flex-shrink:0;">
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="logo" style="width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center;"><i class="ti ti-plus" style="font-size:18px"></i></div>
-      <span class="title" style="font-size:14px; font-weight:600;">Atención · Badia</span>
+      <span class="title" style="font-size:14px; font-weight:600;">
+        {% if _modo == 'manual' %}🛒 Pedido manual{% else %}Atención · Badia{% endif %}
+      </span>
     </div>
     <div style="display:flex; align-items:center; gap:16px;">
-      <select id="filtroLinea" onchange="cargarBandeja()" aria-label="Línea" class="input" style="border-radius:8px; padding:5px 10px; font-size:12px;">
+      <select id="filtroLinea" onchange="cargarBandeja()" aria-label="Línea" class="input" style="border-radius:8px; padding:5px 10px; font-size:12px;{% if _modo == 'manual' %} display:none;{% endif %}">
         <option value="">Todas las líneas</option>
         {% for l in lineas %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
       </select>
 
-      {# Botón 'Clientes' (modal) eliminado — el picker integrado en el sidebar ya cubre la búsqueda. #}
+      {# Acceso a la tabla maestra de clientes (Diego 2026-06-15). #}
+      <a href="/clientes" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;" title="Tabla maestra de clientes">👥 Clientes</a>
+
       {% if current_user.rol in ('admin', 'dev') %}
       <button onclick="abrirModalOperadores()" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">Operadores</button>
       <a href="/atencion/respuestas-rapidas" class="hbtn" style="font-size:12px; padding:6px 11px; border-radius:8px;">⚡ RR</a>
@@ -157,16 +268,23 @@
     </div>
   </div>
 
-  <!-- ── 3 columnas ─────────────────────────────────────────────────────── -->
-  <div id="grid3" style="display:grid; grid-template-columns:300px 1fr 500px; flex:1; min-height:0;">
+  <!-- ── 3 columnas (modo chat) / 1 columna (modo manual) ─────────────────── -->
+  <div id="grid3" class="{% if _modo == 'manual' %}modo-manual{% endif %}"
+       style="display:grid; grid-template-columns:300px 1fr 500px; flex:1; min-height:0;">
 
     <!-- Lista de conversaciones -->
-    <div class="col-side" style="border-right:0.5px solid; display:flex; flex-direction:column; min-height:0;">
-      <div class="side-head" style="padding:9px 10px; display:flex; gap:6px; border-bottom:0.5px solid;">
+    <div id="colBandeja" class="col-side" style="border-right:0.5px solid; display:flex; flex-direction:column; min-height:0;">
+      <div class="side-head" style="padding:9px 10px; display:flex; gap:6px; border-bottom:0.5px solid; flex-wrap:wrap;">
         <button data-vista="sin_asignar" onclick="setVista('sin_asignar')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Cola <b id="cnt-sin_asignar">0</b></button>
         <button data-vista="mias" onclick="setVista('mias')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Mías <b id="cnt-mias">0</b></button>
         <button data-vista="bot" onclick="setVista('bot')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Bot <b id="cnt-bot">0</b></button>
         <button data-vista="todas" onclick="setVista('todas')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Todas <b id="cnt-todas">0</b></button>
+        {# Pestaña 'Manuales' (walk-ins) — convs canal='manual' pendientes de
+           que el cliente venga a retirar. Botón "✓ Retirado" en la conv las cierra. #}
+        <button data-vista="manuales" onclick="setVista('manuales')" class="seg" style="flex:1 1 100%; padding:6px 3px; border-radius:7px; font-size:11px;">🛒 Manuales <b id="cnt-manuales">0</b></button>
+        {# Pestaña 'Cerrados hoy' — PedidoReparto que cerró el operador hoy.
+           Click en "Reabrir" hidrata el sidebar derecho para corregir y guardar UPDATE. #}
+        <button data-vista="cerrados" onclick="setVista('cerrados')" class="seg" style="flex:1 1 100%; padding:6px 3px; border-radius:7px; font-size:11px;">🧾 Cerrados hoy <b id="cnt-cerrados">0</b></button>
       </div>
       <div id="bandeja" style="flex:1; overflow-y:auto; min-height:0;">
         <div class="muted" style="padding:16px; font-size:13px;">Cargando…</div>
@@ -174,7 +292,7 @@
     </div>
 
     <!-- Chat -->
-    <div class="col-chat" style="display:flex; flex-direction:column; min-height:0;">
+    <div id="colChat" class="col-chat" style="display:flex; flex-direction:column; min-height:0;">
       <div class="chat-head" style="padding:9px 16px; border-bottom:0.5px solid; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:50px;">
         <div id="chatHeadInner" class="muted" style="font-size:13px;">Elegí una conversación 👈</div>
         <div id="chatAcciones" style="display:none; align-items:center; gap:7px; flex-shrink:0;">
@@ -224,78 +342,10 @@
           </div>
         </div>
 
-        <!-- Cerrar transacción (Fase A — prototipo, sin persistencia aún) -->
-        <div id="cerrarTxCard" style="display:none; margin:10px 14px 0;">
-          <div class="card" style="border:1px solid; border-radius:14px; overflow:hidden;">
-            <div class="card-head" style="padding:8px 13px; display:flex; align-items:center; gap:9px; border-bottom:0.5px solid;">
-              <div class="card-ic" style="width:24px; height:24px; border-radius:7px; display:flex; align-items:center; justify-content:center;">💳</div>
-              <span class="txt" style="font-size:11px;">Cerrar transacción</span>
-              <span class="muted" style="font-size:9px; margin-left:auto;">prototipo · la venta se carga en ObServer</span>
-            </div>
-            <div style="padding:11px 13px; display:flex; flex-direction:column; gap:10px; font-size:12px;">
-              {# Total / Forma de pago / Paga con / Envío — todos viven en la card
-                 'Pago acordado' del sidebar (Diego 2026-06-14). El modal los lee
-                 vía txGetters. #}
-              <div class="muted2" style="font-size:10px; padding:4px 8px; background:rgba(255,255,255,.03); border-radius:6px;">
-                <span id="txResumenPago">Monto y forma de pago: cargalos arriba (card Pago acordado).</span>
-              </div>
-              <div style="display:flex; gap:8px;">
-                <div style="flex:1;">
-                  <label class="muted2" style="font-size:10px;">Obra social (opcional)</label>
-                  <input id="txOS" placeholder="ej: PAMI" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                </div>
-                <div style="flex:1;">
-                  <label class="muted2" style="font-size:10px;">Receta</label>
-                  <select id="txReceta" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                    <option value="no">No requiere</option>
-                    <option value="pendiente">Pendiente</option>
-                    <option value="recibida">Recibida</option>
-                  </select>
-                </div>
-              </div>
-              <div id="txEnvioWrap" style="display:flex; gap:8px; align-items:flex-end;">
-                <div style="flex:1; min-width:0;">
-                  <label class="muted2" style="font-size:10px;">Domicilio de entrega</label>
-                  <select id="txDomicilio" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;"></select>
-                </div>
-              </div>
-              {# Stock + Sale por + Prioridad — fila compacta abajo de todo. #}
-              <div style="display:flex; gap:8px;">
-                <div style="flex:1;">
-                  <label class="muted2" style="font-size:10px;">¿Stock?</label>
-                  <select id="txStock" onchange="txStockChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                    <option value="hay">Sí, hay</option>
-                    <option value="esperar">Esperar droguería</option>
-                  </select>
-                  <select id="txDrogueria" style="display:none; width:100%; margin-top:5px; border-radius:8px; padding:6px 9px; font-size:12px;" class="input">
-                    <option value="">— elegir droguería —</option>
-                  </select>
-                </div>
-                <div style="flex:1;">
-                  <label class="muted2" style="font-size:10px;">¿Sale por?</label>
-                  <select id="txSalida" onchange="txSalidaChange()" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                    <option value="reparto">Reparto</option>
-                    <option value="retiro">Retiro</option>
-                  </select>
-                </div>
-                <div style="flex:1;">
-                  <label class="muted2" style="font-size:10px;">Prioridad</label>
-                  <select id="txPrioridad" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
-                    <option value="normal">Normal</option>
-                    <option value="alta">Alta</option>
-                    <option value="urgente">🚨 Urgente</option>
-                  </select>
-                </div>
-              </div>
-              <div style="display:flex; justify-content:space-between; align-items:center; border-top:0.5px solid; padding-top:8px;">
-                <span class="muted2" style="font-size:11px;">A cobrar</span>
-                <span id="txACobrar" class="total-amt" style="font-size:16px; font-weight:600;">$0</span>
-              </div>
-              {# txVuelto se quitó: el vuelto vive en pgVuelto (sidebar). #}
-              <button onclick="txCerrar()" class="hbtn hbtn-ok" style="border-radius:9px; padding:8px; font-size:12px;">Cerrar y mandar a caja ▸</button>
-            </div>
-          </div>
-        </div>
+        {# Modal Cerrar transacción ELIMINADO (Diego 2026-06-15: refactor C
+           etapa 3/3). Todos los campos (Stock, Sale por, Prioridad, Receta,
+           OS) ahora viven en el sidebar. guardarYCerrarTx llama a
+           cerrarTxDirecto que hace POST sin abrir modal. #}
 
         <!-- Popup buscador de productos -->
         <div id="searchPop" class="search-pop" style="display:none; margin:10px 14px 0; border:0.5px solid; border-radius:12px; overflow:hidden;">
@@ -322,6 +372,32 @@
 
     <!-- Ficha del cliente -->
     <div class="col-side" id="fichaCol" style="border-left:0.5px solid; overflow-y:auto; min-height:0;">
+      {# Card header walk-in + Canal en la misma línea (Diego 2026-06-15). El
+         badge 'Pendiente de retiro' + botón '✓ Retirado' solo aparecen si
+         destino del pedido = retiro (dSalida === 'retiro'); para reparto
+         los marca el cadete desde la planilla. #}
+      <div id="retiroCard" style="display:none; padding:8px 12px; border-bottom:1px solid var(--border);
+                                    background:rgba(239,159,39,.08);">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div style="flex:0 0 auto; font-size:11px; color:var(--warn); font-weight:600;">🛒 Pedido walk-in</div>
+          {# Canal sale del detalleCard y se monta acá (al lado del título walk-in).
+             En modo chat (sin retiroCard visible) Canal sigue existiendo en el DOM
+             pero hidden; default='atencion'. #}
+          <div style="flex:1; min-width:0;">
+            <select id="dCanal" class="input" style="width:100%; border-radius:8px; padding:4px 8px; font-size:11px;">
+              <option value="atencion">📱 Atención (chat)</option>
+              <option value="mostrador">🏪 Mostrador</option>
+              <option value="telefono">📞 Teléfono</option>
+              <option value="otros">📨 Otros</option>
+            </select>
+          </div>
+          <div id="retiroEstadoWrap" style="display:none; flex:0 0 auto; align-items:center; gap:6px;">
+            <span id="retiroEstado" class="muted" style="font-size:10px;">Pendiente de retiro</span>
+            <button id="btnMarcarRetirado" onclick="marcarRetirado()" class="hbtn hbtn-ok"
+                    style="font-size:11px; padding:5px 10px; border-radius:8px; font-weight:600;">✓ Retirado</button>
+          </div>
+        </div>
+      </div>
       {# Header "Datos del cliente" sacado (Diego 2026-06-14): el primer campo
          del picker ya dice 'Cliente', no aporta y ocupa una línea vertical
          valiosa en sidebar angosto. #}
@@ -332,9 +408,107 @@
         {{ cliente_picker() }}
       </div>
 
+      <div id="envioCuadrasWrap" style="padding:0 12px 8px; display:none;">
+        <div style="display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap;">
+          <div style="flex:0 0 120px;">
+            <label class="muted2" style="font-size:10px; display:flex; align-items:center; gap:5px;">
+              Envío $
+              <span id="pgEnvioPill" style="display:none; font-size:8px; padding:1px 6px; border-radius:999px;"></span>
+            </label>
+            <input id="pgEnvio" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+          </div>
+          <div style="flex:0 0 90px;">
+            <label class="muted2" style="font-size:10px; display:block;" title="Override manual de cuadras">o Cuadras</label>
+            <input id="pgCuadras" type="number" min="0" oninput="pgCuadrasInput()" placeholder="ej: 22" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;" title="Cotiza envío usando este número de cuadras">
+          </div>
+          <div id="pgEnvioInfo" class="muted2" style="font-size:10px; flex:1; min-width:0; line-height:1.3; padding-bottom:6px;"></div>
+        </div>
+      </div>
+
+      {# Card 'Detalle del pedido' — gaps que /pedido/nuevo tenía y /atencion no:
+         producto, nota/ítems, observación con presets, canal. Se persisten al
+         cerrar la transacción. #}
+      <div id="detalleCard" style="padding:6px 12px 8px; border-bottom:1px solid var(--border); display:none;">
+        <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+          <span class="muted" style="font-size:11px; flex-shrink:0;">📋 Detalle del pedido</span>
+          {# Preview en vivo del domicilio tal como saldría en el ticket de envío.
+             Diego 2026-06-15: se actualiza al editar pDir/pPiso/pDepto/pRef/pCiudad. #}
+          <span id="dDomicilioPreview" class="muted2"
+                style="font-size:10px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                title="Cómo va a salir el domicilio en el ticket de envío"></span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:180px;">
+              <label class="muted2" style="font-size:10px; display:block;">Producto</label>
+              <input id="dProducto" placeholder="buscar o escribir libre" class="input"
+                     style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;"
+                     oninput="dProductoInput()" autocomplete="off">
+              <div id="dProductoSug" class="muted2" style="display:none; background:var(--card); border:1px solid var(--border); border-radius:6px; margin-top:2px; max-height:140px; overflow-y:auto; font-size:11px;"></div>
+            </div>
+            <div style="flex:1; min-width:180px;">
+              <label class="muted2" style="font-size:10px; display:block;">Nota / ítems</label>
+              <input id="dNota" placeholder="referencia" class="input"
+                     style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+            </div>
+          </div>
+          <div style="position:relative;">
+            <label class="muted2" style="font-size:10px; display:flex; align-items:center; gap:6px;">
+              <span>Observación</span>
+              <span id="dRecetaBadge" style="font-size:9px; padding:2px 6px; border-radius:8px; background:rgba(29,158,117,.18); color:#1D9E75; font-weight:600;">🟢 Venta libre</span>
+              <button type="button" onclick="dGuardarObsPreset()" tabindex="-1"
+                      title="Guardar el texto actual como preset"
+                      style="margin-left:auto; background:transparent; border:1px solid var(--border); border-radius:6px; cursor:pointer; padding:1px 6px; font-size:10px; color:var(--muted);">＋</button>
+            </label>
+            {# Sin list= y sin <datalist>: el browser estaba pisando con su
+               dropdown nativo. Usamos solo el ▼ custom que muestra dObsDrop. #}
+            <input id="dObservacion" placeholder="elegir del ▼ o escribir libre"
+                   class="input" autocomplete="off"
+                   style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px; padding-right:24px;"
+                   oninput="dActualizarRecetaBadge()">
+            <button type="button" onclick="dToggleObs(event)" tabindex="-1"
+                    style="position:absolute; right:5px; top:62%; background:transparent; border:none; cursor:pointer; padding:2px 5px; font-size:11px; opacity:0.7; color:var(--muted);">▼</button>
+            <div id="dObsDrop" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:1000; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:3px; max-height:200px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
+          </div>
+          {# Obra social + Receta en una sola fila (Diego 2026-06-15). Canal
+             SUBIDO al header del retiroCard. OS precargada de la ficha si la
+             conoce (confirmada > inferida >=50%). #}
+          <div style="display:flex; gap:6px;">
+            <div style="flex:2; min-width:0; position:relative;">
+              <label class="muted2" style="font-size:10px; display:block;">Obra social</label>
+              <input id="dObraSocial" placeholder="ej: pami · swiss medical"
+                     class="input" autocomplete="off"
+                     style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;"
+                     oninput="dObraSocialInput()" onfocus="dObraSocialInput()"
+                     onblur="setTimeout(()=>{const b=document.getElementById('dObraSocialSug'); if(b) b.style.display='none';}, 180)">
+              <div id="dObraSocialSug" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:1000; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:2px; max-height:200px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
+            </div>
+            <div style="flex:1; min-width:0;">
+              <label class="muted2" style="font-size:10px; display:block;">Receta</label>
+              <select id="dReceta" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+                <option value="">No requiere</option>
+                <option value="con">Con receta</option>
+                <option value="pendiente">Pendiente</option>
+              </select>
+            </div>
+          </div>
+          <script>
+            // Default por modo. Solo aplica si el select no fue tocado por el operador.
+            (function dCanalDefault(){
+              const sel = document.getElementById('dCanal');
+              if (!sel) return;
+              sel.value = (window.ATENCION_MODO === 'manual') ? 'mostrador' : 'atencion';
+            })();
+          </script>
+        </div>
+      </div>
+
       {# Card 'Pago' — forma de pago acordada durante el chat (Fase A.5). Persistida
          en BotConversacion. El modal 'Cerrar TX' la precarga al abrir. #}
       <div id="pagoCard" style="padding:6px 12px 8px; border-bottom:1px solid var(--border); display:none;">
+        {# Header con badges (Diego 2026-06-15: Copilot los había borrado al
+           reorganizar la card en una sola fila). pagoBadgeLink solo aparece
+           cuando forma=link_mp y se acordó; pagoBadgeConf cuando dato_pago. #}
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
           <span class="muted" style="font-size:11px;">💳 Pago acordado</span>
           <div style="display:flex; gap:4px;">
@@ -342,12 +516,12 @@
             <span id="pagoBadgeConf" class="tag-green" style="font-size:9px; padding:2px 7px; border-radius:8px; display:none;">pago confirmado ✓</span>
           </div>
         </div>
-        <div style="display:flex; gap:6px; align-items:flex-end;">
+        <div style="display:flex; align-items:flex-end; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
           <div style="flex:0 0 120px;">
             <label class="muted2" style="font-size:10px; display:block;">Monto $</label>
             <input id="pgMonto" type="number" min="0" step="0.01" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
           </div>
-          <div style="flex:1; min-width:0;">
+          <div style="flex:0 0 180px; min-width:160px;">
             <label class="muted2" style="font-size:10px; display:block;">
               Forma de pago
               {# DNI del cliente vinculado: lo pintamos al lado del label en vez
@@ -363,19 +537,52 @@
               <option value="tarjeta">Tarjeta de crédito</option>
             </select>
           </div>
+          {# pgExtra: campos dinamicos segun forma de pago. En efectivo incluye
+             pgPagaCon + pgVuelto inline (Diego 2026-06-15: vuelto a la derecha
+             de 'cuanto paga'). #}
+          <div id="pgExtra" style="flex:1; min-width:160px; display:flex; flex-wrap:wrap; gap:6px; align-items:flex-end;"></div>
         </div>
-        <div id="pgExtra" style="margin-top:7px; display:flex; flex-direction:column; gap:6px;"></div>
-        <div id="pgVuelto" style="margin-top:6px; font-size:11px; color:var(--muted); display:none;"></div>
         {# Costo de envío + botón Cerrar tx side-by-side (Diego 2026-06-14: el operador
            necesita el envío a la vista en el chat, sin abrir el modal). El botón es
            más chico ahora para que entren ambos en la misma línea. #}
-        <div style="display:flex; gap:6px; align-items:flex-end; margin-top:8px;">
-          <div style="flex:0 0 110px;">
-            <label class="muted2" style="font-size:10px; display:block;">Envío $</label>
-            <input id="pgEnvio" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+      </div>
+
+      {# Stock + Sale por + Prioridad + Cerrar TX (Diego 2026-06-15). Reemplaza
+         lo que estaba en el modal cerrarTxCard (borrado más abajo). #}
+      <div id="cerrarTxBtnWrap" style="padding:0 12px 12px; display:none;">
+        <div style="display:flex; gap:6px; margin-bottom:8px;">
+          {# Anchos (Diego 2026-06-15): Stock -30%, Droguería más grande (cuando
+             aparece), Sale por -20%, Prioridad igual. #}
+          <div style="flex:0.7 1 60px; min-width:0;">
+            <label class="muted2" style="font-size:10px; display:block;">¿Stock?</label>
+            <select id="dStock" class="input" onchange="dStockChange()" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+              <option value="ok">OK</option>
+              <option value="esperar">Falta</option>
+            </select>
           </div>
-          <button onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="flex:1; font-size:12px; padding:8px 6px; font-weight:600;">💳 Cerrar transacción</button>
+          <div id="dDrogueriaWrap" style="flex:1.6 1 140px; min-width:0; display:none;">
+            <label class="muted2" style="font-size:10px; display:block;">Droguería</label>
+            <select id="dDrogueria" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+              <option value="">— elegir —</option>
+            </select>
+          </div>
+          <div style="flex:0.8 1 80px; min-width:0;">
+            <label class="muted2" style="font-size:10px; display:block;">Sale por</label>
+            <select id="dSalida" class="input" onchange="dSalidaChange()" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+              <option value="reparto">🛵 Reparto</option>
+              <option value="retiro">🏪 Retiro</option>
+            </select>
+          </div>
+          <div style="flex:1 1 90px; min-width:0;">
+            <label class="muted2" style="font-size:10px; display:block;">Prioridad</label>
+            <select id="dPrioridad" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+              <option value="normal">🟢 Normal</option>
+              <option value="urgente">🔴 Urgente</option>
+              <option value="programado">🕐 Programado</option>
+            </select>
+          </div>
         </div>
+        <button id="btnCerrarTx" onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="width:100%; font-size:12px; padding:10px 6px; font-weight:600;">💳 Cerrar transacción</button>
       </div>
 
       <div id="ficha" style="padding:16px 14px; font-size:11px;">
@@ -473,7 +680,7 @@ const osPrecioCache = {};
 /* ── Tema (claro/oscuro) ── */
 (function(){
   const app = document.getElementById('app');
-  const saved = localStorage.getItem('atencion-theme') || 'dark';
+  const saved = localStorage.getItem('atencion-theme-v2') || 'light';
   setTheme(saved);
   document.getElementById('theme-btn').addEventListener('click', () =>
     setTheme(app.classList.contains('dark') ? 'light' : 'dark'));
@@ -481,7 +688,7 @@ const osPrecioCache = {};
     app.className = t;
     document.getElementById('theme-icon').className = 'ti ' + (t === 'dark' ? 'ti-moon' : 'ti-sun');
     document.getElementById('theme-text').textContent = t === 'dark' ? 'Oscuro' : 'Claro';
-    localStorage.setItem('atencion-theme', t);
+    localStorage.setItem('atencion-theme-v2', t);
   }
 })();
 
@@ -530,22 +737,28 @@ function heartbeat() { fetch('/atencion/heartbeat', {method: 'POST'}).catch(() =
 function setVista(v) {
   vista = v;
   document.querySelectorAll('.seg').forEach(b => b.classList.toggle('on', b.dataset.vista === v));
+  if (v === 'cerrados') { cargarCerradosHoy(); return; }
   renderBandeja();
 }
 function _filtrar(c) {
-  if (vista === 'sin_asignar') return c.filter(x => x.estado === 'cola');
-  if (vista === 'mias')        return c.filter(x => x.estado === 'humano' && x.operador_id === YO);
-  if (vista === 'bot')         return c.filter(x => x.estado === 'bot');
-  return c;
+  if (vista === 'sin_asignar') return c.filter(x => x.estado === 'cola' && x.canal !== 'manual');
+  if (vista === 'mias')        return c.filter(x => x.estado === 'humano' && x.operador_id === YO && x.canal !== 'manual');
+  if (vista === 'bot')         return c.filter(x => x.estado === 'bot' && x.canal !== 'manual');
+  if (vista === 'manuales')    return c.filter(x => x.canal === 'manual' && !x.retirado_en);
+  // 'todas' tambien excluye manuales (tienen su propia pestaña).
+  return c.filter(x => x.canal !== 'manual');
 }
 async function cargarBandeja() {
   const linea = document.getElementById('filtroLinea').value;
   const d = await (await fetch('/atencion/api/conversaciones?linea=' + encodeURIComponent(linea))).json();
   todasConvs = d.conversaciones || [];
-  document.getElementById('cnt-sin_asignar').textContent = todasConvs.filter(c => c.estado === 'cola').length;
-  document.getElementById('cnt-mias').textContent = todasConvs.filter(c => c.estado === 'humano' && c.operador_id === YO).length;
-  document.getElementById('cnt-bot').textContent = todasConvs.filter(c => c.estado === 'bot').length;
-  document.getElementById('cnt-todas').textContent = todasConvs.length;
+  const chat = todasConvs.filter(c => c.canal !== 'manual');
+  const manuales = todasConvs.filter(c => c.canal === 'manual' && !c.retirado_en);
+  document.getElementById('cnt-sin_asignar').textContent = chat.filter(c => c.estado === 'cola').length;
+  document.getElementById('cnt-mias').textContent = chat.filter(c => c.estado === 'humano' && c.operador_id === YO).length;
+  document.getElementById('cnt-bot').textContent = chat.filter(c => c.estado === 'bot').length;
+  document.getElementById('cnt-todas').textContent = chat.length;
+  document.getElementById('cnt-manuales').textContent = manuales.length;
   renderBandeja();
 }
 function renderBandeja() {
@@ -580,6 +793,88 @@ function renderBandeja() {
   }).join('');
 }
 
+/* ── Cerrados hoy ── lista los PedidoReparto que cerró el operador hoy,
+   para reabrir y corregir (vuelto mal, monto, forma de pago, etc.). */
+let pedidoEditando = null;  // id del PedidoReparto que se está editando (UPDATE en vez de INSERT)
+async function cargarCerradosHoy() {
+  const box = document.getElementById('bandeja');
+  box.innerHTML = '<div class="muted" style="padding:16px; font-size:13px;">Cargando…</div>';
+  let d;
+  try { d = await (await fetch('/atencion/api/cerrados-hoy')).json(); }
+  catch(e){ box.innerHTML = '<div class="muted" style="padding:16px;">Error de red.</div>'; return; }
+  const ps = d.pedidos || [];
+  document.getElementById('cnt-cerrados').textContent = ps.length;
+  if (!ps.length){ box.innerHTML = '<div class="muted" style="padding:16px; font-size:13px;">No cerraste nada hoy ✨</div>'; return; }
+  box.innerHTML = ps.map(p => {
+    const editando = (pedidoEditando === p.id);
+    const monto = (p.importe != null) ? `$ ${Math.round(p.importe).toLocaleString('es-AR')}` : '—';
+    const forma = p.forma_pago ? `<span class="muted" style="font-size:10px;">${esc(p.forma_pago)}</span>` : '';
+    const pag   = p.pagado ? '<span style="font-size:9px; color:#16a34a;">✓ cobrado</span>' : '';
+    return `
+    <div class="conv ${editando ? 'conv-active' : ''}" style="margin:${editando ? '7px' : '0'}; padding:9px 12px; ${editando ? 'border-radius:8px;' : 'border-bottom:0.5px solid;'}">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+        <span class="${editando ? 'title' : 'txt'}" style="font-size:13px; font-weight:${editando ? 600 : 400}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">#${p.id} · ${esc(p.cliente_nombre || '—')}</span>
+        <span class="muted" style="font-size:10px;">${esc(p.creado_hora || '')}</span>
+      </div>
+      <div class="muted" style="font-size:11px; margin-bottom:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(p.producto || '—')}</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+        <span style="font-size:11px;">${monto} ${forma} ${pag}</span>
+        <button onclick="reabrirPedido(${p.id})" class="hbtn" style="font-size:10px; padding:3px 8px; border-radius:6px;">✏️ Reabrir</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function reabrirPedido(id){
+  let d;
+  try { d = await (await fetch('/atencion/api/pedido/' + id + '/hidratar')).json(); }
+  catch(e){ alert('Error cargando pedido'); return; }
+  if (!d.ok){ alert(d.error || 'Error'); return; }
+  pedidoEditando = id;
+  const p = d.pedido;
+  // Hidratar el sidebar derecho. IDs del form: pg* (pago) + d* (detalle/destino).
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  setVal('pgMonto', p.total != null ? p.total : '');
+  setVal('pgPagaCon', p.paga_con != null ? p.paga_con : '');
+  setVal('pgEnvio', p.envio_costo != null ? p.envio_costo : '');
+  setVal('pgForma', p.forma_pago || '');
+  setVal('pgLink', p.link_mp || '');
+  setVal('pgDato', p.dato_pago_mp || '');
+  setVal('pgUlt4', p.tarjeta_ult4 || '');
+  setVal('pgTarjNombre', p.tarjeta_nombre || '');
+  setVal('pgMarca', p.tarjeta_marca || '');
+  setVal('dProducto', p.producto || '');
+  setVal('dNota', p.nota || '');
+  setVal('dObservacion', p.observacion || '');
+  setVal('dStock', p.stock || '');
+  setVal('dDrogueria', p.drogueria_id || '');
+  setVal('dSalida', p.destino || '');
+  setVal('dPrioridad', p.prioridad || 'normal');
+  setVal('dObraSocial', p.obra_social || '');
+  setVal('dReceta', p.requiere_receta || '');
+  setVal('dCanal', p.canal || '');
+  // Pulsar handlers visuales si existen
+  try { if (typeof dStockChange === 'function') dStockChange(); } catch(e){}
+  try { if (typeof actualizarCardRetiro === 'function') actualizarCardRetiro(); } catch(e){}
+  // Marcar visualmente que estamos editando
+  const btn = document.getElementById('btnCerrarTx');
+  if (btn) btn.textContent = '💾 Guardar cambios #' + id;
+  // Refrescar lista (highlight)
+  cargarCerradosHoy();
+}
+
+// Limpia el form lateral después de cerrar (INSERT o UPDATE) para que el
+// operador pueda arrancar otro pedido sin valores fantasma.
+function vaciarFormCierre(){
+  ['pgMonto','pgPagaCon','pgEnvio','pgForma','pgLink','pgDato','pgUlt4','pgTarjNombre','pgMarca','pgCupon',
+   'dProducto','dNota','dObservacion','dStock','dDrogueria','dSalida','dPrioridad','dObraSocial','dReceta','dCanal']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  pedidoEditando = null;
+  const btn = document.getElementById('btnCerrarTx');
+  if (btn) btn.textContent = '💳 Cerrar transacción';
+  try { if (typeof dStockChange === 'function') dStockChange(); } catch(e){}
+  try { if (typeof actualizarCardRetiro === 'function') actualizarCardRetiro(); } catch(e){}
+}
+
 /* ── Chat ── */
 async function abrirConv(id) {
   convAbierta = id; ultimoMsgId = 0; encargoNotas = [];
@@ -592,6 +887,51 @@ async function abrirConv(id) {
   document.getElementById('composer').style.display = 'block';
   document.getElementById('chatAcciones').style.display = 'flex';
   renderBandeja();
+  actualizarCardRetiro();
+}
+// Walk-ins: pinta el banner "🛒 Pedido walk-in · Pendiente de retiro" arriba
+// del cliente si la conv abierta es canal='manual'.
+function actualizarCardRetiro(){
+  const card = document.getElementById('retiroCard');
+  if (!card) return;
+  const conv = (todasConvs || []).find(c => c.id === convAbierta);
+  // Walk-in: card visible (con Canal + título). Chat normal: card oculta.
+  if (!conv || conv.canal !== 'manual'){
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  // El estado de retiro (badge + botón) solo se renderiza si destino=retiro.
+  // dSalidaChange ya esconde/muestra retiroEstadoWrap según el select dSalida.
+  const wrap = document.getElementById('retiroEstadoWrap');
+  const est = document.getElementById('retiroEstado');
+  const btn = document.getElementById('btnMarcarRetirado');
+  const dSalida = (document.getElementById('dSalida')||{}).value || '';
+  if (wrap) wrap.style.display = (dSalida === 'retiro') ? 'inline-flex' : 'none';
+  if (conv.retirado_en){
+    if (est){
+      est.textContent = '✓ Retirado el ' + new Date(conv.retirado_en).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+      est.style.color = 'var(--accent)';
+    }
+    if (btn) btn.style.display = 'none';
+  } else {
+    if (est){
+      est.textContent = 'Pendiente de retiro';
+      est.style.color = '';
+    }
+    if (btn) btn.style.display = '';
+  }
+}
+async function marcarRetirado(){
+  if (!convAbierta) return;
+  if (!confirm('Marcar este pedido walk-in como retirado por el cliente?')) return;
+  try {
+    const r = await fetch(`/atencion/${convAbierta}/retirar`, {method:'POST'});
+    const d = await r.json();
+    if (!d.ok){ alert('⚠ ' + (d.error || 'no se pudo')); return; }
+    await cargarBandeja();   // refresca el contador 'manuales' + lista
+    actualizarCardRetiro();
+  } catch(e){ alert('Error: ' + e.message); }
 }
 async function refrescarChat(reset) {
   if (!convAbierta) return;
@@ -856,6 +1196,17 @@ async function cargarFicha() {
   }
   renderFicha();
   if (typeof cargarPagoAcordado === 'function') cargarPagoAcordado();
+  // Precargar OS en la card Detalle del pedido (si el cliente ya tiene OS
+  // confirmada o inferida con confianza). El operador puede sobreescribirlo.
+  const dOs = document.getElementById('dObraSocial');
+  if (dOs && !dOs.value){
+    const nombreOs = (fichaData && fichaData.ficha && fichaData.ficha.obra_social && fichaData.ficha.obra_social.nombre) || '';
+    dOs.value = nombreOs;
+  }
+  // El picker setea programáticamente pDir/pCiudad etc. y eso NO dispara input
+  // events. Forzamos la actualización del preview tras un tick para asegurar
+  // que ya estén pisados los valores.
+  setTimeout(() => { if (typeof dActualizarDomicilioPreview === 'function') dActualizarDomicilioPreview(); }, 80);
 }
 const INP = 'input';
 function renderFicha() {
@@ -880,40 +1231,19 @@ function renderFicha() {
   if (dniSlot) dniSlot.textContent = f.documento ? `DNI ${f.documento}` : '';
   const fila = (ic, lab, val) => val ? `
     <div><div class="muted" style="margin-bottom:2px;"><i class="ti ti-${ic}" style="font-size:12px; vertical-align:-1px; margin-right:5px"></i>${lab}</div><div class="txt">${esc(val)}</div></div>` : '';
-  const osLabel = osInferida && osInferida.confirmada ? 'Obra social ✓' : 'Obra social inferida';
-  const osConf  = osInferida && osInferida.confirmada
-    ? `<span style="color:#4ade80; font-size:9px;">Confirmada por ${esc(osInferida.confirmado_por||'operador')}</span>`
-    : (osInferida && osInferida.confianza_pct != null
-        ? `<span class="muted2" style="font-size:9px;">Confianza: ${osInferida.confianza_pct}%${osInferida.confianza_pct < 50 ? ' ⚠️' : ''}</span>`
-        : '');
-
-  const osHtml = osInferida && osInferida.tiene_os
-    ? `<div class="bt" style="margin-top:10px; padding-top:10px; border-top:0.5px solid;">
-         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
-           <div class="muted" style="font-size:10px;">${osLabel}</div>
-           <button onclick="abrirEditarOS()" class="hbtn" style="font-size:10px; padding:2px 7px;">✏️</button>
-         </div>
-         <div class="title" style="font-size:12px;" id="os-nombre-display">${esc(osInferida.obra_social_nombre)}</div>
-         <div style="margin-top:2px;">${osConf}</div>
-         <div class="muted" style="font-size:9px; margin-top:4px;">Al buscar productos se mostrará el precio estimado con esta OS</div>
-       </div>`
-    : `<div class="bt" style="margin-top:10px; padding-top:10px; border-top:0.5px solid;">
-         <div class="muted" style="font-size:10px; margin-bottom:4px;">Obra social</div>
-         <button onclick="abrirEditarOS()" class="hbtn" style="font-size:10px; padding:3px 10px;">+ Asignar OS</button>
-       </div>`;
   // Nombre, domicilio, teléfono y badge (al lado de Ciudad) viven en el picker
   // de arriba. DNI ahora va al lado de 'Forma de pago' en la card de pago.
-  // Acá solo info aux: notas y obra social.
+  // Acá solo info aux: notas del cliente.
+  // Línea separadora arriba ELIMINADA (la fina border-top); botón Desvincular
+  // subido a la misma línea del label de notas (Diego 2026-06-15).
   p.innerHTML = `
-    <div class="bt" style="padding-top:10px; border-top:0.5px solid;">
-      <div class="muted" style="font-size:10px; margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas del cliente <span class="muted2" style="font-size:9px; font-weight:normal;">(perdurables, NO por transacción)</span></div>
-      <textarea id="fichaNotas" rows="3" class="${INP}" style="width:100%; border-radius:8px; padding:6px 9px; font-size:11px; margin-bottom:6px;">${esc(f.notas || '')}</textarea>
-      <div style="display:flex; gap:6px;">
-        <button id="btnGuardarFicha" onclick="guardarFicha()" class="hbtn hbtn-ok" style="border-radius:8px; padding:5px 11px; font-size:11px;">Guardar notas</button>
-        <button onclick="desvincularCliente()" class="hbtn" style="border-radius:8px; padding:5px 11px; font-size:11px;">Desvincular</button>
+    <div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+        <div class="muted" style="font-size:10px; min-width:0;"><i class="ti ti-alert-triangle" style="font-size:11px; vertical-align:-1px; margin-right:4px"></i>Notas del cliente <span class="muted2" style="font-size:9px; font-weight:normal;">(se guardan al cerrar TX)</span></div>
+        <button onclick="desvincularCliente()" class="hbtn" style="border-radius:8px; padding:4px 10px; font-size:10px; flex-shrink:0;">Desvincular</button>
       </div>
-    </div>
-    ${osHtml}`;
+      <textarea id="fichaNotas" rows="2" class="${INP}" style="width:100%; border-radius:8px; padding:6px 9px; font-size:11px;">${esc(f.notas || '')}</textarea>
+    </div>`;
   cargarDomicilios();
 }
 
@@ -1279,159 +1609,11 @@ async function confirmarPedidoCaja() {
   alert('✅ Pedido enviado a caja (#' + d.id + ' · ' + fmtPrecio(d.total) + ').');
 }
 
-/* ── Cerrar transacción (Fase A — prototipo, sin persistencia: las columnas del
-      pedido las agrega Cline; acá solo la UI + lógica client-side) ── */
-async function toggleCerrarTx() {
-  if (!convAbierta) return;
-  const c = document.getElementById('cerrarTxCard');
-  const abriendo = c.style.display === 'none';
-  c.style.display = abriendo ? 'block' : 'none';
-  if (abriendo) {
-    await txCargarDomicilios();
-    await txPrecargarPago();
-  }
-}
-
-// Precarga el modal con el resumen del pago acordado en el sidebar.
-// El modal ya no duplica Total/Forma/Paga con/Envío — solo muestra el resumen
-// arriba y recalcula 'A cobrar'.
-async function txPrecargarPago(){
-  if (!_pagoState) await cargarPagoAcordado();
-  txActualizarResumen();
-  if (typeof txCalc === 'function') txCalc();
-}
-function txActualizarResumen(){
-  const out = document.getElementById('txResumenPago');
-  if (!out) return;
-  const monto = parseFloat((document.getElementById('pgMonto')||{}).value) || 0;
-  const formaSel = (document.getElementById('pgForma')||{}).value || '';
-  const formas = { link_mp:'Link MP', transferencia:'Transferencia', efectivo:'Efectivo', tarjeta:'Tarjeta' };
-  if (!monto && !formaSel){
-    out.textContent = 'Monto y forma de pago: cargalos arriba (card Pago acordado).';
-    return;
-  }
-  const partes = [];
-  if (monto) partes.push(`<b>$${monto.toLocaleString('es-AR')}</b>`);
-  if (formaSel) partes.push(formas[formaSel] || formaSel);
-  out.innerHTML = '💳 ' + partes.join(' · ');
-}
-// Carga el dropdown de domicilios del cliente. Con varias direcciones, fuerza
-// elección explícita (no asume la primera) → el pedido sale a la dirección correcta.
-async function txCargarDomicilios() {
-  const sel = document.getElementById('txDomicilio');
-  if (!sel) return;
-  let ds = [];
-  try { ds = (await (await fetch(`/atencion/api/${convAbierta}/domicilios`)).json()).domicilios || []; } catch (e) {}
-  sel.dataset.n = ds.length;
-  if (!ds.length) {
-    sel.innerHTML = '<option value="">(sin domicilio cargado)</option>';
-    return;
-  }
-  const opts = ds.map(d => `<option value="${d.id}">${esc((d.etiqueta ? d.etiqueta + ' — ' : '') + (d.direccion || 'ubicación 📍'))}</option>`).join('');
-  sel.innerHTML = (ds.length > 1 ? '<option value="">— elegí el domicilio —</option>' : '') + opts;
-}
-// Reglas de pagado según la forma de pago acordada en el sidebar:
-//   efectivo → false (cobra el cadete al entregar).
-//   tarjeta  → true  (POS presencial, ya cobrado).
-//   link_mp / transferencia → true SOLO si el operador pegó el nro de comprobante
-//     en la card de Pago acordado (verificó manualmente en MP que entró).
-function txComputarPagado() {
-  const f = (document.getElementById('pgForma')||{}).value || '';
-  if (f === 'tarjeta') return true;
-  if (f === 'link_mp' || f === 'transferencia'){
-    const dato = (document.getElementById('pgDato')||{}).value || '';
-    return !!dato.trim();
-  }
-  return false;
-}
+/* Modal Cerrar TX + sus funciones ELIMINADAS (Diego 2026-06-15: refactor C
+   etapa 3/3). Reemplazadas por guardarYCerrarTx + cerrarTxDirecto que viven
+   más abajo. Sale por / Stock / Droguería / Prioridad / Receta migraron al
+   sidebar. */
 const ALIAS_FARMACIA = {{ (alias_transferencia or '')|tojson }};
-function txStockChange() {
-  document.getElementById('txDrogueria').style.display =
-    document.getElementById('txStock').value === 'esperar' ? 'block' : 'none';
-}
-function txSalidaChange() {
-  // Domicilio solo aparece si va por reparto.
-  document.getElementById('txEnvioWrap').style.display =
-    document.getElementById('txSalida').value === 'reparto' ? 'block' : 'none';
-  txCalc();
-}
-function _txVal(id) { const e = document.getElementById(id); return e ? e.value : ''; }
-function txCalc() {
-  // Total y envío vienen de la card 'Pago acordado' (sidebar), no del modal.
-  const total = parseFloat((document.getElementById('pgMonto')||{}).value) || 0;
-  const reparto = _txVal('txSalida') === 'reparto';
-  const envio = reparto ? (parseFloat((document.getElementById('pgEnvio')||{}).value) || 0) : 0;
-  const aCobrar = total + envio;
-  const out = document.getElementById('txACobrar');
-  if (out) out.textContent = fmtPrecio(aCobrar);
-}
-async function txPegarChat(t) {
-  if (!t || !convAbierta) return;
-  await fetch(`/atencion/${convAbierta}/responder`, {
-    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto: t})
-  });
-  await refrescarChat(false);
-}
-async function txCotizarEnvio() {
-  try {
-    const doms = (await (await fetch(`/atencion/api/${convAbierta}/domicilios`)).json()).domicilios || [];
-    if (!doms.length) { alert('El cliente no tiene domicilio cargado todavía.'); return; }
-  } catch(e) {}
-  // TODO: enganchar con la cotización de /config/envio (Cline namespacing). Por
-  // ahora se carga el envío a mano.
-  alert('Cotización automática: pendiente de enganchar con /config/envio. Cargá el envío a mano por ahora.');
-}
-async function txCerrar() {
-  // Total / forma / paga_con / envío vienen del sidebar (card Pago acordado).
-  // guardarYCerrarTx() ya validó los mínimos antes de abrir el modal.
-  const pgGet = id => { const e = document.getElementById(id); return e ? (e.value || '') : ''; };
-  const total = parseFloat(pgGet('pgMonto')) || 0;
-  const forma = pgGet('pgForma');
-  if (!total) { alert('Cargá el monto en la card Pago acordado.'); return; }
-  if (!forma) { alert('Elegí la forma de pago en la card Pago acordado.'); return; }
-  const reparto = _txVal('txSalida') === 'reparto';
-  const envio = reparto ? (parseFloat(pgGet('pgEnvio')) || 0) : 0;
-  const domSel = document.getElementById('txDomicilio');
-  // Si va por reparto y el cliente tiene VARIAS direcciones, exigir elegir cuál.
-  if (reparto && domSel && Number(domSel.dataset.n || 0) > 1 && !domSel.value) {
-    alert('El cliente tiene varias direcciones — elegí a cuál va el envío.'); return;
-  }
-  const payload = {
-    total,
-    domicilio_id: (domSel && domSel.value) ? Number(domSel.value) : null,
-    forma_pago: forma,
-    paga_con: pgGet('pgPagaCon') || null,
-    // El vuelto lo recalcula el backend (no se confía del cliente). Se manda igual de referencia.
-    vuelto: forma === 'efectivo' ? ((parseFloat(pgGet('pgPagaCon'))||0) - (total + envio)) : null,
-    link_mp: pgGet('pgLink') || null,
-    dato_pago_mp: pgGet('pgDato') || null,
-    tarjeta_ult4: pgGet('pgUlt4') || null,
-    obra_social: _txVal('txOS') || null,
-    requiere_receta: _txVal('txReceta'),
-    stock: _txVal('txStock'),
-    drogueria: _txVal('txDrogueria') || null,
-    destino: _txVal('txSalida'),
-    envio_costo: envio,
-    prioridad: _txVal('txPrioridad'),
-    pagado: txComputarPagado(),
-  };
-  try {
-    const r = await fetch(`/atencion/${convAbierta}/cerrar-transaccion`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const d = await r.json();
-    if (!d.ok) { alert('Error al cerrar: ' + (d.error || 'desconocido')); return; }
-    alert(`✅ Transacción cerrada · Pedido #${d.pedido_id} → ${d.estado}`);
-    // Cerrar el modal y volver a la bandeja.
-    const modal = document.getElementById('txModal');
-    if (modal) modal.style.display = 'none';
-    if (typeof refrescarBandeja === 'function') refrescarBandeja();
-  } catch (e) {
-    alert('Error de red: ' + e.message);
-  }
-}
 
 function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
@@ -1477,13 +1659,21 @@ function pagoFormaChange(){
     <button onclick="pagoPegarChat(ALIAS_FARMACIA)" class="hbtn" style="font-size:11px; padding:5px 9px; border-radius:8px;">📤 Mandar alias al chat</button>
     <input id="pgDato" placeholder="nro de comprobante (cuando confirme)" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
   else if (f === 'efectivo') h = `
-    <input id="pgPagaCon" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="¿con cuánto paga? $" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
+    <div style="flex:1; min-width:140px;">
+      <label class="muted2" style="font-size:10px; display:block;">Paga con $</label>
+      <input id="pgPagaCon" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+    </div>
+    <div style="flex:0 0 130px; padding-bottom:6px;">
+      <div class="muted2" style="font-size:10px;">Vuelto</div>
+      <div id="pgVuelto" style="font-size:13px; font-weight:600; line-height:1.2; color:var(--muted);">—</div>
+    </div>`;
   else if (f === 'tarjeta') h = `
     <div style="display:flex; gap:6px;">
       <input id="pgUlt4" maxlength="4" placeholder="últ. 4" class="input" style="width:70px; border-radius:8px; padding:6px 9px; font-size:12px;">
       <input id="pgTarjNombre" placeholder="titular" class="input" style="flex:1; border-radius:8px; padding:6px 9px; font-size:12px;">
       <select id="pgMarca" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;"><option>Visa</option><option>Master</option><option>Amex</option><option>Naranja</option><option>Cabal</option></select>
-    </div>`;
+    </div>
+    <input id="pgCupon" placeholder="nro de cupón / comprobante" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
   document.getElementById('pgExtra').innerHTML = h;
   // Si tenemos estado previo, prellenamos los inputs nuevos.
   if (_pagoState){
@@ -1512,22 +1702,23 @@ async function pagoPegarChat(texto){
 // envío también refrescamos el resumen del modal (si está abierto).
 function pagoRecalcVuelto(){
   const out = document.getElementById('pgVuelto');
-  if (!out) return;
+  if (!out) return;   // pgVuelto solo existe cuando forma=efectivo (lo crea pagoFormaChange)
   const f = document.getElementById('pgForma').value;
+  // El MONTO viene del ticket de ObServer que YA incluye el envio
+  // (Diego 2026-06-14). NO sumar envio aca o lo cobramos doble.
   const monto = parseFloat(document.getElementById('pgMonto').value) || 0;
-  const envioEl = document.getElementById('pgEnvio');
-  const envio = envioEl ? (parseFloat(envioEl.value) || 0) : 0;
-  const totalACobrar = monto + envio;
   const pagaInp = document.getElementById('pgPagaCon');
   const paga = pagaInp ? (parseFloat(pagaInp.value) || 0) : 0;
-  if (f === 'efectivo' && totalACobrar > 0 && paga > 0){
-    const exacto = paga - totalACobrar;
+  if (f === 'efectivo' && monto > 0 && paga > 0){
+    const exacto = paga - monto;
     const vuelto = exacto >= 0 ? Math.floor(exacto / 100) * 100 : exacto;
-    out.style.display = '';
-    out.innerHTML = `Vuelto: <b style="color:${vuelto >= 0 ? 'var(--accent)' : 'var(--warn)'};">$ ${vuelto.toLocaleString('es-AR')}</b>` +
-                    (exacto !== vuelto ? ` <span class="muted2" style="font-size:10px;">(exacto: $${exacto.toLocaleString('es-AR')})</span>` : '');
+    const color = vuelto >= 0 ? 'var(--accent)' : 'var(--warn)';
+    out.style.color = color;
+    out.innerHTML = `$ ${vuelto.toLocaleString('es-AR')}` +
+                    (exacto !== vuelto ? `<span class="muted2" style="font-size:9px; display:block;">exacto: $${exacto.toLocaleString('es-AR')}</span>` : '');
   } else {
-    out.style.display = 'none';
+    out.style.color = 'var(--muted)';
+    out.textContent = '—';
   }
   // Si el modal está abierto, refrescá el resumen y A cobrar.
   if (typeof txCalc === 'function') txCalc();
@@ -1535,7 +1726,21 @@ function pagoRecalcVuelto(){
 }
 async function cargarPagoAcordado(){
   const card = document.getElementById('pagoCard');
-  if (!convAbierta){ card.style.display = 'none'; _pagoState = null; return; }
+  const detalle = document.getElementById('detalleCard');
+  const envCuad = document.getElementById('envioCuadrasWrap');
+  const cerrarBtn = document.getElementById('cerrarTxBtnWrap');
+  if (!convAbierta){
+    card.style.display = 'none';
+    if (detalle) detalle.style.display = 'none';
+    if (envCuad) envCuad.style.display = 'none';
+    if (cerrarBtn) cerrarBtn.style.display = 'none';
+    _pagoState = null;
+    return;
+  }
+  // Detalle del pedido + envío + botón cerrar TX siempre visibles cuando hay conv.
+  if (detalle) detalle.style.display = '';
+  if (envCuad) envCuad.style.display = 'block';
+  if (cerrarBtn) cerrarBtn.style.display = 'block';
   try {
     const r = await fetch(`/atencion/${convAbierta}/pago`);
     if (!r.ok){ card.style.display = 'none'; return; }
@@ -1547,10 +1752,183 @@ async function cargarPagoAcordado(){
     if (envEl) envEl.value = _pagoState.envio_costo != null ? _pagoState.envio_costo : '';
     pagoFormaChange();
     pagoRecalcVuelto();
-    document.getElementById('pagoBadgeLink').style.display = _pagoState.pago_acordado_en ? '' : 'none';
+    // Badge 'link enviado' SOLO cuando la forma de pago es link_mp Y se acordó
+    // (Diego 2026-06-15: aparecía en efectivo/tarjeta también, era engañoso).
+    const _badgeLink = document.getElementById('pagoBadgeLink');
+    const esLinkMp = (_pagoState.forma_pago_propuesta === 'link_mp');
+    _badgeLink.style.display = (_pagoState.pago_acordado_en && esLinkMp) ? '' : 'none';
     document.getElementById('pagoBadgeConf').style.display = _pagoState.pago_confirmado_en ? '' : 'none';
   } catch (e) { console.error('pago load:', e); }
 }
+
+/* ── Card "Detalle del pedido" (sidebar): producto + nota + observación ────
+   Gaps que /pedido/nuevo tenía y /atencion no. Persisten al cerrar TX. */
+let _dObsPresets = [];
+let _dProdTimer = null;
+async function dCargarObsPresets(){
+  try {
+    const r = await fetch('/api/pedido/obs-presets', {credentials:'same-origin'});
+    if (!r.ok) return;
+    const d = await r.json();
+    _dObsPresets = d.presets || [];
+    const dl = document.getElementById('dObsPresets');
+    if (dl) dl.innerHTML = _dObsPresets.map(p => `<option value="${esc(p.texto)}">`).join('');
+  } catch(e){ console.error('obs-presets:', e); }
+}
+function dPintarObsDrop(){
+  const drop = document.getElementById('dObsDrop');
+  if (!drop) return;
+  if (!_dObsPresets.length){
+    drop.innerHTML = '<div style="padding:10px;font-size:11px;color:var(--muted);">sin presets</div>';
+    return;
+  }
+  drop.innerHTML = _dObsPresets.map((p, i) =>
+    '<div class="d-obs-opt" data-idx="' + i + '" style="padding:7px 11px;font-size:12px;cursor:pointer;color:var(--txt);border-bottom:1px solid var(--bd);">' +
+    esc(p.texto) + '</div>'
+  ).join('');
+  drop.onclick = (e) => {
+    const item = e.target.closest('.d-obs-opt');
+    if (!item) return;
+    const idx = parseInt(item.dataset.idx, 10);
+    const preset = _dObsPresets[idx];
+    if (preset){
+      document.getElementById('dObservacion').value = preset.texto;
+      drop.style.display = 'none';
+    }
+  };
+}
+async function dToggleObs(ev){
+  if (ev) ev.stopPropagation();
+  const drop = document.getElementById('dObsDrop');
+  if (!_dObsPresets.length) await dCargarObsPresets();
+  dPintarObsDrop();
+  drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
+}
+// Autocomplete de Obra Social — multi-token sobre obs_obras_sociales (865 activas).
+let _dOsTimer = null;
+function dObraSocialInput(){
+  clearTimeout(_dOsTimer);
+  _dOsTimer = setTimeout(dBuscarObraSocial, 220);
+}
+async function dBuscarObraSocial(){
+  const q = (document.getElementById('dObraSocial').value || '').trim();
+  const box = document.getElementById('dObraSocialSug');
+  if (q.length < 2){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  try {
+    const r = await fetch('/atencion/api/obras-sociales?q=' + encodeURIComponent(q));
+    if (!r.ok){ box.style.display = 'none'; return; }
+    const ds = await r.json();
+    if (!ds.length){ box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.innerHTML = ds.slice(0, 12).map(o =>
+      `<div class="d-os-opt" data-nombre="${esc(o.descripcion)}"
+            style="padding:6px 10px; cursor:pointer; font-size:12px; color:var(--txt); border-bottom:1px solid var(--bd);">
+         ${esc(o.descripcion)}
+       </div>`).join('');
+    box.onclick = (e) => {
+      const it = e.target.closest('.d-os-opt');
+      if (!it) return;
+      document.getElementById('dObraSocial').value = it.dataset.nombre;
+      box.style.display = 'none';
+    };
+    box.style.display = 'block';
+  } catch(e){ box.style.display = 'none'; }
+}
+
+// Guardar el texto actual del campo Observación como preset nuevo.
+async function dGuardarObsPreset(){
+  const texto = (document.getElementById('dObservacion').value || '').trim();
+  if (!texto){ alert('Escribí una observación primero.'); return; }
+  if (texto.length > 160){ alert('Máx 160 caracteres.'); return; }
+  try {
+    const r = await fetch('/api/pedido/obs-presets', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify({texto}),
+    });
+    const d = await r.json();
+    if (!d.ok){ alert('⚠️ ' + (d.error || 'no se pudo guardar')); return; }
+    await dCargarObsPresets();  // recargar para que aparezca en el ▼ próx vez
+    alert(d.reusado ? '✓ Ya existía como preset, reactivado.' : '✓ Guardado como preset.');
+  } catch(e){ alert('Error: ' + e.message); }
+}
+// Cerrar dropdown al clickear fuera (1 listener).
+if (!window._dObsDropListener){
+  document.addEventListener('click', (e) => {
+    const drop = document.getElementById('dObsDrop');
+    if (drop && drop.style.display !== 'none'
+        && !e.target.closest('#dObsDrop')
+        && !e.target.closest('button[onclick*="dToggleObs"]')){
+      drop.style.display = 'none';
+    }
+  });
+  window._dObsDropListener = true;
+}
+// Buscador de producto autocomplete (sugiere; el operador puede dejar texto libre).
+function dProductoInput(){
+  clearTimeout(_dProdTimer);
+  _dProdTimer = setTimeout(dBuscarProducto, 280);
+}
+async function dBuscarProducto(){
+  const q = document.getElementById('dProducto').value.trim();
+  const box = document.getElementById('dProductoSug');
+  if (q.length < 2){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  try {
+    const r = await fetch('/atencion/api/productos/buscar?q=' + encodeURIComponent(q));
+    if (!r.ok){ box.style.display = 'none'; return; }
+    const d = await r.json();
+    const ps = (d.productos || []).slice(0, 8);
+    if (!ps.length){ box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.innerHTML = ps.map((p, i) =>
+      `<div class="d-prod-opt" data-idx="${i}" style="padding:6px 9px; cursor:pointer; border-bottom:1px solid rgba(255,255,255,0.08);">
+        <div style="color:var(--title);">${esc(p.nombre)}</div>
+        <div class="muted2" style="font-size:10px;">obs:${p.observer_id} · stock ${p.stock}</div>
+      </div>`).join('');
+    window._dProductoCache = ps;
+    box.onclick = (e) => {
+      const it = e.target.closest('.d-prod-opt');
+      if (!it) return;
+      const p = window._dProductoCache[parseInt(it.dataset.idx, 10)];
+      if (p){
+        document.getElementById('dProducto').value = p.nombre;
+        window._dProductoObsId = p.observer_id || null;
+        box.style.display = 'none';
+      }
+    };
+    box.style.display = 'block';
+  } catch(e){ box.style.display = 'none'; }
+}
+// Preview en vivo del domicilio (al lado del título 'Detalle del pedido').
+// Concatena pDir + piso/depto/ref + pCiudad como saldría en el ticket de envío.
+function dActualizarDomicilioPreview(){
+  const span = document.getElementById('dDomicilioPreview');
+  if (!span) return;
+  const v = (id) => ((document.getElementById(id)||{}).value || '').trim();
+  const dir = v('pDir');
+  const piso = v('pPiso');
+  const dpto = v('pDepto');
+  const ref = v('pRef');
+  const ciu = v('pCiudad');
+  const parts = [];
+  if (dir) parts.push(dir);
+  if (piso) parts.push('P ' + piso);
+  if (dpto) parts.push('Dpto ' + dpto);
+  if (ref) parts.push(ref);
+  if (ciu) parts.push(ciu);
+  span.textContent = parts.length ? '— ' + parts.join(' · ') : '';
+}
+// Wireo: listeners en los 5 campos del cliente_picker. Idempotente.
+(function dInitPreviewListeners(){
+  if (window._dPreviewWired) return;
+  ['pDir', 'pPiso', 'pDepto', 'pRef'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', dActualizarDomicilioPreview);
+  });
+  const ciu = document.getElementById('pCiudad');
+  if (ciu) ciu.addEventListener('change', dActualizarDomicilioPreview);
+  window._dPreviewWired = true;
+})();
+// Cargar presets al iniciar la pantalla (idempotente).
+dCargarObsPresets();
 async function guardarPagoAcordado(){
   if (!convAbierta) return;
   const f = document.getElementById('pgForma').value;
@@ -1571,11 +1949,6 @@ async function guardarPagoAcordado(){
     body: JSON.stringify(body),
   });
   await cargarPagoAcordado();
-  // Si el modal Cerrar TX está visible, re-precargar con el estado nuevo.
-  const modal = document.getElementById('cerrarTxCard');
-  if (modal && modal.style.display !== 'none' && typeof txPrecargarPago === 'function') {
-    await txPrecargarPago();
-  }
 }
 
 // Guarda el pago + abre/refresca el modal Cerrar TX con todo precargado.
@@ -1585,13 +1958,13 @@ async function guardarYCerrarTx(){
   if (!monto){ alert('Cargá el monto de la operación.'); document.getElementById('pgMonto').focus(); return; }
   const forma = document.getElementById('pgForma').value;
   if (!forma){ alert('Elegí la forma de pago.'); document.getElementById('pgForma').focus(); return; }
-  // Validaciones por forma — bloqueantes acá también para no perder tiempo abriendo el modal.
   const get = id => { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; };
+  // Validaciones por forma
   if (forma === 'link_mp' && !get('pgLink')){
     alert('Pegá el link de MP que le mandaste al cliente.'); document.getElementById('pgLink').focus(); return;
   }
   if ((forma === 'link_mp' || forma === 'transferencia') && !get('pgDato')){
-    alert('Cargá el nro de operación / comprobante (se obtiene de MP cuando entra el pago).');
+    alert('Cargá el nro de operación / comprobante.');
     document.getElementById('pgDato').focus(); return;
   }
   if (forma === 'efectivo' && (!get('pgPagaCon') || parseFloat(get('pgPagaCon')) <= 0)){
@@ -1601,19 +1974,131 @@ async function guardarYCerrarTx(){
     if (!get('pgUlt4')){ alert('Cargá los últimos 4 de la tarjeta.'); return; }
     if (!get('pgTarjNombre')){ alert('Cargá el nombre del titular.'); return; }
   }
-  await guardarPagoAcordado();
-  const modal = document.getElementById('cerrarTxCard');
-  if (modal && modal.style.display === 'none' && typeof toggleCerrarTx === 'function'){
-    toggleCerrarTx();   // abre el modal (este ya llama txPrecargarPago al abrir)
+  const stock = get('dStock');
+  if (stock === 'esperar' && !get('dDrogueria')){
+    alert('Elegí una droguería para pedir.'); document.getElementById('dDrogueria').focus(); return;
   }
+  // Persistir el pago acordado (BotConversacion) y cerrar la TX directo —
+  // ya no abrimos modal (Diego 2026-06-15: refactor C / etapa 3/3).
+  await guardarPagoAcordado();
+  await cerrarTxDirecto();
+}
+
+// Construye el payload y hace POST a /atencion/<conv>/cerrar-transaccion.
+// Reemplaza al txCerrar() viejo del modal.
+async function cerrarTxDirecto(){
+  if (!convAbierta) return;
+  const get = id => { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; };
+  const formaPg = get('pgForma');
+  const envio = parseFloat(get('pgEnvio')) || 0;
+  const total = parseFloat(get('pgMonto')) || 0;
+  const pagaCon = parseFloat(get('pgPagaCon')) || 0;
+  // El backend recalcula vuelto server-side; lo mandamos de referencia.
+  const vueltoCalc = formaPg === 'efectivo' ? (pagaCon - total) : null;
+  const stock = get('dStock');
+  // 'pagado' = true si forma de pago ya está confirmada (link con dato_pago,
+  // transferencia con comprobante, tarjeta presencial, efectivo no por sí solo).
+  const datoPg = get('pgDato');
+  const pagado = (formaPg === 'tarjeta')
+    || ((formaPg === 'link_mp' || formaPg === 'transferencia') && !!datoPg);
+  const payload = {
+    total: total || null,   // <-- Diego 2026-06-15: estaba ausente, backend lo leía como 0
+    forma_pago: formaPg || null,
+    paga_con: pagaCon || null,
+    vuelto: vueltoCalc,
+    link_mp: get('pgLink') || null,
+    dato_pago_mp: datoPg || null,
+    tarjeta_ult4: get('pgUlt4') || null,
+    tarjeta_nombre: get('pgTarjNombre') || null,
+    tarjeta_marca: get('pgMarca') || null,
+    obra_social: get('dObraSocial') || null,
+    requiere_receta: get('dReceta') || null,
+    stock: stock || null,
+    drogueria: get('dDrogueria') || null,
+    destino: get('dSalida') || 'reparto',
+    envio_costo: envio || null,
+    prioridad: get('dPrioridad') || 'normal',
+    pagado,
+    producto: get('dProducto') || null,
+    producto_observer_id: window._dProductoObsId || null,
+    nota: get('dNota') || null,
+    observacion: get('dObservacion') || null,
+    canal: get('dCanal') || 'atencion',
+    cupon_tarjeta: get('pgCupon') || null,
+    ficha_notas: ((document.getElementById('fichaNotas')||{}).value || ''),
+    // Pick del cliente_picker (lat/lng/dir limpios) por si no hay domicilio_id
+    pick_direccion: get('pDir') || null,
+    pick_piso: get('pPiso') || null,
+    pick_depto: get('pDepto') || null,
+    pick_referencia: get('pRef') || null,
+    pick_localidad: get('pCiudad') || null,
+    pick_lat: window._domLat != null ? window._domLat : null,
+    pick_lng: window._domLng != null ? window._domLng : null,
+    // Si estamos editando un pedido cerrado (botón "Reabrir" desde la pestaña
+    // "Cerrados hoy"), el backend hace UPDATE en vez de INSERT.
+    pedido_id: (typeof pedidoEditando !== 'undefined' && pedidoEditando) ? pedidoEditando : null,
+  };
+  try {
+    const r = await fetch(`/atencion/${convAbierta}/cerrar-transaccion`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (!d.ok){ alert('Error al cerrar: ' + (d.error || 'desconocido')); return; }
+    const accion = payload.pedido_id ? 'actualizado' : 'cerrado';
+    alert(`✅ Pedido #${d.pedido_id} ${accion} → ${d.estado}`);
+    vaciarFormCierre();
+    if (typeof refrescarBandeja === 'function') refrescarBandeja();
+    if (typeof cargarBandeja === 'function') cargarBandeja();
+    // Si la vista activa es 'cerrados hoy', refrescar la lista para que se vea el cambio.
+    if (vista === 'cerrados' && typeof cargarCerradosHoy === 'function') cargarCerradosHoy();
+  } catch(e){ alert('Error de red: ' + e.message); }
+}
+
+// Stock = falta → mostrar dropdown de droguería + cargar opciones la primera vez.
+async function dStockChange(){
+  const wrap = document.getElementById('dDrogueriaWrap');
+  if (!wrap) return;
+  const falta = document.getElementById('dStock').value === 'esperar';
+  wrap.style.display = falta ? 'block' : 'none';
+  if (falta){
+    const sel = document.getElementById('dDrogueria');
+    if (sel && sel.options.length <= 1){
+      try {
+        const r = await fetch('/api/proveedores/drog-activas');
+        if (!r.ok) return;
+        const d = await r.json();
+        sel.innerHTML = '<option value="">— elegir —</option>' +
+          (d.drog || []).map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('');
+      } catch(e){ /* silencioso */ }
+    }
+  }
+}
+
+// Sale por = retiro → mostrar el banner 'Pendiente de retiro' + botón Retirado.
+function dSalidaChange(){
+  // Delegamos a actualizarCardRetiro que ya tiene la lógica completa (lee
+  // convAbierta + canal + dSalida + retirado_en).
+  if (typeof actualizarCardRetiro === 'function') actualizarCardRetiro();
 }
 
 cargarCiudades();
 cargarDrogActivas();
 heartbeat();
 cargarEquipo();
-setInterval(cargarBandeja, 5000);
-setInterval(() => refrescarChat(false), 4000);
+// En modo manual (walk-in) NO polleamos bandeja ni chat (no aplican).
+// Si vinimos con ?conv=N, abrimos esa conv automaticamente.
+if (window.ATENCION_MODO === 'manual'){
+  // El modal cerrarTxCard ya no existe (refactor C etapa 3/3, Diego 2026-06-15);
+  // todos los campos viven en el sidebar. Esta sección quedó solo para abrir
+  // automáticamente la conv inicial cuando entramos en modo manual.
+  if (window.ATENCION_CONV_INICIAL){
+    setTimeout(() => abrirConv(window.ATENCION_CONV_INICIAL), 100);
+  }
+} else {
+  setInterval(cargarBandeja, 5000);
+  setInterval(() => refrescarChat(false), 4000);
+}
 setInterval(heartbeat, 30000);
 setInterval(cargarEquipo, 12000);
 </script>
@@ -1628,22 +2113,81 @@ setInterval(cargarEquipo, 12000);
 async function cotizarEnvioAtencion(){
   const inp = document.getElementById('pgEnvio');
   if (!inp) return;
+  // Override manual por cuadras tiene prioridad.
+  const cuaEl = document.getElementById('pgCuadras');
+  const cua = cuaEl ? (cuaEl.value || '').trim() : '';
+  const ciu = (document.getElementById('pCiudad')||{}).value || '';
   let url;
-  if (window._domLat != null && window._domLng != null){
+  if (cua){
+    url = `/config/envio/api/cotizar?cuadras=${encodeURIComponent(cua)}&localidad=${encodeURIComponent(ciu)}`;
+  } else if (window._domLat != null && window._domLng != null){
     url = `/config/envio/api/cotizar?lat=${window._domLat}&lng=${window._domLng}`;
   } else {
     const dir = (document.getElementById('pDir')||{}).value || '';
-    const ciu = (document.getElementById('pCiudad')||{}).value || '';
-    if (!dir.trim()) return;
+    if (!dir.trim()) { pgRenderEnvioInfo(null); return; }
     url = `/config/envio/api/cotizar?direccion=${encodeURIComponent(dir)}&localidad=${encodeURIComponent(ciu)}`;
   }
   try {
     const d = await (await fetch(url)).json();
     if (d && d.monto != null){
       inp.value = Number(d.monto).toFixed(2);
+      pgRenderEnvioInfo(d);
       if (typeof pagoRecalcVuelto === 'function') pagoRecalcVuelto();
+    } else {
+      pgRenderEnvioInfo({error: (d && d.detalle) || 'sin tarifa'});
     }
-  } catch (e) { console.error('cotizar envio:', e); }
+  } catch (e) {
+    console.error('cotizar envio:', e);
+    pgRenderEnvioInfo({error: 'error de red'});
+  }
+}
+function pgRenderEnvioInfo(d){
+  const pill = document.getElementById('pgEnvioPill');
+  const info = document.getElementById('pgEnvioInfo');
+  if (!pill || !info) return;
+  if (!d){
+    pill.style.display = 'none';
+    info.textContent = '';
+    return;
+  }
+  if (d.error){
+    pill.style.display = 'none';
+    info.textContent = '⚠ ' + d.error;
+    info.style.color = 'var(--warn)';
+    return;
+  }
+  pill.style.display = 'inline-block';
+  pill.textContent = d.fuente || '—';
+  pill.style.background = d.fuente === 'zona' ? '#185FA5' : 'var(--accent)';
+  pill.style.color = d.fuente === 'zona' ? '#fff' : 'var(--accent-ink)';
+  const partes = [];
+  if (d.tramo_label) partes.push(d.tramo_label);
+  if (d.detalle) partes.push(d.detalle);
+  if (d.cuadras != null) partes.push(`~${d.cuadras} cuadras`);
+  info.textContent = partes.join(' · ');
+  info.style.color = '';
+}
+let _pgCuaTimer = null;
+function pgCuadrasInput(){
+  clearTimeout(_pgCuaTimer);
+  _pgCuaTimer = setTimeout(cotizarEnvioAtencion, 400);
+}
+// Badge "🟢 Venta libre" / "🟡 Receta" según contenido de Observación.
+function dActualizarRecetaBadge(){
+  const badge = document.getElementById('dRecetaBadge');
+  if (!badge) return;
+  const t = ((document.getElementById('dObservacion')||{}).value || '').toLowerCase();
+  // Palabras clave que indican que el cliente debe traer algo (receta/autorización).
+  const tieneRec = /receta|autoriz|pami|crónic|pase|prescrip|firmad/i.test(t);
+  if (tieneRec){
+    badge.textContent = '🟡 Requiere papel';
+    badge.style.background = 'rgba(239,159,39,.2)';
+    badge.style.color = '#EF9F27';
+  } else {
+    badge.textContent = '🟢 Venta libre';
+    badge.style.background = 'rgba(29,158,117,.18)';
+    badge.style.color = '#1D9E75';
+  }
 }
 
 // Hooks con la conversación abierta:
@@ -1653,7 +2197,10 @@ async function cotizarEnvioAtencion(){
 // La sincronización inversa (cargar el cliente vinculado en el picker al cambiar
 // de conversación) se hace dentro de cargarFicha() — ver más arriba en este archivo.
 ClientePicker.init({
-  onAddressChange: cotizarEnvioAtencion,
+  onAddressChange: () => {
+    cotizarEnvioAtencion();
+    if (typeof dActualizarDomicilioPreview === 'function') dActualizarDomicilioPreview();
+  },
   onClienteSelected: async function({observer_id, cliente_id}){
     if (!convAbierta) return;
     try {

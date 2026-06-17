@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Mock 4 · Spreadsheet menta · fondo crema</title>
+<style>
+  :root {
+    /* Fondo crema cálido (papel) — la tabla queda casi blanca para destacar encima */
+    --bg:#EDE6CF; --surface:#FCFBF7;
+    --txt:#1C1817; --title:#0A0908; --muted:#4F4A3F; --muted2:#6C6759;
+    --border:#D8D0B6; --row-line:#EDE6CF;
+    --header-bg:#C6F2D9; --header-txt:#064E3B;
+    --accent:#10B981; --accent-strong:#047857; --accent-ink:#064E3B; --accent-soft:#E8F8EF;
+    /* Zebra: un pelín más crema que el surface, para guiñar al fondo */
+    --zebra:#F5EFD9; --hov:#9DECC1;
+    --warn:#B45309; --warn-soft:#FCEFCA;
+    --info:#1E40AF;
+    --danger:#B91C1C;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--txt); font-family:var(--font); font-size:12.5px; }
+  .topbar { height:46px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:12px; padding:0 16px; }
+  .logo { font-weight:700; font-size:14px; display:flex; align-items:center; gap:7px; color:var(--title); }
+  .logo .dot { width:8px; height:8px; border-radius:50%; background:var(--accent); }
+  .nav-fecha { display:flex; align-items:center; gap:4px; }
+  .nav-fecha button, .nav-fecha input {
+    padding:4px 9px; border-radius:5px; border:1px solid var(--border);
+    background:var(--surface); color:var(--txt); cursor:pointer; font-size:12px; font-family:inherit; }
+  .nav-fecha button:hover { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+  .nav-fecha .today { font-weight:600; background:var(--accent-soft); color:var(--accent-ink); border-color:var(--accent); }
+  .hbtn { font-size:12px; padding:5px 10px; border-radius:5px; border:1px solid var(--border);
+          background:var(--surface); color:var(--txt); cursor:pointer; text-decoration:none;
+          display:inline-flex; align-items:center; gap:4px; }
+  .hbtn:hover { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+  .muted { color:var(--muted); font-size:11.5px; }
+
+  .wrap { padding:10px 14px; }
+  .turno-header { padding:6px 10px; font-weight:700; font-size:12px; color:var(--header-txt);
+                  background:var(--header-bg); border:1px solid var(--accent); border-radius:5px 5px 0 0;
+                  border-bottom:none; margin-top:14px; letter-spacing:.2px;
+                  display:flex; align-items:center; gap:6px; }
+  .turno-header .count { color:var(--accent-strong); font-weight:500; }
+
+  table { width:100%; border-collapse:collapse; background:var(--surface);
+          border:1px solid var(--border); font-size:12px; }
+  thead th { background:var(--header-bg); color:var(--header-txt); font-weight:700;
+             padding:6px 6px; text-align:left; border-bottom:2px solid var(--accent);
+             white-space:nowrap; font-size:11px; text-transform:uppercase; letter-spacing:.3px;
+             position:sticky; top:0; z-index:1; }
+  thead th + th { border-left:1px solid rgba(16,185,129,.25); }
+  tbody td { padding:5px 6px; border-bottom:1px solid var(--row-line); vertical-align:middle; color:var(--txt); }
+  tbody td + td { border-left:1px solid var(--row-line); }
+  tbody tr:nth-child(even) td { background:var(--zebra); }
+  tbody tr:hover td { background:var(--hov); }
+  tbody tr:last-child td { border-bottom:none; }
+
+  .cliente-nm { font-weight:600; color:var(--title); font-size:12px; }
+  .turnos { display:inline-flex; gap:3px; margin-left:6px; vertical-align:middle; }
+  .btn-turno { width:18px; height:18px; line-height:16px; text-align:center; font-size:10px;
+               font-weight:700; border-radius:50%; cursor:pointer;
+               border:1px solid var(--border); background:var(--surface); color:var(--muted2);
+               transition:all .12s; user-select:none; }
+  .btn-turno:hover { color:var(--title); border-color:var(--muted); }
+  .btn-turno.on.am { background:#DBEAFE; color:#1E40AF; border-color:#3B82F6; }
+  .btn-turno.on.pm { background:#FEE4C7; color:#9A3412; border-color:#F97316; }
+
+  .pin { color:var(--accent-strong); text-decoration:none; margin-left:3px; font-size:11px; }
+  .tel { color:var(--info); text-decoration:none; }
+  .monto { font-weight:600; color:var(--title); font-variant-numeric:tabular-nums; }
+  .monto-vuelto { color:var(--warn); font-weight:600; font-variant-numeric:tabular-nums; }
+  .forma-pago { font-weight:500; color:var(--warn); }
+
+  /* Estado compacto */
+  .estado-bar { display:inline-flex; flex-direction:column; align-items:flex-start; gap:1px;
+                cursor:pointer; padding:0; background:none; border:none; }
+  .estado-bar .nombre { font-size:9.5px; color:var(--muted); font-weight:700;
+                        letter-spacing:.3px; text-transform:lowercase; }
+  .estado-bar .pasos { display:inline-flex; gap:1px; }
+  .estado-paso { display:inline-block; min-width:14px; height:15px; line-height:15px;
+                 text-align:center; font-size:9px; font-weight:700; padding:0 2px;
+                 background:var(--row-line); color:var(--muted2); border-radius:3px; }
+  .estado-paso.done { background:rgba(16,185,129,.3); color:var(--accent-ink); }
+  .estado-paso.actual { background:var(--accent); color:#fff; }
+  .estado-paso.alt-drog { background:var(--warn); color:#fff; }
+  .estado-paso.alt-caja { background:var(--info); color:#fff; }
+
+  .receta { color:var(--warn); font-size:13px; }
+  .pagado { color:var(--accent-strong); font-size:13px; }
+  .dash { color:var(--muted2); }
+  .btn-publicar { padding:3px 8px; font-size:10.5px; border-radius:5px; border:1px solid var(--accent);
+                  background:var(--accent-soft); color:var(--accent-ink); cursor:pointer; font-weight:500; }
+  .btn-publicar:hover { background:var(--accent); color:#fff; }
+  .btn-del { padding:3px 5px; font-size:11px; border-radius:5px; border:1px solid var(--border);
+             background:var(--surface); color:var(--muted); cursor:pointer; }
+  .btn-del:hover { background:#FEF2F2; color:var(--danger); border-color:var(--danger); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><span class="dot"></span>📋 Planilla de reparto</div>
+  <span class="muted">16/06/2026</span>
+  <div class="nav-fecha">
+    <button>◀</button>
+    <input type="date" value="2026-06-16">
+    <button>▶</button>
+    <button class="today">Hoy</button>
+  </div>
+  <div style="flex:1"></div>
+  <button class="hbtn">🛵 Cadetes</button>
+  <a href="#" class="hbtn">⚙️ Tarifas</a>
+  <a href="#" class="hbtn">🗺️ Reparto</a>
+  <a href="#" class="hbtn">← Volver</a>
+</div>
+
+<div class="wrap">
+
+  <div class="turno-header">🌑 Sin asignar <span class="count">· 5 pedidos</span></div>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Cliente</th><th>Dirección</th><th>Tel</th>
+        <th>Envío</th><th>Tomó</th><th>Importe</th><th>Forma</th>
+        <th>Vuelto</th><th>Producto</th><th>Observación</th><th>Rec.</th>
+        <th>Estado</th><th>Entregó</th><th>Cadete</th><th>Recibió</th>
+        <th>Pag.</th><th>WhatsApp</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>17</td>
+        <td><span class="cliente-nm">CASTAGNAVIZ PEREZ L.</span>
+          <span class="turnos" title="Asignar turno"><span class="btn-turno on am" title="Mañana">M</span><span class="btn-turno pm" title="Tarde">T</span></span></td>
+        <td>SOLIS 565 <a href="#" class="pin">📍</a></td>
+        <td><a href="#" class="tel">4581709</a></td>
+        <td>$ 3.500</td>
+        <td class="muted">Operador</td>
+        <td class="monto">$ 28.000</td>
+        <td class="forma-pago">efectivo</td>
+        <td class="monto-vuelto">$ 2.000</td>
+        <td>CLAVULOX x14</td>
+        <td>TRAER AUTORIZACION FIRMADA</td>
+        <td><span class="receta">📋</span></td>
+        <td>
+          <button class="estado-bar">
+            <span class="nombre">kellerhoff</span>
+            <span class="pasos">
+              <span class="estado-paso alt-drog">D</span>
+              <span class="estado-paso">P</span><span class="estado-paso">U</span>
+              <span class="estado-paso">T</span><span class="estado-paso">R</span>
+              <span class="estado-paso">E</span>
+            </span>
+          </button>
+        </td>
+        <td class="dash">—</td><td class="dash">—</td><td class="dash">—</td>
+        <td><span class="pagado">💲</span></td>
+        <td><button class="btn-publicar">📢 Publicar</button></td>
+        <td><button class="btn-del">🗑️</button></td>
+      </tr>
+      <tr>
+        <td>18</td>
+        <td><span class="cliente-nm">CASTAGNAVIZ PEREZ L.</span></td>
+        <td>SOLIS 565 <a href="#" class="pin">📍</a></td>
+        <td><a href="#" class="tel">4581709</a></td>
+        <td>$ 3.500</td>
+        <td class="muted">Operador</td>
+        <td class="dash">—</td>
+        <td class="forma-pago">efectivo</td>
+        <td class="monto-vuelto">$ 30.000</td>
+        <td>DORIXINA RELAX x20</td>
+        <td>Traer Receta (pedido a drogueria)</td>
+        <td><span class="receta">📋</span></td>
+        <td>
+          <button class="estado-bar">
+            <span class="nombre">en caja</span>
+            <span class="pasos">
+              <span class="estado-paso">P</span><span class="estado-paso">U</span>
+              <span class="estado-paso">T</span><span class="estado-paso">R</span>
+              <span class="estado-paso">E</span>
+              <span class="estado-paso alt-caja">$</span>
+            </span>
+          </button>
+        </td>
+        <td class="dash">—</td><td class="dash">—</td><td class="dash">—</td>
+        <td class="dash">—</td>
+        <td><button class="btn-publicar">📢 Publicar</button></td>
+        <td><button class="btn-del">🗑️</button></td>
+      </tr>
+      <tr>
+        <td>19</td>
+        <td><span class="cliente-nm">CASTAGNAVIZ PEREZ L.</span></td>
+        <td>SOLIS 565 <a href="#" class="pin">📍</a></td>
+        <td><a href="#" class="tel">4581709</a></td>
+        <td>$ 3.500</td>
+        <td class="muted">Operador</td>
+        <td class="dash">—</td>
+        <td class="forma-pago">efectivo</td>
+        <td class="monto-vuelto">$ 40.000</td>
+        <td>MYLANTA EXTRA x96</td>
+        <td>Traer Receta (pedido a drogueria)</td>
+        <td><span class="receta">📋</span></td>
+        <td>
+          <button class="estado-bar">
+            <span class="nombre">en caja</span>
+            <span class="pasos">
+              <span class="estado-paso">P</span><span class="estado-paso">U</span>
+              <span class="estado-paso">T</span><span class="estado-paso">R</span>
+              <span class="estado-paso">E</span>
+              <span class="estado-paso alt-caja">$</span>
+            </span>
+          </button>
+        </td>
+        <td class="dash">—</td><td class="dash">—</td><td class="dash">—</td>
+        <td class="dash">—</td>
+        <td><button class="btn-publicar">📢 Publicar</button></td>
+        <td><button class="btn-del">🗑️</button></td>
+      </tr>
+      <tr>
+        <td>20</td>
+        <td><span class="cliente-nm">ARTURO MIGUEL SANCHEZ</span>
+          <span class="turnos" title="Asignar turno"><span class="btn-turno am" title="Mañana">M</span><span class="btn-turno on pm" title="Tarde">T</span></span></td>
+        <td>NAVARRO 6061 <a href="#" class="pin">📍</a></td>
+        <td><a href="#" class="tel">4589348</a></td>
+        <td>$ 3.500</td>
+        <td class="muted">Operador</td>
+        <td class="dash">—</td>
+        <td class="forma-pago">efectivo</td>
+        <td class="monto-vuelto">$ 10.000</td>
+        <td>PARACETAMOL x20</td>
+        <td>Traer Receta (pedido a drogueria)</td>
+        <td><span class="receta">📋</span></td>
+        <td>
+          <button class="estado-bar">
+            <span class="nombre">kellerhoff</span>
+            <span class="pasos">
+              <span class="estado-paso alt-drog">D</span>
+              <span class="estado-paso">P</span><span class="estado-paso">U</span>
+              <span class="estado-paso">T</span><span class="estado-paso">R</span>
+              <span class="estado-paso">E</span>
+            </span>
+          </button>
+        </td>
+        <td class="dash">—</td><td class="dash">—</td><td class="dash">—</td>
+        <td><span class="pagado">💲</span></td>
+        <td><button class="btn-publicar">📢 Publicar</button></td>
+        <td><button class="btn-del">🗑️</button></td>
+      </tr>
+      <tr>
+        <td>21</td>
+        <td><span class="cliente-nm">PAPIRIO EZEQUIEL</span></td>
+        <td>SUIPACHA 300 <a href="#" class="pin">📍</a></td>
+        <td><a href="#" class="tel">4932589</a></td>
+        <td>$ 8.000</td>
+        <td class="muted">Operador</td>
+        <td class="dash">—</td>
+        <td class="forma-pago">efectivo</td>
+        <td class="monto-vuelto">$ 10.000</td>
+        <td>CIRIAX 500 x20</td>
+        <td>Traer Receta</td>
+        <td><span class="receta">📋</span></td>
+        <td>
+          <button class="estado-bar">
+            <span class="nombre">kellerhoff</span>
+            <span class="pasos">
+              <span class="estado-paso alt-drog">D</span>
+              <span class="estado-paso">P</span><span class="estado-paso">U</span>
+              <span class="estado-paso">T</span><span class="estado-paso">R</span>
+              <span class="estado-paso">E</span>
+            </span>
+          </button>
+        </td>
+        <td class="dash">—</td><td class="dash">—</td><td class="dash">—</td>
+        <td><span class="pagado">💲</span></td>
+        <td><button class="btn-publicar">📢 Publicar</button></td>
+        <td><button class="btn-del">🗑️</button></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

@@ -61,13 +61,23 @@
             <div class="flex items-start gap-3 text-sm border border-surface-border rounded-lg px-3 py-2">
                 <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 mt-0.5">{{ d.etiqueta or 'Otro' }}</span>
                 <div class="flex-1 min-w-0">
-                    <div class="text-[#1e1e1e]">{{ d.direccion or '(sin dirección escrita)' }}</div>
+                    <div class="text-[#1e1e1e]">
+                        {{ d.direccion or '(sin dirección escrita)' }}
+                        {% if d.piso %}<span class="text-xs text-[#666]"> · Piso {{ d.piso }}</span>{% endif %}
+                        {% if d.depto %}<span class="text-xs text-[#666]"> · Dpto {{ d.depto }}</span>{% endif %}
+                    </div>
                     {% if d.localidad %}<div class="text-xs text-[#888]">{{ d.localidad }}</div>{% endif %}
+                    {% if d.referencia %}<div class="text-[11px] text-[#999] italic">{{ d.referencia }}</div>{% endif %}
                 </div>
                 {% if d.lat and d.lng %}
                 <a href="https://www.google.com/maps/search/?api=1&query={{ d.lat }},{{ d.lng }}"
                    target="_blank" rel="noopener"
-                   class="text-xs text-sky-700 hover:text-sky-900 underline whitespace-nowrap">Ver en Maps ↗</a>
+                   class="text-xs text-sky-700 hover:text-sky-900 underline whitespace-nowrap font-mono"
+                   title="Abrir en Google Maps">
+                    📍 {{ '%.4f'|format(d.lat) }}, {{ '%.4f'|format(d.lng) }} ↗
+                </a>
+                {% else %}
+                <span class="text-[10px] text-[#bbb] italic whitespace-nowrap">sin georef</span>
                 {% endif %}
             </div>
             {% endfor %}

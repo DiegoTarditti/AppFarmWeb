@@ -20,39 +20,39 @@ from bot import direcciones
 def test_separar_direccion_dto_numero():
     r = direcciones.separar_direccion('bolivia 1614 DTO 2')
     assert r == {'direccion': 'bolivia 1614', 'piso': None,
-                 'depto': '2', 'referencia': None}
+                 'depto': '2', 'referencia': None, 'localidad': None}
 
 
 def test_separar_direccion_piso_numero():
     r = direcciones.separar_direccion('San Martín 100 piso 1')
     assert r == {'direccion': 'San Martín 100', 'piso': '1',
-                 'depto': None, 'referencia': None}
+                 'depto': None, 'referencia': None, 'localidad': None}
 
 
 def test_separar_direccion_depto_letra():
     r = direcciones.separar_direccion('Av Pellegrini 1234 depto B')
     assert r == {'direccion': 'Av Pellegrini 1234', 'piso': None,
-                 'depto': 'B', 'referencia': None}
+                 'depto': 'B', 'referencia': None, 'localidad': None}
 
 
 def test_separar_direccion_pb():
     r = direcciones.separar_direccion('Mendoza 2500 PB')
     assert r == {'direccion': 'Mendoza 2500', 'piso': 'PB',
-                 'depto': None, 'referencia': None}
+                 'depto': None, 'referencia': None, 'localidad': None}
 
 
 def test_separar_direccion_calle_con_numero_en_nombre():
     """Caso crítico: 'Pasaje 3 de Febrero 1614 dto 2' NO debe romperse."""
     r = direcciones.separar_direccion('Pasaje 3 de Febrero 1614 dto 2')
     assert r == {'direccion': 'Pasaje 3 de Febrero 1614', 'piso': None,
-                 'depto': '2', 'referencia': None}
+                 'depto': '2', 'referencia': None, 'localidad': None}
 
 
 def test_separar_direccion_ordinal_y_letra_suelta():
     """Caso crítico: 'Rioja 950 1° B' → piso='1', depto='B' (sin keyword dto)."""
     r = direcciones.separar_direccion('Rioja 950 1° B')
     assert r == {'direccion': 'Rioja 950', 'piso': '1',
-                 'depto': 'B', 'referencia': None}
+                 'depto': 'B', 'referencia': None, 'localidad': None}
 
 
 def test_separar_direccion_monoblock_y_dto():
@@ -68,14 +68,14 @@ def test_separar_direccion_monoblock_y_dto():
 def test_separar_direccion_sin_unidad():
     r = direcciones.separar_direccion('Bolivia 1614')
     assert r == {'direccion': 'Bolivia 1614', 'piso': None,
-                 'depto': None, 'referencia': None}
+                 'depto': None, 'referencia': None, 'localidad': None}
 
 
 def test_separar_direccion_vacio_o_none():
     for inp in ('', None, '   '):
         r = direcciones.separar_direccion(inp)
         assert r == {'direccion': '', 'piso': None,
-                     'depto': None, 'referencia': None}
+                     'depto': None, 'referencia': None, 'localidad': None}
 
 
 def test_separar_preserva_casing_y_acentos():

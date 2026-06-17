@@ -21,6 +21,41 @@ from services import reparto
 log = logging.getLogger(__name__)
 
 
+def _notificar_cliente_pedido(s, pedido, nuevo_estado):
+    """Avisa al cliente del pedido (via WAHA DM) cuando entra a en_ruta o
+    entregado. No bloquea el commit si falla — loguea y sigue."""
+    if nuevo_estado not in ('en_ruta', 'entregado'):
+        return None
+    if not pedido.cliente_id:
+        return None
+    cli = s.get(database.Cliente, pedido.cliente_id)
+    if not cli:
+        return None
+    raw = (cli.whatsapp or cli.telefono or '').strip()
+    if not raw:
+        return None
+    from bot.whatsapp_grupo import enviar_dm, normalizar_wa_id
+    wa_id = normalizar_wa_id(raw)
+    if not wa_id:
+        return None
+    nombre = (cli.nombre or '').strip().split(' ')[0] or 'Cliente'
+    if nuevo_estado == 'en_ruta':
+        texto = (f'🛵 Hola {nombre}! Tu pedido ya salió a domicilio.\n'
+                 f'📍 {pedido.direccion or "tu dirección"}\n\n'
+                 f'En unos minutos pasa el repartidor.')
+    else:
+        texto = f'✅ Hola {nombre}! Tu pedido fue entregado. ¡Gracias por elegirnos!'
+    try:
+        r = enviar_dm(wa_id, texto)
+        if not r.get('ok'):
+            log.warning('notificar pedido #%s al cliente fallo: %s',
+                        pedido.id, r.get('error'))
+        return r
+    except Exception as e:  # noqa: BLE001
+        log.exception('notificar pedido #%s al cliente: %s', pedido.id, e)
+        return None
+
+
 def _persistir_mensaje_reparto(*, es_grupo, chat_id, wa_id_emisor, push_name, body, from_me):
     """Persiste un mensaje del grupo de cadetes o un DM de cadete en
     BotConversacion + BotMensaje. Si es de un cadete (DM o grupo) intenta
@@ -39,7 +74,13 @@ def _persistir_mensaje_reparto(*, es_grupo, chat_id, wa_id_emisor, push_name, bo
                       .first())
         # Si no hay vínculo previo pero el push_name apunta inequívoco a un
         # cadete sin wa_id, autocompletar (silencio: 0 o 2+ matches → skip).
-        if not cadete and wa_id_emisor and push_name:
+        # IMPORTANTE: solo auto-vincular si el wa_id_emisor es un numero real
+        # (@c.us). WhatsApp 2026+ usa LID (@lid) en grupos para anonimizar al
+        # participante — guardar el LID como wa_id no sirve para mandar DMs
+        # despues. Para grupos, ignorar el participant LID; el wa_id real lo
+        # carga el operador a mano desde el modal (telefono → wa_id @c.us).
+        if (not cadete and wa_id_emisor and push_name
+                and wa_id_emisor.endswith('@c.us')):
             nombre_norm = ' '.join(push_name.lower().split())
             from sqlalchemy import func as _func
             candidatos = (s.query(database.Cadete)
@@ -62,19 +103,22 @@ def _persistir_mensaje_reparto(*, es_grupo, chat_id, wa_id_emisor, push_name, bo
                     estado_atencion='humano', nodo='reparto')
                 s.add(conv); s.flush()
         else:
-            # DM con un cadete particular.
-            if not wa_id_emisor:
+            # DM con un cadete particular. PRIVACIDAD: solo persistimos DMs si
+            # el remitente es un cadete reconocido. WAHA recibe webhooks de TODOS
+            # los DMs al numero vinculado (incluidos chats personales del operador
+            # con familiares, amigos, etc.) — sin este guard quedarian todos en DB.
+            if not wa_id_emisor or not cadete:
                 return None
             conv = (s.query(database.BotConversacion)
                     .filter_by(canal='whatsapp', canal_user_id=wa_id_emisor).first())
             if not conv:
                 conv = database.BotConversacion(
                     canal='whatsapp', canal_user_id=wa_id_emisor,
-                    nombre_cliente=(cadete.nombre if cadete else push_name) or 'Cadete',
+                    nombre_cliente=cadete.nombre,
                     estado_atencion='humano', nodo='reparto',
-                    cadete_id=(cadete.id if cadete else None))
+                    cadete_id=cadete.id)
                 s.add(conv); s.flush()
-            elif cadete and not conv.cadete_id:
+            elif not conv.cadete_id:
                 conv.cadete_id = cadete.id
         # Insertar el mensaje. fromMe ⇒ lo mandó el operador; else lo mandó un cadete.
         # En el grupo, fromMe también puede ser el bot publicando un pedido — lo
@@ -132,7 +176,8 @@ def _ruta_dict(r, cadetes=None):
 def _cadete_dict(c):
     return {'id': c.id, 'nombre': c.nombre, 'telefono': c.telefono or '',
             'tarifa_dia': float(c.tarifa_dia) if c.tarifa_dia is not None else None,
-            'activo': c.activo, 'token': c.token or ''}
+            'activo': c.activo, 'token': c.token or '',
+            'wa_id': c.wa_id or ''}
 
 
 def _mapa_cadetes(s):
@@ -309,6 +354,15 @@ def init_app(app):
                 c.nombre = nombre
             if 'telefono' in b:
                 c.telefono = (b.get('telefono') or '').strip() or None
+                # Auto-derivar wa_id desde el telefono si todavia no lo tenia.
+                # Permite mandar DMs desde el panel sin esperar a que el cadete
+                # escriba primero. Si el telefono se borra, el wa_id queda como
+                # estaba (puede haber sido vinculado por webhook).
+                if c.telefono and not c.wa_id:
+                    from bot.whatsapp_grupo import normalizar_wa_id
+                    c.wa_id = normalizar_wa_id(c.telefono)
+            if 'wa_id' in b:
+                c.wa_id = (b.get('wa_id') or '').strip() or None
             if 'tarifa_dia' in b:
                 try:
                     c.tarifa_dia = float(b['tarifa_dia']) if b.get('tarifa_dia') not in (None, '') else None
@@ -573,7 +627,13 @@ def init_app(app):
         # En DMs (from = wa_id del cadete) participant suele venir vacío.
         participant = (msg.get('participant') or msg.get('author')
                        or (msg.get('_data') or {}).get('author') or '')
-        es_grupo = chat_id.endswith('@g.us') or chat_id == whatsapp_grupo.WAHA_GRUPO_ENVIOS
+        es_grupo = chat_id.endswith('@g.us')
+        # Si es un grupo, debe ser EXACTAMENTE el grupo de reparto configurado.
+        # WAHA dispara webhooks por TODOS los grupos del numero vinculado
+        # (incluye grupos personales del operador). Sin este filtro entraban
+        # mensajes de cualquier lado al panel del grupo de cadetes.
+        if es_grupo and chat_id != whatsapp_grupo.WAHA_GRUPO_ENVIOS:
+            return jsonify({'ok': True, 'ignored': 'other_group'})
         wa_id_emisor = whatsapp_grupo.normalizar_wa_id(participant if es_grupo else chat_id)
         from_me = bool(msg.get('fromMe'))
         try:
@@ -639,6 +699,7 @@ def init_app(app):
             if cad:
                 p.cadete_id = cad.id
                 p.estado = 'en_ruta'   # opcional: al tomar lo pasa a en_ruta
+                _notificar_cliente_pedido(s, p, 'en_ruta')
             s.commit()
             extra = f' (cadete del sistema: {cad.nombre})' if cad else ' (sin match en cadetes)'
             whatsapp_grupo.publicar_en_grupo(
@@ -988,6 +1049,164 @@ def init_app(app):
             log.exception('borrar pedido #%s fallo: %s', pid, e)
             return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
+    @app.route('/reparto/pedido/<int:pid>/ticket-pdf')
+    @login_required
+    def reparto_ticket_pdf(pid):
+        """PDF del ticket del cadete (formato 80mm de ancho) para imprimir desde
+        el browser. Diego 2026-06-16: prefirió PDF en vez de impresión directa
+        ESC/POS por DockerPanel — la impresión la dispara desde Windows.
+
+        Genera con reportlab usando un width de 80mm y fuente Courier monoespaciada.
+        Incluye todo lo que el cadete necesita para entregar."""
+        if not _ok():
+            return 'sin permiso', 403
+        from io import BytesIO
+
+        from reportlab.lib.pagesizes import mm
+        from reportlab.lib.units import mm as MM
+        from reportlab.pdfgen import canvas
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pid)
+            if not p:
+                return 'pedido no existe', 404
+            cad = _mapa_cadetes(s)
+            rutas_cad = {r.id: r.cadete_id for r in s.query(database.RutaReparto)
+                         .filter(database.RutaReparto.cadete_id.isnot(None)).all()}
+            ef_id = reparto.cadete_efectivo_id(p, rutas_cad)
+            cadete_nom = cad.get(ef_id, '') if ef_id else ''
+            # total_paciente YA incluye el envío (el operador carga el total con
+            # envío). El producto se deriva: producto = total - envío.
+            total_monto = float(p.total_paciente) if p.total_paciente is not None else None
+            envio_v = float(p.envio_costo) if p.envio_costo is not None else None
+            producto_monto = (round((total_monto or 0) - (envio_v or 0), 2)
+                              if total_monto is not None else None)
+            cobrar = None if p.pagado else total_monto
+            paga_con = float(p.paga_con) if p.paga_con is not None else None
+            fecha = p.creado_en.strftime('%d/%m %H:%M') if p.creado_en else ''
+            data = dict(
+                id=p.id, fecha=fecha, cliente=p.cliente_nombre or '',
+                telefono=p.telefono or '', direccion=p.direccion or '',
+                localidad=p.localidad or '',
+                piso=p.piso or '', depto=p.depto or '', referencia=p.referencia or '',
+                observacion=p.observacion or '', producto=p.producto or '',
+                receta_pendiente=(p.receta_estado == 'pendiente')
+                                  or (p.receta_estado is None and bool(p.requiere_receta)),
+                pagado=bool(p.pagado), forma_pago=p.forma_pago or '',
+                producto_monto=producto_monto, envio=envio_v, total=total_monto,
+                cobrar=cobrar, paga_con=paga_con, vuelto=p.vuelto or '',
+                obra_social=p.obra_social or '', cadete=cadete_nom,
+            )
+
+        # 80mm wide, alto fluido según contenido. Margen interno 5mm.
+        # Más aire que la versión anterior (Diego 2026-06-16): los textos no
+        # tocan las líneas separadoras, y un bloque grande de firma al final.
+        W = 80 * MM
+        margin = 5 * MM
+        usable = W - 2 * margin
+        # Estimación de líneas para calcular alto del PDF.
+        n_lines_est = 24 + len(data['producto']) // 34 + len(data['observacion']) // 34
+        H = (35 + n_lines_est * 5.2) * MM
+        buf = BytesIO()
+        c = canvas.Canvas(buf, pagesize=(W, H))
+        y = H - margin
+        # Espaciado vertical entre líneas (más generoso).
+        def line(txt='', size=8, bold=False, sep=False, spacer=False):
+            nonlocal y
+            if sep:
+                y -= 2.5 * MM
+                c.setLineWidth(0.3)
+                c.line(margin, y, W - margin, y)
+                y -= 3 * MM
+                return
+            if spacer:
+                y -= 2 * MM
+                return
+            c.setFont('Courier-Bold' if bold else 'Courier', size)
+            # Wrap a 34 caracteres (cabe cómodo en 80mm con Courier 8pt).
+            txt = txt or ''
+            chunks = [txt[i:i+34] for i in range(0, max(1, len(txt)), 34)] if txt else ['']
+            for chunk in chunks:
+                c.drawString(margin, y, chunk)
+                y -= (size * 0.42 + 1.6) * MM
+        # Header
+        line('FARMACIA BADIA', size=11, bold=True)
+        line(f'PEDIDO #{data["id"]}   {data["fecha"]}', size=9, bold=True)
+        line(sep=True)
+        # Cliente / dirección
+        line(f'Cliente: {data["cliente"]}', bold=True)
+        if data['telefono']:
+            line(f'Tel:     {data["telefono"]}')
+        line(f'Direc:   {data["direccion"]}')
+        if data['piso'] or data['depto']:
+            extras = ' '.join(filter(None, [
+                f'Piso {data["piso"]}' if data['piso'] else '',
+                f'Dpto {data["depto"]}' if data['depto'] else '',
+            ]))
+            line(f'         {extras}')
+        if data['localidad']:
+            line(f'Ciudad:  {data["localidad"]}', bold=True)
+        if data['referencia']:
+            line(f'Ref:     {data["referencia"]}')
+        line(sep=True)
+        # Producto
+        if data['producto']:
+            line('PRODUCTO', bold=True)
+            line(spacer=True)
+            line(data['producto'])
+        if data['observacion']:
+            line(spacer=True)
+            line(f'OBS: {data["observacion"]}', bold=True)
+        if data['receta_pendiente']:
+            line(spacer=True)
+            line('!! RECETA PENDIENTE !!', bold=True)
+        line(sep=True)
+        # Pago: SIEMPRE desglosamos Producto + Envío + Total, y al final
+        # indicamos si está pagado (cadete solo entrega) o lo cobra el cadete.
+        line('IMPORTES', bold=True)
+        line(spacer=True)
+        prod_v = data['producto_monto'] or 0
+        env_v = data['envio'] or 0
+        total_v = data['total'] or 0       # total cargado (ya incluye envío)
+        if prod_v > 0:
+            line(f'  Producto: $ {prod_v:,.0f}'.replace(',', '.'))
+        if env_v > 0:
+            line(f'  Envio:    $ {env_v:,.0f}'.replace(',', '.'))
+        if total_v > 0:
+            line(f'  TOTAL:    $ {total_v:,.0f}'.replace(',', '.'), size=11, bold=True)
+        line(spacer=True)
+        if data['pagado']:
+            line(f'>> PAGADO ({data["forma_pago"] or "—"}) <<', bold=True)
+            line('   no cobrar en entrega', size=7)
+        else:
+            line('>> COBRA CADETE <<', bold=True)
+            line(spacer=True)
+            line(f'  Forma:    {data["forma_pago"] or "—"}')
+            if data['paga_con'] is not None:
+                line(f'  Paga con: $ {data["paga_con"]:,.0f}'.replace(',', '.'))
+            if data['vuelto']:
+                line(f'  Vuelto:   $ {data["vuelto"]}', bold=True)
+        line(sep=True)
+        # Cobertura / cadete
+        if data['obra_social']:
+            line(f'OS: {data["obra_social"]}')
+        if data['cadete']:
+            line(f'Cadete: {data["cadete"]}')
+        if data['obra_social'] or data['cadete']:
+            line(sep=True)
+        # Espacio AMPLIO para firma del cliente (Diego 2026-06-16).
+        line('Firma del cliente:', size=8)
+        y -= 14 * MM   # espacio en blanco para firmar
+        c.setLineWidth(0.4)
+        c.line(margin, y, W - margin, y)
+        y -= 4 * MM
+        line('Aclaración y DNI:', size=7)
+        y -= 10 * MM
+        c.line(margin, y, W - margin, y)
+        c.showPage(); c.save()
+        from flask import Response
+        return Response(buf.getvalue(), mimetype='application/pdf',
+                        headers={'Content-Disposition': f'inline; filename=ticket-pedido-{pid}.pdf'})
+
     @app.route('/reparto/pedido/<int:pid>/ticket')
     @login_required
     def reparto_ticket_data(pid):
@@ -1006,11 +1225,13 @@ def init_app(app):
             rutas_cad = {r.id: r.cadete_id for r in s.query(database.RutaReparto)
                          .filter(database.RutaReparto.cadete_id.isnot(None)).all()}
             ef_id = reparto.cadete_efectivo_id(p, rutas_cad)
-            producto_monto = float(p.total_paciente) if p.total_paciente is not None else None
+            # total_paciente YA incluye el envío (el operador carga el total).
+            # Producto = total - envío. Si ya está pagado, el cadete no cobra.
+            total_monto = float(p.total_paciente) if p.total_paciente is not None else None
             envio = float(p.envio_costo) if p.envio_costo is not None else None
-            # Cobrar = producto + envío (mismo criterio que el vuelto de atención).
-            # Si ya está pagado, el cadete no cobra nada.
-            cobrar = None if p.pagado else round((producto_monto or 0) + (envio or 0), 2)
+            producto_monto = (round((total_monto or 0) - (envio or 0), 2)
+                              if total_monto is not None else None)
+            cobrar = None if p.pagado else total_monto
             return jsonify({
                 'id': p.id,
                 'fecha': p.creado_en.strftime('%d/%m %H:%M') if p.creado_en else '',
@@ -1027,6 +1248,7 @@ def init_app(app):
                 'forma_pago': p.forma_pago or '',
                 'producto_monto': producto_monto,
                 'envio': envio,
+                'total': total_monto,
                 'cobrar': cobrar,
                 'paga_con': float(p.paga_con) if p.paga_con is not None else None,
                 'vuelto': p.vuelto or '',
@@ -1125,6 +1347,7 @@ def init_app(app):
             if not p or p.cadete_id != c.id:
                 return jsonify({'ok': False, 'error': 'no autorizado'}), 403
             p.estado = 'entregado'
+            _notificar_cliente_pedido(s, p, 'entregado')
             s.commit()
             return jsonify({'ok': True})
 
@@ -1159,6 +1382,10 @@ def init_app(app):
                             database.PedidoReparto.id).all())
             cadetes = {c.id: c.nombre for c in
                        s.query(database.Cadete).all()}
+            # Para mostrar el nombre (abreviado) en la barra de estado cuando el
+            # pedido está 'esperando_drog'.
+            droguerias = {p.id: p.razon_social
+                          for p in s.query(database.Provider).all()}
             usuarios = s.query(database.Usuario).filter(
                 database.Usuario.activo.is_(True)).order_by(
                 database.Usuario.nombre_completo).all()
@@ -1214,6 +1441,7 @@ def init_app(app):
                                pedidos_manana=manana,
                                pedidos_tarde=tarde,
                                cadetes=cadetes,
+                               droguerias=droguerias,
                                usuarios=usuarios_list)
 
     @app.route('/api/reparto/pedido/<int:pid>/actualizar', methods=['POST'])
@@ -1249,5 +1477,8 @@ def init_app(app):
             else:
                 valor = (str(valor).strip() if valor else None)
             setattr(p, campo, valor)
+            # Avisar al cliente cuando el estado avanza a en_ruta o entregado.
+            if campo == 'estado':
+                _notificar_cliente_pedido(s, p, valor)
             s.commit()
             return jsonify({'ok': True})

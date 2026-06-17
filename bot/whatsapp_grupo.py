@@ -69,6 +69,9 @@ def normalizar_wa_id(raw):
     """Convierte un wa_id 'crudo' a formato WAHA canónico '<num>@c.us'.
     - Si ya viene con '@g.us' o '@c.us', lo deja igual.
     - Si son dígitos puros, le agrega '@c.us'.
+    - Si termina en '@lid' (Linked Identity de WhatsApp 2026+ en grupos,
+      es un ID anónimo NO el número real) → None. Sin el número real no
+      se puede mandar DM despues.
     - None / vacío → None.
     """
     s = (raw or '').strip()
@@ -76,6 +79,8 @@ def normalizar_wa_id(raw):
         return None
     if s.endswith('@c.us') or s.endswith('@g.us'):
         return s
+    if s.endswith('@lid'):
+        return None
     digs = ''.join(ch for ch in s if ch.isdigit())
     return f'{digs}@c.us' if digs else None
 

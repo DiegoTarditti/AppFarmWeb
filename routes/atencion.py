@@ -35,13 +35,64 @@ def init_app(app):
     @app.route('/atencion')
     @login_required
     def atencion_panel():
-        return render_template('atencion.html', lineas=store.lineas_distintas())
+        # Modo manual (walk-in): /atencion?modo=manual&new=1 crea una BotConversacion
+        # stub (sin chat WhatsApp/Telegram, solo para registrar el pedido) y abre el
+        # panel en modo simplificado (sin bandeja ni columna de chat).
+        # Refactor C — etapa 2: reemplaza /pedido/nuevo.
+        modo = (request.args.get('modo') or '').strip()
+        nueva = request.args.get('new') == '1'
+        if modo == 'manual' and nueva:
+            import uuid as _uuid
+            observer_id = request.args.get('observer_id')
+            # Deep-link con observer_id: vincular la conv al cliente automaticamente.
+            cliente_id = None
+            try:
+                observer_id_int = int(observer_id) if observer_id else None
+            except (TypeError, ValueError):
+                observer_id_int = None
+            with database.get_db() as s:
+                if observer_id_int:
+                    cliente_id = database.get_or_create_cliente(s, observer_id=observer_id_int)
+                conv = database.BotConversacion(
+                    canal='manual',
+                    canal_user_id=f'manual-{_uuid.uuid4().hex[:10]}',
+                    nombre_cliente='(walk-in)',
+                    estado_atencion='humano',
+                    nodo='pedido',
+                    operador_user_id=current_user.id,
+                    cliente_id=cliente_id,
+                )
+                s.add(conv); s.commit()
+                from flask import redirect
+                return redirect(f'/atencion?modo=manual&conv={conv.id}')
+        from flask import make_response
+        resp = make_response(render_template(
+            'atencion.html', lineas=store.lineas_distintas(),
+            modo=modo, conv_inicial=request.args.get('conv')))
+        # El JS de cerrar-transaccion va embebido en este HTML; si el browser cachea
+        # la respuesta, los fixes nuevos no llegan al operador hasta hard-reload.
+        resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        return resp
 
     @app.route('/atencion/api/conversaciones')
     @login_required
     def atencion_conversaciones():
         linea = request.args.get('linea') or None
         return jsonify({'conversaciones': store.listar_conversaciones(linea)})
+
+    @app.route('/atencion/<int:conv_id>/retirar', methods=['POST'])
+    @login_required
+    def atencion_marcar_retirado(conv_id):
+        """Walk-in (canal='manual'): el cliente vino a retirar el pedido. Setea
+        BotConversacion.retirado_en → la conv desaparece de la pestaña 'Manuales'."""
+        with database.get_db() as s:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'ok': False, 'error': 'conv no existe'}), 404
+            conv.retirado_en = database.now_ar()
+            s.commit()
+            return jsonify({'ok': True,
+                            'retirado_en': conv.retirado_en.isoformat()})
 
     @app.route('/atencion/api/<int:conv_id>/mensajes')
     @login_required
@@ -279,6 +330,84 @@ def init_app(app):
             conv_id, items, current_user.id,
             cliente_nombre=ficha['nombre'] if ficha else None))
 
+    @app.route('/atencion/api/cerrados-hoy')
+    @login_required
+    def atencion_cerrados_hoy():
+        """Pedidos cerrados HOY por el operador actual.
+        Sirve para la pestaña 'Cerrados hoy' del panel: permite reabrir y
+        corregir un pedido recién cerrado (vuelto mal, monto, forma de pago, etc).
+        """
+        from sqlalchemy import desc
+        oper = (getattr(current_user, 'nombre_completo', None)
+                or getattr(current_user, 'username', None) or 'operador')
+        with database.get_db() as s:
+            hoy = database.now_ar().date()
+            P = database.PedidoReparto
+            q = (s.query(P)
+                 .filter(P.fecha == hoy, P.tomo == oper)
+                 .order_by(desc(P.id))
+                 .limit(50)
+                 .all())
+            return jsonify({'pedidos': [{
+                'id': p.id,
+                'creado_hora': p.creado_en.strftime('%H:%M') if p.creado_en else None,
+                'cliente_nombre': p.cliente_nombre,
+                'direccion': p.direccion,
+                'producto': (p.producto or '')[:40],
+                'forma_pago': p.forma_pago,
+                'importe': float(p.importe) if p.importe is not None else None,
+                'vuelto': p.vuelto,
+                'estado': p.estado,
+                'pagado': bool(p.pagado),
+            } for p in q]})
+
+    @app.route('/atencion/api/pedido/<int:pedido_id>/hidratar')
+    @login_required
+    def atencion_pedido_hidratar(pedido_id):
+        """Devuelve los campos de un PedidoReparto en formato listo para llenar
+        el form de 'Cerrar transacción'. El frontend hace fetch y pinta los inputs."""
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pedido_id)
+            if not p:
+                return jsonify({'ok': False, 'error': 'pedido no existe'}), 404
+            return jsonify({'ok': True, 'pedido': {
+                'id': p.id,
+                'conv_id': None,  # PedidoReparto no guarda conv_id; el reabrir se hace stand-alone
+                'cliente_id': p.cliente_id,
+                'cliente_nombre': p.cliente_nombre,
+                'telefono': p.telefono,
+                'direccion': p.direccion,
+                'piso': p.piso,
+                'depto': p.depto,
+                'referencia': p.referencia,
+                'localidad': p.localidad,
+                'lat': float(p.lat) if p.lat is not None else None,
+                'lng': float(p.lng) if p.lng is not None else None,
+                'total': float(p.importe) if p.importe is not None else None,
+                'forma_pago': p.forma_pago,
+                'paga_con': float(p.paga_con) if p.paga_con is not None else None,
+                'vuelto': p.vuelto,
+                'envio_costo': float(p.envio_costo) if p.envio_costo is not None else None,
+                'link_mp': p.link_mp,
+                'dato_pago_mp': p.dato_pago_mp,
+                'tarjeta_ult4': p.tarjeta_ult4,
+                'tarjeta_nombre': p.tarjeta_nombre,
+                'tarjeta_marca': p.tarjeta_marca,
+                'obra_social': p.obra_social,
+                'requiere_receta': p.receta_estado,
+                'requiere_firma': bool(p.requiere_firma),
+                'producto': p.producto,
+                'producto_observer_id': p.producto_observer_id,
+                'nota': p.nota,
+                'observacion': p.observacion,
+                'stock': p.stock_status,
+                'drogueria_id': p.drogueria_id,
+                'destino': p.destino,
+                'pagado': bool(p.pagado),
+                'canal': p.canal,
+                'prioridad': p.prioridad,
+            }})
+
     @app.route('/atencion/<int:conv_id>/cerrar-transaccion', methods=['POST'])
     @login_required
     def atencion_cerrar_transaccion(conv_id):
@@ -287,6 +416,24 @@ def init_app(app):
         campos de pago/cobertura/destino y lo deja en estado='en_caja' para que
         el cajero lo cobre fiscalmente en ObServer y lo despache."""
         body = request.json or {}
+
+        # Validación defensiva: si el operador armó pago en efectivo (paga_con > 0)
+        # pero el form no mandó 'total', el frontend está con JS cacheado viejo
+        # (faltaba `total: total || null` en el payload hasta el 2026-06-15).
+        # Sin esto el backend leía total=None y el vuelto salía igual al paga_con.
+        try:
+            _total_in = float(body.get('total') or 0)
+        except (TypeError, ValueError):
+            _total_in = 0
+        try:
+            _paga_in = float(body.get('paga_con') or 0)
+        except (TypeError, ValueError):
+            _paga_in = 0
+        if _paga_in > 0 and _total_in <= 0:
+            return jsonify({
+                'ok': False,
+                'error': 'Falta el Monto del pedido. Refrescá la página (Ctrl+Shift+R) y cargalo de nuevo.'
+            }), 400
 
         # Resolver drogueria_id (puede venir como id numérico o nombre).
         drogueria_id = None
@@ -301,6 +448,51 @@ def init_app(app):
                             .first())
                     if prov:
                         drogueria_id = prov.id
+
+        # Si NO vino domicilio_id pero SI vinieron pick_lat/lng del cliente_picker,
+        # creamos un DomicilioCliente nuevo y lo usamos. Así el cliente queda con
+        # su geo registrada en /clientes para próximas visitas (Diego 2026-06-15).
+        pick_lat = body.get('pick_lat')
+        pick_lng = body.get('pick_lng')
+        # Resolver cliente_id sin abrir el bloque grande (que viene más abajo y
+        # ahí también se carga conv para el resto del flujo).
+        _conv_cli_id = None
+        if (not body.get('domicilio_id')) and pick_lat and pick_lng:
+            with database.get_db() as _s:
+                _conv_tmp = _s.get(database.BotConversacion, conv_id)
+                _conv_cli_id = _conv_tmp.cliente_id if _conv_tmp else None
+        if (not body.get('domicilio_id')) and pick_lat and pick_lng and _conv_cli_id:
+            with database.get_db() as s:
+                # Dedupe por (cliente, dir, localidad, piso, depto): si el cliente
+                # ya tiene un domicilio con esos campos, actualizamos su geo;
+                # si no, lo creamos.
+                D = database.DomicilioCliente
+                pdir = (body.get('pick_direccion') or '').strip() or None
+                ploc = (body.get('pick_localidad') or '').strip() or None
+                ppiso = (body.get('pick_piso') or '').strip() or None
+                pdpto = (body.get('pick_depto') or '').strip() or None
+                pref = (body.get('pick_referencia') or '').strip() or None
+                existing = (s.query(D).filter(
+                    D.cliente_id == _conv_cli_id,
+                    D.direccion == pdir,
+                    D.localidad == ploc,
+                    D.piso == ppiso,
+                    D.depto == pdpto,
+                ).first())
+                if existing:
+                    existing.lat = float(pick_lat)
+                    existing.lng = float(pick_lng)
+                    existing.geo_actualizado_en = database.now_ar()
+                    s.commit()
+                    body['domicilio_id'] = existing.id
+                else:
+                    nuevo = D(cliente_id=_conv_cli_id, etiqueta='Casa',
+                              direccion=pdir, localidad=ploc, piso=ppiso,
+                              depto=pdpto, referencia=pref,
+                              lat=float(pick_lat), lng=float(pick_lng),
+                              geo_actualizado_en=database.now_ar())
+                    s.add(nuevo); s.commit()
+                    body['domicilio_id'] = nuevo.id
 
         # Datos del cliente y el domicilio ELEGIDO en el modal (cuando el cliente
         # tiene varias direcciones). Si no vino domicilio_id, cae al más reciente
@@ -334,18 +526,19 @@ def init_app(app):
                 envio = None
 
             # Vuelto recalculado server-side (no se confía del valor del cliente):
-            # solo aplica a efectivo. vuelto = pagaCon − (total + envío).
+            # solo aplica a efectivo. vuelto = pagaCon − total. El total viene
+            # del ticket de ObServer que YA incluye el envío (Diego 2026-06-14),
+            # por eso NO sumamos envío aca.
             vuelto_str = None
             if body.get('forma_pago') == 'efectivo' and paga_con is not None:
-                vuelto_str = str(int(round(paga_con - ((total or 0) + (envio or 0)))))
+                vuelto_str = str(int(round(paga_con - (total or 0))))
 
             # Teléfono (se muestra en la planilla): si el pedido vino del chat, en
             # WhatsApp el canal_user_id ES el teléfono; si no, de la ficha del cliente.
             telefono = (ficha.get('telefono') if ficha else None) or \
                 (conv.canal_user_id if conv.canal == 'whatsapp' else None)
 
-            p = database.PedidoReparto(
-                fecha=database.now_ar().date(),
+            data = dict(
                 cliente_id=conv.cliente_id,
                 cliente_nombre=(ficha['nombre'] if ficha else None) or conv.nombre_cliente,
                 telefono=telefono,
@@ -353,6 +546,8 @@ def init_app(app):
                 piso=dom.get('piso'),
                 depto=dom.get('depto'),
                 referencia=dom.get('referencia'),
+                # Localidad: prioridad al DomicilioCliente; fallback al pick del picker.
+                localidad=dom.get('localidad') or (body.get('pick_localidad') or '').strip() or None,
                 lat=dom.get('lat'),
                 lng=dom.get('lng'),
                 # ── Pago ──
@@ -362,7 +557,10 @@ def init_app(app):
                 paga_con=paga_con,
                 vuelto=vuelto_str,
                 link_mp=body.get('link_mp') or None,
-                dato_pago_mp=body.get('dato_pago_mp') or None,
+                # dato_pago_mp comparte campo entre nro op MP/transferencia y cupón
+                # de tarjeta (se diferencia por forma_pago). Si vienen ambos en el
+                # body (raro), prioriza dato_pago_mp.
+                dato_pago_mp=(body.get('dato_pago_mp') or body.get('cupon_tarjeta') or '').strip() or None,
                 tarjeta_ult4=body.get('tarjeta_ult4') or None,
                 tarjeta_nombre=body.get('tarjeta_nombre') or None,
                 tarjeta_marca=body.get('tarjeta_marca') or None,
@@ -370,6 +568,16 @@ def init_app(app):
                 obra_social=body.get('obra_social') or None,
                 receta_estado=body.get('requiere_receta') or None,
                 requiere_firma=bool(body.get('requiere_firma') or False),
+                # ── Detalle del pedido (Diego 2026-06-14) ──
+                producto=(body.get('producto') or '').strip() or None,
+                producto_observer_id=body.get('producto_observer_id') or None,
+                nota=(body.get('nota') or '').strip() or None,
+                observacion=(body.get('observacion') or '').strip() or None,
+                # canal: cómo entró el pedido (atencion/mostrador/teléfono/otros).
+                # Lo guardamos en la columna 'canal' del PedidoReparto (reemplaza el
+                # 'atencion' hardcoded más abajo).
+                # cupon_tarjeta: nro de cupón/comprobante cuando forma=tarjeta.
+                # Se guarda en dato_pago_mp (campo unificado, lo diferenciás por forma_pago).
                 # ── Stock + destino ──
                 stock_status=body.get('stock') or None,
                 drogueria_id=drogueria_id,
@@ -385,12 +593,44 @@ def init_app(app):
                 # `pagado` solo registra que la plata ya entró (badge "cobrado" +
                 # "ticket fiscal pendiente" en la bandeja de caja).
                 estado='en_caja',
-                canal='atencion',
+                # canal: si vino en el body lo usamos (modo manual permite elegir
+                # mostrador/teléfono/otros); default 'atencion' para mantener
+                # backward compat con cierres anteriores.
+                canal=(body.get('canal') or '').strip() or 'atencion',
                 tomo=oper,
                 # turno: lo asigna el operador de planilla (entra NULL).
                 prioridad=body.get('prioridad') or 'normal',
             )
-            s.add(p)
+
+            # Reabrir un pedido existente (corregir vuelto/monto/forma/etc.) vs
+            # crear uno nuevo. Si llega pedido_id, UPDATE de campos editables
+            # (no pisamos fecha ni creado_en para preservar la historia).
+            pedido_existente_id = body.get('pedido_id')
+            if pedido_existente_id:
+                p = s.get(database.PedidoReparto, int(pedido_existente_id))
+                if not p:
+                    return jsonify({'ok': False, 'error': 'pedido no existe'}), 404
+                # Preservar campos del flujo original (no rebajar estado ni cambiar
+                # dueño): el operador puede estar solo corrigiendo monto/dirección.
+                NO_PISAR_EN_UPDATE = {'estado', 'tomo'}
+                for k, v in data.items():
+                    if k in NO_PISAR_EN_UPDATE:
+                        continue
+                    setattr(p, k, v)
+            else:
+                data['fecha'] = database.now_ar().date()
+                p = database.PedidoReparto(**data)
+                s.add(p)
+            # Notas del cliente (textarea de la ficha): se persisten al cerrar
+            # TX en vez de tener un botón aparte (Diego 2026-06-15: el botón
+            # 'Guardar notas' antiguo refrescaba toda la ficha y borraba el
+            # monto del form). Sólo persistir si el body trae ficha_notas (no
+            # tocar Cliente.notas si el operador no escribió nada).
+            ficha_notas_raw = body.get('ficha_notas')
+            if conv.cliente_id and ficha_notas_raw is not None:
+                cli = s.get(database.Cliente, conv.cliente_id)
+                if cli:
+                    cli.notas = ficha_notas_raw.strip() or None
             s.commit()
             return jsonify({'ok': True, 'pedido_id': p.id, 'estado': p.estado})
 
@@ -571,17 +811,34 @@ def init_app(app):
     @app.route('/atencion/api/obras-sociales')
     @login_required
     def atencion_obras_sociales_lista():
-        """Lista global de OS con ventas en el último año."""
-        q = """
-            SELECT DISTINCT oos.observer_id, oos.descripcion
-            FROM obs_obras_sociales oos
-            JOIN obs_ventas_detalle ovd ON ovd.obra_social_observer = oos.observer_id
-            WHERE ovd.fecha_estadistica >= NOW() - INTERVAL '12 months'
-            ORDER BY oos.descripcion LIMIT 200
-        """
+        """Lista de OS:
+        - Sin ?q: top 200 con ventas en el último año (uso típico).
+        - Con ?q='swiss medical': multi-token search sobre toda la tabla
+          (case-insensitive, cada palabra debe estar en la descripción)."""
+        q_arg = (request.args.get('q') or '').strip()
+        if not q_arg:
+            sql = """
+                SELECT DISTINCT oos.observer_id, oos.descripcion
+                FROM obs_obras_sociales oos
+                JOIN obs_ventas_detalle ovd ON ovd.obra_social_observer = oos.observer_id
+                WHERE ovd.fecha_estadistica >= NOW() - INTERVAL '12 months'
+                ORDER BY oos.descripcion LIMIT 200
+            """
+            with database.get_db() as s:
+                rows = s.execute(database.text(sql)).fetchall()
+            return jsonify([{'observer_id': r[0], 'descripcion': r[1]} for r in rows])
+        # Multi-token search: cada palabra del query es un ilike sobre descripcion.
+        # Más permisivo que el endpoint global porque incluye OS sin ventas
+        # recientes (útil cuando el operador escribe el nombre exacto).
+        from helpers import multi_token_filter
         with database.get_db() as s:
-            rows = s.execute(database.text(q)).fetchall()
-        return jsonify([{'observer_id': r[0], 'descripcion': r[1]} for r in rows])
+            base = s.query(database.ObsObraSocial).filter(database.ObsObraSocial.fecha_baja.is_(None))
+            clausula = multi_token_filter(q_arg, database.ObsObraSocial.descripcion)
+            if clausula is not None:
+                base = base.filter(clausula)
+            rows = base.order_by(database.ObsObraSocial.descripcion).limit(20).all()
+            return jsonify([{'observer_id': r.observer_id, 'descripcion': r.descripcion}
+                            for r in rows])
 
     @app.route('/atencion/api/clientes/<int:observer_id>/obra-social', methods=['GET', 'POST'])
     @login_required

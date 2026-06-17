@@ -40,7 +40,9 @@ _RE_PISO_ORD_LETRA = re.compile(
 )
 _RE_DEPTO_KW = re.compile(
     r'\s*'
-    r'\b(?:dto|dpto|depto|dep|departamento|uf)\s*'
+    # Orden importa: keywords largas primero para que 'dpto' no matchee como 'dp' + 'to'.
+    # 'dp' agregado por Diego 2026-06-15: 'DONADO 976 BIS DP 2' venía sin matchear.
+    r'\b(?:departamento|dpto|depto|dto|dep|dp|uf)\s*'
     r'[:.]?\s*'
     r'(?P<depto>[a-z0-9]+)\s*\.?\s*$',
     re.IGNORECASE
@@ -66,13 +68,35 @@ _RE_ENTRE_CALLES = re.compile(
 )
 _TRAIL_GARBAGE = re.compile(r'[\s,;\.]+$')
 
+# Patrón "/ CIUDAD" o "- CIUDAD" o ", CIUDAD" al final del string. Típico de
+# ObServer Argentina (ej. "CALLE 6 C 4418 / FUNES").
+_RE_LOCALIDAD_TAIL = re.compile(
+    r'\s*[/\-,]\s*([a-záéíóúñ\.\s]+)\s*$',
+    re.IGNORECASE
+)
 
-def separar_direccion(texto: str) -> dict:
+
+def _localidades_filtro() -> list[str]:
+    """Whitelist de ciudades válidas — misma fuente que el filtro del geocoder
+    (ENVIO_CIUDADES_FILTRO). Si la env var no está, default a Rosario/Funes/Roldán.
+    Devuelve nombres normalizados (lowercase + sin tildes) para comparar."""
+    import os as _os
+    raw = _os.environ.get('ENVIO_CIUDADES_FILTRO', 'rosario,funes,roldan')
+    return [_norm(c) for c in raw.split(',') if c.strip()]
+
+
+def separar_direccion(texto: str, ciudades_validas: list[str] | None = None) -> dict:
     """'bolivia 1614 DTO 2' → {direccion:'bolivia 1614', depto:'2', piso:None, referencia:None}.
 
     Calle y número quedan juntos en `direccion`; piso / depto / referencia se
     separan en sus propios campos. Si el string no tiene unidad, `direccion`
     es el input completo (con casing y acentos originales) y el resto None.
+
+    Si `ciudades_validas` se pasa (lista de strings normalizados) o por default
+    ENVIO_CIUDADES_FILTRO está seteada, se intenta extraer la ciudad del final
+    del string (patrones típicos de ObServer: "CALLE X 123 / FUNES",
+    "AV. Y 456 - ROSARIO", etc.). Devuelve `localidad` con el casing canónico
+    (Title Case sobre el match de la whitelist).
 
     Robustez: tolera mayúsculas, acentos, abreviaturas (DTO/DPTO/DEP/UF),
     ordinales con grado (1°/2do/3er) y combinaciones (piso+depto, monoblock+dto).
@@ -80,12 +104,29 @@ def separar_direccion(texto: str) -> dict:
     (ej. 'Pasaje 3 de Febrero 1614 dto 2' → direccion intacta).
     """
     if not texto or not texto.strip():
-        return {'direccion': '', 'piso': None, 'depto': None, 'referencia': None}
+        return {'direccion': '', 'piso': None, 'depto': None,
+                'referencia': None, 'localidad': None}
 
     original = texto.strip()
     norm = _norm(original)
 
-    piso = depto = referencia = None
+    piso = depto = referencia = localidad = None
+
+    # Regla 0 (corre PRIMERO, antes de piso/depto/ref): extraer "/ CIUDAD" al
+    # final si la ciudad está en la whitelist. Así "CALLE 6 C 4418 / FUNES" →
+    # localidad='Funes', direccion='CALLE 6 C 4418', y el resto de las reglas
+    # operan sobre el string sin la cola de ciudad.
+    if ciudades_validas is None:
+        ciudades_validas = _localidades_filtro()
+    if ciudades_validas:
+        m = _RE_LOCALIDAD_TAIL.search(norm)
+        if m:
+            candidata = _norm(m.group(1).strip())
+            if candidata in ciudades_validas:
+                # Devolver con Title Case del valor canónico de la whitelist.
+                localidad = candidata.title()
+                norm = norm[:m.start()].rstrip()
+                original = original[:m.start()].rstrip()
 
     # Regla 1: ordinal + letra suelta (p.ej. "1° B", "2do A")
     m = _RE_PISO_ORD_LETRA.search(norm)
@@ -147,4 +188,5 @@ def separar_direccion(texto: str) -> dict:
         'piso': piso or None,
         'depto': depto or None,
         'referencia': referencia or None,
+        'localidad': localidad or None,
     }

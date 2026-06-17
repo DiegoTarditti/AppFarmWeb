@@ -68,9 +68,9 @@
     const ahora = new Date();
     const ts = new Date(iso);
     const meses = (ahora - ts) / (1000*60*60*24*30.4);
-    if (meses < 3)  return {bg:'rgba(29,158,117,0.22)', label:'reciente'};
-    if (meses < 12) return {bg:'rgba(239,159,39,0.22)', label:'>3 meses'};
-    return                  {bg:'rgba(220,90,40,0.28)', label:'>1 año'};
+    if (meses < 3)  return {bg:'rgba(16,185,129,0.28)', label:'reciente'};
+    if (meses < 12) return {bg:'rgba(180,83,9,0.22)',   label:'>3 meses'};
+    return                  {bg:'rgba(185,28,28,0.22)',  label:'>1 año'};
   }
 
   function renderDomCoords(){
@@ -84,10 +84,15 @@
       const lat = latPrec.toFixed(2);
       const lng = lngPrec.toFixed(2);
       const sem = semaforoGeo(window._domGeoAt);
+      // Saco 'reciente' del badge (Diego 2026-06-15): el color del bg ya
+      // indica antigüedad (verde=reciente, naranja=>3m, rojo=>1año). Mantenemos
+      // la fecha si la tenemos para que sirva como referencia rápida.
+      const labelTxt = sem.label === 'reciente' ? '' : sem.label;
+      const tail = [labelTxt, window._domGeoAt ? fmtFechaGeo(window._domGeoAt) : ''].filter(Boolean).join(' · ');
       el.innerHTML = `
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:nowrap; white-space:nowrap;">
-          <span style="font-size:14px; font-weight:700; color:var(--accent); font-family:monospace;">📍 ${lat}, ${lng}</span>
-          <span style="font-size:14px; font-weight:600; color:var(--title);">${sem.label}${window._domGeoAt ? ' · '+fmtFechaGeo(window._domGeoAt) : ''}</span>
+          <span style="font-size:14px; font-weight:700; color:#064E3B; font-family:monospace;">📍 ${lat}, ${lng}</span>
+          ${tail ? `<span style="font-size:13px; font-weight:600; color:#0A0908;">${tail}</span>` : ''}
           <a href="https://www.google.com/maps?q=${latPrec},${lngPrec}" target="_blank" rel="noopener"
              style="font-size:11px; font-weight:700; color:#fff; background:#185FA5;
                     padding:5px 12px; border-radius:8px; text-decoration:none;"
@@ -97,6 +102,20 @@
       el.style.padding = '4px 10px';
       el.style.borderRadius = '8px';
       el.style.marginTop = '4px';
+    } else if (window._geoRefStatus === 'pending'){
+      // Auto-georef no resolvio inequivocamente → CTA visible.
+      // No distinguimos 'no_match' vs 'multiple' porque para el operador es lo
+      // mismo (tiene que confirmar manual). Y los contadores no siempre coinciden
+      // con lo que muestra el dropdown despues por race conditions de loc.
+      el.innerHTML = `
+        <button type="button" onclick="ClientePicker.buscarGeoSugerencias()"
+                style="background:rgba(239,159,39,0.18); color:#EF9F27; border:1px solid rgba(239,159,39,0.45);
+                       border-radius:8px; padding:6px 10px; font-size:11px; font-weight:600; cursor:pointer; width:100%; text-align:center;">
+          🗺️ ⚠ Identificar con Maps
+        </button>`;
+      el.style.background = 'transparent';
+      el.style.padding = '0';
+      el.style.marginTop = '0';
     } else {
       el.innerHTML = `<span class="muted2" style="font-size:11px;">sin geolocalización</span>`;
       el.style.background = 'transparent';
@@ -222,19 +241,33 @@
           selC.appendChild(opt);
         }
       }
-      const _dirEl = $('pDir');
-      if (_dirEl.value && (_dirEl.value.match(/(dto|dpto|depto|dep|departamento|uf|piso|pb|planta baja|monoblock|torre|entre|°|º)/i) || ficha.direccion != null)){
-        try {
-          const r = await jpost('/api/clientes/separar-direccion', {texto: _dirEl.value});
-          if (r && r.direccion){
-            _dirEl.value = r.direccion;
-            // pPiso/pDepto/pRef solo existen en hosts con bloque domicilio
-            // estructurado (pedido_nuevo). En /reparto solo hay pDir.
-            const _piso = $('pPiso');   if (_piso)  _piso.value  = r.piso || '';
-            const _dpto = $('pDepto');  if (_dpto)  _dpto.value  = r.depto || '';
-            const _ref  = $('pRef');    if (_ref)   _ref.value   = r.referencia || '';
-          }
-        } catch(e) { /* ok, dejamos como está */ }
+      // Si la ficha ya viene con piso/depto/referencia parseados desde el
+      // backend (caso ObServer con campos embebidos en domicilio), los usamos
+      // directo sin pegar otra vez a /api/clientes/separar-direccion.
+      // pPiso/pDepto/pRef solo existen en hosts con bloque domicilio
+      // estructurado (no en /reparto que solo tiene pDir).
+      const _piso = $('pPiso');
+      const _dpto = $('pDepto');
+      const _ref  = $('pRef');
+      if (ficha.piso || ficha.depto || ficha.referencia){
+        if (_piso) _piso.value = ficha.piso || '';
+        if (_dpto) _dpto.value = ficha.depto || '';
+        if (_ref)  _ref.value  = ficha.referencia || '';
+      } else {
+        // Fallback: la ficha no parseó nada (ej. cliente local viejo); seguimos
+        // pegando a /api/clientes/separar-direccion sobre el texto del input.
+        const _dirEl = $('pDir');
+        if (_dirEl.value && (_dirEl.value.match(/(dto|dpto|depto|dep|departamento|dp\b|uf|piso|pb|planta baja|monoblock|torre|entre|°|º)/i) || ficha.direccion != null)){
+          try {
+            const r = await jpost('/api/clientes/separar-direccion', {texto: _dirEl.value});
+            if (r && r.direccion){
+              _dirEl.value = r.direccion;
+              if (_piso) _piso.value = r.piso || '';
+              if (_dpto) _dpto.value = r.depto || '';
+              if (_ref)  _ref.value  = r.referencia || '';
+            }
+          } catch(e) { /* ok, dejamos como está */ }
+        }
       }
       const doms = ficha.domicilios||[];
       window._doms = doms;
@@ -242,6 +275,13 @@
       const algunoConGeo = doms.some(x => x.lat != null && x.lng != null);
       if (!algunoConGeo && dir && callbacks.onAddressChange){
         setTimeout(callbacks.onAddressChange, 100);
+      }
+      // Auto-georef: si no hay domicilio con coords guardadas, intentar resolver
+      // automaticamente con la direccion + ciudad limpias. Si encuentra UNA sola
+      // sugerencia en zona, la setea sola (badge verde). Si no, muestra CTA
+      // 'Identificar con Maps'. Diego 2026-06-15.
+      if (!algunoConGeo && $('pDir').value.trim()){
+        setTimeout(autoIntentarGeoref, 150);
       }
       const sel = $('pDom');
       sel.innerHTML = '<option value="">— escribir dirección —</option>' +
@@ -266,6 +306,7 @@
     window._domLat = null;
     window._domLng = null;
     window._domGeoAt = null;
+    window._geoRefStatus = null;
     renderDomCoords();
     clearTimeout(_geoTmr);
     const q = $('pDir').value.trim();
@@ -290,15 +331,19 @@
       const CIUDADES_OK = Array.isArray(window.ENVIO_CIUDADES_FILTRO) && window.ENVIO_CIUDADES_FILTRO.length
         ? window.ENVIO_CIUDADES_FILTRO
         : ['rosario', 'funes', 'roldan'];
-      let aviso = '';
-      const match = sug.filter(s => CIUDADES_OK.includes(_norm(s.localidad)));
-      if (match.length){
-        sug = match;
-      } else {
-        aviso = `<div class="muted2" style="padding:6px 9px; font-size:10px; background:rgba(239,159,39,.12);">⚠ Sin coincidencias en Rosario / Funes / Roldán. Mostramos otras:</div>`;
+      // Modo ESTRICTO (Diego 2026-06-14): si ninguna sugerencia matchea la zona
+      // configurada, NO mostrar ninguna. Antes el comportamiento era 'fallback
+      // permisivo con aviso', pero confundia porque parecia que el filtro no
+      // estaba activo. Ahora hay 0 ruido — el operador refraseaa la busqueda.
+      sug = sug.filter(s => CIUDADES_OK.includes(_norm(s.localidad)));
+      if (!sug.length){
+        const zonas = CIUDADES_OK.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(' / ');
+        box.style.display='block';
+        box.innerHTML = `<div class="muted2" style="padding:8px 10px; font-size:11px; background:rgba(239,159,39,.15); color:#EF9F27;">⚠ No encontramos esa dirección en <b>${esc(zonas)}</b>. Probá con una variante (calle + altura + barrio).</div>`;
+        return;
       }
       box.style.display='block';
-      box.innerHTML = aviso + sug.map(s=>{
+      box.innerHTML = sug.map(s=>{
         return `<div class="it" onclick='ClientePicker.pickGeo(${JSON.stringify(s)})'>
           <b>${esc(s.direccion||s.nomenclatura)}</b>
           <span class="muted2" style="font-size:10px;"> · ${esc(s.localidad||'')}</span>
@@ -308,7 +353,64 @@
     } catch(e){ box.style.display='none'; }
   }
 
-  function pickGeo(s){
+  // Auto-georef silenciosa: corre tras cargar cliente para intentar resolver
+  // las coords con la direccion ya limpia. Si encuentra UNA sola sugerencia en
+  // zona, llama pickGeo (badge verde). Si encuentra varias o ninguna, marca
+  // window._geoRefStatus para que renderDomCoords pinte el CTA naranja.
+  async function autoIntentarGeoref(){
+    const dirEl = $('pDir');
+    if (!dirEl) return;
+    const dir = (dirEl.value || '').trim();
+    const loc = ($('pCiudad') || {}).value || '';
+    if (dir.length < 3) return;
+    const _normLoc = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const CIUDADES_OK = Array.isArray(window.ENVIO_CIUDADES_FILTRO) && window.ENVIO_CIUDADES_FILTRO.length
+      ? window.ENVIO_CIUDADES_FILTRO
+      : ['rosario', 'funes', 'roldan'];
+    try {
+      const r = await fetch(`/api/clientes/geocodificar?q=${encodeURIComponent(dir)}&loc=${encodeURIComponent(loc)}`);
+      if (!r.ok) return;
+      const d = await r.json();
+      const enZona = (d.sugerencias || []).filter(s => CIUDADES_OK.includes(_normLoc(s.localidad)));
+      // Si una sugerencia matchea EXACTO el texto del operador (case+espacios
+      // insensible), gana sobre el resto. Útil cuando el geocoder devuelve
+      // 'SOLIS 565' + 'SOLIS BIS 565' para input 'SOLIS 565' (Diego 2026-06-15).
+      const normTxt = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+      const dirNorm = normTxt(dir);
+      const exact = enZona.find(s => normTxt(s.direccion || s.nomenclatura) === dirNorm);
+      if (exact){
+        window._geoRefStatus = null;
+        await pickGeo(exact);
+      } else if (enZona.length === 1){
+        window._geoRefStatus = null;
+        await pickGeo(enZona[0]);
+      } else {
+        // 0 o >1 sin exact match → CTA naranja para que el operador elija.
+        window._geoRefStatus = 'pending';
+        renderDomCoords();
+      }
+    } catch(e) { /* silencioso */ }
+  }
+
+  async function pickGeo(s){
+    // ANTES de pisar pDir con la dir limpia del geocoder, parsear el texto
+    // que tenia el campo para rescatar piso/depto/ref que vinieron embebidos
+    // (Diego 2026-06-15: 'DONADO 976 BIS DP 2' → al elegir 'DONADO BIS 976'
+    // del dropdown se perdia el "DP 2"). Solo aplica si pPiso/pDepto/pRef
+    // están vacios (no sobrescribir si el operador ya cargo algo).
+    const _piso = $('pPiso'), _dpto = $('pDepto'), _ref = $('pRef');
+    const textoOrig = ($('pDir').value || '').trim();
+    if (textoOrig && (_piso || _dpto || _ref)
+        && !(_piso && _piso.value) && !(_dpto && _dpto.value) && !(_ref && _ref.value)){
+      try {
+        const r = await jpost('/api/clientes/separar-direccion', {texto: textoOrig});
+        if (r){
+          if (_piso && r.piso) _piso.value = r.piso;
+          if (_dpto && r.depto) _dpto.value = r.depto;
+          if (_ref && r.referencia) _ref.value = r.referencia;
+        }
+      } catch(e) { /* si falla, igual seguimos con el pick */ }
+    }
     $('pDir').value = s.direccion || s.nomenclatura;
     if (s.localidad){
       const selC = $('pCiudad');
@@ -325,6 +427,7 @@
     window._domLat = s.lat;
     window._domLng = s.lng;
     window._domGeoAt = new Date().toISOString();
+    window._geoRefStatus = null;   // ya hay coords, limpiar el flag del CTA
     renderDomCoords();
     $('resGeo').style.display='none';
     const domSel = $('pDom');
@@ -513,6 +616,7 @@
     window._domLat = null;
     window._domLng = null;
     window._domGeoAt = null;
+    window._geoRefStatus = null;
     actualizarDomDropdown([]);
     renderDomCoords();
     if (callbacks.onClear) callbacks.onClear();
@@ -537,6 +641,53 @@
     }
   }
 
+  // Field picker: el operador selecciona texto en el input Dirección
+  // (window.getSelection o input.selectionStart/End) y al click toma el texto
+  // y lo pone en el campo destino + lo quita de Dirección.
+  // Diego 2026-06-15: util para "DONADO 976 BIS DP 2" → selecciono "DP 2",
+  // toco ✂ Depto → pDepto="DP 2", pDir="DONADO 976 BIS".
+  function fieldPick(targetId){
+    const dirEl = $('pDir');
+    const tgt = $(targetId);
+    if (!dirEl || !tgt) return;
+    let texto = '';
+    let inicio = -1, fin = -1;
+    if (document.activeElement === dirEl
+        && dirEl.selectionStart != null
+        && dirEl.selectionStart !== dirEl.selectionEnd){
+      inicio = dirEl.selectionStart;
+      fin = dirEl.selectionEnd;
+      texto = dirEl.value.substring(inicio, fin);
+    } else {
+      // Fallback: selección "flotante" del documento (usuario seleccionó pero
+      // tocó el botón sin reclickear el input). Buscamos esa selección en pDir.
+      const sel = (window.getSelection && window.getSelection().toString()) || '';
+      const t = sel.trim();
+      if (t && dirEl.value.includes(t)){
+        texto = t;
+        inicio = dirEl.value.indexOf(t);
+        fin = inicio + t.length;
+      }
+    }
+    texto = (texto || '').trim();
+    if (!texto){
+      alert('Seleccioná primero el pedazo de texto en el campo Dirección.');
+      dirEl.focus();
+      return;
+    }
+    tgt.value = texto;
+    // Quitar el texto de Dirección y limpiar dobles espacios + separadores
+    // sueltos al borde.
+    if (inicio >= 0){
+      const nuevo = (dirEl.value.slice(0, inicio) + dirEl.value.slice(fin))
+        .replace(/\s+/g, ' ')
+        .replace(/^[\s,\-/]+|[\s,\-/]+$/g, '')
+        .trim();
+      dirEl.value = nuevo;
+    }
+    tgt.focus();
+  }
+
   window.ClientePicker = {
     init,
     getValues,
@@ -544,7 +695,7 @@
     loadCliente,
     // métodos expuestos para handlers onclick/oninput del macro:
     onClienteInput, buscarCli, pickCli,
-    onDirInput, buscarGeoSugerencias, pickGeo,
+    onDirInput, buscarGeoSugerencias, pickGeo, fieldPick,
     onDomChange,
     abrirNuevoCliente, cerrarModal, guardarNuevoCliente,
     abrirEditarCliente, guardarEditarCliente,
