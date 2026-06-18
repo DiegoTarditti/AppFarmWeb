@@ -68,6 +68,9 @@ def exigir_login():
                       'whatsapp_reenganche',
                       # WAHA webhook del grupo de reparto (red docker interna)
                       'reparto_whatsapp_grupo_webhook',
+                      # Telegram webhook del grupo de cadetes (auth propia via
+                      # X-Telegram-Bot-Api-Secret-Token header).
+                      'reparto_telegram_cadetes_webhook',
                       # Crons externos: auth propia via X-Cron-Secret header.
                       'api_cron_recalcular_os_clientes',
                       'api_cron_notificar_alarmas',
@@ -187,6 +190,15 @@ def _keep_alive_loop():
 
 
 threading.Thread(target=_keep_alive_loop, daemon=True).start()
+
+# Telegram (grupo de cadetes): polling worker. No-op si está apagado en env.
+# Lo arrancamos acá (no en cada worker de gunicorn) para que solo UN proceso
+# haga polling — sino se pelean por los updates.
+try:
+    from bot import telegram_grupo
+    telegram_grupo.iniciar_polling_thread()
+except Exception:  # noqa: BLE001
+    pass
 
 
 if __name__ == '__main__':
