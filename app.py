@@ -178,7 +178,15 @@ def _keep_alive_loop():
         except Exception:
             enabled, interval = False, 10
         interval = max(1, min(60, interval))
-        if enabled:
+        # Solo mantener despierto en horario de atención (08:00–18:00 AR).
+        # Fuera de ese rango se deja dormir a Render (ahorra horas de instancia
+        # del plan free; decisión Diego 2026-06-18).
+        try:
+            hora = database.now_ar().hour
+        except Exception:
+            hora = 12
+        en_horario = 8 <= hora < 18
+        if enabled and en_horario:
             try:
                 urlopen(f'{base_url}/health_web', timeout=10).read()
             except (URLError, OSError):
