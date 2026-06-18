@@ -719,16 +719,202 @@ def init_app(app):
         r = whatsapp_grupo.configurar_webhook(url_interno)
         return jsonify(r)
 
+    # ── Telegram: webhook del grupo de cadetes (reemplaza WAHA, 2026-06) ────
+
+    @app.route('/telegram/cadetes/webhook', methods=['POST'])
+    def reparto_telegram_cadetes_webhook():
+        """Recibe Updates de Telegram: callbacks del botón TOMAR + mensajes
+        del grupo y DMs de cadetes.
+
+        Flujo del TOMAR (callback_tomar):
+          1) Identifica el pedido por callback_data ('tomar:<pedido_id>').
+          2) Asignación atómica: si ya fue tomado, avisa al cadete que clickeó.
+          3) Auto-magic: si el Cadete con ese nombre no tiene telegram_user_id,
+             lo guarda. Si no hay match, deja sin cadete_id (queda en historial).
+          4) Edita el mensaje del grupo: saca el botón + agrega 'Tomado por X'.
+          5) DM al cadete con detalle completo del pedido.
+
+        Sin login: Telegram hace POST desde su backend (no es alcanzable
+        desde fuera salvo por Meta/Telegram con secret_token)."""
+        from bot import telegram_grupo
+
+        # Validar X-Telegram-Bot-Api-Secret-Token si está configurado.
+        secret_header = request.headers.get('X-Telegram-Bot-Api-Secret-Token', '')
+        if not telegram_grupo.validar_webhook_secret(secret_header):
+            log.warning('Telegram webhook: secret inválido')
+            return jsonify({'ok': False, 'error': 'forbidden'}), 403
+
+        payload = request.json or {}
+        upd = telegram_grupo.parsear_update(payload)
+        tipo = upd.get('tipo')
+
+        if tipo == 'callback_tomar':
+            return _telegram_procesar_tomar(upd, telegram_grupo)
+
+        if tipo == 'mensaje_dm':
+            # Por ahora solo logueamos. La persistencia en BotConversacion
+            # para el panel /reparto/planilla se hace en commit posterior.
+            log.info('telegram DM de %s: %s',
+                     upd.get('user_name'), (upd.get('texto') or '')[:80])
+            return jsonify({'ok': True, 'tipo': 'mensaje_dm'})
+
+        if tipo == 'mensaje_grupo':
+            # No implementamos frase libre — el botón TOMAR es el único path.
+            return jsonify({'ok': True, 'ignored': 'mensaje_grupo_sin_handler'})
+
+        return jsonify({'ok': True, 'ignored': tipo or 'unknown'})
+
+    def _telegram_procesar_tomar(upd, tg):
+        """Asigna un pedido cuando un cadete clickea el botón TOMAR.
+        Atómico: si ya fue tomado, el segundo cadete recibe un toast."""
+        pedido_id = upd.get('pedido_id')
+        user_id = upd.get('user_id')
+        user_name = upd.get('user_name') or upd.get('user_username') or 'alguien'
+        callback_qid = upd.get('callback_query_id')
+        message_id = upd.get('message_id')
+        if not pedido_id or not user_id or not callback_qid:
+            tg.answer_callback(callback_qid, 'Datos inválidos', alert=True)
+            return jsonify({'ok': False, 'error': 'callback inválido'}), 400
+
+        with database.get_db() as s:
+            P = database.PedidoReparto
+            p = s.get(P, pedido_id)
+            if not p:
+                tg.answer_callback(callback_qid, 'Pedido no existe', alert=True)
+                return jsonify({'ok': True, 'ignored': 'pedido_no_existe'})
+
+            # Anti-doble-toma: si ya está tomado, avisar al cadete que clickeó.
+            if p.tomado_por_wsap:
+                tg.answer_callback(
+                    callback_qid,
+                    f'Ya lo tomó {p.tomado_por_wsap}',
+                    alert=False)
+                return jsonify({'ok': True, 'ignored': 'ya_tomado', 'pedido_id': p.id})
+
+            # Auto-magic: buscar Cadete primero por telegram_user_id, después
+            # por nombre. Si encuentra por nombre y no tenía telegram_user_id,
+            # lo guarda ahora.
+            cad = (s.query(database.Cadete)
+                   .filter(database.Cadete.telegram_user_id == user_id).first())
+            if not cad:
+                from sqlalchemy import func as _func
+                nombre_norm = ' '.join(user_name.lower().split())
+                if nombre_norm:
+                    cad = (s.query(database.Cadete)
+                           .filter(_func.lower(database.Cadete.nombre)
+                                   .like(f'%{nombre_norm}%'))
+                           .first())
+                    if cad and not cad.telegram_user_id:
+                        cad.telegram_user_id = user_id
+
+            # Asignar el pedido.
+            p.tomado_por_wsap = user_name[:80]
+            p.tomado_en = database.now_ar()
+            if cad:
+                p.cadete_id = cad.id
+                p.estado = 'en_ruta'
+                _notificar_cliente_pedido(s, p, 'en_ruta')
+            s.commit()
+            cad_id = cad.id if cad else None
+            cad_nombre = cad.nombre if cad else None
+
+        # Toast al cadete que clickeó.
+        tg.answer_callback(callback_qid, '✅ Tomado')
+
+        # Editar el mensaje del grupo: sacar botón + dejar texto "Tomado por X".
+        if message_id:
+            extra = f' ({cad_nombre})' if cad_nombre else ''
+            tg.editar_mensaje_grupo(
+                message_id,
+                f'✅ Pedido #{pedido_id} tomado por <b>{user_name}</b>{extra}')
+
+        # DM al cadete con detalle completo del pedido (si lo tenemos en DB).
+        # Telegram permite DM solo después de que el user interactuó con el
+        # bot (lo que cumple el propio callback que acabamos de procesar).
+        try:
+            with database.get_db() as s:
+                p = s.get(database.PedidoReparto, pedido_id)
+                if p:
+                    detalle = _telegram_armar_detalle_pedido(p)
+                    tg.enviar_dm(user_id, detalle)
+        except Exception as e:  # noqa: BLE001 — DM fallido no rompe el flujo
+            log.warning('Telegram DM detalle pedido falló: %s', e)
+
+        return jsonify({'ok': True, 'pedido_id': pedido_id, 'tomado_por': user_name,
+                        'cadete_id': cad_id})
+
+    def _telegram_armar_detalle_pedido(p):
+        """Texto HTML con el detalle del pedido para el DM al cadete."""
+        partes = [f'📦 <b>Pedido #{p.id}</b>']
+        if p.cliente_nombre:
+            partes.append(f'👤 {p.cliente_nombre}')
+        if p.direccion:
+            d = p.direccion
+            if p.piso:
+                d += f', piso {p.piso}'
+            if p.depto:
+                d += f', dto {p.depto}'
+            partes.append(f'📍 {d}')
+            if p.referencia:
+                partes.append(f'   ↳ {p.referencia}')
+        if p.lat and p.lng:
+            partes.append(f'🗺 https://www.google.com/maps?q={p.lat},{p.lng}')
+        partes.append('')
+        linea_pago = []
+        if p.importe is not None:
+            linea_pago.append(f'$ {float(p.importe):,.0f}'.replace(',', '.'))
+        if p.forma_pago:
+            linea_pago.append(p.forma_pago)
+        if p.vuelto:
+            linea_pago.append(f'(vto: {p.vuelto})')
+        if linea_pago:
+            partes.append('💰 ' + ' '.join(linea_pago))
+        if p.envio_costo is not None:
+            partes.append(f'🛵 Envío $ {float(p.envio_costo):,.0f}'.replace(',', '.'))
+        if p.producto:
+            partes.append(f'💊 {p.producto}')
+        if p.observacion:
+            partes.append(f'📝 {p.observacion}')
+        meta = []
+        if p.prioridad and p.prioridad != 'normal':
+            meta.append({'urgente': '🔴 URGENTE', 'programado': '🕐 prog.'}
+                        .get(p.prioridad, p.prioridad))
+        if p.requiere_receta:
+            meta.append('📋 con receta')
+        if meta:
+            partes.append(' · '.join(meta))
+        return '\n'.join(partes)
+
+    @app.route('/telegram/cadetes/setup-webhook', methods=['POST'])
+    @login_required
+    def reparto_telegram_setup_webhook():
+        """Endpoint admin: configura el webhook de Telegram apuntando al
+        endpoint público (Render). Llamar UNA vez después de deploy o cuando
+        cambie la URL pública."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        from bot import telegram_grupo
+        url = (request.json or {}).get('url')
+        if not url:
+            return jsonify({'ok': False,
+                            'error': 'pasá url en el body ({"url": "https://..."})'}), 400
+        r = telegram_grupo.setear_webhook(url)
+        return jsonify(r)
+
     # ── Chat de reparto (panel en /reparto/planilla) ────────────────────────
     # 5 endpoints que sirven la lista de conversaciones (grupo + DMs) y permiten
     # mandar mensajes desde el panel sin salir de la planilla.
 
     def _conv_grupo_or_none(s):
-        from bot import whatsapp_grupo as _wg
-        if not _wg.WAHA_GRUPO_ENVIOS:
+        # Migración WAHA → Telegram (2026-06): el canal sigue siendo
+        # 'whatsapp_grupo' por compat con queries históricas (busca convs
+        # creadas en ambas eras). El canal_user_id pasó a ser el chat_id de
+        # Telegram (string del int negativo).
+        from bot import telegram_grupo as _tg
+        if not _tg.GRUPO_CHAT_ID:
             return None
         return (s.query(database.BotConversacion)
-                .filter_by(canal='whatsapp_grupo', canal_user_id=_wg.WAHA_GRUPO_ENVIOS)
+                .filter_by(canal='whatsapp_grupo', canal_user_id=str(_tg.GRUPO_CHAT_ID))
                 .first())
 
     def _msg_to_dict(m):
@@ -842,10 +1028,10 @@ def init_app(app):
         texto = ((request.json or {}).get('texto') or '').strip()
         if not texto:
             return jsonify({'ok': False, 'error': 'texto vacío'}), 400
-        from bot import whatsapp_grupo
-        r = whatsapp_grupo.publicar_en_grupo(texto)
+        from bot import telegram_grupo
+        r = telegram_grupo.publicar_en_grupo(texto)
         if not r.get('ok'):
-            return jsonify({'ok': False, 'error': r.get('error') or 'fallo WAHA'}), 502
+            return jsonify({'ok': False, 'error': r.get('error') or 'fallo Telegram'}), 502
         # Persistir el mensaje saliente.
         with database.get_db() as s:
             grupo = _conv_grupo_or_none(s)
@@ -853,7 +1039,7 @@ def init_app(app):
                 # Si el grupo aún no tiene conv (1er mensaje saliente nunca), crearla.
                 grupo = database.BotConversacion(
                     canal='whatsapp_grupo',
-                    canal_user_id=whatsapp_grupo.WAHA_GRUPO_ENVIOS,
+                    canal_user_id=str(telegram_grupo.GRUPO_CHAT_ID),
                     nombre_cliente='Grupo de cadetes',
                     estado_atencion='humano', nodo='reparto')
                 s.add(grupo); s.flush()
@@ -874,23 +1060,24 @@ def init_app(app):
         texto = ((request.json or {}).get('texto') or '').strip()
         if not texto:
             return jsonify({'ok': False, 'error': 'texto vacío'}), 400
-        from bot import whatsapp_grupo
+        from bot import telegram_grupo
         with database.get_db() as s:
             cadete = s.get(database.Cadete, cadete_id)
             if not cadete:
                 return jsonify({'ok': False, 'error': 'cadete no existe'}), 404
-            if not cadete.wa_id:
-                return jsonify({'ok': False, 'error': 'cadete sin wa_id (todavía no escribió o no se vinculó)'}), 400
-            r = whatsapp_grupo.enviar_dm(cadete.wa_id, texto)
+            if not cadete.telegram_user_id:
+                return jsonify({'ok': False, 'error':
+                                'cadete sin telegram_user_id (todavía no clickeó TOMAR ni se vinculó)'}), 400
+            r = telegram_grupo.enviar_dm(cadete.telegram_user_id, texto)
             if not r.get('ok'):
-                return jsonify({'ok': False, 'error': r.get('error') or 'fallo WAHA'}), 502
+                return jsonify({'ok': False, 'error': r.get('error') or 'fallo Telegram'}), 502
             conv = (s.query(database.BotConversacion)
                     .filter_by(cadete_id=cadete_id, canal='whatsapp')
                     .order_by(database.BotConversacion.ultimo_en.desc())
                     .first())
             if not conv:
                 conv = database.BotConversacion(
-                    canal='whatsapp', canal_user_id=cadete.wa_id,
+                    canal='whatsapp', canal_user_id=str(cadete.telegram_user_id),
                     nombre_cliente=cadete.nombre,
                     estado_atencion='humano', nodo='reparto',
                     cadete_id=cadete.id)
@@ -907,7 +1094,7 @@ def init_app(app):
     def reparto_pedido_publicar(pid):
         if not _ok():
             return jsonify({'ok': False, 'error': 'sin permiso'}), 403
-        from bot import whatsapp_grupo
+        from bot import telegram_grupo
         with database.get_db() as s:
             p = s.get(database.PedidoReparto, pid)
             if not p:
@@ -915,12 +1102,12 @@ def init_app(app):
             # Armar texto del mensaje. ⚠️ PRIVACIDAD: el grupo de cadetes solo
             # necesita ubicación para decidir si lo toma. NO mandar nombre, teléfono,
             # producto, total, forma de pago, vuelto, observación ni receta — todo
-            # ese detalle se le pasa al cadete por chat 1:1 cuando lo tome.
-            partes = [f'🚚 *Pedido #{p.id}*']
+            # ese detalle se le pasa al cadete por chat 1:1 cuando lo tome (DM).
+            partes = [f'🚚 <b>Pedido #{p.id}</b>']
             if p.direccion:
                 partes.append(f'📍 {p.direccion}')
             if p.lat is not None and p.lng is not None:
-                partes.append(f'🗺️ https://www.google.com/maps?q={p.lat},{p.lng}')
+                partes.append(f'🗺 https://www.google.com/maps?q={p.lat},{p.lng}')
             meta = []
             if p.turno:
                 meta.append({'mañana': '🌅 Mañana', 'tarde': '🌆 Tarde'}.get(p.turno, p.turno))
@@ -929,12 +1116,19 @@ def init_app(app):
             if meta:
                 partes.append(' · '.join(meta))
             partes.append('')
-            partes.append('Responder *tomo* o *yo* para tomarlo.')
+            partes.append('Click <b>TOMAR</b> abajo para asignártelo.')
             texto = '\n'.join(partes)
-            r = whatsapp_grupo.publicar_en_grupo(texto)
+            # publicar_pedido manda al grupo CON botón inline 'TOMAR'.
+            # El callback_data del botón es 'tomar:<pid>' → cuando un cadete
+            # clickea, el webhook /telegram/cadetes/webhook lo procesa.
+            r = telegram_grupo.publicar_pedido(texto, p.id)
             if not r.get('ok'):
-                return jsonify({'ok': False, 'error': r.get('error') or 'sin respuesta WAHA'}), 502
-            p.waha_msg_id = r.get('waha_msg_id')
+                return jsonify({'ok': False, 'error': r.get('error')
+                                or 'sin respuesta Telegram'}), 502
+            # Reusamos la columna waha_msg_id para guardar el message_id de
+            # Telegram (es un int, lo guardamos como string). Eso permite que
+            # el webhook edite el mensaje al asignarse (sacar botón TOMAR).
+            p.waha_msg_id = str(r.get('telegram_msg_id') or '')
             p.publicado_en = database.now_ar()
             # Avanzar el estado a 'publicado' solo si todavía no había salido
             # del flujo pre-publicación. Republish de un pedido ya tomado /
@@ -944,14 +1138,14 @@ def init_app(app):
             # Persistir el publish en la conv del grupo para que aparezca en el
             # panel de /reparto/planilla (sino la timeline del grupo solo
             # tendría lo que llega del webhook).
+            grupo_uid = str(telegram_grupo.GRUPO_CHAT_ID) if telegram_grupo.GRUPO_CHAT_ID else None
             grupo = (s.query(database.BotConversacion)
-                     .filter_by(canal='whatsapp_grupo',
-                                canal_user_id=whatsapp_grupo.WAHA_GRUPO_ENVIOS)
-                     .first()) if whatsapp_grupo.WAHA_GRUPO_ENVIOS else None
-            if not grupo and whatsapp_grupo.WAHA_GRUPO_ENVIOS:
+                     .filter_by(canal='whatsapp_grupo', canal_user_id=grupo_uid)
+                     .first()) if grupo_uid else None
+            if not grupo and grupo_uid:
                 grupo = database.BotConversacion(
                     canal='whatsapp_grupo',
-                    canal_user_id=whatsapp_grupo.WAHA_GRUPO_ENVIOS,
+                    canal_user_id=grupo_uid,
                     nombre_cliente='Grupo de cadetes',
                     estado_atencion='humano', nodo='reparto')
                 s.add(grupo); s.flush()

@@ -646,7 +646,13 @@ class Cadete(Base):
     # los DMs entrantes a un Cadete sin depender del push_name (que puede repetirse).
     # Se autocompleta la primera vez que el cadete responde algo en el grupo si el
     # push_name matchea inequívocamente con Cadete.nombre.
+    # DEPRECADO 2026-06: se migra a Telegram (ver telegram_user_id abajo). Queda
+    # como columna por compatibilidad / rollback hasta sacar el endpoint WAHA.
     wa_id = Column(String(40), nullable=True, index=True)
+    # user_id de Telegram del cadete (BigInt, ej 8803285963). Se autocompleta al
+    # primer TOMAR (callback) o al matchear nombre vs Cadete.nombre cuando el
+    # cadete escribe en el grupo. Reemplaza a wa_id en el flujo Telegram (2026-06).
+    telegram_user_id = Column(BigInteger, nullable=True, index=True)
     creado_en = Column(DateTime, default=now_ar)
 
 
@@ -4650,6 +4656,11 @@ def _pg_add_columns(conn):
         # wa_id del cadete (auto-vínculo del DM al Cadete por número).
         "ALTER TABLE cadetes ADD COLUMN IF NOT EXISTS wa_id VARCHAR(40)",
         "CREATE INDEX IF NOT EXISTS idx_cadetes_wa_id ON cadetes(wa_id)",
+        # telegram_user_id (auto-vínculo del cadete al primer TOMAR via callback).
+        # Migración WAHA → Telegram (2026-06). BIGINT porque los user_id de
+        # Telegram superan int32 desde 2023+ (ej. 8803285963).
+        "ALTER TABLE cadetes ADD COLUMN IF NOT EXISTS telegram_user_id BIGINT",
+        "CREATE INDEX IF NOT EXISTS idx_cadetes_telegram_user_id ON cadetes(telegram_user_id)",
         # Presencia de agentes en el panel de atención.
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_presencia VARCHAR(12) NOT NULL DEFAULT 'online'",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_actividad TIMESTAMP",
