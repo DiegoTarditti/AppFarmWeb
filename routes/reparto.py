@@ -829,6 +829,14 @@ def init_app(app):
             log.warning('[telegram callback_tomar] pid=%s user_id=%s user_name=%s',
                         upd.get('pedido_id'), upd.get('user_id'), upd.get('user_name'))
             return _telegram_procesar_tomar(upd, telegram_grupo)
+        if tipo == 'callback_retirado':
+            log.warning('[telegram callback_retirado] pid=%s user_id=%s',
+                        upd.get('pedido_id'), upd.get('user_id'))
+            return _telegram_procesar_retirado(upd, telegram_grupo)
+        if tipo == 'callback_entregado':
+            log.warning('[telegram callback_entregado] pid=%s user_id=%s',
+                        upd.get('pedido_id'), upd.get('user_id'))
+            return _telegram_procesar_entregado(upd, telegram_grupo)
 
         if tipo == 'mensaje_dm':
             texto_dm = (upd.get('texto') or '').strip()
@@ -915,58 +923,38 @@ def init_app(app):
                             'tg_user_id=%s (editalo en /cadetes)',
                             cad.id, cad.nombre, user_id)
 
-            # Asignar el pedido. El estado cambia SIEMPRE a 'en_ruta' al tomar
-            # (con o sin match de cadete local). Sino el pedido queda en
-            # 'publicado' eternamente cuando el cadete no está en la tabla.
+            # TOMAR: estado nuevo 'tomado' (cadete se reservó el pedido, todavía
+            # no fue a retirar a la farmacia). Diego 2026-06-19: separamos
+            # 'tomado' → 'en_ruta' (al apretar Retirado) → 'entregado'.
             p.tomado_por_wsap = user_name[:80]
             p.tomado_en = database.now_ar()
-            p.estado = 'en_ruta'
+            p.tomado_dm_user_id = user_id
+            p.estado = 'tomado'
             if cad:
                 p.cadete_id = cad.id
-            try:
-                _notificar_cliente_pedido(s, p, 'en_ruta')
-            except Exception as e:  # noqa: BLE001 — no romper el flujo del toma
-                log.warning('notificar cliente pedido falló: %s', e)
+            # NO notificar al cliente acá — solo cuando pase a 'en_ruta'
+            # (Retirado) o 'entregado'. Tomar es estado interno.
 
-            # Persistir el evento "tomado" en la conv del grupo para que el
-            # panel /reparto/planilla lo capte por su polling existente.
-            cad_nombre = cad.nombre if cad else None
-            grupo_uid = str(tg.GRUPO_CHAT_ID) if tg.GRUPO_CHAT_ID else None
-            if grupo_uid:
-                grupo_conv = (s.query(database.BotConversacion)
-                              .filter_by(canal='whatsapp_grupo',
-                                         canal_user_id=grupo_uid).first())
-                if not grupo_conv:
-                    grupo_conv = database.BotConversacion(
-                        canal='whatsapp_grupo', canal_user_id=grupo_uid,
-                        nombre_cliente='Grupo de cadetes',
-                        estado_atencion='humano', nodo='reparto')
-                    s.add(grupo_conv); s.flush()
-                extra_lbl = f' ({cad_nombre})' if cad_nombre else ''
-                s.add(database.BotMensaje(
-                    conversacion_id=grupo_conv.id, origen='cadete',
-                    texto=f'✅ Pedido #{p.id} tomado por {user_name}{extra_lbl}'))
-                grupo_conv.ultimo_en = database.now_ar()
+            # Diego 2026-06-19: NO publicar nada nuevo en el grupo de Telegram
+            # ni en la conv interna del grupo. El seguimiento pasa al DM del
+            # cadete. (Antes había un BotMensaje "✅ Pedido #X tomado por Y"
+            # que sumaba ruido — sacado.)
 
             s.commit()
             cad_id = cad.id if cad else None
+            cad_nombre = cad.nombre if cad else None
 
         # Toast al cadete que clickeó.
         tg.answer_callback(callback_qid, '✅ Tomado')
 
-        # Editar el mensaje del grupo: sacar botón + dejar texto "Tomado por X".
+        # Sacar los botones del mensaje del grupo (queda el texto del pedido
+        # intacto, pero ya nadie puede tomarlo). Diego 2026-06-19: no agregar
+        # texto "Tomado por X" — solo despublicar el botón.
         if message_id:
-            extra = f' ({cad_nombre})' if cad_nombre else ''
-            tg.editar_mensaje_grupo(
-                message_id,
-                f'✅ Pedido #{pedido_id} tomado por <b>{user_name}</b>{extra}')
+            tg.sacar_botones_grupo(message_id)
 
-        # DM al cadete con detalle completo del pedido (si lo tenemos en DB).
-        # Telegram permite DM solo después de que el user interactuó con el
-        # bot (lo que cumple el propio callback que acabamos de procesar).
-        # IMPORTANTE: la conexión DB se libera ANTES del HTTP a Telegram
-        # (que puede tardar segundos) sino el pool de conexiones se agota
-        # con varios TOMARes simultáneos.
+        # DM al cadete con detalle completo + botón "✅ Retirado".
+        # Libero la conexión DB antes del HTTP a Telegram para no bloquear el pool.
         detalle = None
         try:
             with database.get_db() as s:
@@ -976,11 +964,22 @@ def init_app(app):
         except Exception as e:  # noqa: BLE001
             log.warning('Telegram armar detalle pedido falló: %s', e)
         if detalle:
-            res_dm = tg.enviar_dm(user_id, detalle)
-            # Si el cadete nunca inició el bot, Telegram no deja DMearlo (403).
-            # Fallback: dejamos un deep link en el grupo → al tocarlo arranca el
-            # bot y recibe el detalle (handler de /start ped_<id> más abajo).
-            if not res_dm.get('ok'):
+            botones = [[{'text': '📦 Retirado de farmacia',
+                         'callback_data': f'retirado:{pedido_id}'}]]
+            res_dm = tg.enviar_dm(user_id, detalle, botones=botones)
+            if res_dm.get('ok'):
+                # Persistir el message_id del DM para poder editar el botón
+                # cuando el cadete apriete Retirado/Entregado.
+                try:
+                    with database.get_db() as s:
+                        p2 = s.get(database.PedidoReparto, pedido_id)
+                        if p2:
+                            p2.tomado_dm_msg_id = res_dm.get('telegram_msg_id')
+                            s.commit()
+                except Exception as e:  # noqa: BLE001
+                    log.warning('Persistir tomado_dm_msg_id falló: %s', e)
+            else:
+                # Cadete nunca inició el bot → 403. Deep link en el grupo.
                 log.warning('Telegram DM detalle falló (%s) → fallback deep link',
                             res_dm.get('error'))
                 link = tg.deep_link_pedido(pedido_id)
@@ -994,11 +993,82 @@ def init_app(app):
         return jsonify({'ok': True, 'pedido_id': pedido_id, 'tomado_por': user_name,
                         'cadete_id': cad_id})
 
+    def _telegram_procesar_retirado(upd, tg):
+        """Cadete apretó '📦 Retirado de farmacia' en el DM. Estado → 'en_ruta'.
+        Edita el botón del DM a '✅ Entregado'."""
+        pedido_id = upd.get('pedido_id')
+        user_id = upd.get('user_id')
+        callback_qid = upd.get('callback_query_id')
+        if not pedido_id or not callback_qid:
+            return jsonify({'ok': False, 'error': 'callback inválido'}), 400
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pedido_id)
+            if not p:
+                tg.answer_callback(callback_qid, 'Pedido no existe', alert=True)
+                return jsonify({'ok': True, 'ignored': 'pedido_no_existe'})
+            # Validar que sea el cadete que tomó (anti-abuso).
+            if p.tomado_dm_user_id and p.tomado_dm_user_id != user_id:
+                tg.answer_callback(callback_qid, 'No sos el cadete asignado', alert=True)
+                return jsonify({'ok': True, 'ignored': 'cadete_distinto'})
+            p.estado = 'en_ruta'
+            p.retirado_en = database.now_ar()
+            try:
+                _notificar_cliente_pedido(s, p, 'en_ruta')
+            except Exception as e:  # noqa: BLE001
+                log.warning('notificar cliente en_ruta falló: %s', e)
+            dm_msg_id = p.tomado_dm_msg_id
+            s.commit()
+        tg.answer_callback(callback_qid, '✓ En ruta')
+        # Cambiar el botón del DM de Retirado → Entregado.
+        if dm_msg_id and user_id:
+            tg.editar_botones_dm(user_id, dm_msg_id,
+                                 [[{'text': '✅ Entregado al cliente',
+                                    'callback_data': f'entregado:{pedido_id}'}]])
+        return jsonify({'ok': True, 'pedido_id': pedido_id, 'estado': 'en_ruta'})
+
+    def _telegram_procesar_entregado(upd, tg):
+        """Cadete apretó '✅ Entregado al cliente'. Estado → 'entregado'.
+        Saca el botón del DM (queda inerte)."""
+        pedido_id = upd.get('pedido_id')
+        user_id = upd.get('user_id')
+        callback_qid = upd.get('callback_query_id')
+        if not pedido_id or not callback_qid:
+            return jsonify({'ok': False, 'error': 'callback inválido'}), 400
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pedido_id)
+            if not p:
+                tg.answer_callback(callback_qid, 'Pedido no existe', alert=True)
+                return jsonify({'ok': True, 'ignored': 'pedido_no_existe'})
+            if p.tomado_dm_user_id and p.tomado_dm_user_id != user_id:
+                tg.answer_callback(callback_qid, 'No sos el cadete asignado', alert=True)
+                return jsonify({'ok': True, 'ignored': 'cadete_distinto'})
+            p.estado = 'entregado'
+            p.entregado_en = database.now_ar()
+            try:
+                _notificar_cliente_pedido(s, p, 'entregado')
+            except Exception as e:  # noqa: BLE001
+                log.warning('notificar cliente entregado falló: %s', e)
+            dm_msg_id = p.tomado_dm_msg_id
+            s.commit()
+        tg.answer_callback(callback_qid, '✅ Entregado')
+        # Sacar los botones del DM (fin del workflow del cadete).
+        if dm_msg_id and user_id:
+            tg.editar_botones_dm(user_id, dm_msg_id, [])
+        return jsonify({'ok': True, 'pedido_id': pedido_id, 'estado': 'entregado'})
+
     def _telegram_armar_detalle_pedido(p):
-        """Texto HTML con el detalle del pedido para el DM al cadete."""
+        """Texto HTML con el detalle del pedido para el DM al cadete.
+        Incluye total, lo que tiene que cobrar (si no está pagado), forma de
+        pago, vuelto. Diego 2026-06-19: el cadete usa este DM como única
+        fuente de info en la calle."""
+        def _arg(n):
+            return f'$ {float(n):,.0f}'.replace(',', '.')
+
         partes = [f'📦 <b>Pedido #{p.id}</b>']
         if p.cliente_nombre:
-            partes.append(f'👤 {p.cliente_nombre}')
+            partes.append(f'👤 <b>{p.cliente_nombre}</b>')
+        if p.telefono:
+            partes.append(f'📞 {p.telefono}')
         if p.direccion:
             d = p.direccion
             if p.piso:
@@ -1006,32 +1076,53 @@ def init_app(app):
             if p.depto:
                 d += f', dto {p.depto}'
             partes.append(f'📍 {d}')
+            if p.localidad:
+                partes.append(f'   {p.localidad}')
             if p.referencia:
                 partes.append(f'   ↳ {p.referencia}')
         if p.lat and p.lng:
             partes.append(f'🗺 https://www.google.com/maps?q={p.lat},{p.lng}')
+
         partes.append('')
-        linea_pago = []
-        if p.importe is not None:
-            linea_pago.append(f'$ {float(p.importe):,.0f}'.replace(',', '.'))
-        if p.forma_pago:
-            linea_pago.append(p.forma_pago)
-        if p.vuelto:
-            linea_pago.append(f'(vto: {p.vuelto})')
-        if linea_pago:
-            partes.append('💰 ' + ' '.join(linea_pago))
+        partes.append('━━━ <b>PAGO</b> ━━━')
+        # total_paciente incluye el envío (el operador carga el total final).
+        total = float(p.total_paciente) if p.total_paciente is not None else (
+            float(p.importe) if p.importe is not None else None)
+        if total is not None:
+            partes.append(f'💵 Total: <b>{_arg(total)}</b>')
         if p.envio_costo is not None:
-            partes.append(f'🛵 Envío $ {float(p.envio_costo):,.0f}'.replace(',', '.'))
+            envio_txt = 'SIN CARGO' if p.envio_sin_cargo else _arg(p.envio_costo)
+            partes.append(f'🛵 Envío: {envio_txt}')
+        if p.forma_pago:
+            partes.append(f'💳 Forma: {p.forma_pago}')
+        # Cobrar / pagado
+        if p.pagado:
+            partes.append('✅ <b>Ya está pagado · no cobrar</b>')
+        elif total is not None:
+            partes.append(f'💰 <b>COBRAR: {_arg(total)}</b>')
+        if p.paga_con is not None:
+            partes.append(f'   paga con: {_arg(p.paga_con)}')
+        if p.vuelto:
+            partes.append(f'   vuelto: $ {p.vuelto}')
+        if p.dato_pago_mp:
+            partes.append(f'   nro op: {p.dato_pago_mp}')
+
+        partes.append('')
+        partes.append('━━━ <b>DETALLE</b> ━━━')
         if p.producto:
             partes.append(f'💊 {p.producto}')
         if p.observacion:
             partes.append(f'📝 {p.observacion}')
+        if p.obra_social:
+            partes.append(f'🏥 OS: {p.obra_social}')
         meta = []
         if p.prioridad and p.prioridad != 'normal':
             meta.append({'urgente': '🔴 URGENTE', 'programado': '🕐 prog.'}
                         .get(p.prioridad, p.prioridad))
-        if p.requiere_receta:
-            meta.append('📋 con receta')
+        if p.receta_estado == 'pendiente' or (p.receta_estado is None and bool(p.requiere_receta)):
+            meta.append('📋 receta pendiente')
+        if p.requiere_firma:
+            meta.append('✍ requiere firma')
         if meta:
             partes.append(' · '.join(meta))
         return '\n'.join(partes)

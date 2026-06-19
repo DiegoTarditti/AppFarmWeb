@@ -1542,9 +1542,19 @@ function rowProducto(p) {
     ? '<span class="rx" style="font-size:8px; padding:2px 6px; border-radius:8px; background:#a78bfa22; color:#a78bfa; border:1px solid #a78bfa55;" title="Se vende fraccionado">FR</span>'
     : '';
   const sub = [esc(p.droga), esc(p.presentacion)].filter(Boolean).join(' · ');
-  const arg = encodeURIComponent(JSON.stringify({n: p.nombre, pr: p.precio, s: sub}));
+  const arg = encodeURIComponent(JSON.stringify({
+    n: p.nombre, pr: p.precio, s: sub,
+    oid: p.observer_id, ce: p.cantidad_envase || 0, fr: !!p.fraccionable
+  }));
+  // Si es fraccionable, input numérico al lado del + para vender N unidades
+  // sueltas (precio = precio_envase / cantidad_envase * N). Default 1 u.
+  const fracInput = (!sin && p.fraccionable && p.cantidad_envase)
+    ? `<input id="qty_${p.observer_id}" type="number" min="1" step="1" value="1"
+        onclick="event.stopPropagation()" title="Unidades sueltas (envase = ${p.cantidad_envase})"
+        style="width:42px; padding:3px 5px; font-size:11px; background:rgba(0,0,0,0.25); color:var(--txt); border:1px solid rgba(255,255,255,0.18); border-radius:5px; text-align:center; margin-top:4px;">`
+    : '';
   const plus = sin ? ''
-    : `<div class="card-ic" onclick="agregarProductoEnc('${arg}')" title="Agregar al pedido" style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; margin-top:4px; margin-left:auto; cursor:pointer;"><i class="ti ti-plus" style="font-size:13px"></i></div>`;
+    : `<div class="card-ic" onclick="agregarProductoEnc('${arg}')" title="Agregar al pedido" style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; margin-top:4px; cursor:pointer;"><i class="ti ti-plus" style="font-size:13px"></i></div>`;
   return `
     <div class="sp-row" style="display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:0.5px solid; ${sin ? 'opacity:0.5;' : ''}">
       <div style="flex:1; min-width:0;">
@@ -1557,9 +1567,12 @@ function rowProducto(p) {
           <span style="font-size:12px; font-weight:600; color:${sin ? 'rgba(255,255,255,0.55)' : (p.nivel === 'low' ? '#F8B95E' : '#5FE5A8')};">${stockTxt}</span>
         </div>
       </div>
-      <div style="text-align:right; flex-shrink:0;">
+      <div style="text-align:right; flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:0;">
         <div class="${sin ? 'muted2' : 'title'}" style="font-size:13px; font-weight:600;">${fmtPrecio(p.precio)}</div>
-        ${plus}
+        <div style="display:flex; align-items:center; gap:5px;">
+          ${fracInput}
+          ${plus}
+        </div>
       </div>
     </div>`;
 }
@@ -1570,12 +1583,27 @@ const _kprod = n => (n || '').trim().toLowerCase();
 
 function agregarProductoEnc(enc) {
   const o = JSON.parse(decodeURIComponent(enc));
-  agregarProducto(o.n, o.pr, o.s);
+  // Fraccionado: el operador eligió N unidades sueltas. El precio unitario
+  // se calcula dividiendo el precio del envase por la cantidad por envase.
+  // El nombre incluye la fracción para diferenciar líneas distintas del
+  // mismo producto (ej: 1/60 vs 3/60 → líneas separadas).
+  if (o.fr && o.ce > 0) {
+    const inp = document.getElementById(`qty_${o.oid}`);
+    const cant = Math.max(1, parseInt((inp && inp.value) || '1', 10));
+    const precioU = o.pr ? (o.pr / o.ce) : 0;
+    const nombre = `${o.n} (${cant}/${o.ce})`;
+    const sub = o.s ? `${o.s} · fracc.` : 'fracc.';
+    agregarProducto(nombre, precioU, sub, cant);
+    if (inp) inp.value = 1;  // reset para próxima vez
+    return;
+  }
+  agregarProducto(o.n, o.pr, o.s, 1);
 }
-function agregarProducto(nombre, precio, sub) {
+function agregarProducto(nombre, precio, sub, cant) {
+  cant = cant || 1;
   const it = pedido.find(x => _kprod(x.nombre) === _kprod(nombre));
-  if (it) it.cant++;
-  else pedido.push({nombre, precio: precio || 0, sub: sub || '', cant: 1});
+  if (it) it.cant += cant;
+  else pedido.push({nombre, precio: precio || 0, sub: sub || '', cant});
   renderPedido();
 }
 function cambiarCant(i, d) {

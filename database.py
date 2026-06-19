@@ -732,6 +732,13 @@ class PedidoReparto(Base):
     publicado_en = Column(DateTime, nullable=True)
     tomado_por_wsap = Column(String(80), nullable=True)
     tomado_en = Column(DateTime, nullable=True)
+    # Telegram: DM con detalle + botón evolutivo (Retirado → Entregado → ✓) que
+    # se envía al cadete que tomó. Guardamos el message_id + user_id para
+    # poder editar el botón al apretar Retirado/Entregado. Diego 2026-06-19.
+    tomado_dm_msg_id = Column(BigInteger, nullable=True)
+    tomado_dm_user_id = Column(BigInteger, nullable=True)
+    retirado_en = Column(DateTime, nullable=True)
+    entregado_en = Column(DateTime, nullable=True)
     # ── Cerrar transacción (Fase A, spec docs/fase_a_transaccion.md) ─────────
     # Datos capturados por el operador en /atencion antes de mandar a caja.
     # El `importe` viejo es el total bruto desde ObServer; `total_paciente` es lo
@@ -4740,6 +4747,10 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS publicado_en TIMESTAMP",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_por_wsap VARCHAR(80)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_dm_msg_id BIGINT",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_dm_user_id BIGINT",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS retirado_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS entregado_en TIMESTAMP",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_waha_msg ON pedidos_reparto(waha_msg_id)",
         "ALTER TABLE domicilios_cliente ADD COLUMN IF NOT EXISTS geo_actualizado_en TIMESTAMP",
         # Domicilios estructurados: piso/depto/referencia separados de direccion

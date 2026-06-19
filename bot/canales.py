@@ -13,9 +13,21 @@ def enviar(canal, canal_user_id, texto):
     Devuelve True/False según pudo enviarlo."""
     if canal == 'telegram':
         return _enviar_telegram(canal_user_id, texto)
+    if canal == 'telegram_cadete':
+        # DM al cadete por el bot de cadetes (token separado).
+        return _enviar_telegram_cadete(canal_user_id, texto)
     if canal == 'whatsapp':
         return _enviar_whatsapp(canal_user_id, texto)
     return False
+
+
+def _enviar_telegram_cadete(chat_id, texto):
+    from bot import telegram_grupo
+    try:
+        tg_uid = int(chat_id)
+    except (TypeError, ValueError):
+        return False
+    return bool(telegram_grupo.enviar_dm(tg_uid, texto).get('ok'))
 
 
 def _enviar_whatsapp(to, texto):
