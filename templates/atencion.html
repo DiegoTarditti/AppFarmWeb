@@ -2084,11 +2084,13 @@ async function cerrarTxDirecto(){
       if (vista === 'cerrados' && typeof cargarCerradosHoy === 'function') cargarCerradosHoy();
       return;
     }
-    // Pedido nuevo: abre el ticket de envío (PDF 80mm) en otra pestaña para
-    // imprimir, y la pestaña actual va a la planilla. Diego 2026-06-19: skip
-    // /caja, el cierre termina directo en /reparto/planilla.
-    try { window.open(`/reparto/pedido/${d.pedido_id}/ticket-pdf`, '_blank', 'noopener'); }
-    catch(e){ /* popup bloqueado: no rompe el redirect */ }
+    // Pedido nuevo: pregunta si imprimir el ticket de envío (PDF 80mm) y
+    // después manda a la planilla. El ticket NO sale automático — el
+    // operador decide caso por caso (Diego 2026-06-19).
+    if (confirm(`✅ Pedido #${d.pedido_id} creado.\n\n¿Imprimir ticket de envío?`)){
+      try { window.open(`/reparto/pedido/${d.pedido_id}/ticket-pdf`, '_blank', 'noopener'); }
+      catch(e){ /* popup bloqueado: no rompe el redirect */ }
+    }
     window.location.href = '/reparto/planilla';
   } catch(e){ alert('Error de red: ' + e.message); }
 }
