@@ -755,10 +755,15 @@ def init_app(app):
             return _telegram_procesar_tomar(upd, telegram_grupo)
 
         if tipo == 'mensaje_dm':
-            # Por ahora solo logueamos. La persistencia en BotConversacion
-            # para el panel /reparto/planilla se hace en commit posterior.
-            log.info('telegram DM de %s: %s',
-                     upd.get('user_name'), (upd.get('texto') or '')[:80])
+            texto_dm = (upd.get('texto') or '').strip()
+            uid_dm = upd.get('user_id')
+            nom_dm = upd.get('user_name') or upd.get('user_username') or 'alguien'
+            # Deep link: /start ped_<id> → entregar el detalle si es el que tomó.
+            if uid_dm and texto_dm.startswith('/start ped_'):
+                raw = texto_dm[len('/start ped_'):].strip()
+                if raw.isdigit():
+                    return _telegram_entregar_detalle_dm(int(raw), uid_dm, nom_dm, telegram_grupo)
+            log.info('telegram DM de %s: %s', nom_dm, texto_dm[:80])
             return jsonify({'ok': True, 'tipo': 'mensaje_dm'})
 
         if tipo == 'mensaje_grupo':
@@ -871,10 +876,20 @@ def init_app(app):
         except Exception as e:  # noqa: BLE001
             log.warning('Telegram armar detalle pedido falló: %s', e)
         if detalle:
-            try:
-                tg.enviar_dm(user_id, detalle)
-            except Exception as e:  # noqa: BLE001 — DM fallido no rompe el flujo
-                log.warning('Telegram DM detalle pedido falló: %s', e)
+            res_dm = tg.enviar_dm(user_id, detalle)
+            # Si el cadete nunca inició el bot, Telegram no deja DMearlo (403).
+            # Fallback: dejamos un deep link en el grupo → al tocarlo arranca el
+            # bot y recibe el detalle (handler de /start ped_<id> más abajo).
+            if not res_dm.get('ok'):
+                log.warning('Telegram DM detalle falló (%s) → fallback deep link',
+                            res_dm.get('error'))
+                link = tg.deep_link_pedido(pedido_id)
+                if link and message_id:
+                    extra = f' ({cad_nombre})' if cad_nombre else ''
+                    tg.editar_mensaje_grupo(
+                        message_id,
+                        f'✅ Pedido #{pedido_id} tomado por <b>{user_name}</b>{extra}\n'
+                        f'📩 {user_name}: tocá para ver el detalle → {link}')
 
         return jsonify({'ok': True, 'pedido_id': pedido_id, 'tomado_por': user_name,
                         'cadete_id': cad_id})
@@ -920,6 +935,41 @@ def init_app(app):
         if meta:
             partes.append(' · '.join(meta))
         return '\n'.join(partes)
+
+    def _telegram_entregar_detalle_dm(pedido_id, user_id, user_name, tg):
+        """Deep link /start ped_<id>: entrega el detalle por DM SOLO si quien lo
+        abre es el cadete que tomó el pedido. De paso aprende/vincula su
+        telegram_user_id (auto-onboarding)."""
+        from sqlalchemy import func as _f
+        nom = ' '.join((user_name or '').lower().split())
+        autorizado = False
+        detalle = None
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pedido_id)
+            if not p:
+                tg.enviar_dm(user_id, 'Ese pedido no existe.')
+                return jsonify({'ok': True, 'detalle': 'no_existe'})
+            # Identificar al cadete por telegram_user_id; si no, por nombre (y aprender).
+            cad = (s.query(database.Cadete)
+                   .filter(database.Cadete.telegram_user_id == user_id).first())
+            if not cad and nom:
+                cad = (s.query(database.Cadete)
+                       .filter(_f.lower(database.Cadete.nombre).like(f'%{nom}%')).first())
+                if cad and not cad.telegram_user_id:
+                    cad.telegram_user_id = user_id
+            # Si el pedido lo tomó este cadete (por nombre) y no estaba vinculado, vincular.
+            if p.cadete_id is None and cad and p.tomado_por_wsap \
+               and ' '.join(p.tomado_por_wsap.lower().split()) == nom:
+                p.cadete_id = cad.id
+            autorizado = bool(cad and p.cadete_id == cad.id)
+            if autorizado:
+                detalle = _telegram_armar_detalle_pedido(p)
+            s.commit()
+        if autorizado and detalle:
+            tg.enviar_dm(user_id, detalle)
+            return jsonify({'ok': True, 'detalle': 'enviado'})
+        tg.enviar_dm(user_id, 'Ese pedido no está asignado a vos.')
+        return jsonify({'ok': True, 'detalle': 'no_autorizado'})
 
     @app.route('/telegram/cadetes/setup-webhook', methods=['POST'])
     @login_required
