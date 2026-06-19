@@ -130,6 +130,11 @@
     border-left:1px solid var(--border);
     display:flex; flex-direction:column; transition:flex-basis 0.18s ease;
     overflow:hidden;
+    /* Sticky al viewport: el panel queda fijo mientras las tablas a la
+       izquierda scrollean. Sino el input del DM termina al fondo de la
+       página y hay que scrollear para responder (Diego 2026-06-19). */
+    position:sticky; top:50px;
+    height:calc(100vh - 50px); align-self:flex-start;
   }
   .chat-panel.is-collapsed { flex:0 0 40px; }
   .chat-head { display:flex; align-items:center; gap:8px; padding:8px 10px;
