@@ -859,14 +859,22 @@ def init_app(app):
         # DM al cadete con detalle completo del pedido (si lo tenemos en DB).
         # Telegram permite DM solo después de que el user interactuó con el
         # bot (lo que cumple el propio callback que acabamos de procesar).
+        # IMPORTANTE: la conexión DB se libera ANTES del HTTP a Telegram
+        # (que puede tardar segundos) sino el pool de conexiones se agota
+        # con varios TOMARes simultáneos.
+        detalle = None
         try:
             with database.get_db() as s:
                 p = s.get(database.PedidoReparto, pedido_id)
                 if p:
                     detalle = _telegram_armar_detalle_pedido(p)
-                    tg.enviar_dm(user_id, detalle)
-        except Exception as e:  # noqa: BLE001 — DM fallido no rompe el flujo
-            log.warning('Telegram DM detalle pedido falló: %s', e)
+        except Exception as e:  # noqa: BLE001
+            log.warning('Telegram armar detalle pedido falló: %s', e)
+        if detalle:
+            try:
+                tg.enviar_dm(user_id, detalle)
+            except Exception as e:  # noqa: BLE001 — DM fallido no rompe el flujo
+                log.warning('Telegram DM detalle pedido falló: %s', e)
 
         return jsonify({'ok': True, 'pedido_id': pedido_id, 'tomado_por': user_name,
                         'cadete_id': cad_id})
