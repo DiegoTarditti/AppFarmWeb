@@ -223,6 +223,7 @@ def _pedido_dict(p, cadetes=None, rutas_cadete=None):
         'referencia': p.referencia or '',
         # Control por cadete
         'envio_costo': float(p.envio_costo) if p.envio_costo is not None else None,
+        'envio_sin_cargo': bool(p.envio_sin_cargo),
         'total_paciente': float(p.total_paciente) if p.total_paciente is not None else None,
         'receta_estado': p.receta_estado or '',
         'envio_liquidado': bool(p.envio_liquidado),
@@ -1382,9 +1383,12 @@ def init_app(app):
             cadete_nom = cad.get(ef_id, '') if ef_id else ''
             # total_paciente YA incluye el envío (el operador carga el total con
             # envío). El producto se deriva: producto = total - envío.
+            # Si el envío va sin cargo, el operador NO lo suma al total → el
+            # producto es igual al total y el cadete no cobra el envío.
             total_monto = float(p.total_paciente) if p.total_paciente is not None else None
             envio_v = float(p.envio_costo) if p.envio_costo is not None else None
-            producto_monto = (round((total_monto or 0) - (envio_v or 0), 2)
+            envio_sc = bool(p.envio_sin_cargo)
+            producto_monto = (round((total_monto or 0) - (0 if envio_sc else (envio_v or 0)), 2)
                               if total_monto is not None else None)
             cobrar = None if p.pagado else total_monto
             paga_con = float(p.paga_con) if p.paga_con is not None else None
@@ -1398,7 +1402,8 @@ def init_app(app):
                 receta_pendiente=(p.receta_estado == 'pendiente')
                                   or (p.receta_estado is None and bool(p.requiere_receta)),
                 pagado=bool(p.pagado), forma_pago=p.forma_pago or '',
-                producto_monto=producto_monto, envio=envio_v, total=total_monto,
+                producto_monto=producto_monto, envio=envio_v, envio_sin_cargo=envio_sc,
+                total=total_monto,
                 cobrar=cobrar, paga_con=paga_con, vuelto=p.vuelto or '',
                 obra_social=p.obra_social or '', cadete=cadete_nom,
             )
@@ -1475,7 +1480,9 @@ def init_app(app):
         total_v = data['total'] or 0       # total cargado (ya incluye envío)
         if prod_v > 0:
             line(f'  Producto: $ {prod_v:,.0f}'.replace(',', '.'))
-        if env_v > 0:
+        if data['envio_sin_cargo']:
+            line('  Envio:    SIN CARGO', bold=True)
+        elif env_v > 0:
             line(f'  Envio:    $ {env_v:,.0f}'.replace(',', '.'))
         if total_v > 0:
             line(f'  TOTAL:    $ {total_v:,.0f}'.replace(',', '.'), size=11, bold=True)
@@ -1532,10 +1539,13 @@ def init_app(app):
                          .filter(database.RutaReparto.cadete_id.isnot(None)).all()}
             ef_id = reparto.cadete_efectivo_id(p, rutas_cad)
             # total_paciente YA incluye el envío (el operador carga el total).
-            # Producto = total - envío. Si ya está pagado, el cadete no cobra.
+            # Producto = total - envío. Si el envío va sin cargo, el operador
+            # NO lo sumó al total → producto = total.
+            # Si ya está pagado, el cadete no cobra.
             total_monto = float(p.total_paciente) if p.total_paciente is not None else None
             envio = float(p.envio_costo) if p.envio_costo is not None else None
-            producto_monto = (round((total_monto or 0) - (envio or 0), 2)
+            envio_sc = bool(p.envio_sin_cargo)
+            producto_monto = (round((total_monto or 0) - (0 if envio_sc else (envio or 0)), 2)
                               if total_monto is not None else None)
             cobrar = None if p.pagado else total_monto
             return jsonify({
@@ -1554,6 +1564,7 @@ def init_app(app):
                 'forma_pago': p.forma_pago or '',
                 'producto_monto': producto_monto,
                 'envio': envio,
+                'envio_sin_cargo': envio_sc,
                 'total': total_monto,
                 'cobrar': cobrar,
                 'paga_con': float(p.paga_con) if p.paga_con is not None else None,

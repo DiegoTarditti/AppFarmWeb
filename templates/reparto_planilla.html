@@ -285,15 +285,21 @@
       <td class="celda-editable" data-campo="forma_pago" data-tipo="select-forma_pago">
         <span class="celda-valor" style="color:var(--warn); font-weight:600;">{{ p.forma_pago or '—' }}</span>
       </td>
-      {# Operación = Importe − Envío (lo del producto, sin el envío). Derivada, no editable. #}
-      {% set _op = (p.importe or 0) - (p.envio_costo or 0) %}
+      {# Operación = Importe − Envío (lo del producto, sin el envío). Si el
+         envío va sin cargo el operador no lo sumó al importe → operación = importe. #}
+      {% set _op = (p.importe or 0) if p.envio_sin_cargo else ((p.importe or 0) - (p.envio_costo or 0)) %}
       <td>
         <input type="checkbox" class="chk-sum" data-col="operacion" data-val="{{ _op }}" onchange="sumarCol(this)">
         <span>{{ '$ {:,.0f}'.format(_op) if (p.importe is not none or p.envio_costo is not none) else '—' }}</span>
       </td>
       <td class="celda-editable" data-campo="envio_costo" data-tipo="text">
-        <input type="checkbox" class="chk-sum" data-col="envio" data-val="{{ p.envio_costo or 0 }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
-        <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
+        {# Sin cargo: la suma del envío cobrable es 0 (la cotización queda como info). #}
+        <input type="checkbox" class="chk-sum" data-col="envio" data-val="{{ 0 if p.envio_sin_cargo else (p.envio_costo or 0) }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
+        {% if p.envio_sin_cargo %}
+          <span class="celda-valor" style="color:var(--accent); font-weight:600;" title="Cotizado: {{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}">SIN CARGO</span>
+        {% else %}
+          <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
+        {% endif %}
       </td>
       <td class="celda-editable" data-campo="importe" data-tipo="text">
         <input type="checkbox" class="chk-sum" data-col="importe" data-val="{{ p.importe or 0 }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
@@ -565,7 +571,7 @@ const CADETES = {{ cadetes | tojson }};
 const CADETE_OPTS = '<option value="">—</option>' + Object.entries(CADETES).map(([id,n])=>`<option value="${id}">${esc(n)}</option>`).join('');
 const USUARIOS = {{ usuarios | tojson }};
 const USUARIO_OPTS = '<option value="">—</option>' + USUARIOS.map(u=>`<option value="${esc(u.nombre)}">${esc(u.nombre)}</option>`).join('');
-const FORMA_PAGO_OPTS = '<option value="">—</option>' + ['efectivo','transfer','link','sc','debito','credito'].map(v=>`<option value="${v}">${v}</option>`).join('');
+const FORMA_PAGO_OPTS = '<option value="">—</option>' + ['efectivo','transfer','link','sc','debito','credito','sin_cargo'].map(v=>`<option value="${v}">${v}</option>`).join('');
 
 function esc(s) { return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
