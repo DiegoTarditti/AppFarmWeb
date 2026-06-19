@@ -125,10 +125,11 @@ PERFILES_PATHS_COMUNES = ('/home', '/login', '/logout', '/cambiar-password',
 # IMPORTANTE: NO incluir 'operador' acá. 'operador' es el rol canónico actual
 # de todos los operadores; si entra en este dict, migrar_roles_a_perfiles() lo
 # pisa en cada restart con ["chat_clientes"] y borra los perfiles reales.
+# 'cajero' se deprecó el 2026-06-19 (/caja sin uso); su migración a operador
+# se hace por SQL inline en database.init_db (UPDATE usuarios).
 ROL_LEGACY_A_PERFILES = {
     'rendicion': ['rendicion'],
     'auditor': ['audit_recetas'],
-    'cajero': ['chat_clientes'],   # caja se hereda desde chat_clientes
     'pedidos': ['pedidos_drog'],
 }
 

@@ -4776,6 +4776,17 @@ def _pg_add_columns(conn):
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_destino ON pedidos_reparto(destino)",
     ]:
         conn.execute(text(stmt))
+    # Rol 'cajero' deprecado (Diego 2026-06-19): /caja queda sin uso, los
+    # cobros se manejan desde /atencion + /reparto/planilla. Cualquier
+    # usuario residual con rol='cajero' se promueve a operador con perfil
+    # chat_clientes (idempotente — si ya está migrado, no hace nada).
+    conn.execute(text("""
+        UPDATE usuarios
+           SET perfiles_json = '["chat_clientes"]'
+         WHERE rol = 'cajero'
+           AND (perfiles_json IS NULL OR perfiles_json = '' OR perfiles_json = '[]')
+    """))
+    conn.execute(text("UPDATE usuarios SET rol = 'operador' WHERE rol = 'cajero'"))
     # Token para link móvil del cadete (vista de reparto sin login)
     conn.execute(text(
         "ALTER TABLE cadetes ADD COLUMN IF NOT EXISTS token VARCHAR(12)"

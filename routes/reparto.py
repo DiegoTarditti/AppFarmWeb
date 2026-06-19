@@ -1772,7 +1772,8 @@ def init_app(app):
         EDITABLES = {'tomo', 'importe', 'forma_pago', 'vuelto', 'producto',
                      'observacion', 'pagado', 'requiere_receta',
                      'entregado_por', 'cadete_id', 'recibio', 'estado', 'turno',
-                     'etiqueta', 'etiqueta_color'}
+                     'etiqueta', 'etiqueta_color',
+                     'envio_costo', 'envio_sin_cargo'}
         if campo not in EDITABLES:
             return jsonify({'ok': False, 'error': f'campo no editable: {campo}'}), 400
         with database.get_db() as s:
@@ -1780,13 +1781,13 @@ def init_app(app):
             if not p:
                 return jsonify({'ok': False, 'error': 'no existe'}), 404
             # Tipos especiales
-            if campo in ('pagado', 'requiere_receta'):
+            if campo in ('pagado', 'requiere_receta', 'envio_sin_cargo'):
                 valor = bool(valor)
-            elif campo == 'importe' and valor is not None and valor != '':
+            elif campo in ('importe', 'envio_costo') and valor is not None and valor != '':
                 try:
                     valor = float(str(valor).replace(',', '.'))
                 except (TypeError, ValueError):
-                    return jsonify({'ok': False, 'error': 'importe inválido'}), 400
+                    return jsonify({'ok': False, 'error': f'{campo} inválido'}), 400
             elif campo == 'cadete_id':
                 try:
                     valor = int(valor) if valor not in (None, '') else None

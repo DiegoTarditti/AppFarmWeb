@@ -300,6 +300,10 @@
         {% else %}
           <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
         {% endif %}
+        {# Toggle inline: click directo togglea sin_cargo sin abrir el editor de monto. #}
+        <button type="button" class="btn-toggle-sc" onclick="toggleEnvioSinCargo(event, {{ p.id }}, {{ 'true' if p.envio_sin_cargo else 'false' }})"
+                title="{{ 'Cobrar envío (sacar sin cargo)' if p.envio_sin_cargo else 'Marcar envío sin cargo' }}"
+                style="margin-left:4px; font-size:9px; padding:1px 4px; border-radius:4px; border:1px solid var(--border); background:{{ 'var(--accent)' if p.envio_sin_cargo else 'transparent' }}; color:{{ '#06241a' if p.envio_sin_cargo else 'var(--muted)' }}; cursor:pointer;">SC</button>
       </td>
       <td class="celda-editable" data-campo="importe" data-tipo="text">
         <input type="checkbox" class="chk-sum" data-col="importe" data-val="{{ p.importe or 0 }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
@@ -581,6 +585,18 @@ async function actualizarCampo(pid, campo, valor) {
     body: JSON.stringify({campo, valor})
   });
   return r.json();
+}
+
+// Toggle inline del flag 'envio_sin_cargo' desde la planilla. El botón vive en
+// la celda Envío y solo togglea (no abre el editor de monto). Recargamos la
+// página para resincronizar la celda Operación y los chequeos de suma.
+async function toggleEnvioSinCargo(ev, pid, actual) {
+  ev.stopPropagation();
+  ev.preventDefault();
+  const nuevo = !actual;
+  const d = await actualizarCampo(pid, 'envio_sin_cargo', nuevo);
+  if (!d.ok) { alert('Error: ' + (d.error || 'no se pudo guardar')); return; }
+  location.reload();
 }
 
 // Arqueo de caja: suma los valores marcados de una columna DENTRO de su tabla
