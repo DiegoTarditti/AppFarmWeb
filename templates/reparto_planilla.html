@@ -69,6 +69,9 @@
   .planilla-table tr.fila-receta td:first-child { border-left:2px solid var(--danger); }
   .planilla-table tr.fila-anulado { opacity:.3; text-decoration:line-through; }
 
+  /* Arqueo: total por columna (bajo el título) + check de selección */
+  .col-sum { font-size:10px; color:var(--accent); font-weight:700; margin-top:2px; min-height:12px; }
+  .chk-sum { transform:scale(0.8); cursor:pointer; vertical-align:middle; margin-right:2px; accent-color:var(--accent); }
   /* Celdas editables */
   .celda-editable { cursor:pointer; min-width:50px; border-radius:3px; padding:2px 4px; }
   .celda-editable:hover { background:var(--hov); }
@@ -217,9 +220,10 @@
       <th style="min-width:130px;">Cliente</th>
       <th style="min-width:160px;">Dirección</th>
       <th style="width:85px;">Teléfono</th>
-      <th style="width:70px;">Envío $</th>
+      <th style="width:70px;">Envío $<div class="col-sum" data-col="envio"></div></th>
       <th style="width:65px;">Tomó</th>
-      <th style="width:80px;">Importe</th>
+      <th style="width:80px;">Importe<div class="col-sum" data-col="importe"></div></th>
+      <th style="width:80px;">Operación<div class="col-sum" data-col="operacion"></div></th>
       <th style="width:80px;">Forma pago</th>
       <th style="width:90px;">Vuelto</th>
       <th style="width:110px;">Producto</th>
@@ -245,15 +249,12 @@
       <td style="font-weight:700; color:var(--muted2);">{{ inicio_num + loop.index0 + 1 }}</td>
       <td>
         <b style="color:var(--title);">{{ p.cliente_nombre or 's/cliente' }}</b>
-        {% if con_turno_btns %}
-        <span class="turno-switch">
-          <span class="btn-turno {{ 'on' if p.turno == 'mañana' else '' }}"
-                onclick="setTurno({{ p.id }}, 'mañana')" title="Mañana">M</span>
-          <span class="btn-turno {{ 'on' if p.turno == 'tarde' else '' }}"
-                onclick="setTurno({{ p.id }}, 'tarde')" title="Tarde">T</span>
-          <span class="btn-turno {{ 'on' if p.turno == 'noche' else '' }}"
-                onclick="setTurno({{ p.id }}, 'noche')" title="Noche">N</span>
-        </span>
+        {% if p.creado_en or p.turno %}
+        <div style="color:var(--muted2);">
+          {% if p.creado_en %}{{ p.creado_en.strftime('%H:%M · %d/%m') }}{% endif %}
+          {# Turno de solo lectura, al final de la línea: queda el original. #}
+          {% if p.turno %} · <b style="color:var(--accent);" title="{{ p.turno|capitalize }}">{{ {'mañana':'M','tarde':'T','noche':'N'}.get(p.turno, p.turno[:1]|upper) }}</b>{% endif %}
+        </div>
         {% endif %}
       </td>
       <td style="font-size:11px; color:var(--muted);">
@@ -278,13 +279,21 @@
         {% if p.telefono %}<a href="tel:{{ p.telefono }}" style="color:var(--accenttxt);">{{ p.telefono }}</a>{% else %}—{% endif %}
       </td>
       <td class="celda-editable" data-campo="envio_costo" data-tipo="text">
+        <input type="checkbox" class="chk-sum" data-col="envio" data-val="{{ p.envio_costo or 0 }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
         <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
       </td>
       <td class="celda-editable" data-campo="tomo" data-tipo="select-usuarios">
         <span class="celda-valor">{{ p.tomo or '—' }}</span>
       </td>
       <td class="celda-editable" data-campo="importe" data-tipo="text">
+        <input type="checkbox" class="chk-sum" data-col="importe" data-val="{{ p.importe or 0 }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
         <span class="celda-valor">{{ '$ {:,.0f}'.format(p.importe) if p.importe is not none else '—' }}</span>
+      </td>
+      {# Operación = Importe − Envío (lo del producto, sin el envío). Derivada, no editable. #}
+      {% set _op = (p.importe or 0) - (p.envio_costo or 0) %}
+      <td>
+        <input type="checkbox" class="chk-sum" data-col="operacion" data-val="{{ _op }}" onchange="sumarCol(this)">
+        <span>{{ '$ {:,.0f}'.format(_op) if (p.importe is not none or p.envio_costo is not none) else '—' }}</span>
       </td>
       <td class="celda-editable" data-campo="forma_pago" data-tipo="select-forma_pago">
         <span class="celda-valor" style="color:var(--warn); font-weight:600;">{{ p.forma_pago or '—' }}</span>
@@ -361,7 +370,9 @@
         <span class="celda-valor">{{ p.entregado_por or '—' }}</span>
       </td>
       <td class="celda-editable" data-campo="cadete_id" data-tipo="select-cadetes">
-        <span class="celda-valor">{{ cadetes.get(p.cadete_id) or '—' }}</span>
+        {# Fallback: si el que tomó por Telegram no es un cadete registrado
+           (sin cadete_id), igual mostramos su nombre (tomado_por_wsap). #}
+        <span class="celda-valor">{{ cadetes.get(p.cadete_id) or p.tomado_por_wsap or '—' }}</span>
       </td>
       <td class="celda-editable" data-campo="recibio" data-tipo="text">
         <span class="celda-valor">{{ p.recibio or '—' }}</span>
@@ -411,7 +422,7 @@
     </tr>
     {% endfor %}
     {% if not pedidos %}
-    <tr><td colspan="18" class="sin-pedidos">Sin pedidos</td></tr>
+    <tr><td colspan="19" class="sin-pedidos">Sin pedidos</td></tr>
     {% endif %}
   </tbody>
 </table>
@@ -460,7 +471,7 @@
    Polling cada 3s mientras el panel esté abierto. #}
 <aside id="chatPanel" class="chat-panel">
   <div class="chat-head" onclick="chatToggle()">
-    <span class="chev">◀</span>
+    <span class="chev">▶</span>
     <span class="chat-head-text">💬 Chats reparto</span>
   </div>
   <div class="chat-body">
@@ -547,9 +558,23 @@ async function actualizarCampo(pid, campo, valor) {
   return r.json();
 }
 
+// Arqueo de caja: suma los valores marcados de una columna DENTRO de su tabla
+// (cada sección suma lo suyo) y lo muestra bajo el título de la columna.
+function sumarCol(chk) {
+  const tabla = chk.closest('table');
+  const col = chk.dataset.col;
+  let total = 0;
+  tabla.querySelectorAll('.chk-sum[data-col="' + col + '"]:checked')
+       .forEach(c => { total += parseFloat(c.dataset.val) || 0; });
+  const out = tabla.querySelector('.col-sum[data-col="' + col + '"]');
+  if (out) out.textContent = total
+    ? '$ ' + total.toLocaleString('es-AR', {maximumFractionDigits: 0})
+    : '';
+}
+
 document.querySelectorAll('.celda-editable').forEach(td => {
   td.addEventListener('click', function() {
-    if (td.querySelector('input') || td.querySelector('select')) return;
+    if (td.querySelector('input:not(.chk-sum)') || td.querySelector('select')) return;
     const span  = td.querySelector('.celda-valor');
     const campo = td.dataset.campo;
     const tipo  = td.dataset.tipo;

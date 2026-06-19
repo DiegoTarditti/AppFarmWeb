@@ -152,6 +152,20 @@ def _inyectar_ciudades_envio():
 
 
 @app.context_processor
+def _inyectar_turno_actual():
+    """Turno global compartido (Config.turno_actual): default sticky del dropdown
+    de turno en /atención. Vacío si no se eligió ninguno todavía."""
+    turno = ''
+    try:
+        with database.get_db() as s:
+            cfg = s.get(database.Config, 1)
+            turno = (cfg.turno_actual if cfg else '') or ''
+    except Exception:  # noqa: BLE001 — defensivo (DB no disponible en algunos render iniciales)
+        pass
+    return {'turno_actual': turno}
+
+
+@app.context_processor
 def _inyectar_alias_transferencia():
     """Alias para transferencias (config en /config/envio). Se usa en /atencion
     cuando el operador elige forma de pago = Transferencia. None si no se cargó."""

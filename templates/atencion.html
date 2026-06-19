@@ -581,6 +581,16 @@
               <option value="programado">🕐 Programado</option>
             </select>
           </div>
+          <div style="flex:1 1 90px; min-width:0;">
+            <label class="muted2" style="font-size:10px; display:block;">Turno</label>
+            {# Default = turno global compartido (sticky). Lo elige el operador y
+               queda para todos hasta que se cambie. #}
+            <select id="dTurno" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+              <option value="mañana" {{ 'selected' if turno_actual == 'mañana' }}>🌅 Mañana</option>
+              <option value="tarde" {{ 'selected' if turno_actual == 'tarde' }}>🌆 Tarde</option>
+              <option value="noche" {{ 'selected' if turno_actual == 'noche' }}>🌙 Noche</option>
+            </select>
+          </div>
         </div>
         <button id="btnCerrarTx" onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="width:100%; font-size:12px; padding:10px 6px; font-weight:600;">💳 Cerrar transacción</button>
       </div>
@@ -2018,6 +2028,7 @@ async function cerrarTxDirecto(){
     destino: get('dSalida') || 'reparto',
     envio_costo: envio || null,
     prioridad: get('dPrioridad') || 'normal',
+    turno: get('dTurno') || null,
     pagado,
     producto: get('dProducto') || null,
     producto_observer_id: window._dProductoObsId || null,

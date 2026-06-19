@@ -598,7 +598,9 @@ def init_app(app):
                 # backward compat con cierres anteriores.
                 canal=(body.get('canal') or '').strip() or 'atencion',
                 tomo=oper,
-                # turno: lo asigna el operador de planilla (entra NULL).
+                # turno: viene del dropdown de /atención (global sticky). Si no
+                # vino, queda NULL (se podrá ver/derivar en la planilla).
+                turno=(body.get('turno') or '').strip() or None,
                 prioridad=body.get('prioridad') or 'normal',
             )
 
@@ -621,6 +623,13 @@ def init_app(app):
                 data['fecha'] = database.now_ar().date()
                 p = database.PedidoReparto(**data)
                 s.add(p)
+            # Turno global compartido: el último turno elegido queda de default
+            # para TODOS los operadores (sticky en /atención).
+            _turno_sel = (body.get('turno') or '').strip() or None
+            if _turno_sel:
+                cfg = s.get(database.Config, 1)
+                if cfg:
+                    cfg.turno_actual = _turno_sel
             # Notas del cliente (textarea de la ficha): se persisten al cerrar
             # TX en vez de tener un botón aparte (Diego 2026-06-15: el botón
             # 'Guardar notas' antiguo refrescaba toda la ficha y borraba el

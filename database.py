@@ -54,6 +54,9 @@ class Config(Base):
     # Keep-alive: evitar que Render duerma el servicio vía self-ping periódico
     keep_alive_enabled = Column(Boolean, nullable=False, default=False)
     keep_alive_interval_min = Column(Integer, nullable=False, default=10)
+    # Turno actual del reparto (global compartido): default sticky para los
+    # pedidos nuevos. El operador lo cambia en /atención y queda para todos.
+    turno_actual = Column(String(10), nullable=True)
     # Backups automáticos (ejecutados por DockerPanel host)
     backup_ruta_remota        = Column(String(500), nullable=True)   # UNC tipo \\server-1\backups\farmacia
     backup_hora               = Column(Integer, nullable=False, default=17, server_default='17')  # 0-23
@@ -4009,6 +4012,7 @@ def _pg_add_columns(conn):
     # el INSERT explota con NOT NULL porque no les ponemos valor).
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_interval_min INTEGER NOT NULL DEFAULT 10"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS turno_actual VARCHAR(10)"))
     # Backups automáticos
     for ddl in [
         "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_ruta_remota VARCHAR(500)",
@@ -4122,6 +4126,7 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_baja_tol DECIMAL(6,1) NOT NULL DEFAULT 0.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_interval_min INTEGER NOT NULL DEFAULT 10"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS turno_actual VARCHAR(10)"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS dockerpanel_ruta VARCHAR(500)"))
 
     # Cleanup legacy: descuento_campanas, descuento_modulos, descuento_modulo_items.
