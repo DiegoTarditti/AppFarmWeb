@@ -139,8 +139,11 @@ def _persistir_dm_telegram(telegram_user_id, push_name, body):
                .filter(database.Cadete.telegram_user_id == telegram_user_id)
                .first())
         if not cad:
-            log.info('DM Telegram ignorado (user_id %s no es cadete): %s',
-                     telegram_user_id, body[:50])
+            log.warning(
+                '[telegram DM] descartado: user_id=%s name=%r no está vinculado '
+                'a ningún Cadete. Para habilitar el chat, cargá ese user_id en '
+                '/cadetes (columna TG ID). Mensaje: %s',
+                telegram_user_id, push_name, body[:50])
             return None
         canal_user_id = str(telegram_user_id)
         conv = (s.query(database.BotConversacion)
@@ -208,7 +211,8 @@ def _cadete_dict(c):
     return {'id': c.id, 'nombre': c.nombre, 'telefono': c.telefono or '',
             'tarifa_dia': float(c.tarifa_dia) if c.tarifa_dia is not None else None,
             'activo': c.activo, 'token': c.token or '',
-            'wa_id': c.wa_id or ''}
+            'wa_id': c.wa_id or '',
+            'telegram_user_id': c.telegram_user_id}
 
 
 def _mapa_cadetes(s):
@@ -395,6 +399,15 @@ def init_app(app):
                     c.wa_id = normalizar_wa_id(c.telefono)
             if 'wa_id' in b:
                 c.wa_id = (b.get('wa_id') or '').strip() or None
+            if 'telegram_user_id' in b:
+                raw_tg = b.get('telegram_user_id')
+                if raw_tg in (None, '', '—'):
+                    c.telegram_user_id = None
+                else:
+                    try:
+                        c.telegram_user_id = int(str(raw_tg).strip())
+                    except (TypeError, ValueError):
+                        return jsonify({'ok': False, 'error': 'telegram_user_id debe ser número'}), 400
             if 'tarifa_dia' in b:
                 try:
                     c.tarifa_dia = float(b['tarifa_dia']) if b.get('tarifa_dia') not in (None, '') else None
