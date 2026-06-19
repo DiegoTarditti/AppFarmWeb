@@ -847,6 +847,7 @@ def buscar_productos_detalle(query, limite=12):
                COALESCE(pa.precio_pvp, pr.precio_pvp)   AS precio_pvp,
                nd.descripcion               AS droga,
                atr.concentracion_mg, atr.concentracion_unidad, atr.forma_farma, atr.cantidad_envase,
+               COALESCE(pr.fraccionado, atr.es_fraccionable, FALSE) AS fraccionable,
                op.id_tipo_venta_control     AS tvc,
                op.observer_id
           FROM obs_productos op
@@ -878,6 +879,7 @@ def buscar_productos_detalle(query, limite=12):
         stock = int(r.stock or 0)
         nivel = 'none' if stock <= 0 else ('low' if stock <= 5 else 'ok')
         tvc = (r.tvc or '').strip()
+        cant_env = int(r.cantidad_envase) if r.cantidad_envase else None
         out.append({
             'nombre': r.descripcion, 'droga': r.droga or '',
             'presentacion': _fmt_presentacion(r),
@@ -885,6 +887,8 @@ def buscar_productos_detalle(query, limite=12):
             'stock': stock, 'nivel': nivel,
             'receta': bool(tvc and tvc != 'L'),
             'observer_id': r.observer_id,
+            'fraccionable': bool(r.fraccionable),
+            'cantidad_envase': cant_env,
         })
     return out
 
