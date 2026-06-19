@@ -60,6 +60,26 @@ def _get(method, **params):
     return {'ok': True, 'result': data.get('result')}
 
 
+_BOT_USERNAME = None
+
+
+def bot_username():
+    """@username del bot (cacheado vía getMe). Para deep links t.me/<u>?start=…
+    que permiten DM al cadete que todavía no inició el chat con el bot."""
+    global _BOT_USERNAME
+    if _BOT_USERNAME is None:
+        r = _get('getMe')
+        _BOT_USERNAME = ((r.get('result') or {}).get('username') or '') if r.get('ok') else ''
+    return _BOT_USERNAME
+
+
+def deep_link_pedido(pedido_id):
+    """Link que arranca el bot en privado y entrega el detalle del pedido.
+    Vacío si no se pudo resolver el username."""
+    u = bot_username()
+    return f'https://t.me/{u}?start=ped_{pedido_id}' if u else ''
+
+
 # ── Mensajes al grupo + botón inline TOMAR ──────────────────────────────────
 
 def publicar_pedido(texto, pedido_id, chat_id=None):
