@@ -381,6 +381,16 @@
         <span style="cursor:pointer; font-size:14px;" onclick="toggleBooleano({{ p.id }}, 'pagado', {{ 'true' if p.pagado else 'false' }})">
           {% if p.pagado %}💲{% else %}<span style="color:var(--muted2);">—</span>{% endif %}
         </span>
+        {# Etiqueta libre con color (marcado manual): texto ≤10 + color. #}
+        <div style="display:flex; align-items:center; gap:2px; justify-content:center; margin-top:3px;">
+          <input type="text" class="etq-txt" maxlength="10" value="{{ p.etiqueta or '' }}" placeholder="etiq"
+                 title="Etiqueta (máx 10)" onchange="guardarEtiqueta(this)"
+                 style="width:54px; font-size:10px; padding:1px 3px; border:1px solid var(--row-bd); border-radius:4px;
+                        background:{{ p.etiqueta_color if p.etiqueta else 'transparent' }}; color:{{ '#fff' if p.etiqueta else 'var(--txt)' }};">
+          <input type="color" class="etq-col" value="{{ p.etiqueta_color or '#EF9F27' }}"
+                 title="Color de la etiqueta" onchange="guardarEtiqueta(this)"
+                 style="width:18px; height:18px; padding:0; border:none; background:none; cursor:pointer;">
+        </div>
       </td>
       <td style="text-align:center;">
         {% if p.tomado_por_wsap %}
@@ -570,6 +580,20 @@ function sumarCol(chk) {
   if (out) out.textContent = total
     ? '$ ' + total.toLocaleString('es-AR', {maximumFractionDigits: 0})
     : '';
+}
+
+// Etiqueta libre con color: guarda texto + color y pinta el campo en vivo.
+async function guardarEtiqueta(el) {
+  const td = el.closest('td');
+  const pid = el.closest('tr').dataset.pid;
+  const txt = td.querySelector('.etq-txt');
+  const col = td.querySelector('.etq-col');
+  const valor = txt.value.trim();
+  const color = col.value;
+  txt.style.background = valor ? color : 'transparent';
+  txt.style.color = valor ? '#fff' : 'var(--txt)';
+  await actualizarCampo(pid, 'etiqueta', valor || null);
+  await actualizarCampo(pid, 'etiqueta_color', valor ? color : null);
 }
 
 document.querySelectorAll('.celda-editable').forEach(td => {

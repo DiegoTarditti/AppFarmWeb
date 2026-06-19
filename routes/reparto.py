@@ -1693,7 +1693,8 @@ def init_app(app):
         valor = b.get('valor')
         EDITABLES = {'tomo', 'importe', 'forma_pago', 'vuelto', 'producto',
                      'observacion', 'pagado', 'requiere_receta',
-                     'entregado_por', 'cadete_id', 'recibio', 'estado', 'turno'}
+                     'entregado_por', 'cadete_id', 'recibio', 'estado', 'turno',
+                     'etiqueta', 'etiqueta_color'}
         if campo not in EDITABLES:
             return jsonify({'ok': False, 'error': f'campo no editable: {campo}'}), 400
         with database.get_db() as s:
