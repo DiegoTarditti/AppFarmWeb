@@ -838,12 +838,19 @@ def buscar_productos_detalle(query, limite=12):
     params['lim'] = limite
     params['fid'] = id_farmacia
     # Solo obs_* + LEFT JOIN simple con productos master para el precio.
-    # Diego 2026-06-19: sin EAN, sin producto_atributos — la descripción
-    # de Observer ya trae presentación/dosis en el nombre.
+    # Si el master no tiene precio, fallback a product_analytics vía EAN
+    # del master (subquery scalar, NO multiplica filas). Diego 2026-06-19.
     sql = database.text(f"""
         SELECT op.descripcion,
                COALESCE(os.stock_actual, 0)  AS stock,
-               pr.precio_pvp                 AS precio_pvp,
+               COALESCE(
+                 pr.precio_pvp,
+                 (SELECT pa.precio_pvp
+                    FROM product_analytics pa
+                   WHERE pa.codigo_barra = pr.codigo_barra
+                     AND pa.precio_pvp > 0
+                   LIMIT 1)
+               )                            AS precio_pvp,
                nd.descripcion                AS droga,
                op.cantidad_envase            AS cantidad_envase,
                op.es_fraccionable            AS fraccionable,
