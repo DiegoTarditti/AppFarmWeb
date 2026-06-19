@@ -734,16 +734,18 @@ async function cargarEquipo() {
     document.getElementById('me-label').textContent = p.l;
     document.getElementById('me-btn').style.opacity = yo.estado === 'ausente' ? '0.55' : '1';
   }
-  document.getElementById('equipo').innerHTML = ops.filter(o => o.id !== YO).map(o => {
-    const p = PRES[o.estado] || PRES.online;
-    const col = o.conectado ? p.c : 'var(--away)';
-    const op = o.conectado ? '1' : '0.4';
-    const est = o.conectado ? p.l : 'desconectado';
-    return `<div title="${esc(o.nombre)} — ${est}" style="position:relative; width:26px; height:26px; opacity:${op};">
-        <div style="width:26px; height:26px; border-radius:50%; background:var(--cardic); color:var(--cardic-tx); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600;">${esc(o.iniciales)}</div>
-        <span style="position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; background:${col}; border:2px solid var(--topbar);"></span>
-      </div>`;
-  }).join('');
+  // Solo conectados (panel abierto en los últimos 70s). Los desconectados
+  // contaminaban el encabezado con una fila larga de iniciales en gris que
+  // no aportaba info útil (Diego 2026-06-19).
+  document.getElementById('equipo').innerHTML = ops
+    .filter(o => o.id !== YO && o.conectado)
+    .map(o => {
+      const p = PRES[o.estado] || PRES.online;
+      return `<div title="${esc(o.nombre)} — ${p.l}" style="position:relative; width:26px; height:26px;">
+          <div style="width:26px; height:26px; border-radius:50%; background:var(--cardic); color:var(--cardic-tx); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600;">${esc(o.iniciales)}</div>
+          <span style="position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; background:${p.c}; border:2px solid var(--topbar);"></span>
+        </div>`;
+    }).join('');
 }
 
 function heartbeat() { fetch('/atencion/heartbeat', {method: 'POST'}).catch(() => {}); }

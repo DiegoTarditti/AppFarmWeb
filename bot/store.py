@@ -179,11 +179,12 @@ def listar_operadores():
     """Usuarios que pueden atender, con su presencia (estado + conectado).
     Conectado = mandó heartbeat en los últimos 70 s (panel abierto).
 
-    Filtra los 'operador' por tener el perfil 'chat_clientes' (el que da
-    acceso a /atencion). Diego 2026-06-19: la lista se había vuelto
-    interminable porque incluía todos los operadores del sistema (rendición,
-    auditor, etc.) que nunca atienden el chat. admin/farmacia/dev pasan
-    siempre (superusers).
+    Filtra a TODOS los usuarios por tener 'chat_clientes' en perfiles_json
+    (el perfil que da acceso a /atencion). admin/farmacia/dev también
+    necesitan tenerlo si quieren aparecer en el equipo — Diego 2026-06-19:
+    sino la lista quedaba contaminada con superusers que nunca atienden.
+    Para incluir un admin en el equipo, agregá 'chat_clientes' a sus
+    perfiles desde /usuarios.
     """
     import json as _json
     ahora = database.now_ar()
@@ -194,13 +195,12 @@ def listar_operadores():
               .order_by(database.Usuario.username).all())
         out = []
         for u in us:
-            if u.rol == 'operador':
-                try:
-                    perfiles = _json.loads(u.perfiles_json or '[]')
-                except (ValueError, TypeError):
-                    perfiles = []
-                if 'chat_clientes' not in perfiles:
-                    continue
+            try:
+                perfiles = _json.loads(u.perfiles_json or '[]')
+            except (ValueError, TypeError):
+                perfiles = []
+            if 'chat_clientes' not in perfiles:
+                continue
             out.append({'id': u.id, 'nombre': u.nombre_completo or u.username, 'rol': u.rol,
                         'username': u.username,
                         'iniciales': _iniciales(u.nombre_completo or u.username),
