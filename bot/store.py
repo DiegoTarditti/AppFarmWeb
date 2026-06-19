@@ -809,18 +809,14 @@ def get_domicilio(dom_id):
 # ── Buscador de productos (panel de atención) ────────────────────────────────
 
 def _fmt_presentacion(r):
-    partes = []
-    if r.concentracion_mg:
-        c = r.concentracion_mg
-        c = int(c) if c == int(c) else c
-        partes.append(f"{c} {r.concentracion_unidad or 'mg'}")
+    # La descripción de Observer ya trae forma/dosis en el nombre ('COM x 60'),
+    # así que la "presentación" derivada se reduce a 'N u.' si hay
+    # cantidad_envase. Sin esto queda vacía y se omite del subtítulo.
     if r.cantidad_envase:
         n = r.cantidad_envase
         n = int(n) if n == int(n) else n
-        partes.append(f"{n} {r.forma_farma or 'u.'}")
-    elif r.forma_farma:
-        partes.append(r.forma_farma)
-    return ' · '.join(partes)
+        return f'{n} u.'
+    return ''
 
 
 def buscar_productos_detalle(query, limite=12):
@@ -841,27 +837,17 @@ def buscar_productos_detalle(query, limite=12):
     params = {f'p{i}': f'%{w}%' for i, w in enumerate(palabras)}
     params['lim'] = limite
     params['fid'] = id_farmacia
-    # OJO: NO joineamos obs_codigos_barras directamente porque un producto
-    # puede tener N EANs alternativos → cada fila se multiplica por N. Para
-    # el precio usamos una subquery scalar que toma el precio_pvp más alto
-    # entre todos los EANs (NULLS LAST → prefiere el que TIENE precio).
+    # Solo obs_* + LEFT JOIN simple con productos master para el precio.
+    # Diego 2026-06-19: sin EAN, sin producto_atributos — la descripción
+    # de Observer ya trae presentación/dosis en el nombre.
     sql = database.text(f"""
         SELECT op.descripcion,
-               COALESCE(os.stock_actual, 0)             AS stock,
-               COALESCE(
-                 (SELECT pa.precio_pvp
-                    FROM obs_codigos_barras cb
-                    JOIN product_analytics pa ON pa.codigo_barra = cb.codigo_barras
-                   WHERE cb.producto_observer = op.observer_id
-                     AND cb.fecha_baja IS NULL
-                   ORDER BY pa.precio_pvp DESC NULLS LAST
-                   LIMIT 1),
-                 pr.precio_pvp
-               )                            AS precio_pvp,
-               nd.descripcion               AS droga,
-               atr.concentracion_mg, atr.concentracion_unidad, atr.forma_farma, atr.cantidad_envase,
-               COALESCE(pr.fraccionado, atr.es_fraccionable, FALSE) AS fraccionable,
-               op.id_tipo_venta_control     AS tvc,
+               COALESCE(os.stock_actual, 0)  AS stock,
+               pr.precio_pvp                 AS precio_pvp,
+               nd.descripcion                AS droga,
+               op.cantidad_envase            AS cantidad_envase,
+               op.es_fraccionable            AS fraccionable,
+               op.id_tipo_venta_control      AS tvc,
                op.observer_id
           FROM obs_productos op
           JOIN obs_stock os
@@ -871,8 +857,6 @@ def buscar_productos_detalle(query, limite=12):
             ON nd.observer_id = op.nombre_droga_observer
           LEFT JOIN productos pr
             ON pr.observer_id = op.observer_id
-          LEFT JOIN producto_atributos atr
-            ON atr.producto_id = pr.id
          WHERE op.fecha_baja IS NULL
            AND ({cond_prod} OR {cond_droga})
          ORDER BY (os.stock_actual > 0) DESC, os.stock_actual DESC, op.descripcion
