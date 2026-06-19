@@ -762,7 +762,7 @@ def init_app(app):
             if uid_dm and texto_dm.startswith('/start ped_'):
                 raw = texto_dm[len('/start ped_'):].strip()
                 if raw.isdigit():
-                    return _telegram_entregar_detalle_dm(int(raw), uid_dm, nom_dm, tg)
+                    return _telegram_entregar_detalle_dm(int(raw), uid_dm, nom_dm, telegram_grupo)
             log.info('telegram DM de %s: %s', nom_dm, texto_dm[:80])
             return jsonify({'ok': True, 'tipo': 'mensaje_dm'})
 
