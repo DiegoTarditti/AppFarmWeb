@@ -129,6 +129,37 @@ def _persistir_mensaje_reparto(*, es_grupo, chat_id, wa_id_emisor, push_name, bo
         s.commit()
         return conv.id
 
+def _persistir_dm_telegram(telegram_user_id, push_name, body):
+    """Persiste un DM recibido por Telegram al bot del grupo de cadetes.
+    Solo guarda si el remitente está vinculado a un Cadete (privacidad).
+    Devuelve conv.id o None.
+    """
+    with database.get_db() as s:
+        cad = (s.query(database.Cadete)
+               .filter(database.Cadete.telegram_user_id == telegram_user_id)
+               .first())
+        if not cad:
+            log.info('DM Telegram ignorado (user_id %s no es cadete): %s',
+                     telegram_user_id, body[:50])
+            return None
+        canal_user_id = str(telegram_user_id)
+        conv = (s.query(database.BotConversacion)
+                .filter(database.BotConversacion.cadete_id == cad.id)
+                .order_by(database.BotConversacion.ultimo_en.desc())
+                .first())
+        if not conv:
+            conv = database.BotConversacion(
+                canal='telegram_cadete', canal_user_id=canal_user_id,
+                nombre_cliente=cad.nombre or push_name or 'Cadete',
+                estado_atencion='humano', nodo='reparto',
+                cadete_id=cad.id)
+            s.add(conv); s.flush()
+        s.add(database.BotMensaje(conversacion_id=conv.id, origen='cliente', texto=body))
+        conv.ultimo_en = database.now_ar()
+        s.commit()
+        return conv.id
+
+
 _ROLES_OK = ('admin', 'dev', 'farmacia')
 # Perfiles que tocan rutas de /reparto/* (incluye las APIs internas que usa
 # /pedido/nuevo y la planilla del día).
@@ -765,6 +796,14 @@ def init_app(app):
                 if raw.isdigit():
                     return _telegram_entregar_detalle_dm(int(raw), uid_dm, nom_dm, telegram_grupo)
             log.info('telegram DM de %s: %s', nom_dm, texto_dm[:80])
+            # Persistir el DM SI viene de un cadete reconocido (privacidad: no
+            # guardamos DMs de gente random que escriba al bot). Lo dejamos
+            # disponible en el panel /reparto/planilla → DMs cadetes.
+            if uid_dm and texto_dm:
+                try:
+                    _persistir_dm_telegram(uid_dm, nom_dm, texto_dm)
+                except Exception as e:  # noqa: BLE001
+                    log.warning('persistir DM telegram falló: %s', e)
             return jsonify({'ok': True, 'tipo': 'mensaje_dm'})
 
         if tipo == 'mensaje_grupo':
@@ -1088,8 +1127,11 @@ def init_app(app):
         except (TypeError, ValueError):
             desde_id = 0
         with database.get_db() as s:
+            # No filtramos por canal: el cadete puede tener conv legacy
+            # whatsapp (WAHA) o nueva telegram_cadete. Identificamos por
+            # cadete_id que es lo único estable.
             conv = (s.query(database.BotConversacion)
-                    .filter_by(cadete_id=cadete_id, canal='whatsapp')
+                    .filter_by(cadete_id=cadete_id)
                     .order_by(database.BotConversacion.ultimo_en.desc())
                     .first())
             if not conv:
@@ -1158,13 +1200,16 @@ def init_app(app):
             r = telegram_grupo.enviar_dm(cadete.telegram_user_id, texto)
             if not r.get('ok'):
                 return jsonify({'ok': False, 'error': r.get('error') or 'fallo Telegram'}), 502
+            # Tomamos cualquier conv del cadete (sin filtrar por canal); si no
+            # existe creamos una nueva como 'telegram_cadete' que es el canal
+            # actual (WAHA quedó deprecado para cadetes el 2026-06-18).
             conv = (s.query(database.BotConversacion)
-                    .filter_by(cadete_id=cadete_id, canal='whatsapp')
+                    .filter_by(cadete_id=cadete_id)
                     .order_by(database.BotConversacion.ultimo_en.desc())
                     .first())
             if not conv:
                 conv = database.BotConversacion(
-                    canal='whatsapp', canal_user_id=str(cadete.telegram_user_id),
+                    canal='telegram_cadete', canal_user_id=str(cadete.telegram_user_id),
                     nombre_cliente=cadete.nombre,
                     estado_atencion='humano', nodo='reparto',
                     cadete_id=cadete.id)
