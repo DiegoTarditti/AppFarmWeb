@@ -388,6 +388,7 @@ def init_app(app):
                 'paga_con': float(p.paga_con) if p.paga_con is not None else None,
                 'vuelto': p.vuelto,
                 'envio_costo': float(p.envio_costo) if p.envio_costo is not None else None,
+                'envio_sin_cargo': bool(p.envio_sin_cargo),
                 'link_mp': p.link_mp,
                 'dato_pago_mp': p.dato_pago_mp,
                 'tarjeta_ult4': p.tarjeta_ult4,
@@ -584,15 +585,21 @@ def init_app(app):
                 destino=body.get('destino') or None,
                 envio_costo=envio,
                 # ── Workflow ──
-                # Si el operador ya cobró (link MP confirmado, transfer con comprobante,
-                # tarjeta presencial), saltamos 'en_caja' y vamos directo al estado
-                # destino (mismo cálculo que usa /caja/pedido/<id>/cobrar).
-                pagado=bool(body.get('pagado') or False),
-                # SIEMPRE pasa por caja: aunque el operador ya haya cobrado, el
-                # cajero tiene que emitir el ticket fiscal en ObServer y despachar.
-                # `pagado` solo registra que la plata ya entró (badge "cobrado" +
-                # "ticket fiscal pendiente" en la bandeja de caja).
-                estado='en_caja',
+                # `pagado` viene del frontend: True cuando la plata YA entró (link
+                # MP confirmado, transfer con comprobante, tarjeta presencial). En
+                # efectivo queda False hasta que el cadete vuelva con la plata.
+                # `sin_cargo` se autocobra (no hay nada que cobrar).
+                pagado=(bool(body.get('pagado') or False)
+                        or body.get('forma_pago') == 'sin_cargo'),
+                # Saltamos /caja: el cierre de TX deja el pedido directo en su
+                # estado destino (mismo cálculo que usaba /caja/pedido/<id>/cobrar).
+                # Diego 2026-06-19: /caja queda subutilizada, el ticket fiscal en
+                # ObServer lo emite el operador desde /atencion (manual).
+                estado=caja.proximo_estado_cobrado(
+                    (body.get('destino') or '').strip() or None,
+                    (body.get('stock') or '').strip() or None,
+                ),
+                envio_sin_cargo=bool(body.get('envio_sin_cargo') or False),
                 # canal: si vino en el body lo usamos (modo manual permite elegir
                 # mostrador/teléfono/otros); default 'atencion' para mantener
                 # backward compat con cierres anteriores.

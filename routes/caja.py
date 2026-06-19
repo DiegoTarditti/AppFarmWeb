@@ -2,7 +2,13 @@
 los cobra (registrando el medio de pago) y marca entregado.
 
 NO procesa pagos online (Meta lo prohíbe para farmacia): el cobro es presencial,
-acá solo se registra. Rol 'cajero' acotado a /caja/* (ver auth_routes).
+acá solo se registra.
+
+Estado 2026-06-19: el flujo principal de pedidos saltea esta pantalla (al
+cerrar TX en /atencion el pedido va directo a /reparto/planilla con el estado
+final ya resuelto). La pantalla sigue existiendo para los TicketCaja sueltos
+legacy y para consultas, pero la bandeja 'Por cobrar' queda vacía. El rol
+'cajero' se deprecó.
 """
 import csv
 import io

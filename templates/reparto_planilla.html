@@ -285,15 +285,25 @@
       <td class="celda-editable" data-campo="forma_pago" data-tipo="select-forma_pago">
         <span class="celda-valor" style="color:var(--warn); font-weight:600;">{{ p.forma_pago or '—' }}</span>
       </td>
-      {# Operación = Importe − Envío (lo del producto, sin el envío). Derivada, no editable. #}
-      {% set _op = (p.importe or 0) - (p.envio_costo or 0) %}
+      {# Operación = Importe − Envío (lo del producto, sin el envío). Si el
+         envío va sin cargo el operador no lo sumó al importe → operación = importe. #}
+      {% set _op = (p.importe or 0) if p.envio_sin_cargo else ((p.importe or 0) - (p.envio_costo or 0)) %}
       <td>
         <input type="checkbox" class="chk-sum" data-col="operacion" data-val="{{ _op }}" onchange="sumarCol(this)">
         <span>{{ '$ {:,.0f}'.format(_op) if (p.importe is not none or p.envio_costo is not none) else '—' }}</span>
       </td>
       <td class="celda-editable" data-campo="envio_costo" data-tipo="text">
-        <input type="checkbox" class="chk-sum" data-col="envio" data-val="{{ p.envio_costo or 0 }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
-        <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
+        {# Sin cargo: la suma del envío cobrable es 0 (la cotización queda como info). #}
+        <input type="checkbox" class="chk-sum" data-col="envio" data-val="{{ 0 if p.envio_sin_cargo else (p.envio_costo or 0) }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
+        {% if p.envio_sin_cargo %}
+          <span class="celda-valor" style="color:var(--accent); font-weight:600;" title="Cotizado: {{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}">SIN CARGO</span>
+        {% else %}
+          <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
+        {% endif %}
+        {# Toggle inline: click directo togglea sin_cargo sin abrir el editor de monto. #}
+        <button type="button" class="btn-toggle-sc" onclick="toggleEnvioSinCargo(event, {{ p.id }}, {{ 'true' if p.envio_sin_cargo else 'false' }})"
+                title="{{ 'Cobrar envío (sacar sin cargo)' if p.envio_sin_cargo else 'Marcar envío sin cargo' }}"
+                style="margin-left:4px; font-size:9px; padding:1px 4px; border-radius:4px; border:1px solid var(--border); background:{{ 'var(--accent)' if p.envio_sin_cargo else 'transparent' }}; color:{{ '#06241a' if p.envio_sin_cargo else 'var(--muted)' }}; cursor:pointer;">SC</button>
       </td>
       <td class="celda-editable" data-campo="importe" data-tipo="text">
         <input type="checkbox" class="chk-sum" data-col="importe" data-val="{{ p.importe or 0 }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
@@ -565,7 +575,7 @@ const CADETES = {{ cadetes | tojson }};
 const CADETE_OPTS = '<option value="">—</option>' + Object.entries(CADETES).map(([id,n])=>`<option value="${id}">${esc(n)}</option>`).join('');
 const USUARIOS = {{ usuarios | tojson }};
 const USUARIO_OPTS = '<option value="">—</option>' + USUARIOS.map(u=>`<option value="${esc(u.nombre)}">${esc(u.nombre)}</option>`).join('');
-const FORMA_PAGO_OPTS = '<option value="">—</option>' + ['efectivo','transfer','link','sc','debito','credito'].map(v=>`<option value="${v}">${v}</option>`).join('');
+const FORMA_PAGO_OPTS = '<option value="">—</option>' + ['efectivo','transfer','link','sc','debito','credito','sin_cargo'].map(v=>`<option value="${v}">${v}</option>`).join('');
 
 function esc(s) { return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
@@ -575,6 +585,18 @@ async function actualizarCampo(pid, campo, valor) {
     body: JSON.stringify({campo, valor})
   });
   return r.json();
+}
+
+// Toggle inline del flag 'envio_sin_cargo' desde la planilla. El botón vive en
+// la celda Envío y solo togglea (no abre el editor de monto). Recargamos la
+// página para resincronizar la celda Operación y los chequeos de suma.
+async function toggleEnvioSinCargo(ev, pid, actual) {
+  ev.stopPropagation();
+  ev.preventDefault();
+  const nuevo = !actual;
+  const d = await actualizarCampo(pid, 'envio_sin_cargo', nuevo);
+  if (!d.ok) { alert('Error: ' + (d.error || 'no se pudo guardar')); return; }
+  location.reload();
 }
 
 // Arqueo de caja: suma los valores marcados de una columna DENTRO de su tabla
@@ -801,14 +823,20 @@ async function chatRefrescar(){
       if (!d.dms.length) {
         lst.innerHTML = '<div class="dm-empty">sin chats todavía.</div>';
       } else {
-        lst.innerHTML = d.dms.map(it => `
-          <div class="dm-item" onclick="chatAbrirDm(${it.cadete_id}, '${esc(it.nombre)}')">
-            <div>
-              <div class="name">${esc(it.nombre)}</div>
-              <div class="last">${esc(it.ultimo || '')}</div>
+        lst.innerHTML = d.dms.map(it => {
+          const badge = it.sin_vincular
+            ? `<span class="badge" style="background:#a78bfa; color:#1e1238; font-size:8px; padding:1px 5px; border-radius:6px;">sin vincular</span>` : '';
+          const tgId = it.sin_vincular && it.tg_user_id
+            ? `<span class="muted2" style="font-size:9px;">tg:${it.tg_user_id}</span>` : '';
+          return `
+          <div class="dm-item" onclick="chatAbrirDm(${it.conv_id}, '${esc(it.nombre)}', ${it.sin_vincular ? 'true' : 'false'}, '${esc(String(it.tg_user_id || ''))}')">
+            <div style="flex:1; min-width:0;">
+              <div class="name">${esc(it.nombre)} ${badge}</div>
+              <div class="last">${esc(it.ultimo || '')} ${tgId}</div>
             </div>
             <div class="time">${chatHora(it.ultimo_en)}</div>
-          </div>`).join('');
+          </div>`;
+        }).join('');
       }
     }
   } catch (e) { /* polling silencioso */ }
@@ -832,7 +860,7 @@ async function chatRefrescar(){
     const desde = chatState.dmUltIds[cid] || 0;
     if (desde){
       try {
-        const r = await fetch(`/api/reparto/chat/cadete/${cid}/mensajes?desde_id=${desde}`);
+        const r = await fetch(`/api/reparto/chat/dm/${cid}/mensajes?desde_id=${desde}`);
         const d = await r.json();
         if (d.ok && d.mensajes && d.mensajes.length){
           const cont = document.getElementById('chatDmMsgs');
@@ -845,25 +873,57 @@ async function chatRefrescar(){
   }
 }
 
-async function chatAbrirDm(cadete_id, nombre){
-  chatState.dmActivo = cadete_id;
+async function chatAbrirDm(conv_id, nombre, sinVincular, tgUserId){
+  chatState.dmActivo = conv_id;
+  chatState.dmSinVincular = !!sinVincular;
+  chatState.dmTgUserId = tgUserId || '';
   document.getElementById('chatDmList').style.display = 'none';
   const det = document.getElementById('chatDmDetail');
   det.style.display = 'flex';
   const back = det.querySelector('.dm-detail-back');
-  back.textContent = '◀ volver — ' + nombre;
+  back.textContent = '◀ volver — ' + nombre + (sinVincular ? '  ⚠ sin vincular' : '');
+  // Bandeja "dar de alta": botón rápido si la conv es huérfana.
+  let banner = document.getElementById('chatDmVincularBanner');
+  if (sinVincular){
+    if (!banner){
+      banner = document.createElement('div');
+      banner.id = 'chatDmVincularBanner';
+      banner.style.cssText = 'background:#a78bfa22; border:1px solid #a78bfa; padding:8px 10px; border-radius:8px; margin:6px 0; display:flex; gap:8px; align-items:center; font-size:11px;';
+      document.getElementById('chatDmMsgs').parentNode.insertBefore(banner, document.getElementById('chatDmMsgs'));
+    }
+    banner.innerHTML = `
+      <span>Conv sin cadete vinculado. tg_user_id: <b>${esc(String(tgUserId))}</b></span>
+      <button class="hbtn hbtn-ok" onclick="vincularConvACadete(${conv_id})">✅ Dar de alta como cadete</button>`;
+  } else if (banner){
+    banner.remove();
+  }
   const cont = document.getElementById('chatDmMsgs');
   cont.innerHTML = '<div class="dm-empty">cargando…</div>';
   try {
-    const r = await fetch(`/api/reparto/chat/cadete/${cadete_id}/mensajes`);
+    const r = await fetch(`/api/reparto/chat/dm/${conv_id}/mensajes`);
     const d = await r.json();
     if (!d.ok) { cont.innerHTML = '<div class="dm-empty">error</div>'; return; }
     if (!d.mensajes.length) { cont.innerHTML = '<div class="dm-empty">sin mensajes.</div>'; return; }
     cont.innerHTML = d.mensajes.map(chatRenderMsg).join('');
-    chatState.dmUltIds[cadete_id] = d.mensajes[d.mensajes.length - 1].id;
+    chatState.dmUltIds[conv_id] = d.mensajes[d.mensajes.length - 1].id;
     chatScrollFondo('chatDmMsgs');
     document.getElementById('chatDmInput').focus();
   } catch (e) { cont.innerHTML = '<div class="dm-empty">error</div>'; }
+}
+
+async function vincularConvACadete(conv_id){
+  const nombre = prompt('Nombre del cadete (podés editarlo después en /cadetes):');
+  if (!nombre) return;
+  try {
+    const r = await fetch(`/api/reparto/chat/dm/${conv_id}/vincular-cadete`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({nombre: nombre.trim()})
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo vincular')); return; }
+    alert(`✅ Cadete creado (id ${d.cadete_id}). Andá a /cadetes para completar teléfono / tarifa.`);
+    location.reload();
+  } catch (e) { alert('Error: ' + e.message); }
 }
 
 function chatVolverDMs(){
@@ -879,7 +939,7 @@ async function chatDmEnviar(){
   if (!t) return;
   inp.disabled = true;
   try {
-    const r = await fetch(`/api/reparto/chat/cadete/${chatState.dmActivo}/responder`, {
+    const r = await fetch(`/api/reparto/chat/dm/${chatState.dmActivo}/responder`, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({texto: t})
     });

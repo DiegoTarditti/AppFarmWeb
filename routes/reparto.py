@@ -129,6 +129,71 @@ def _persistir_mensaje_reparto(*, es_grupo, chat_id, wa_id_emisor, push_name, bo
         s.commit()
         return conv.id
 
+def _persistir_dm_telegram(telegram_user_id, push_name, body):
+    """Persiste un DM recibido por Telegram al bot del grupo de cadetes.
+    Si el remitente está vinculado a un Cadete, la conv queda con cadete_id.
+    Si no, queda como conv 'huérfana' (cadete_id=NULL) para que el operador
+    pueda verla en el panel y decidir si vincularla o ignorarla.
+    Devuelve conv.id.
+    """
+    with database.get_db() as s:
+        cad = (s.query(database.Cadete)
+               .filter(database.Cadete.telegram_user_id == telegram_user_id)
+               .first())
+        # Fallback: si no hay match por tg_user_id, probamos por nombre. Si
+        # encontramos un cadete sin tg_user_id cuyo nombre contiene al
+        # push_name (mismo criterio que el TOMAR), aprovechamos el DM para
+        # autovincular. Así no hace falta tomar un pedido para empezar a
+        # chatear.
+        if not cad and push_name:
+            from sqlalchemy import func as _func
+            nombre_norm = ' '.join(push_name.lower().split())
+            if nombre_norm:
+                cad = (s.query(database.Cadete)
+                       .filter(_func.lower(database.Cadete.nombre)
+                               .like(f'%{nombre_norm}%'),
+                               database.Cadete.telegram_user_id.is_(None))
+                       .first())
+                if cad:
+                    cad.telegram_user_id = telegram_user_id
+        # Get-or-create conv. Identificamos por canal_user_id (= tg user_id)
+        # para que mensajes consecutivos del mismo user vayan al mismo lugar
+        # esté o no vinculado a Cadete.
+        canal_user_id = str(telegram_user_id)
+        conv = None
+        if cad:
+            conv = (s.query(database.BotConversacion)
+                    .filter(database.BotConversacion.cadete_id == cad.id)
+                    .order_by(database.BotConversacion.ultimo_en.desc())
+                    .first())
+        if not conv:
+            conv = (s.query(database.BotConversacion)
+                    .filter_by(canal='telegram_cadete', canal_user_id=canal_user_id)
+                    .first())
+        if not conv:
+            conv = database.BotConversacion(
+                canal='telegram_cadete', canal_user_id=canal_user_id,
+                nombre_cliente=(cad.nombre if cad else push_name) or 'Sin vincular',
+                estado_atencion='humano', nodo='reparto',
+                cadete_id=cad.id if cad else None)
+            s.add(conv); s.flush()
+        elif cad and not conv.cadete_id:
+            # Conv huérfana que recién se autovinculó: pegarla al cadete.
+            conv.cadete_id = cad.id
+            conv.nombre_cliente = cad.nombre or conv.nombre_cliente
+        if not cad:
+            log.warning(
+                '[telegram DM] persistido como huérfano: user_id=%s name=%r. '
+                'Vinculá ese tg_user_id a un Cadete en /cadetes para responderle.',
+                telegram_user_id, push_name)
+        s.add(database.BotMensaje(conversacion_id=conv.id, origen='cliente', texto=body))
+        conv.ultimo_en = database.now_ar()
+        s.commit()
+        log.warning('[telegram DM] guardado conv_id=%s cadete_id=%s body=%r',
+                    conv.id, conv.cadete_id, body[:60])
+        return conv.id
+
+
 _ROLES_OK = ('admin', 'dev', 'farmacia')
 # Perfiles que tocan rutas de /reparto/* (incluye las APIs internas que usa
 # /pedido/nuevo y la planilla del día).
@@ -177,7 +242,8 @@ def _cadete_dict(c):
     return {'id': c.id, 'nombre': c.nombre, 'telefono': c.telefono or '',
             'tarifa_dia': float(c.tarifa_dia) if c.tarifa_dia is not None else None,
             'activo': c.activo, 'token': c.token or '',
-            'wa_id': c.wa_id or ''}
+            'wa_id': c.wa_id or '',
+            'telegram_user_id': c.telegram_user_id}
 
 
 def _mapa_cadetes(s):
@@ -223,6 +289,7 @@ def _pedido_dict(p, cadetes=None, rutas_cadete=None):
         'referencia': p.referencia or '',
         # Control por cadete
         'envio_costo': float(p.envio_costo) if p.envio_costo is not None else None,
+        'envio_sin_cargo': bool(p.envio_sin_cargo),
         'total_paciente': float(p.total_paciente) if p.total_paciente is not None else None,
         'receta_estado': p.receta_estado or '',
         'envio_liquidado': bool(p.envio_liquidado),
@@ -363,6 +430,15 @@ def init_app(app):
                     c.wa_id = normalizar_wa_id(c.telefono)
             if 'wa_id' in b:
                 c.wa_id = (b.get('wa_id') or '').strip() or None
+            if 'telegram_user_id' in b:
+                raw_tg = b.get('telegram_user_id')
+                if raw_tg in (None, '', '—'):
+                    c.telegram_user_id = None
+                else:
+                    try:
+                        c.telegram_user_id = int(str(raw_tg).strip())
+                    except (TypeError, ValueError):
+                        return jsonify({'ok': False, 'error': 'telegram_user_id debe ser número'}), 400
             if 'tarifa_dia' in b:
                 try:
                     c.tarifa_dia = float(b['tarifa_dia']) if b.get('tarifa_dia') not in (None, '') else None
@@ -764,6 +840,14 @@ def init_app(app):
                 if raw.isdigit():
                     return _telegram_entregar_detalle_dm(int(raw), uid_dm, nom_dm, telegram_grupo)
             log.info('telegram DM de %s: %s', nom_dm, texto_dm[:80])
+            # Persistir el DM SI viene de un cadete reconocido (privacidad: no
+            # guardamos DMs de gente random que escriba al bot). Lo dejamos
+            # disponible en el panel /reparto/planilla → DMs cadetes.
+            if uid_dm and texto_dm:
+                try:
+                    _persistir_dm_telegram(uid_dm, nom_dm, texto_dm)
+                except Exception as e:  # noqa: BLE001
+                    log.warning('persistir DM telegram falló: %s', e)
             return jsonify({'ok': True, 'tipo': 'mensaje_dm'})
 
         if tipo == 'mensaje_grupo':
@@ -799,9 +883,15 @@ def init_app(app):
                     alert=False)
                 return jsonify({'ok': True, 'ignored': 'ya_tomado', 'pedido_id': p.id})
 
-            # Auto-magic: buscar Cadete primero por telegram_user_id, después
-            # por nombre. Si encuentra por nombre y no tenía telegram_user_id,
-            # lo guarda ahora.
+            # Auto-magic en 3 pasos:
+            #  1) Buscar Cadete por telegram_user_id (vínculo previo).
+            #  2) Si no, buscar por nombre LIKE (push_name → matching parcial)
+            #     y completar el telegram_user_id si encuentra match único.
+            #  3) Si tampoco, AUTO-CREAR un Cadete con el push_name como
+            #     nombre + tg_user_id. Diego 2026-06-19: tomar un pedido ya
+            #     es señal fuerte de que es cadete; mejor crearlo solo y que
+            #     el operador edite nombre/teléfono/tarifa en /cadetes que
+            #     que el pedido quede sin asignar.
             cad = (s.query(database.Cadete)
                    .filter(database.Cadete.telegram_user_id == user_id).first())
             if not cad:
@@ -814,6 +904,16 @@ def init_app(app):
                            .first())
                     if cad and not cad.telegram_user_id:
                         cad.telegram_user_id = user_id
+            if not cad:
+                cad = database.Cadete(
+                    nombre=user_name[:60] or f'Cadete tg:{user_id}',
+                    telegram_user_id=user_id,
+                    token=uuid.uuid4().hex[:12],
+                    activo=True)
+                s.add(cad); s.flush()
+                log.warning('[telegram TOMAR] auto-alta cadete id=%s nombre=%r '
+                            'tg_user_id=%s (editalo en /cadetes)',
+                            cad.id, cad.nombre, user_id)
 
             # Asignar el pedido. El estado cambia SIEMPRE a 'en_ruta' al tomar
             # (con o sin match de cadete local). Sino el pedido queda en
@@ -1027,11 +1127,14 @@ def init_app(app):
                     'ultimo_en': ult.creado_en.isoformat() if (ult and ult.creado_en) else None,
                     'ultimo_origen': ult.origen if ult else None,
                 }
-            # DMs: conversaciones con cadete_id NO NULL (los autovinculados o
-            # vinculados a mano). Limitamos a últimas 50 para que el polling
-            # no se infle si hay muchos cadetes inactivos.
+            # DMs: conversaciones con cadete_id O del canal telegram_cadete
+            # (incluye huérfanos sin vincular, así el operador los ve y los
+            # puede asignar). Limitamos a últimas 50.
+            from sqlalchemy import or_ as _or
             convs = (s.query(database.BotConversacion)
-                     .filter(database.BotConversacion.cadete_id.isnot(None))
+                     .filter(_or(
+                         database.BotConversacion.cadete_id.isnot(None),
+                         database.BotConversacion.canal == 'telegram_cadete'))
                      .order_by(database.BotConversacion.ultimo_en.desc())
                      .limit(50).all())
             dms = []
@@ -1043,7 +1146,9 @@ def init_app(app):
                 dms.append({
                     'conv_id': c.id,
                     'cadete_id': c.cadete_id,
-                    'nombre': cad.nombre if cad else (c.nombre_cliente or 'Cadete'),
+                    'sin_vincular': c.cadete_id is None,
+                    'tg_user_id': c.canal_user_id if c.canal == 'telegram_cadete' else None,
+                    'nombre': cad.nombre if cad else (c.nombre_cliente or 'Sin vincular'),
                     'ultimo': ult.texto[:80] if ult else '',
                     'ultimo_en': ult.creado_en.isoformat() if (ult and ult.creado_en) else None,
                     'ultimo_origen': ult.origen if ult else None,
@@ -1076,10 +1181,11 @@ def init_app(app):
             return jsonify({'ok': True, 'conv_id': grupo.id,
                             'mensajes': [_msg_to_dict(m) for m in msgs]})
 
-    @app.route('/api/reparto/chat/cadete/<int:cadete_id>/mensajes')
+    @app.route('/api/reparto/chat/dm/<int:conv_id>/mensajes')
     @login_required
-    def api_reparto_chat_cadete_mensajes(cadete_id):
-        """DM con un cadete puntual. Igual semántica que el de grupo."""
+    def api_reparto_chat_dm_mensajes(conv_id):
+        """DM con un cadete o conv huérfana (sin cadete vinculado todavía).
+        Identifica por conv_id directo, así soporta ambos casos."""
         if not _ok():
             return jsonify({'ok': False, 'error': 'sin permiso'}), 403
         try:
@@ -1087,10 +1193,7 @@ def init_app(app):
         except (TypeError, ValueError):
             desde_id = 0
         with database.get_db() as s:
-            conv = (s.query(database.BotConversacion)
-                    .filter_by(cadete_id=cadete_id, canal='whatsapp')
-                    .order_by(database.BotConversacion.ultimo_en.desc())
-                    .first())
+            conv = s.get(database.BotConversacion, conv_id)
             if not conv:
                 return jsonify({'ok': True, 'mensajes': [], 'conv_id': None})
             q = s.query(database.BotMensaje).filter_by(conversacion_id=conv.id)
@@ -1136,11 +1239,13 @@ def init_app(app):
             s.commit()
             return jsonify({'ok': True, 'mensaje': _msg_to_dict(m)})
 
-    @app.route('/api/reparto/chat/cadete/<int:cadete_id>/responder', methods=['POST'])
+    @app.route('/api/reparto/chat/dm/<int:conv_id>/responder', methods=['POST'])
     @login_required
-    def api_reparto_chat_cadete_responder(cadete_id):
-        """El operador escribe a un cadete (DM). Manda por WAHA al wa_id del
-        cadete y persiste."""
+    def api_reparto_chat_dm_responder(conv_id):
+        """El operador escribe a una conv DM. La conv puede tener Cadete
+        vinculado (canal 'telegram_cadete' con cadete_id) o ser huérfana
+        (canal_user_id = tg user_id, cadete_id NULL). En ambos casos
+        sacamos el tg_user_id de donde haya."""
         if not _ok():
             return jsonify({'ok': False, 'error': 'sin permiso'}), 403
         texto = ((request.json or {}).get('texto') or '').strip()
@@ -1148,32 +1253,70 @@ def init_app(app):
             return jsonify({'ok': False, 'error': 'texto vacío'}), 400
         from bot import telegram_grupo
         with database.get_db() as s:
-            cadete = s.get(database.Cadete, cadete_id)
-            if not cadete:
-                return jsonify({'ok': False, 'error': 'cadete no existe'}), 404
-            if not cadete.telegram_user_id:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'ok': False, 'error': 'conv no existe'}), 404
+            # Resolver tg_user_id: prioridad al Cadete vinculado, fallback al
+            # canal_user_id de la conv (caso huérfano).
+            tg_uid = None
+            cadete = s.get(database.Cadete, conv.cadete_id) if conv.cadete_id else None
+            if cadete and cadete.telegram_user_id:
+                tg_uid = cadete.telegram_user_id
+            elif conv.canal == 'telegram_cadete' and conv.canal_user_id:
+                try:
+                    tg_uid = int(conv.canal_user_id)
+                except (TypeError, ValueError):
+                    tg_uid = None
+            if not tg_uid:
                 return jsonify({'ok': False, 'error':
-                                'cadete sin telegram_user_id (todavía no clickeó TOMAR ni se vinculó)'}), 400
-            r = telegram_grupo.enviar_dm(cadete.telegram_user_id, texto)
+                                'no tengo telegram_user_id para esta conv (¿WAHA legacy?)'}), 400
+            r = telegram_grupo.enviar_dm(tg_uid, texto)
             if not r.get('ok'):
                 return jsonify({'ok': False, 'error': r.get('error') or 'fallo Telegram'}), 502
-            conv = (s.query(database.BotConversacion)
-                    .filter_by(cadete_id=cadete_id, canal='whatsapp')
-                    .order_by(database.BotConversacion.ultimo_en.desc())
-                    .first())
-            if not conv:
-                conv = database.BotConversacion(
-                    canal='whatsapp', canal_user_id=str(cadete.telegram_user_id),
-                    nombre_cliente=cadete.nombre,
-                    estado_atencion='humano', nodo='reparto',
-                    cadete_id=cadete.id)
-                s.add(conv); s.flush()
             m = database.BotMensaje(conversacion_id=conv.id, origen='operador', texto=texto)
             s.add(m)
             conv.ultimo_en = database.now_ar()
             conv.operador_user_id = current_user.id
             s.commit()
             return jsonify({'ok': True, 'mensaje': _msg_to_dict(m)})
+
+    @app.route('/api/reparto/chat/dm/<int:conv_id>/vincular-cadete', methods=['POST'])
+    @login_required
+    def api_reparto_chat_dm_vincular(conv_id):
+        """Toma una conv huérfana (canal=telegram_cadete, cadete_id=NULL),
+        crea un Cadete nuevo con el nombre que recibió y la vincula. El
+        operador puede editar todos los campos del cadete en /cadetes."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        nombre = ((request.json or {}).get('nombre') or '').strip()
+        if not nombre:
+            return jsonify({'ok': False, 'error': 'falta nombre'}), 400
+        with database.get_db() as s:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'ok': False, 'error': 'conv no existe'}), 404
+            if conv.cadete_id:
+                return jsonify({'ok': False, 'error': 'la conv ya está vinculada'}), 400
+            if conv.canal != 'telegram_cadete' or not conv.canal_user_id:
+                return jsonify({'ok': False, 'error': 'la conv no es de Telegram'}), 400
+            try:
+                tg_uid = int(conv.canal_user_id)
+            except (TypeError, ValueError):
+                return jsonify({'ok': False, 'error': 'canal_user_id no es numérico'}), 400
+            # Si ya hay un cadete con ese tg_user_id, solo vincular (no duplicar).
+            cad = (s.query(database.Cadete)
+                   .filter(database.Cadete.telegram_user_id == tg_uid).first())
+            if not cad:
+                cad = database.Cadete(
+                    nombre=nombre[:60],
+                    telegram_user_id=tg_uid,
+                    token=uuid.uuid4().hex[:12],
+                    activo=True)
+                s.add(cad); s.flush()
+            conv.cadete_id = cad.id
+            conv.nombre_cliente = cad.nombre
+            s.commit()
+            return jsonify({'ok': True, 'cadete_id': cad.id})
 
     @app.route('/reparto/pedido/<int:pid>/publicar', methods=['POST'])
     @login_required
@@ -1382,9 +1525,12 @@ def init_app(app):
             cadete_nom = cad.get(ef_id, '') if ef_id else ''
             # total_paciente YA incluye el envío (el operador carga el total con
             # envío). El producto se deriva: producto = total - envío.
+            # Si el envío va sin cargo, el operador NO lo suma al total → el
+            # producto es igual al total y el cadete no cobra el envío.
             total_monto = float(p.total_paciente) if p.total_paciente is not None else None
             envio_v = float(p.envio_costo) if p.envio_costo is not None else None
-            producto_monto = (round((total_monto or 0) - (envio_v or 0), 2)
+            envio_sc = bool(p.envio_sin_cargo)
+            producto_monto = (round((total_monto or 0) - (0 if envio_sc else (envio_v or 0)), 2)
                               if total_monto is not None else None)
             cobrar = None if p.pagado else total_monto
             paga_con = float(p.paga_con) if p.paga_con is not None else None
@@ -1398,7 +1544,8 @@ def init_app(app):
                 receta_pendiente=(p.receta_estado == 'pendiente')
                                   or (p.receta_estado is None and bool(p.requiere_receta)),
                 pagado=bool(p.pagado), forma_pago=p.forma_pago or '',
-                producto_monto=producto_monto, envio=envio_v, total=total_monto,
+                producto_monto=producto_monto, envio=envio_v, envio_sin_cargo=envio_sc,
+                total=total_monto,
                 cobrar=cobrar, paga_con=paga_con, vuelto=p.vuelto or '',
                 obra_social=p.obra_social or '', cadete=cadete_nom,
             )
@@ -1475,7 +1622,9 @@ def init_app(app):
         total_v = data['total'] or 0       # total cargado (ya incluye envío)
         if prod_v > 0:
             line(f'  Producto: $ {prod_v:,.0f}'.replace(',', '.'))
-        if env_v > 0:
+        if data['envio_sin_cargo']:
+            line('  Envio:    SIN CARGO', bold=True)
+        elif env_v > 0:
             line(f'  Envio:    $ {env_v:,.0f}'.replace(',', '.'))
         if total_v > 0:
             line(f'  TOTAL:    $ {total_v:,.0f}'.replace(',', '.'), size=11, bold=True)
@@ -1532,10 +1681,13 @@ def init_app(app):
                          .filter(database.RutaReparto.cadete_id.isnot(None)).all()}
             ef_id = reparto.cadete_efectivo_id(p, rutas_cad)
             # total_paciente YA incluye el envío (el operador carga el total).
-            # Producto = total - envío. Si ya está pagado, el cadete no cobra.
+            # Producto = total - envío. Si el envío va sin cargo, el operador
+            # NO lo sumó al total → producto = total.
+            # Si ya está pagado, el cadete no cobra.
             total_monto = float(p.total_paciente) if p.total_paciente is not None else None
             envio = float(p.envio_costo) if p.envio_costo is not None else None
-            producto_monto = (round((total_monto or 0) - (envio or 0), 2)
+            envio_sc = bool(p.envio_sin_cargo)
+            producto_monto = (round((total_monto or 0) - (0 if envio_sc else (envio or 0)), 2)
                               if total_monto is not None else None)
             cobrar = None if p.pagado else total_monto
             return jsonify({
@@ -1554,6 +1706,7 @@ def init_app(app):
                 'forma_pago': p.forma_pago or '',
                 'producto_monto': producto_monto,
                 'envio': envio,
+                'envio_sin_cargo': envio_sc,
                 'total': total_monto,
                 'cobrar': cobrar,
                 'paga_con': float(p.paga_con) if p.paga_con is not None else None,
@@ -1761,7 +1914,8 @@ def init_app(app):
         EDITABLES = {'tomo', 'importe', 'forma_pago', 'vuelto', 'producto',
                      'observacion', 'pagado', 'requiere_receta',
                      'entregado_por', 'cadete_id', 'recibio', 'estado', 'turno',
-                     'etiqueta', 'etiqueta_color'}
+                     'etiqueta', 'etiqueta_color',
+                     'envio_costo', 'envio_sin_cargo'}
         if campo not in EDITABLES:
             return jsonify({'ok': False, 'error': f'campo no editable: {campo}'}), 400
         with database.get_db() as s:
@@ -1769,13 +1923,13 @@ def init_app(app):
             if not p:
                 return jsonify({'ok': False, 'error': 'no existe'}), 404
             # Tipos especiales
-            if campo in ('pagado', 'requiere_receta'):
+            if campo in ('pagado', 'requiere_receta', 'envio_sin_cargo'):
                 valor = bool(valor)
-            elif campo == 'importe' and valor is not None and valor != '':
+            elif campo in ('importe', 'envio_costo') and valor is not None and valor != '':
                 try:
                     valor = float(str(valor).replace(',', '.'))
                 except (TypeError, ValueError):
-                    return jsonify({'ok': False, 'error': 'importe inválido'}), 400
+                    return jsonify({'ok': False, 'error': f'{campo} inválido'}), 400
             elif campo == 'cadete_id':
                 try:
                     valor = int(valor) if valor not in (None, '') else None

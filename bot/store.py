@@ -177,20 +177,37 @@ def _iniciales(nombre):
 
 def listar_operadores():
     """Usuarios que pueden atender, con su presencia (estado + conectado).
-    Conectado = mandó heartbeat en los últimos 70 s (panel abierto)."""
+    Conectado = mandó heartbeat en los últimos 70 s (panel abierto).
+
+    Filtra los 'operador' por tener el perfil 'chat_clientes' (el que da
+    acceso a /atencion). Diego 2026-06-19: la lista se había vuelto
+    interminable porque incluía todos los operadores del sistema (rendición,
+    auditor, etc.) que nunca atienden el chat. admin/farmacia/dev pasan
+    siempre (superusers).
+    """
+    import json as _json
     ahora = database.now_ar()
     with database.get_db() as s:
         us = (s.query(database.Usuario)
               .filter(database.Usuario.activo.is_(True),
                       database.Usuario.rol.in_(['operador', 'admin', 'farmacia', 'dev']))
               .order_by(database.Usuario.username).all())
-        return [{'id': u.id, 'nombre': u.nombre_completo or u.username, 'rol': u.rol,
-                 'username': u.username,
-                 'iniciales': _iniciales(u.nombre_completo or u.username),
-                 'estado': u.estado_presencia or 'online',
-                 'conectado': bool(u.ultima_actividad
-                                   and (ahora - u.ultima_actividad) < timedelta(seconds=70))}
-                for u in us]
+        out = []
+        for u in us:
+            if u.rol == 'operador':
+                try:
+                    perfiles = _json.loads(u.perfiles_json or '[]')
+                except (ValueError, TypeError):
+                    perfiles = []
+                if 'chat_clientes' not in perfiles:
+                    continue
+            out.append({'id': u.id, 'nombre': u.nombre_completo or u.username, 'rol': u.rol,
+                        'username': u.username,
+                        'iniciales': _iniciales(u.nombre_completo or u.username),
+                        'estado': u.estado_presencia or 'online',
+                        'conectado': bool(u.ultima_actividad
+                                          and (ahora - u.ultima_actividad) < timedelta(seconds=70))})
+        return out
 
 
 def heartbeat(user_id):

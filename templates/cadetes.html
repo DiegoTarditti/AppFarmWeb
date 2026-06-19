@@ -47,7 +47,7 @@
         La tarifa por jornada se usa para los pagos.
       </div>
       <table>
-        <thead><tr><th>Nombre</th><th>Teléfono</th><th>Tarifa/día</th><th>Zonas</th><th>Activo</th><th>Link</th><th></th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Teléfono</th><th title="Telegram user_id — se autocompleta al primer TOMAR si el nombre coincide; sino cargalo a mano para que el bot pueda enviarle DMs">TG&nbsp;ID</th><th>Tarifa/día</th><th>Zonas</th><th>Activo</th><th>Link</th><th></th></tr></thead>
         <tbody id="tb"></tbody>
       </table>
       <div style="display:flex; gap:6px; margin-top:12px; flex-wrap:wrap;">
@@ -68,12 +68,13 @@ async function cargar(){
     <tr>
       <td><input class="input" value="${esc(c.nombre)}" onchange="save(${c.id},'nombre',this.value)" style="width:160px;"></td>
       <td><input class="input" value="${esc(c.telefono)}" placeholder="—" onchange="save(${c.id},'telefono',this.value)" style="width:140px;"></td>
+      <td><input class="input" value="${c.telegram_user_id!=null?c.telegram_user_id:''}" placeholder="—" onchange="save(${c.id},'telegram_user_id',this.value)" style="width:120px;" title="Telegram user_id (numérico)"></td>
       <td><input class="input" type="number" step="0.01" value="${c.tarifa_dia!=null?c.tarifa_dia:''}" placeholder="—" onchange="save(${c.id},'tarifa_dia',this.value)" style="width:100px;"></td>
       <td>${c.zonas?`<span class="badge" style="background:var(--accent);color:var(--accent-ink);">${c.zonas} zona${c.zonas>1?'s':''}</span>`:'<span class="muted">—</span>'}</td>
       <td><input type="checkbox" ${c.activo?'checked':''} onchange="save(${c.id},'activo',this.checked)"></td>
       <td>${c.token ? `<button class="hbtn" onclick="copiarLink('${c.token}')">🔗 Link</button>` : '<span class="muted">—</span>'}</td>
       <td><button class="hbtn hbtn-danger" onclick="delCadete(${c.id})">Quitar</button></td>
-    </tr>`).join('') || '<tr><td colspan="7" class="muted">Sin cadetes.</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="8" class="muted">Sin cadetes.</td></tr>';
 }
 async function save(id, campo, val){
   await jpost('/cadetes', {id, [campo]:val});

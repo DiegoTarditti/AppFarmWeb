@@ -236,6 +236,8 @@ def init_app(app):
 
 
 # Lista de roles válidos usada en crear/editar
+# 'cajero' se deprecó el 2026-06-19; los residuales se migran a 'operador'
+# por SQL en database.init_db.
 PERMISOS_ROLES = {'farmacia', 'dev', 'remoto', 'admin', 'operador',
                   # legacy (se migran a 'operador' al arranque; se aceptan por compat)
-                  'pedidos', 'auditor', 'rendicion', 'cajero'}
+                  'pedidos', 'auditor', 'rendicion'}

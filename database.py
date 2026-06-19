@@ -716,6 +716,10 @@ class PedidoReparto(Base):
     observacion = Column(Text, nullable=True)
     producto = Column(String(200), nullable=True)
     envio_costo = Column(DECIMAL(10, 2), nullable=True)
+    # Flag: el envío va sin cargo (cliente fidelizado, promo, etc.). Se mantiene
+    # envio_costo con el cotizado real para info, pero el cadete no lo cobra y
+    # en planilla/ticket aparece como 'ENVÍO SIN CARGO'.
+    envio_sin_cargo = Column(Boolean, nullable=False, default=False, server_default='false')
     producto_observer_id = Column(Integer, nullable=True, index=True)
     piso = Column(String(20), nullable=True)
     depto = Column(String(20), nullable=True)
@@ -4729,6 +4733,7 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS observacion TEXT",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS producto VARCHAR(200)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS envio_costo NUMERIC(10,2)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS envio_sin_cargo BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS producto_observer_id INTEGER",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_producto_obs ON pedidos_reparto(producto_observer_id)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS waha_msg_id VARCHAR(120)",
@@ -4771,6 +4776,17 @@ def _pg_add_columns(conn):
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_destino ON pedidos_reparto(destino)",
     ]:
         conn.execute(text(stmt))
+    # Rol 'cajero' deprecado (Diego 2026-06-19): /caja queda sin uso, los
+    # cobros se manejan desde /atencion + /reparto/planilla. Cualquier
+    # usuario residual con rol='cajero' se promueve a operador con perfil
+    # chat_clientes (idempotente — si ya está migrado, no hace nada).
+    conn.execute(text("""
+        UPDATE usuarios
+           SET perfiles_json = '["chat_clientes"]'
+         WHERE rol = 'cajero'
+           AND (perfiles_json IS NULL OR perfiles_json = '' OR perfiles_json = '[]')
+    """))
+    conn.execute(text("UPDATE usuarios SET rol = 'operador' WHERE rol = 'cajero'"))
     # Token para link móvil del cadete (vista de reparto sin login)
     conn.execute(text(
         "ALTER TABLE cadetes ADD COLUMN IF NOT EXISTS token VARCHAR(12)"

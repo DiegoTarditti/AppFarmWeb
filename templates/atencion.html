@@ -421,6 +421,10 @@
             <label class="muted2" style="font-size:10px; display:block;" title="Override manual de cuadras">o Cuadras</label>
             <input id="pgCuadras" type="number" min="0" oninput="pgCuadrasInput()" placeholder="ej: 22" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;" title="Cotiza envío usando este número de cuadras">
           </div>
+          <label style="display:flex; align-items:center; gap:4px; font-size:11px; padding-bottom:8px;" title="El cadete NO cobra el envío al cliente. El monto cotizado queda como info.">
+            <input id="pgEnvioSinCargo" type="checkbox" onchange="pgEnvioSinCargoChange()" style="margin:0;">
+            <span class="muted2">Sin cargo</span>
+          </label>
           <div id="pgEnvioInfo" class="muted2" style="font-size:10px; flex:1; min-width:0; line-height:1.3; padding-bottom:6px;"></div>
         </div>
       </div>
@@ -535,6 +539,7 @@
               <option value="transferencia">Transferencia</option>
               <option value="efectivo">Efectivo</option>
               <option value="tarjeta">Tarjeta de crédito</option>
+              <option value="sin_cargo">Sin cargo</option>
             </select>
           </div>
           {# pgExtra: campos dinamicos segun forma de pago. En efectivo incluye
@@ -846,6 +851,8 @@ async function reabrirPedido(id){
   setVal('pgMonto', p.total != null ? p.total : '');
   setVal('pgPagaCon', p.paga_con != null ? p.paga_con : '');
   setVal('pgEnvio', p.envio_costo != null ? p.envio_costo : '');
+  const cbEsc = document.getElementById('pgEnvioSinCargo');
+  if (cbEsc){ cbEsc.checked = !!p.envio_sin_cargo; pgEnvioSinCargoChange(); }
   setVal('pgForma', p.forma_pago || '');
   setVal('pgLink', p.link_mp || '');
   setVal('pgDato', p.dato_pago_mp || '');
@@ -878,6 +885,8 @@ function vaciarFormCierre(){
   ['pgMonto','pgPagaCon','pgEnvio','pgForma','pgLink','pgDato','pgUlt4','pgTarjNombre','pgMarca','pgCupon',
    'dProducto','dNota','dObservacion','dStock','dDrogueria','dSalida','dPrioridad','dObraSocial','dReceta','dCanal']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const cbEsc = document.getElementById('pgEnvioSinCargo');
+  if (cbEsc){ cbEsc.checked = false; pgEnvioSinCargoChange(); }
   pedidoEditando = null;
   const btn = document.getElementById('btnCerrarTx');
   if (btn) btn.textContent = '💳 Cerrar transacción';
@@ -1684,6 +1693,8 @@ function pagoFormaChange(){
       <select id="pgMarca" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;"><option>Visa</option><option>Master</option><option>Amex</option><option>Naranja</option><option>Cabal</option></select>
     </div>
     <input id="pgCupon" placeholder="nro de cupón / comprobante" class="input" style="border-radius:8px; padding:6px 9px; font-size:12px;">`;
+  else if (f === 'sin_cargo') h = `
+    <div class="muted2" style="font-size:11px; padding:6px 0;">✓ Sin cargo · no se cobra</div>`;
   document.getElementById('pgExtra').innerHTML = h;
   // Si tenemos estado previo, prellenamos los inputs nuevos.
   if (_pagoState){
@@ -1964,10 +1975,13 @@ async function guardarPagoAcordado(){
 // Guarda el pago + abre/refresca el modal Cerrar TX con todo precargado.
 // Valida primero lo MÍNIMO del sidebar (monto + forma); el modal valida el resto.
 async function guardarYCerrarTx(){
-  const monto = parseFloat(document.getElementById('pgMonto').value) || 0;
-  if (!monto){ alert('Cargá el monto de la operación.'); document.getElementById('pgMonto').focus(); return; }
   const forma = document.getElementById('pgForma').value;
   if (!forma){ alert('Elegí la forma de pago.'); document.getElementById('pgForma').focus(); return; }
+  // 'sin_cargo' no exige monto (el operador puede dejarlo en 0).
+  const monto = parseFloat(document.getElementById('pgMonto').value) || 0;
+  if (!monto && forma !== 'sin_cargo'){
+    alert('Cargá el monto de la operación.'); document.getElementById('pgMonto').focus(); return;
+  }
   const get = id => { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; };
   // Validaciones por forma
   if (forma === 'link_mp' && !get('pgLink')){
@@ -2008,9 +2022,12 @@ async function cerrarTxDirecto(){
   const stock = get('dStock');
   // 'pagado' = true si forma de pago ya está confirmada (link con dato_pago,
   // transferencia con comprobante, tarjeta presencial, efectivo no por sí solo).
+  // sin_cargo se autocobra (nada que cobrar).
   const datoPg = get('pgDato');
   const pagado = (formaPg === 'tarjeta')
+    || (formaPg === 'sin_cargo')
     || ((formaPg === 'link_mp' || formaPg === 'transferencia') && !!datoPg);
+  const envioSinCargo = (document.getElementById('pgEnvioSinCargo') || {}).checked || false;
   const payload = {
     total: total || null,   // <-- Diego 2026-06-15: estaba ausente, backend lo leía como 0
     forma_pago: formaPg || null,
@@ -2027,6 +2044,7 @@ async function cerrarTxDirecto(){
     drogueria: get('dDrogueria') || null,
     destino: get('dSalida') || 'reparto',
     envio_costo: envio || null,
+    envio_sin_cargo: envioSinCargo,
     prioridad: get('dPrioridad') || 'normal',
     turno: get('dTurno') || null,
     pagado,
@@ -2056,14 +2074,40 @@ async function cerrarTxDirecto(){
     });
     const d = await r.json();
     if (!d.ok){ alert('Error al cerrar: ' + (d.error || 'desconocido')); return; }
-    const accion = payload.pedido_id ? 'actualizado' : 'cerrado';
-    alert(`✅ Pedido #${d.pedido_id} ${accion} → ${d.estado}`);
-    vaciarFormCierre();
-    if (typeof refrescarBandeja === 'function') refrescarBandeja();
-    if (typeof cargarBandeja === 'function') cargarBandeja();
-    // Si la vista activa es 'cerrados hoy', refrescar la lista para que se vea el cambio.
-    if (vista === 'cerrados' && typeof cargarCerradosHoy === 'function') cargarCerradosHoy();
+    // Reabrir pedido existente: NO redirect a planilla — el operador puede
+    // estar corrigiendo monto/dirección y quiere volver al chat o seguir.
+    if (payload.pedido_id){
+      alert(`✅ Pedido #${d.pedido_id} actualizado → ${d.estado}`);
+      vaciarFormCierre();
+      if (typeof refrescarBandeja === 'function') refrescarBandeja();
+      if (typeof cargarBandeja === 'function') cargarBandeja();
+      if (vista === 'cerrados' && typeof cargarCerradosHoy === 'function') cargarCerradosHoy();
+      return;
+    }
+    // Pedido nuevo: pregunta si imprimir el ticket de envío (PDF 80mm) y
+    // después manda a la planilla. El ticket NO sale automático — el
+    // operador decide caso por caso (Diego 2026-06-19).
+    if (confirm(`✅ Pedido #${d.pedido_id} creado.\n\n¿Imprimir ticket de envío?`)){
+      try { window.open(`/reparto/pedido/${d.pedido_id}/ticket-pdf`, '_blank', 'noopener'); }
+      catch(e){ /* popup bloqueado: no rompe el redirect */ }
+    }
+    window.location.href = '/reparto/planilla';
   } catch(e){ alert('Error de red: ' + e.message); }
+}
+
+// Checkbox 'Envío sin cargo': grisa el monto pero lo mantiene como info
+// (el flag separado en DB es lo que define que el cadete no cobre).
+function pgEnvioSinCargoChange(){
+  const cb = document.getElementById('pgEnvioSinCargo');
+  const inp = document.getElementById('pgEnvio');
+  if (!cb || !inp) return;
+  if (cb.checked){
+    inp.style.opacity = '0.5';
+    inp.title = 'Sin cargo · monto solo informativo';
+  } else {
+    inp.style.opacity = '';
+    inp.title = '';
+  }
 }
 
 // Stock = falta → mostrar dropdown de droguería + cargar opciones la primera vez.
