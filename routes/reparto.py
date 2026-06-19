@@ -1272,6 +1272,23 @@ def init_app(app):
             s.commit()
         return jsonify({'ok': True, 'liquidados': n, 'total': total})
 
+    @app.route('/reparto/pedido/<int:pid>/liquidar', methods=['POST'])
+    @login_required
+    def reparto_liquidar_pedido(pid):
+        """Marca/desmarca UN envío como pagado al cadete (toggle envio_liquidado).
+        Granular: complementa el 'Liquidar' por cadete (que es en lote)."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pid)
+            if not p:
+                return jsonify({'ok': False, 'error': 'no existe'}), 404
+            p.envio_liquidado = not p.envio_liquidado
+            p.envio_liquidado_en = database.now_ar() if p.envio_liquidado else None
+            estado = p.envio_liquidado
+            s.commit()
+        return jsonify({'ok': True, 'envio_liquidado': estado})
+
     @app.route('/reparto/pedido/<int:pid>/delete', methods=['POST'])
     @login_required
     def reparto_eliminar(pid):
