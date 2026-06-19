@@ -189,6 +189,8 @@ def _persistir_dm_telegram(telegram_user_id, push_name, body):
         s.add(database.BotMensaje(conversacion_id=conv.id, origen='cliente', texto=body))
         conv.ultimo_en = database.now_ar()
         s.commit()
+        log.warning('[telegram DM] guardado conv_id=%s cadete_id=%s body=%r',
+                    conv.id, conv.cadete_id, body[:60])
         return conv.id
 
 
