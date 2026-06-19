@@ -1151,6 +1151,12 @@ def init_app(app):
                 meta.append('🚨 URGENTE')
             if meta:
                 partes.append(' · '.join(meta))
+            # Cobro: el grupo solo necesita saber SI hay que cobrar (efectivo).
+            # El monto/vuelto va por DM 1:1 cuando lo toman (privacidad).
+            if not p.pagado and (p.forma_pago or '').strip().lower() == 'efectivo':
+                partes.append('💵 <b>COBRAR en efectivo</b>')
+            else:
+                partes.append('✅ Pagado — no cobrar')
             partes.append('')
             partes.append('Click <b>TOMAR</b> abajo para asignártelo.')
             texto = '\n'.join(partes)
@@ -1687,7 +1693,8 @@ def init_app(app):
         valor = b.get('valor')
         EDITABLES = {'tomo', 'importe', 'forma_pago', 'vuelto', 'producto',
                      'observacion', 'pagado', 'requiere_receta',
-                     'entregado_por', 'cadete_id', 'recibio', 'estado', 'turno'}
+                     'entregado_por', 'cadete_id', 'recibio', 'estado', 'turno',
+                     'etiqueta', 'etiqueta_color'}
         if campo not in EDITABLES:
             return jsonify({'ok': False, 'error': f'campo no editable: {campo}'}), 400
         with database.get_db() as s:

@@ -54,6 +54,9 @@ class Config(Base):
     # Keep-alive: evitar que Render duerma el servicio vía self-ping periódico
     keep_alive_enabled = Column(Boolean, nullable=False, default=False)
     keep_alive_interval_min = Column(Integer, nullable=False, default=10)
+    # Turno actual del reparto (global compartido): default sticky para los
+    # pedidos nuevos. El operador lo cambia en /atención y queda para todos.
+    turno_actual = Column(String(10), nullable=True)
     # Backups automáticos (ejecutados por DockerPanel host)
     backup_ruta_remota        = Column(String(500), nullable=True)   # UNC tipo \\server-1\backups\farmacia
     backup_hora               = Column(Integer, nullable=False, default=17, server_default='17')  # 0-23
@@ -751,6 +754,10 @@ class PedidoReparto(Base):
     # botón "Liquidar" del control por cadete los marca pagados (saldo → 0).
     envio_liquidado = Column(Boolean, nullable=False, default=False, server_default='false')
     envio_liquidado_en = Column(DateTime, nullable=True)
+    # Etiqueta libre con color (arqueo/marcado manual en la planilla): texto
+    # corto (<=10) + color hex. Solo presentación, no afecta la lógica.
+    etiqueta = Column(String(10), nullable=True)
+    etiqueta_color = Column(String(7), nullable=True)   # '#RRGGBB'
 
 
 class ObsSyncLog(Base):
@@ -4009,6 +4016,7 @@ def _pg_add_columns(conn):
     # el INSERT explota con NOT NULL porque no les ponemos valor).
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_interval_min INTEGER NOT NULL DEFAULT 10"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS turno_actual VARCHAR(10)"))
     # Backups automáticos
     for ddl in [
         "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_ruta_remota VARCHAR(500)",
@@ -4122,6 +4130,7 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_baja_tol DECIMAL(6,1) NOT NULL DEFAULT 0.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_interval_min INTEGER NOT NULL DEFAULT 10"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS turno_actual VARCHAR(10)"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS dockerpanel_ruta VARCHAR(500)"))
 
     # Cleanup legacy: descuento_campanas, descuento_modulos, descuento_modulo_items.
@@ -4751,6 +4760,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS destino VARCHAR(10)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS envio_liquidado BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS envio_liquidado_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS etiqueta VARCHAR(10)",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS etiqueta_color VARCHAR(7)",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_drogueria ON pedidos_reparto(drogueria_id)",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_destino ON pedidos_reparto(destino)",
     ]:
