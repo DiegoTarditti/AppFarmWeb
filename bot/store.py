@@ -841,10 +841,23 @@ def buscar_productos_detalle(query, limite=12):
     params = {f'p{i}': f'%{w}%' for i, w in enumerate(palabras)}
     params['lim'] = limite
     params['fid'] = id_farmacia
+    # OJO: NO joineamos obs_codigos_barras directamente porque un producto
+    # puede tener N EANs alternativos → cada fila se multiplica por N. Para
+    # el precio usamos una subquery scalar que toma el precio_pvp más alto
+    # entre todos los EANs (NULLS LAST → prefiere el que TIENE precio).
     sql = database.text(f"""
         SELECT op.descripcion,
                COALESCE(os.stock_actual, 0)             AS stock,
-               COALESCE(pa.precio_pvp, pr.precio_pvp)   AS precio_pvp,
+               COALESCE(
+                 (SELECT pa.precio_pvp
+                    FROM obs_codigos_barras cb
+                    JOIN product_analytics pa ON pa.codigo_barra = cb.codigo_barras
+                   WHERE cb.producto_observer = op.observer_id
+                     AND cb.fecha_baja IS NULL
+                   ORDER BY pa.precio_pvp DESC NULLS LAST
+                   LIMIT 1),
+                 pr.precio_pvp
+               )                            AS precio_pvp,
                nd.descripcion               AS droga,
                atr.concentracion_mg, atr.concentracion_unidad, atr.forma_farma, atr.cantidad_envase,
                COALESCE(pr.fraccionado, atr.es_fraccionable, FALSE) AS fraccionable,
@@ -856,10 +869,6 @@ def buscar_productos_detalle(query, limite=12):
            AND os.id_farmacia = :fid
           LEFT JOIN obs_nombres_drogas nd
             ON nd.observer_id = op.nombre_droga_observer
-          LEFT JOIN obs_codigos_barras cb
-            ON cb.producto_observer = op.observer_id AND cb.fecha_baja IS NULL
-          LEFT JOIN product_analytics pa
-            ON pa.codigo_barra = cb.codigo_barras
           LEFT JOIN productos pr
             ON pr.observer_id = op.observer_id
           LEFT JOIN producto_atributos atr
