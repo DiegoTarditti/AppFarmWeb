@@ -2546,9 +2546,14 @@ def init_engine(database_url=None):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     is_postgres = not database_url.startswith('sqlite')
     connect_args = {'connect_timeout': 10} if is_postgres else {}
+    # Pool más grande: la planilla/control + el polling de varias pestañas
+    # abren muchas conexiones; con 5+10 se agotaba (QueuePool TimeoutError).
+    # Postgres: 10 + 20 = 30 conexiones, recicladas c/30min (Render free admite ~97).
+    pool_kwargs = {'pool_timeout': 20, 'pool_pre_ping': True}
+    if is_postgres:
+        pool_kwargs.update(pool_size=10, max_overflow=20, pool_recycle=1800)
     engine = create_engine(database_url, echo=False, future=True,
-                           connect_args=connect_args,
-                           pool_timeout=15, pool_pre_ping=True)
+                           connect_args=connect_args, **pool_kwargs)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False,
                                expire_on_commit=False)
     return database_url
