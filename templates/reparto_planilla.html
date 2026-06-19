@@ -926,6 +926,31 @@ async function cadBorrar(id, nombre){
     chatIniciarPolling();
   }
 })();
+
+// Auto-refresh de la tabla principal cada 30 seg. Salta si:
+//   - hay un INPUT/SELECT/TEXTAREA en foco (estás editando una celda)
+//   - hay un modal abierto (creando cadete, viendo cadetes, etc.)
+//   - hay un chat o composer abierto con texto sin enviar
+// Sino, los cambios desde el grupo (TOMAR via Telegram) no se ven hasta F5.
+function _autorefreshOk(){
+  const ae = document.activeElement;
+  if (ae && ['INPUT','SELECT','TEXTAREA'].includes(ae.tagName)) return false;
+  // modal del overlay (cadetes / tarifas) abierto
+  const ovs = document.querySelectorAll('.modal-overlay');
+  for (const o of ovs){
+    const style = getComputedStyle(o);
+    if (style.display !== 'none' && style.visibility !== 'hidden') return false;
+  }
+  // composer del chat con texto sin enviar
+  const composers = document.querySelectorAll('textarea, [contenteditable=true]');
+  for (const c of composers){
+    if ((c.value || c.textContent || '').trim()) return false;
+  }
+  return true;
+}
+setInterval(() => {
+  if (_autorefreshOk()) location.reload();
+}, 30000);
 </script>
 </body>
 </html>

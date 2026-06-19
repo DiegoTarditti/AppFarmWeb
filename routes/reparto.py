@@ -747,8 +747,11 @@ def init_app(app):
         payload = request.json or {}
         upd = telegram_grupo.parsear_update(payload)
         tipo = upd.get('tipo')
+        log.warning('[telegram webhook] tipo=%s user=%s', tipo, upd.get('user_name'))
 
         if tipo == 'callback_tomar':
+            log.warning('[telegram callback_tomar] pid=%s user_id=%s user_name=%s',
+                        upd.get('pedido_id'), upd.get('user_id'), upd.get('user_name'))
             return _telegram_procesar_tomar(upd, telegram_grupo)
 
         if tipo == 'mensaje_dm':
@@ -807,16 +810,41 @@ def init_app(app):
                     if cad and not cad.telegram_user_id:
                         cad.telegram_user_id = user_id
 
-            # Asignar el pedido.
+            # Asignar el pedido. El estado cambia SIEMPRE a 'en_ruta' al tomar
+            # (con o sin match de cadete local). Sino el pedido queda en
+            # 'publicado' eternamente cuando el cadete no está en la tabla.
             p.tomado_por_wsap = user_name[:80]
             p.tomado_en = database.now_ar()
+            p.estado = 'en_ruta'
             if cad:
                 p.cadete_id = cad.id
-                p.estado = 'en_ruta'
+            try:
                 _notificar_cliente_pedido(s, p, 'en_ruta')
+            except Exception as e:  # noqa: BLE001 — no romper el flujo del toma
+                log.warning('notificar cliente pedido falló: %s', e)
+
+            # Persistir el evento "tomado" en la conv del grupo para que el
+            # panel /reparto/planilla lo capte por su polling existente.
+            cad_nombre = cad.nombre if cad else None
+            grupo_uid = str(tg.GRUPO_CHAT_ID) if tg.GRUPO_CHAT_ID else None
+            if grupo_uid:
+                grupo_conv = (s.query(database.BotConversacion)
+                              .filter_by(canal='whatsapp_grupo',
+                                         canal_user_id=grupo_uid).first())
+                if not grupo_conv:
+                    grupo_conv = database.BotConversacion(
+                        canal='whatsapp_grupo', canal_user_id=grupo_uid,
+                        nombre_cliente='Grupo de cadetes',
+                        estado_atencion='humano', nodo='reparto')
+                    s.add(grupo_conv); s.flush()
+                extra_lbl = f' ({cad_nombre})' if cad_nombre else ''
+                s.add(database.BotMensaje(
+                    conversacion_id=grupo_conv.id, origen='cadete',
+                    texto=f'✅ Pedido #{p.id} tomado por {user_name}{extra_lbl}'))
+                grupo_conv.ultimo_en = database.now_ar()
+
             s.commit()
             cad_id = cad.id if cad else None
-            cad_nombre = cad.nombre if cad else None
 
         # Toast al cadete que clickeó.
         tg.answer_callback(callback_qid, '✅ Tomado')
@@ -1118,6 +1146,9 @@ def init_app(app):
             partes.append('')
             partes.append('Click <b>TOMAR</b> abajo para asignártelo.')
             texto = '\n'.join(partes)
+            # Versión sin tags HTML para persistir en BotConversacion: la
+            # planilla muestra texto plano y veríamos los <b>..</b> literales.
+            texto_plano = texto.replace('<b>', '').replace('</b>', '')
             # publicar_pedido manda al grupo CON botón inline 'TOMAR'.
             # El callback_data del botón es 'tomar:<pid>' → cuando un cadete
             # clickea, el webhook /telegram/cadetes/webhook lo procesa.
@@ -1151,7 +1182,7 @@ def init_app(app):
                 s.add(grupo); s.flush()
             if grupo:
                 s.add(database.BotMensaje(conversacion_id=grupo.id,
-                                          origen='operador', texto=texto))
+                                          origen='operador', texto=texto_plano))
                 grupo.ultimo_en = database.now_ar()
             s.commit()
             return jsonify({'ok': True, 'waha_msg_id': p.waha_msg_id,

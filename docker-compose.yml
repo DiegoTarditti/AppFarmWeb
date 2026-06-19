@@ -60,6 +60,14 @@ services:
       # Token del bot (Telegram hoy). Lo usa el bot para escuchar y el panel de
       # atención (/atencion) para enviar las respuestas del operador al cliente.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # Bot Telegram del grupo de cadetes (separado del bot de clientes).
+      # USAR_POLLING=true → arranca un thread que hace getUpdates por
+      # long-polling (no necesita URL pública alcanzable desde internet).
+      # El secret valida el reenvío del polling al endpoint local.
+      TELEGRAM_CADETES_BOT_TOKEN: ${TELEGRAM_CADETES_BOT_TOKEN:-}
+      TELEGRAM_CADETES_GRUPO_CHAT_ID: ${TELEGRAM_CADETES_GRUPO_CHAT_ID:-}
+      TELEGRAM_CADETES_WEBHOOK_SECRET: ${TELEGRAM_CADETES_WEBHOOK_SECRET:-}
+      TELEGRAM_CADETES_USAR_POLLING: ${TELEGRAM_CADETES_USAR_POLLING:-}
       # WhatsApp Cloud API. Dejar en blanco hasta tener las keys de Meta.
       # WABA_TOKEN: System User Token (para enviar mensajes)
       # WABA_PHONE_ID: ID del número de WhatsApp en el portal de Meta

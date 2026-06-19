@@ -284,3 +284,111 @@ def validar_webhook_secret(header_value):
     if not WEBHOOK_SECRET:
         return True
     return header_value == WEBHOOK_SECRET
+
+
+# ── Polling mode (uso local, sin URL pública) ───────────────────────────────
+#
+# Cuando la app corre en local (ej. la planilla de Badia en LAN) Telegram no
+# puede entregarnos webhooks porque localhost no es público. Polling resuelve:
+# un thread llama getUpdates con long-polling (timeout=25s) → si llega algo
+# reenvía el update a nuestro endpoint /telegram/cadetes/webhook por HTTP local
+# (con el secret en el header).
+#
+# Activación: env var TELEGRAM_CADETES_USAR_POLLING=true. Si está vacío o
+# false → no arranca (default seguro: Render no se queda corriendo polling
+# por error y peleando con local por los updates).
+
+USAR_POLLING = (os.environ.get('TELEGRAM_CADETES_USAR_POLLING') or '').lower() in ('1', 'true', 'yes', 'on')
+LOCAL_WEBHOOK_URL = (os.environ.get('TELEGRAM_CADETES_LOCAL_WEBHOOK_URL')
+                    or 'http://localhost:5000/telegram/cadetes/webhook').rstrip('/')
+
+
+# Mantenemos referencia al file del lock para que el GC no lo libere mientras
+# el proceso vive (cerrar el file libera el flock).
+_polling_lock_keepalive = []
+
+
+def iniciar_polling_thread():
+    """Arranca el thread del polling worker. Llamar una vez en app.py al
+    arranque. No-op si USAR_POLLING está apagado, falta el token o si OTRO
+    worker de gunicorn ya tiene el lock del polling.
+
+    El lock por flock previene el "Conflict: terminated by other getUpdates"
+    cuando gunicorn corre con multiple workers (Telegram solo permite UNA
+    sesión de getUpdates por bot)."""
+    if not USAR_POLLING:
+        log.warning('[telegram polling] no arranca: TELEGRAM_CADETES_USAR_POLLING off')
+        return
+    if not BOT_TOKEN:
+        log.warning('[telegram polling] no arranca: TELEGRAM_CADETES_BOT_TOKEN vacío')
+        return
+
+    # Lock por socket bind: solo UN worker de gunicorn debe arrancar el polling.
+    # El primero que binda al puerto gana, los demás reciben EADDRINUSE.
+    # Más robusto que flock (no hay file descriptors heredados ni archivos
+    # zombie en /tmp que sobreviven a restarts).
+    # Usamos un puerto random alto y bind a 127.0.0.1 (no expuesto fuera).
+    POLLING_LOCK_PORT = 12347
+    try:
+        import socket as _sk
+        s = _sk.socket(_sk.AF_INET, _sk.SOCK_STREAM)
+        s.setsockopt(_sk.SOL_SOCKET, _sk.SO_REUSEADDR, 0)  # NO reuse — queremos fallar
+        s.bind(('127.0.0.1', POLLING_LOCK_PORT))
+        s.listen(1)
+        _polling_lock_keepalive.append(s)
+    except OSError as e:
+        log.warning('[telegram polling] otro worker ya tiene el lock (port %d) — no arranco acá: %s',
+                    POLLING_LOCK_PORT, e)
+        return
+
+    import threading
+    t = threading.Thread(target=_polling_worker, daemon=True, name='telegram_polling')
+    t.start()
+    log.warning('[telegram polling] worker started (lock adquirido)')
+
+
+def _polling_worker():
+    """Loop infinito: getUpdates con long-polling → reenvía al endpoint local."""
+    import time
+    # Antes de arrancar: borrar el webhook si quedó configurado (sino getUpdates
+    # devuelve 409 Conflict). Idempotente: si no había webhook, no pasa nada.
+    try:
+        _post('deleteWebhook', json={'drop_pending_updates': False})
+    except Exception:  # noqa: BLE001
+        pass
+
+    offset = 0
+    while True:
+        try:
+            r = requests.get(
+                f'{API_BASE}/getUpdates',
+                params={'offset': offset, 'timeout': 25, 'allowed_updates':
+                        '["message","callback_query","edited_message"]'},
+                timeout=35,
+            )
+            data = r.json()
+            if not data.get('ok'):
+                log.warning('telegram getUpdates !ok: %s', data.get('description'))
+                time.sleep(5)
+                continue
+            for upd in data.get('result') or []:
+                offset = upd['update_id'] + 1
+                _reenviar_al_endpoint_local(upd)
+        except requests.Timeout:
+            # Esperado con long-polling cuando no hay updates en 25s. Sin log.
+            continue
+        except Exception as e:  # noqa: BLE001
+            log.warning('telegram polling falló: %s — sleep 5s', e)
+            time.sleep(5)
+
+
+def _reenviar_al_endpoint_local(update):
+    """POST del update tal cual a nuestro endpoint /telegram/cadetes/webhook.
+    Reusa toda la lógica del endpoint sin duplicar código."""
+    try:
+        headers = {'Content-Type': 'application/json'}
+        if WEBHOOK_SECRET:
+            headers['X-Telegram-Bot-Api-Secret-Token'] = WEBHOOK_SECRET
+        requests.post(LOCAL_WEBHOOK_URL, json=update, headers=headers, timeout=15)
+    except Exception as e:  # noqa: BLE001
+        log.warning('reenvío al webhook local falló: %s', e)
