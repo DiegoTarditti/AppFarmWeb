@@ -131,8 +131,10 @@ def _persistir_mensaje_reparto(*, es_grupo, chat_id, wa_id_emisor, push_name, bo
 
 def _persistir_dm_telegram(telegram_user_id, push_name, body):
     """Persiste un DM recibido por Telegram al bot del grupo de cadetes.
-    Solo guarda si el remitente está vinculado a un Cadete (privacidad).
-    Devuelve conv.id o None.
+    Si el remitente está vinculado a un Cadete, la conv queda con cadete_id.
+    Si no, queda como conv 'huérfana' (cadete_id=NULL) para que el operador
+    pueda verla en el panel y decidir si vincularla o ignorarla.
+    Devuelve conv.id.
     """
     with database.get_db() as s:
         cad = (s.query(database.Cadete)
@@ -154,25 +156,36 @@ def _persistir_dm_telegram(telegram_user_id, push_name, body):
                        .first())
                 if cad:
                     cad.telegram_user_id = telegram_user_id
-        if not cad:
-            log.warning(
-                '[telegram DM] descartado: user_id=%s name=%r no está vinculado '
-                'a ningún Cadete. Para habilitar el chat, cargá ese user_id en '
-                '/cadetes (columna TG ID). Mensaje: %s',
-                telegram_user_id, push_name, body[:50])
-            return None
+        # Get-or-create conv. Identificamos por canal_user_id (= tg user_id)
+        # para que mensajes consecutivos del mismo user vayan al mismo lugar
+        # esté o no vinculado a Cadete.
         canal_user_id = str(telegram_user_id)
-        conv = (s.query(database.BotConversacion)
-                .filter(database.BotConversacion.cadete_id == cad.id)
-                .order_by(database.BotConversacion.ultimo_en.desc())
-                .first())
+        conv = None
+        if cad:
+            conv = (s.query(database.BotConversacion)
+                    .filter(database.BotConversacion.cadete_id == cad.id)
+                    .order_by(database.BotConversacion.ultimo_en.desc())
+                    .first())
+        if not conv:
+            conv = (s.query(database.BotConversacion)
+                    .filter_by(canal='telegram_cadete', canal_user_id=canal_user_id)
+                    .first())
         if not conv:
             conv = database.BotConversacion(
                 canal='telegram_cadete', canal_user_id=canal_user_id,
-                nombre_cliente=cad.nombre or push_name or 'Cadete',
+                nombre_cliente=(cad.nombre if cad else push_name) or 'Sin vincular',
                 estado_atencion='humano', nodo='reparto',
-                cadete_id=cad.id)
+                cadete_id=cad.id if cad else None)
             s.add(conv); s.flush()
+        elif cad and not conv.cadete_id:
+            # Conv huérfana que recién se autovinculó: pegarla al cadete.
+            conv.cadete_id = cad.id
+            conv.nombre_cliente = cad.nombre or conv.nombre_cliente
+        if not cad:
+            log.warning(
+                '[telegram DM] persistido como huérfano: user_id=%s name=%r. '
+                'Vinculá ese tg_user_id a un Cadete en /cadetes para responderle.',
+                telegram_user_id, push_name)
         s.add(database.BotMensaje(conversacion_id=conv.id, origen='cliente', texto=body))
         conv.ultimo_en = database.now_ar()
         s.commit()
@@ -868,9 +881,15 @@ def init_app(app):
                     alert=False)
                 return jsonify({'ok': True, 'ignored': 'ya_tomado', 'pedido_id': p.id})
 
-            # Auto-magic: buscar Cadete primero por telegram_user_id, después
-            # por nombre. Si encuentra por nombre y no tenía telegram_user_id,
-            # lo guarda ahora.
+            # Auto-magic en 3 pasos:
+            #  1) Buscar Cadete por telegram_user_id (vínculo previo).
+            #  2) Si no, buscar por nombre LIKE (push_name → matching parcial)
+            #     y completar el telegram_user_id si encuentra match único.
+            #  3) Si tampoco, AUTO-CREAR un Cadete con el push_name como
+            #     nombre + tg_user_id. Diego 2026-06-19: tomar un pedido ya
+            #     es señal fuerte de que es cadete; mejor crearlo solo y que
+            #     el operador edite nombre/teléfono/tarifa en /cadetes que
+            #     que el pedido quede sin asignar.
             cad = (s.query(database.Cadete)
                    .filter(database.Cadete.telegram_user_id == user_id).first())
             if not cad:
@@ -883,6 +902,16 @@ def init_app(app):
                            .first())
                     if cad and not cad.telegram_user_id:
                         cad.telegram_user_id = user_id
+            if not cad:
+                cad = database.Cadete(
+                    nombre=user_name[:60] or f'Cadete tg:{user_id}',
+                    telegram_user_id=user_id,
+                    token=uuid.uuid4().hex[:12],
+                    activo=True)
+                s.add(cad); s.flush()
+                log.warning('[telegram TOMAR] auto-alta cadete id=%s nombre=%r '
+                            'tg_user_id=%s (editalo en /cadetes)',
+                            cad.id, cad.nombre, user_id)
 
             # Asignar el pedido. El estado cambia SIEMPRE a 'en_ruta' al tomar
             # (con o sin match de cadete local). Sino el pedido queda en
@@ -1096,11 +1125,14 @@ def init_app(app):
                     'ultimo_en': ult.creado_en.isoformat() if (ult and ult.creado_en) else None,
                     'ultimo_origen': ult.origen if ult else None,
                 }
-            # DMs: conversaciones con cadete_id NO NULL (los autovinculados o
-            # vinculados a mano). Limitamos a últimas 50 para que el polling
-            # no se infle si hay muchos cadetes inactivos.
+            # DMs: conversaciones con cadete_id O del canal telegram_cadete
+            # (incluye huérfanos sin vincular, así el operador los ve y los
+            # puede asignar). Limitamos a últimas 50.
+            from sqlalchemy import or_ as _or
             convs = (s.query(database.BotConversacion)
-                     .filter(database.BotConversacion.cadete_id.isnot(None))
+                     .filter(_or(
+                         database.BotConversacion.cadete_id.isnot(None),
+                         database.BotConversacion.canal == 'telegram_cadete'))
                      .order_by(database.BotConversacion.ultimo_en.desc())
                      .limit(50).all())
             dms = []
@@ -1112,7 +1144,9 @@ def init_app(app):
                 dms.append({
                     'conv_id': c.id,
                     'cadete_id': c.cadete_id,
-                    'nombre': cad.nombre if cad else (c.nombre_cliente or 'Cadete'),
+                    'sin_vincular': c.cadete_id is None,
+                    'tg_user_id': c.canal_user_id if c.canal == 'telegram_cadete' else None,
+                    'nombre': cad.nombre if cad else (c.nombre_cliente or 'Sin vincular'),
                     'ultimo': ult.texto[:80] if ult else '',
                     'ultimo_en': ult.creado_en.isoformat() if (ult and ult.creado_en) else None,
                     'ultimo_origen': ult.origen if ult else None,
@@ -1145,10 +1179,11 @@ def init_app(app):
             return jsonify({'ok': True, 'conv_id': grupo.id,
                             'mensajes': [_msg_to_dict(m) for m in msgs]})
 
-    @app.route('/api/reparto/chat/cadete/<int:cadete_id>/mensajes')
+    @app.route('/api/reparto/chat/dm/<int:conv_id>/mensajes')
     @login_required
-    def api_reparto_chat_cadete_mensajes(cadete_id):
-        """DM con un cadete puntual. Igual semántica que el de grupo."""
+    def api_reparto_chat_dm_mensajes(conv_id):
+        """DM con un cadete o conv huérfana (sin cadete vinculado todavía).
+        Identifica por conv_id directo, así soporta ambos casos."""
         if not _ok():
             return jsonify({'ok': False, 'error': 'sin permiso'}), 403
         try:
@@ -1156,13 +1191,7 @@ def init_app(app):
         except (TypeError, ValueError):
             desde_id = 0
         with database.get_db() as s:
-            # No filtramos por canal: el cadete puede tener conv legacy
-            # whatsapp (WAHA) o nueva telegram_cadete. Identificamos por
-            # cadete_id que es lo único estable.
-            conv = (s.query(database.BotConversacion)
-                    .filter_by(cadete_id=cadete_id)
-                    .order_by(database.BotConversacion.ultimo_en.desc())
-                    .first())
+            conv = s.get(database.BotConversacion, conv_id)
             if not conv:
                 return jsonify({'ok': True, 'mensajes': [], 'conv_id': None})
             q = s.query(database.BotMensaje).filter_by(conversacion_id=conv.id)
@@ -1208,11 +1237,13 @@ def init_app(app):
             s.commit()
             return jsonify({'ok': True, 'mensaje': _msg_to_dict(m)})
 
-    @app.route('/api/reparto/chat/cadete/<int:cadete_id>/responder', methods=['POST'])
+    @app.route('/api/reparto/chat/dm/<int:conv_id>/responder', methods=['POST'])
     @login_required
-    def api_reparto_chat_cadete_responder(cadete_id):
-        """El operador escribe a un cadete (DM). Manda por WAHA al wa_id del
-        cadete y persiste."""
+    def api_reparto_chat_dm_responder(conv_id):
+        """El operador escribe a una conv DM. La conv puede tener Cadete
+        vinculado (canal 'telegram_cadete' con cadete_id) o ser huérfana
+        (canal_user_id = tg user_id, cadete_id NULL). En ambos casos
+        sacamos el tg_user_id de donde haya."""
         if not _ok():
             return jsonify({'ok': False, 'error': 'sin permiso'}), 403
         texto = ((request.json or {}).get('texto') or '').strip()
@@ -1220,35 +1251,70 @@ def init_app(app):
             return jsonify({'ok': False, 'error': 'texto vacío'}), 400
         from bot import telegram_grupo
         with database.get_db() as s:
-            cadete = s.get(database.Cadete, cadete_id)
-            if not cadete:
-                return jsonify({'ok': False, 'error': 'cadete no existe'}), 404
-            if not cadete.telegram_user_id:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'ok': False, 'error': 'conv no existe'}), 404
+            # Resolver tg_user_id: prioridad al Cadete vinculado, fallback al
+            # canal_user_id de la conv (caso huérfano).
+            tg_uid = None
+            cadete = s.get(database.Cadete, conv.cadete_id) if conv.cadete_id else None
+            if cadete and cadete.telegram_user_id:
+                tg_uid = cadete.telegram_user_id
+            elif conv.canal == 'telegram_cadete' and conv.canal_user_id:
+                try:
+                    tg_uid = int(conv.canal_user_id)
+                except (TypeError, ValueError):
+                    tg_uid = None
+            if not tg_uid:
                 return jsonify({'ok': False, 'error':
-                                'cadete sin telegram_user_id (todavía no clickeó TOMAR ni se vinculó)'}), 400
-            r = telegram_grupo.enviar_dm(cadete.telegram_user_id, texto)
+                                'no tengo telegram_user_id para esta conv (¿WAHA legacy?)'}), 400
+            r = telegram_grupo.enviar_dm(tg_uid, texto)
             if not r.get('ok'):
                 return jsonify({'ok': False, 'error': r.get('error') or 'fallo Telegram'}), 502
-            # Tomamos cualquier conv del cadete (sin filtrar por canal); si no
-            # existe creamos una nueva como 'telegram_cadete' que es el canal
-            # actual (WAHA quedó deprecado para cadetes el 2026-06-18).
-            conv = (s.query(database.BotConversacion)
-                    .filter_by(cadete_id=cadete_id)
-                    .order_by(database.BotConversacion.ultimo_en.desc())
-                    .first())
-            if not conv:
-                conv = database.BotConversacion(
-                    canal='telegram_cadete', canal_user_id=str(cadete.telegram_user_id),
-                    nombre_cliente=cadete.nombre,
-                    estado_atencion='humano', nodo='reparto',
-                    cadete_id=cadete.id)
-                s.add(conv); s.flush()
             m = database.BotMensaje(conversacion_id=conv.id, origen='operador', texto=texto)
             s.add(m)
             conv.ultimo_en = database.now_ar()
             conv.operador_user_id = current_user.id
             s.commit()
             return jsonify({'ok': True, 'mensaje': _msg_to_dict(m)})
+
+    @app.route('/api/reparto/chat/dm/<int:conv_id>/vincular-cadete', methods=['POST'])
+    @login_required
+    def api_reparto_chat_dm_vincular(conv_id):
+        """Toma una conv huérfana (canal=telegram_cadete, cadete_id=NULL),
+        crea un Cadete nuevo con el nombre que recibió y la vincula. El
+        operador puede editar todos los campos del cadete en /cadetes."""
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        nombre = ((request.json or {}).get('nombre') or '').strip()
+        if not nombre:
+            return jsonify({'ok': False, 'error': 'falta nombre'}), 400
+        with database.get_db() as s:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'ok': False, 'error': 'conv no existe'}), 404
+            if conv.cadete_id:
+                return jsonify({'ok': False, 'error': 'la conv ya está vinculada'}), 400
+            if conv.canal != 'telegram_cadete' or not conv.canal_user_id:
+                return jsonify({'ok': False, 'error': 'la conv no es de Telegram'}), 400
+            try:
+                tg_uid = int(conv.canal_user_id)
+            except (TypeError, ValueError):
+                return jsonify({'ok': False, 'error': 'canal_user_id no es numérico'}), 400
+            # Si ya hay un cadete con ese tg_user_id, solo vincular (no duplicar).
+            cad = (s.query(database.Cadete)
+                   .filter(database.Cadete.telegram_user_id == tg_uid).first())
+            if not cad:
+                cad = database.Cadete(
+                    nombre=nombre[:60],
+                    telegram_user_id=tg_uid,
+                    token=uuid.uuid4().hex[:12],
+                    activo=True)
+                s.add(cad); s.flush()
+            conv.cadete_id = cad.id
+            conv.nombre_cliente = cad.nombre
+            s.commit()
+            return jsonify({'ok': True, 'cadete_id': cad.id})
 
     @app.route('/reparto/pedido/<int:pid>/publicar', methods=['POST'])
     @login_required
