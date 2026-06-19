@@ -138,6 +138,22 @@ def _persistir_dm_telegram(telegram_user_id, push_name, body):
         cad = (s.query(database.Cadete)
                .filter(database.Cadete.telegram_user_id == telegram_user_id)
                .first())
+        # Fallback: si no hay match por tg_user_id, probamos por nombre. Si
+        # encontramos un cadete sin tg_user_id cuyo nombre contiene al
+        # push_name (mismo criterio que el TOMAR), aprovechamos el DM para
+        # autovincular. Así no hace falta tomar un pedido para empezar a
+        # chatear.
+        if not cad and push_name:
+            from sqlalchemy import func as _func
+            nombre_norm = ' '.join(push_name.lower().split())
+            if nombre_norm:
+                cad = (s.query(database.Cadete)
+                       .filter(_func.lower(database.Cadete.nombre)
+                               .like(f'%{nombre_norm}%'),
+                               database.Cadete.telegram_user_id.is_(None))
+                       .first())
+                if cad:
+                    cad.telegram_user_id = telegram_user_id
         if not cad:
             log.warning(
                 '[telegram DM] descartado: user_id=%s name=%r no está vinculado '
