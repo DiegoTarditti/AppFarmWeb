@@ -20,10 +20,10 @@
   .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border); background:var(--hov); color:var(--txt); cursor:pointer; text-decoration:none; }
   .hbtn-ok { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700; }
   .input { background:var(--hov); color:var(--txt); border:1px solid var(--border); border-radius:8px; padding:7px 9px; font-size:13px; }
-  .wrap { padding:16px; max-width:1100px; margin:0 auto; }
+  .wrap { padding:16px; max-width:1500px; margin:0 auto; }
   .muted { color:var(--muted); } .muted2 { color:var(--muted2); }
   /* Card por cadete */
-  .cad { background:var(--card); border:1px solid var(--border); border-radius:14px; margin-bottom:16px; overflow:hidden; }
+  .cad { background:var(--card); border:1px solid var(--border); border-radius:14px; margin-bottom:16px; overflow-x:auto; }
   .cad-head { display:flex; align-items:center; gap:10px; padding:11px 14px; background:var(--surface);
               border-bottom:1px solid var(--border); flex-wrap:wrap; }
   .cad-name { font-weight:800; font-size:14px; }
@@ -89,6 +89,19 @@ function cobroCell(p){
   if(p.pagado) return '<span class="pill ok">💵 cobrado</span>';
   return `<button class="mini warn" onclick="cobrar(${p.id})" title="${money(montoCobro(p))}">💵 cobrar ${money(montoCobro(p))}</button>`;
 }
+// ¿Le pagué el envío al cadete? (toggle envio_liquidado por fila)
+function liqCell(p){
+  if(p.envio_costo==null) return '<span class="muted2">—</span>';
+  if(p.envio_liquidado) return `<button class="mini ok" onclick="liquidarUno(${p.id})" title="Pagado al cadete — clic para deshacer">✓ pagado</button>`;
+  return `<button class="mini" onclick="liquidarUno(${p.id})" title="Marcar que le pagaste este envío al cadete">pagar ${money(p.envio_costo)}</button>`;
+}
+
+const DASH = '<span class="muted2">—</span>';
+function num(v){ return v!=null ? money(v) : DASH; }
+function vNum(p){ const s=(p.vuelto||'').toString().trim(); return /^\d+$/.test(s) ? parseFloat(s) : 0; }
+function operacionCell(p){ return (p.importe!=null||p.envio_costo!=null) ? money((p.importe||0)-(p.envio_costo||0)) : DASH; }
+function pagaConCell(p){ return p.importe!=null ? money((p.importe||0)+vNum(p)) : DASH; }   // Importe + Vuelto
+function vueltoCell(p){ const s=(p.vuelto||'').toString().trim(); if(!s) return DASH; return /^\d+$/.test(s) ? money(parseFloat(s)) : esc(s); }
 
 async function cargar(){
   const d = await (await fetch('/reparto/api?fecha='+fechaVal())).json();
@@ -114,12 +127,19 @@ async function cargar(){
       .sort((a,b)=> (a.estado==='entregado')-(b.estado==='entregado') || (a.cliente_nombre||'').localeCompare(b.cliente_nombre||''))
       .map(p=>`<tr class="${p.estado==='entregado'?'entregado':''}">
         <td><b>${esc(p.cliente_nombre)}</b></td>
-        <td>${esc(p.direccion)||'<span class="muted2">—</span>'}</td>
-        <td>${p.envio_costo!=null?money(p.envio_costo):'<span class="muted2">—</span>'}</td>
+        <td>${esc(p.direccion)||DASH}</td>
+        <td>${p.telefono?esc(p.telefono):DASH}</td>
+        <td>${p.forma_pago?esc(p.forma_pago):DASH}</td>
+        <td>${operacionCell(p)}</td>
+        <td>${num(p.envio_costo)}</td>
+        <td>${num(p.importe)}</td>
+        <td>${pagaConCell(p)}</td>
+        <td>${vueltoCell(p)}</td>
         <td class="muted">${esc(p.observacion)||''}</td>
         <td style="text-align:center;">${recetaCell(p)}</td>
         <td>${estadoCell(p)}</td>
         <td>${cobroCell(p)}</td>
+        <td>${liqCell(p)}</td>
       </tr>`).join('');
     const liq = g.cid ? `<button class="hbtn hbtn-ok" onclick="liquidar(${g.cid}, '${esc(g.nombre)}', ${seLeDebe})" ${seLeDebe?'':'disabled style=\"opacity:.45;cursor:default;\"'}>Liquidar</button>` : '';
     return `<div class="cad">
@@ -133,8 +153,9 @@ async function cargar(){
       </div>
       <table>
         <thead><tr>
-          <th>Cliente</th><th>Dirección</th><th>Envío</th><th>Observación</th>
-          <th>Rx</th><th>Estado</th><th>Cobro</th>
+          <th>Cliente</th><th>Dirección</th><th>Tel</th><th>Forma pago</th>
+          <th>Operación</th><th>Envío</th><th>Importe</th><th>Paga con</th><th>Vuelto</th>
+          <th>Observación</th><th>Rx</th><th>Estado</th><th>Cobro</th><th>Pago cadete</th>
         </tr></thead>
         <tbody>${filas}</tbody>
       </table>
@@ -144,6 +165,7 @@ async function cargar(){
 
 async function estado(pid, e){ await jpost(`/reparto/pedido/${pid}/estado`, {estado:e}); cargar(); }
 async function cobrar(pid){ await jpost(`/reparto/pedido/${pid}/cobrar`, {pagado:true}); cargar(); }
+async function liquidarUno(pid){ await jpost(`/reparto/pedido/${pid}/liquidar`, {}); cargar(); }
 async function liquidar(cid, nombre, total){
   if(!total){ return; }
   if(!confirm(`¿Liquidar ${money(total)} de envíos a ${nombre}? Se marcan como pagados sus entregados de hoy.`)) return;
@@ -152,7 +174,8 @@ async function liquidar(cid, nombre, total){
   else { alert('⚠️ '+(d.error||'no se pudo')); }
 }
 
-document.getElementById('fecha').value = hoyISO();
+// Respeta ?fecha= de la URL; si no viene, hoy.
+document.getElementById('fecha').value = new URLSearchParams(location.search).get('fecha') || hoyISO();
 cargar();
 </script>
 </body>

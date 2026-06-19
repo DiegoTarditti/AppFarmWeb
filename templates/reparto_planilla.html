@@ -220,14 +220,15 @@
       <th style="min-width:130px;">Cliente</th>
       <th style="min-width:160px;">Dirección</th>
       <th style="width:85px;">Teléfono</th>
-      <th style="width:70px;">Envío $<div class="col-sum" data-col="envio"></div></th>
       <th style="width:65px;">Tomó</th>
-      <th style="width:80px;">Importe<div class="col-sum" data-col="importe"></div></th>
-      <th style="width:80px;">Operación<div class="col-sum" data-col="operacion"></div></th>
       <th style="width:80px;">Forma pago</th>
-      <th style="width:90px;">Vuelto</th>
-      <th style="width:110px;">Producto</th>
-      <th style="min-width:130px;">Observación</th>
+      <th style="width:80px;">Operación<div class="col-sum" data-col="operacion"></div></th>
+      <th style="width:70px;">Envío $<div class="col-sum" data-col="envio"></div></th>
+      <th style="width:80px;">Importe<div class="col-sum" data-col="importe"></div></th>
+      <th style="width:62px; white-space:normal;">Paga con</th>
+      <th style="width:68px;">Vuelto</th>
+      <th style="width:170px;">Producto</th>
+      <th style="width:170px;">Observación</th>
       <th style="width:50px;">Receta</th>
       <th style="width:130px;" title="Pendiente · pLanilla · pUblicado · Tomado · Ruta · Entregado">Estado</th>
       <th style="width:75px;">Entregó</th>
@@ -278,16 +279,11 @@
       <td style="font-size:11px; color:var(--muted);">
         {% if p.telefono %}<a href="tel:{{ p.telefono }}" style="color:var(--accenttxt);">{{ p.telefono }}</a>{% else %}—{% endif %}
       </td>
-      <td class="celda-editable" data-campo="envio_costo" data-tipo="text">
-        <input type="checkbox" class="chk-sum" data-col="envio" data-val="{{ p.envio_costo or 0 }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
-        <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
-      </td>
       <td class="celda-editable" data-campo="tomo" data-tipo="select-usuarios">
         <span class="celda-valor">{{ p.tomo or '—' }}</span>
       </td>
-      <td class="celda-editable" data-campo="importe" data-tipo="text">
-        <input type="checkbox" class="chk-sum" data-col="importe" data-val="{{ p.importe or 0 }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
-        <span class="celda-valor">{{ '$ {:,.0f}'.format(p.importe) if p.importe is not none else '—' }}</span>
+      <td class="celda-editable" data-campo="forma_pago" data-tipo="select-forma_pago">
+        <span class="celda-valor" style="color:var(--warn); font-weight:600;">{{ p.forma_pago or '—' }}</span>
       </td>
       {# Operación = Importe − Envío (lo del producto, sin el envío). Derivada, no editable. #}
       {% set _op = (p.importe or 0) - (p.envio_costo or 0) %}
@@ -295,8 +291,21 @@
         <input type="checkbox" class="chk-sum" data-col="operacion" data-val="{{ _op }}" onchange="sumarCol(this)">
         <span>{{ '$ {:,.0f}'.format(_op) if (p.importe is not none or p.envio_costo is not none) else '—' }}</span>
       </td>
-      <td class="celda-editable" data-campo="forma_pago" data-tipo="select-forma_pago">
-        <span class="celda-valor" style="color:var(--warn); font-weight:600;">{{ p.forma_pago or '—' }}</span>
+      <td class="celda-editable" data-campo="envio_costo" data-tipo="text">
+        <input type="checkbox" class="chk-sum" data-col="envio" data-val="{{ p.envio_costo or 0 }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
+        <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="importe" data-tipo="text">
+        <input type="checkbox" class="chk-sum" data-col="importe" data-val="{{ p.importe or 0 }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
+        <span class="celda-valor">{{ '$ {:,.0f}'.format(p.importe) if p.importe is not none else '—' }}</span>
+      </td>
+      {# Con cuánto paga = Importe (total) + Vuelto. Derivado de lo ya calculado. #}
+      {% set _vstr = (p.vuelto or '').strip() %}
+      {% set _vclean = _vstr.replace('.','').replace(',','').replace('-','').replace(' ','') %}
+      {% set _vnum = (_vstr|float) if (_vstr and _vclean.isdigit()) else 0 %}
+      {% set _imp = (p.importe|float) if p.importe is not none else 0 %}
+      <td>
+        <span>{{ '$ {:,.0f}'.format(_imp + _vnum) if p.importe is not none else '—' }}</span>
       </td>
       <td class="celda-editable" data-campo="vuelto" data-tipo="text">
         {# Si el vuelto es numérico, lo formateamos como $ con separador de miles. #}
@@ -310,10 +319,10 @@
           {% endif %}
         </span>
       </td>
-      <td class="celda-editable" data-campo="producto" data-tipo="text" style="max-width:120px; overflow:hidden; text-overflow:ellipsis;">
+      <td class="celda-editable" data-campo="producto" data-tipo="text" style="max-width:200px; overflow:hidden; text-overflow:ellipsis;">
         <span class="celda-valor">{{ p.producto or '—' }}</span>
       </td>
-      <td class="celda-editable" data-campo="observacion" data-tipo="text" style="max-width:150px; overflow:hidden; text-overflow:ellipsis;">
+      <td class="celda-editable" data-campo="observacion" data-tipo="text" style="max-width:200px; overflow:hidden; text-overflow:ellipsis;">
         <span class="celda-valor">{{ p.observacion or '—' }}</span>
       </td>
       <td style="text-align:center;">
@@ -374,7 +383,7 @@
            (sin cadete_id), igual mostramos su nombre (tomado_por_wsap). #}
         <span class="celda-valor">{{ cadetes.get(p.cadete_id) or p.tomado_por_wsap or '—' }}</span>
       </td>
-      <td class="celda-editable" data-campo="recibio" data-tipo="text">
+      <td class="celda-editable" data-campo="recibio" data-tipo="select-usuarios">
         <span class="celda-valor">{{ p.recibio or '—' }}</span>
       </td>
       <td style="text-align:center;">
@@ -432,7 +441,7 @@
     </tr>
     {% endfor %}
     {% if not pedidos %}
-    <tr><td colspan="19" class="sin-pedidos">Sin pedidos</td></tr>
+    <tr><td colspan="20" class="sin-pedidos">Sin pedidos</td></tr>
     {% endif %}
   </tbody>
 </table>
@@ -553,7 +562,7 @@ function cambiarDia(delta, fechaStr) {
 }
 
 const CADETES = {{ cadetes | tojson }};
-const CADETE_OPTS = '<option value="">—</option>' + Object.entries(CADETES).map(([id,n])=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+const CADETE_OPTS = '<option value="">—</option>' + Object.entries(CADETES).map(([id,n])=>`<option value="${id}">${esc(n)}</option>`).join('');
 const USUARIOS = {{ usuarios | tojson }};
 const USUARIO_OPTS = '<option value="">—</option>' + USUARIOS.map(u=>`<option value="${esc(u.nombre)}">${esc(u.nombre)}</option>`).join('');
 const FORMA_PAGO_OPTS = '<option value="">—</option>' + ['efectivo','transfer','link','sc','debito','credito'].map(v=>`<option value="${v}">${v}</option>`).join('');
@@ -618,7 +627,7 @@ document.querySelectorAll('.celda-editable').forEach(td => {
       input = document.createElement('select');
       input.innerHTML = CADETE_OPTS;
       const match = Object.entries(CADETES).find(([,n]) => n === valorActual);
-      input.value = match ? match[1] : '';
+      input.value = match ? match[0] : '';
     } else {
       input = document.createElement('input');
       input.type  = campo === 'importe' ? 'number' : 'text';
