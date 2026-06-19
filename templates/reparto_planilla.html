@@ -829,7 +829,7 @@ async function chatRefrescar(){
           const tgId = it.sin_vincular && it.tg_user_id
             ? `<span class="muted2" style="font-size:9px;">tg:${it.tg_user_id}</span>` : '';
           return `
-          <div class="dm-item" onclick="chatAbrirDm(${it.conv_id}, '${esc(it.nombre)}', ${it.sin_vincular ? 'true' : 'false'}, ${JSON.stringify(it.tg_user_id || '')})">
+          <div class="dm-item" onclick="chatAbrirDm(${it.conv_id}, '${esc(it.nombre)}', ${it.sin_vincular ? 'true' : 'false'}, '${esc(String(it.tg_user_id || ''))}')">
             <div style="flex:1; min-width:0;">
               <div class="name">${esc(it.nombre)} ${badge}</div>
               <div class="last">${esc(it.ultimo || '')} ${tgId}</div>
