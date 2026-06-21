@@ -145,6 +145,17 @@ def editar_mensaje_grupo(message_id, nuevo_texto, sacar_kb=True, chat_id=None):
     return r
 
 
+def sacar_botones_grupo(message_id, chat_id=None):
+    """Quita el inline keyboard del mensaje del grupo SIN tocar el texto.
+    Diego 2026-06-19: al TOMAR el botón desaparece pero el detalle del
+    pedido queda visible en el grupo. El seguimiento pasa al DM del cadete."""
+    chat = chat_id or GRUPO_CHAT_ID
+    return _post('editMessageReplyMarkup', json={
+        'chat_id': chat, 'message_id': int(message_id),
+        'reply_markup': {'inline_keyboard': []},
+    })
+
+
 def answer_callback(callback_query_id, texto=None, alert=False):
     """Responde el callback al usuario que clickeó el botón. Muestra un toast
     chico (alert=False) o un dialog (alert=True). Sin texto: cierra el spinner.
@@ -161,8 +172,10 @@ def answer_callback(callback_query_id, texto=None, alert=False):
 
 # ── DM 1:1 al cadete ────────────────────────────────────────────────────────
 
-def enviar_dm(user_id, texto):
+def enviar_dm(user_id, texto, botones=None):
     """Mensaje directo al cadete. user_id es el telegram_user_id (int).
+    botones: lista de filas de InlineKeyboardButton dicts. Ejemplo:
+        [[{'text': '✅ Retiré', 'callback_data': 'retiro:123'}]]
 
     OJO: el bot solo puede DM a usuarios que ANTES iniciaron conversación con él
     (vía /start o similar). Si nunca hablaron, Telegram devuelve 'Forbidden:
@@ -172,15 +185,30 @@ def enviar_dm(user_id, texto):
     """
     if not user_id:
         return {'ok': False, 'error': 'user_id vacío'}
-    r = _post('sendMessage', json={
+    body = {
         'chat_id': int(user_id),
         'text': texto,
         'parse_mode': 'HTML',
         'disable_web_page_preview': True,
-    })
+    }
+    if botones:
+        body['reply_markup'] = {'inline_keyboard': botones}
+    r = _post('sendMessage', json=body)
     if not r['ok']:
         return r
     return {'ok': True, 'telegram_msg_id': r['result']['message_id'], 'raw': r['result']}
+
+
+def editar_botones_dm(user_id, message_id, botones):
+    """Cambia el inline keyboard de un DM previo (no toca el texto). Útil
+    para evolucionar 'Retiré' → 'Entregado' → sin botones."""
+    if not user_id or not message_id:
+        return {'ok': False, 'error': 'datos incompletos'}
+    return _post('editMessageReplyMarkup', json={
+        'chat_id': int(user_id),
+        'message_id': int(message_id),
+        'reply_markup': {'inline_keyboard': botones or []},
+    })
 
 
 # ── Parseo de updates entrantes ─────────────────────────────────────────────
@@ -204,7 +232,13 @@ def parsear_update(payload):
     cb = payload.get('callback_query')
     if cb:
         data = cb.get('data') or ''
-        if data.startswith('tomar:'):
+        # Tres callbacks soportados: 'tomar:<pid>', 'retirado:<pid>',
+        # 'entregado:<pid>'. Cada uno avanza un paso del workflow del cadete.
+        _PREFIJOS = {'tomar:': 'callback_tomar',
+                     'retirado:': 'callback_retirado',
+                     'entregado:': 'callback_entregado'}
+        prefijo_match = next((p for p in _PREFIJOS if data.startswith(p)), None)
+        if prefijo_match:
             try:
                 pid = int(data.split(':', 1)[1])
             except (ValueError, IndexError):
@@ -213,7 +247,7 @@ def parsear_update(payload):
             msg = cb.get('message') or {}
             chat = msg.get('chat') or {}
             return {
-                'tipo': 'callback_tomar',
+                'tipo': _PREFIJOS[prefijo_match],
                 'callback_query_id': cb.get('id'),
                 'user_id': user.get('id'),
                 'user_name': _full_name(user),

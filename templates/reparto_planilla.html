@@ -17,7 +17,10 @@
     --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   }
   * { box-sizing:border-box; }
-  body { margin:0; min-height:100vh; background:var(--bg); color:var(--txt); font-family:var(--font); }
+  /* height fijo 100vh + overflow hidden: la página nunca scrollea como un todo.
+     El scroll vive dentro de .wrap (las tablas), así el chat-panel lateral
+     y la topbar quedan siempre visibles sin sticky/fixed. Diego 2026-06-19. */
+  html, body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(--txt); font-family:var(--font); }
   .topbar { height:50px; background:var(--surface); border-bottom:1px solid var(--border);
             display:flex; align-items:center; gap:12px; padding:0 18px; flex-wrap:wrap; }
   .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
@@ -117,8 +120,10 @@
   .sin-pedidos { text-align:center; padding:40px; color:var(--muted); }
 
   /* ── Panel colapsable de chat de reparto (Grupo cadetes + DMs) ────────── */
-  .planilla-shell { display:flex; align-items:stretch; min-height:calc(100vh - 50px); }
-  .wrap { flex:1; min-width:0; }   /* deja respirar al aside lateral */
+  /* Shell: ocupa exactamente el viewport menos la topbar y NO crece. Las tablas
+     scrollean dentro de .wrap. El chat-panel a la derecha siempre visible. */
+  .planilla-shell { display:flex; align-items:stretch; height:calc(100vh - 50px); }
+  .wrap { flex:1; min-width:0; overflow-y:auto; padding-bottom:20px; }   /* scroll interno */
   /* Chat panel: queda en dark mode dentro del shell claro (las burbujas se leen
      mejor sobre fondo oscuro, patrón WhatsApp/Telegram). Override scoped de
      variables — los hijos del panel heredan estos valores en vez de los del tema. */

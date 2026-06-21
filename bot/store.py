@@ -179,11 +179,12 @@ def listar_operadores():
     """Usuarios que pueden atender, con su presencia (estado + conectado).
     Conectado = mandó heartbeat en los últimos 70 s (panel abierto).
 
-    Filtra los 'operador' por tener el perfil 'chat_clientes' (el que da
-    acceso a /atencion). Diego 2026-06-19: la lista se había vuelto
-    interminable porque incluía todos los operadores del sistema (rendición,
-    auditor, etc.) que nunca atienden el chat. admin/farmacia/dev pasan
-    siempre (superusers).
+    Filtra a TODOS los usuarios por tener 'chat_clientes' en perfiles_json
+    (el perfil que da acceso a /atencion). admin/farmacia/dev también
+    necesitan tenerlo si quieren aparecer en el equipo — Diego 2026-06-19:
+    sino la lista quedaba contaminada con superusers que nunca atienden.
+    Para incluir un admin en el equipo, agregá 'chat_clientes' a sus
+    perfiles desde /usuarios.
     """
     import json as _json
     ahora = database.now_ar()
@@ -194,13 +195,12 @@ def listar_operadores():
               .order_by(database.Usuario.username).all())
         out = []
         for u in us:
-            if u.rol == 'operador':
-                try:
-                    perfiles = _json.loads(u.perfiles_json or '[]')
-                except (ValueError, TypeError):
-                    perfiles = []
-                if 'chat_clientes' not in perfiles:
-                    continue
+            try:
+                perfiles = _json.loads(u.perfiles_json or '[]')
+            except (ValueError, TypeError):
+                perfiles = []
+            if 'chat_clientes' not in perfiles:
+                continue
             out.append({'id': u.id, 'nombre': u.nombre_completo or u.username, 'rol': u.rol,
                         'username': u.username,
                         'iniciales': _iniciales(u.nombre_completo or u.username),
@@ -809,18 +809,14 @@ def get_domicilio(dom_id):
 # ── Buscador de productos (panel de atención) ────────────────────────────────
 
 def _fmt_presentacion(r):
-    partes = []
-    if r.concentracion_mg:
-        c = r.concentracion_mg
-        c = int(c) if c == int(c) else c
-        partes.append(f"{c} {r.concentracion_unidad or 'mg'}")
+    # La descripción de Observer ya trae forma/dosis en el nombre ('COM x 60'),
+    # así que la "presentación" derivada se reduce a 'N u.' si hay
+    # cantidad_envase. Sin esto queda vacía y se omite del subtítulo.
     if r.cantidad_envase:
         n = r.cantidad_envase
         n = int(n) if n == int(n) else n
-        partes.append(f"{n} {r.forma_farma or 'u.'}")
-    elif r.forma_farma:
-        partes.append(r.forma_farma)
-    return ' · '.join(partes)
+        return f'{n} u.'
+    return ''
 
 
 def buscar_productos_detalle(query, limite=12):
@@ -841,13 +837,24 @@ def buscar_productos_detalle(query, limite=12):
     params = {f'p{i}': f'%{w}%' for i, w in enumerate(palabras)}
     params['lim'] = limite
     params['fid'] = id_farmacia
+    # Solo obs_* + LEFT JOIN simple con productos master para el precio.
+    # Si el master no tiene precio, fallback a product_analytics vía EAN
+    # del master (subquery scalar, NO multiplica filas). Diego 2026-06-19.
     sql = database.text(f"""
         SELECT op.descripcion,
-               COALESCE(os.stock_actual, 0)             AS stock,
-               COALESCE(pa.precio_pvp, pr.precio_pvp)   AS precio_pvp,
-               nd.descripcion               AS droga,
-               atr.concentracion_mg, atr.concentracion_unidad, atr.forma_farma, atr.cantidad_envase,
-               op.id_tipo_venta_control     AS tvc,
+               COALESCE(os.stock_actual, 0)  AS stock,
+               COALESCE(
+                 pr.precio_pvp,
+                 (SELECT pa.precio_pvp
+                    FROM product_analytics pa
+                   WHERE pa.codigo_barra = pr.codigo_barra
+                     AND pa.precio_pvp > 0
+                   LIMIT 1)
+               )                            AS precio_pvp,
+               nd.descripcion                AS droga,
+               op.cantidad_envase            AS cantidad_envase,
+               op.es_fraccionable            AS fraccionable,
+               op.id_tipo_venta_control      AS tvc,
                op.observer_id
           FROM obs_productos op
           JOIN obs_stock os
@@ -855,14 +862,8 @@ def buscar_productos_detalle(query, limite=12):
            AND os.id_farmacia = :fid
           LEFT JOIN obs_nombres_drogas nd
             ON nd.observer_id = op.nombre_droga_observer
-          LEFT JOIN obs_codigos_barras cb
-            ON cb.producto_observer = op.observer_id AND cb.fecha_baja IS NULL
-          LEFT JOIN product_analytics pa
-            ON pa.codigo_barra = cb.codigo_barras
           LEFT JOIN productos pr
             ON pr.observer_id = op.observer_id
-          LEFT JOIN producto_atributos atr
-            ON atr.producto_id = pr.id
          WHERE op.fecha_baja IS NULL
            AND ({cond_prod} OR {cond_droga})
          ORDER BY (os.stock_actual > 0) DESC, os.stock_actual DESC, op.descripcion
@@ -878,6 +879,7 @@ def buscar_productos_detalle(query, limite=12):
         stock = int(r.stock or 0)
         nivel = 'none' if stock <= 0 else ('low' if stock <= 5 else 'ok')
         tvc = (r.tvc or '').strip()
+        cant_env = int(r.cantidad_envase) if r.cantidad_envase else None
         out.append({
             'nombre': r.descripcion, 'droga': r.droga or '',
             'presentacion': _fmt_presentacion(r),
@@ -885,6 +887,8 @@ def buscar_productos_detalle(query, limite=12):
             'stock': stock, 'nivel': nivel,
             'receta': bool(tvc and tvc != 'L'),
             'observer_id': r.observer_id,
+            'fraccionable': bool(r.fraccionable),
+            'cantidad_envase': cant_env,
         })
     return out
 

@@ -734,16 +734,18 @@ async function cargarEquipo() {
     document.getElementById('me-label').textContent = p.l;
     document.getElementById('me-btn').style.opacity = yo.estado === 'ausente' ? '0.55' : '1';
   }
-  document.getElementById('equipo').innerHTML = ops.filter(o => o.id !== YO).map(o => {
-    const p = PRES[o.estado] || PRES.online;
-    const col = o.conectado ? p.c : 'var(--away)';
-    const op = o.conectado ? '1' : '0.4';
-    const est = o.conectado ? p.l : 'desconectado';
-    return `<div title="${esc(o.nombre)} — ${est}" style="position:relative; width:26px; height:26px; opacity:${op};">
-        <div style="width:26px; height:26px; border-radius:50%; background:var(--cardic); color:var(--cardic-tx); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600;">${esc(o.iniciales)}</div>
-        <span style="position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; background:${col}; border:2px solid var(--topbar);"></span>
-      </div>`;
-  }).join('');
+  // Solo conectados (panel abierto en los últimos 70s). Los desconectados
+  // contaminaban el encabezado con una fila larga de iniciales en gris que
+  // no aportaba info útil (Diego 2026-06-19).
+  document.getElementById('equipo').innerHTML = ops
+    .filter(o => o.id !== YO && o.conectado)
+    .map(o => {
+      const p = PRES[o.estado] || PRES.online;
+      return `<div title="${esc(o.nombre)} — ${p.l}" style="position:relative; width:26px; height:26px;">
+          <div style="width:26px; height:26px; border-radius:50%; background:var(--cardic); color:var(--cardic-tx); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600;">${esc(o.iniciales)}</div>
+          <span style="position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; background:${p.c}; border:2px solid var(--topbar);"></span>
+        </div>`;
+    }).join('');
 }
 
 function heartbeat() { fetch('/atencion/heartbeat', {method: 'POST'}).catch(() => {}); }
@@ -1520,31 +1522,57 @@ async function buscarProductos() {
 function rowProducto(p) {
   const sin = p.nivel === 'none';
   const dotCol = p.nivel === 'ok' ? '#1D9E75' : p.nivel === 'low' ? 'var(--busy)' : 'var(--away)';
-  const stockTxt = p.nivel === 'ok' ? `En stock · ${p.stock} u.`
-                 : p.nivel === 'low' ? `Últimas ${p.stock} u.` : 'Sin stock';
+  // Si es fraccionable y sabemos cantidad por envase, mostramos
+  //   envases enteros / unidades sueltas.
+  // Ej: stock=844, cantidad_envase=98 → "8 env / 844 u".
+  let stockTxt;
+  if (sin) {
+    stockTxt = 'Sin stock';
+  } else if (p.fraccionable && p.cantidad_envase) {
+    const envEnt = Math.floor(p.stock / p.cantidad_envase);
+    stockTxt = `${envEnt} env / ${p.stock} u · x${p.cantidad_envase}`;
+  } else {
+    stockTxt = (p.nivel === 'low' ? `Últimas ${p.stock} u.` : `En stock · ${p.stock} u.`);
+  }
   const stockCls = sin ? 'muted2' : (p.nivel === 'low' ? 'busy-txt' : 'accent-txt');
   const rx = p.receta
     ? '<span class="rx" style="font-size:8px; padding:2px 6px; border-radius:8px; display:inline-flex; align-items:center; gap:3px;"><i class="ti ti-prescription" style="font-size:9px"></i>Receta</span>'
     : '';
+  const frac = p.fraccionable
+    ? '<span class="rx" style="font-size:8px; padding:2px 6px; border-radius:8px; background:#a78bfa22; color:#a78bfa; border:1px solid #a78bfa55;" title="Se vende fraccionado">FR</span>'
+    : '';
   const sub = [esc(p.droga), esc(p.presentacion)].filter(Boolean).join(' · ');
-  const arg = encodeURIComponent(JSON.stringify({n: p.nombre, pr: p.precio, s: sub}));
+  const arg = encodeURIComponent(JSON.stringify({
+    n: p.nombre, pr: p.precio, s: sub,
+    oid: p.observer_id, ce: p.cantidad_envase || 0, fr: !!p.fraccionable
+  }));
+  // Si es fraccionable, input numérico al lado del + para vender N unidades
+  // sueltas (precio = precio_envase / cantidad_envase * N). Default 1 u.
+  const fracInput = (!sin && p.fraccionable && p.cantidad_envase)
+    ? `<input id="qty_${p.observer_id}" type="number" min="1" step="1" value="1"
+        onclick="event.stopPropagation()" title="Unidades sueltas (envase = ${p.cantidad_envase})"
+        style="width:42px; padding:3px 5px; font-size:11px; background:rgba(0,0,0,0.25); color:var(--txt); border:1px solid rgba(255,255,255,0.18); border-radius:5px; text-align:center; margin-top:4px;">`
+    : '';
   const plus = sin ? ''
-    : `<div class="card-ic" onclick="agregarProductoEnc('${arg}')" title="Agregar al pedido" style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; margin-top:4px; margin-left:auto; cursor:pointer;"><i class="ti ti-plus" style="font-size:13px"></i></div>`;
+    : `<div class="card-ic" onclick="agregarProductoEnc('${arg}')" title="Agregar al pedido" style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; margin-top:4px; cursor:pointer;"><i class="ti ti-plus" style="font-size:13px"></i></div>`;
   return `
     <div class="sp-row" style="display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:0.5px solid; ${sin ? 'opacity:0.5;' : ''}">
       <div style="flex:1; min-width:0;">
         <div style="display:flex; align-items:center; gap:6px;">
-          <span class="title" style="font-size:12px;">${esc(p.nombre)}</span> ${rx}
+          <span class="title" style="font-size:13px; font-weight:600;">${esc(p.nombre)}</span> ${rx} ${frac}
         </div>
-        ${sub ? `<div class="muted" style="font-size:10px; margin-top:1px;">${sub}</div>` : ''}
-        <div style="display:flex; align-items:center; gap:5px; margin-top:3px;">
-          <span style="width:5px; height:5px; border-radius:50%; background:${dotCol};"></span>
-          <span class="${stockCls}" style="font-size:9px; color:${p.nivel === 'low' ? 'var(--busytx)' : ''};">${stockTxt}</span>
+        ${sub ? `<div style="font-size:12px; margin-top:2px; color:rgba(255,255,255,0.78);">${sub}</div>` : ''}
+        <div style="display:flex; align-items:center; gap:6px; margin-top:4px;">
+          <span style="width:7px; height:7px; border-radius:50%; background:${dotCol};"></span>
+          <span style="font-size:12px; font-weight:600; color:${sin ? 'rgba(255,255,255,0.55)' : (p.nivel === 'low' ? '#F8B95E' : '#5FE5A8')};">${stockTxt}</span>
         </div>
       </div>
-      <div style="text-align:right; flex-shrink:0;">
-        <div class="${sin ? 'muted2' : 'title'}" style="font-size:12px;">${fmtPrecio(p.precio)}</div>
-        ${plus}
+      <div style="text-align:right; flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:0;">
+        <div class="${sin ? 'muted2' : 'title'}" style="font-size:13px; font-weight:600;">${fmtPrecio(p.precio)}</div>
+        <div style="display:flex; align-items:center; gap:5px;">
+          ${fracInput}
+          ${plus}
+        </div>
       </div>
     </div>`;
 }
@@ -1555,12 +1583,27 @@ const _kprod = n => (n || '').trim().toLowerCase();
 
 function agregarProductoEnc(enc) {
   const o = JSON.parse(decodeURIComponent(enc));
-  agregarProducto(o.n, o.pr, o.s);
+  // Fraccionado: el operador eligió N unidades sueltas. El precio unitario
+  // se calcula dividiendo el precio del envase por la cantidad por envase.
+  // El nombre incluye la fracción para diferenciar líneas distintas del
+  // mismo producto (ej: 1/60 vs 3/60 → líneas separadas).
+  if (o.fr && o.ce > 0) {
+    const inp = document.getElementById(`qty_${o.oid}`);
+    const cant = Math.max(1, parseInt((inp && inp.value) || '1', 10));
+    const precioU = o.pr ? (o.pr / o.ce) : 0;
+    const nombre = `${o.n} (${cant}/${o.ce})`;
+    const sub = o.s ? `${o.s} · fracc.` : 'fracc.';
+    agregarProducto(nombre, precioU, sub, cant);
+    if (inp) inp.value = 1;  // reset para próxima vez
+    return;
+  }
+  agregarProducto(o.n, o.pr, o.s, 1);
 }
-function agregarProducto(nombre, precio, sub) {
+function agregarProducto(nombre, precio, sub, cant) {
+  cant = cant || 1;
   const it = pedido.find(x => _kprod(x.nombre) === _kprod(nombre));
-  if (it) it.cant++;
-  else pedido.push({nombre, precio: precio || 0, sub: sub || '', cant: 1});
+  if (it) it.cant += cant;
+  else pedido.push({nombre, precio: precio || 0, sub: sub || '', cant});
   renderPedido();
 }
 function cambiarCant(i, d) {

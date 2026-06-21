@@ -1352,6 +1352,104 @@ una tarea aparte.
 
 ---
 
+## ⏳ Pendiente — Precio actual desde `DW.ProductosVendidos` (2026-06-19)
+
+**Trigger**: el buscador de productos en /atencion muestra el "precio
+histórico promedio" del último mes con ventas (`product_analytics.precio_pvp`,
+calculado por `pvp_reciente()`). Eso queda desactualizado vs el precio
+"lista actual" que Observer muestra en su UI propia. Ejemplo concreto
+2026-06-19: Buscapina Compositum x 60 mostraba **$76.670** en el buscador
+pero Observer decía **$61.200**.
+
+**Diagnóstico** (vía exploración con `scripts/observer_buscar_precio.py`):
+- `DW.Productos` **NO expone** el precio lista actual. Solo trae catálogo
+  (descripción, lab, droga, fraccionable, troquel, alfabeta).
+- `DW.ProductosHistorico` (kardex) tampoco — solo metadatos del producto.
+- `DW.ProductosVendidos.Precio` (money) SÍ tiene el precio unitario por
+  venta. Y `FechaDeOperacion` (datetime) permite ordenar por última venta.
+
+**Caveat (fraccionados)**: `Precio` es por **unidad vendida**, no por envase.
+Para Buscapina (fraccionable, envase=60): última venta `Precio=$1.122`,
+`Cantidad=0.167` (= 10 unidades), `Importe=$11.220`. El precio del envase
+sería $1.122 × 60 = $67.320 (cerca del $61.200 que ve Diego, capaz hay
+un descuento o diferencia IVA).
+
+**Cómo**:
+1. ALTER TABLE `obs_productos` ADD COLUMN `precio_ultima_venta DECIMAL(14,2)`.
+2. Nuevo paso de sync (`sync_precios_ultima_venta`):
+   ```sql
+   SELECT IdProducto, Precio, FechaDeOperacion
+     FROM DW.ProductosVendidos pv
+    WHERE FechaDeOperacion = (SELECT MAX(pv2.FechaDeOperacion)
+                                FROM DW.ProductosVendidos pv2
+                               WHERE pv2.IdProducto = pv.IdProducto)
+   ```
+   (o `ROW_NUMBER() OVER (PARTITION BY IdProducto ORDER BY FechaDeOperacion DESC)`
+   si lo anterior es lento sobre 66k productos.)
+3. Persistir en `obs_productos.precio_ultima_venta`.
+4. Modificar `buscar_productos_detalle` en `bot/store.py`: prioridad nueva
+   ```sql
+   COALESCE(pr.precio_pvp,
+            CASE WHEN op.es_fraccionable AND op.cantidad_envase
+                 THEN op.precio_ultima_venta * op.cantidad_envase
+                 ELSE op.precio_ultima_venta END,
+            (SELECT pa.precio_pvp FROM product_analytics pa
+              WHERE pa.codigo_barra = pr.codigo_barra LIMIT 1))
+   ```
+
+**Esfuerzo**: ~2hs (sync + columna + buscador + test smoke).
+
+**Pendiente de decisión**: el gap $67.320 (calculado) vs $61.200 (Observer UI)
+todavía no está cerrado — capaz hay descuento, IVA, o markup farmacia.
+Antes de implementar, validar 2-3 productos más comparando con Observer UI
+para ver si la fórmula `precio_ultima_venta × cantidad_envase` es robusta.
+
+---
+
+## ⏳ Pendiente — Mejorar detalle del DM al cadete (2026-06-19)
+
+**Trigger**: Diego pidió originalmente que el DM al cadete (post-TOMAR)
+incluya "copia del mensaje tomado + datos adicionales (nombre, importe,
+cobrar, etc)". La versión actual de `_telegram_armar_detalle_pedido` en
+`routes/reparto.py` ya muestra: cliente, teléfono, dirección, mapa,
+total/envío/forma de pago, cobrar/pagado, paga_con, vuelto, dato_pago,
+producto, observación, OS, prioridad, receta, firma. Diego dijo
+"después lo mejoramos" — anota lo que faltaría:
+
+- Mostrar **monto a cobrar destacado** si forma=efectivo (ya está pero
+  podría ser más visual: caja grande tipo header).
+- Si forma=link_mp o transferencia y NO está pagado: incluir el link MP
+  copiable o el alias.
+- Mostrar **Pedido #X** en el header con timestamp de cuándo se publicó
+  (útil para saber cuánto tiempo lleva).
+- Si OS=PAMI: badge especial (tipo cobertura).
+- Tarifa de envío del cadete (lo que la farmacia le debe pagar) — útil
+  para que el cadete sepa cuánto liquida al final del turno.
+
+**Esfuerzo**: ~30 min de UX, sin cambios de modelo.
+
+---
+
+## ⏳ Pendiente — Cerrar contraste/legibilidad del buscador en /atencion (2026-06-19)
+
+Pasos de UX del buscador del 💊 que quedaron pendientes después de los
+ajustes del 2026-06-19:
+- ✅ Contraste mejorado (12px + colores explícitos sobre fondo verde).
+- ✅ Badge `FR` para fraccionables.
+- ✅ Stock por envase (24/1450 · x60).
+- ✅ Input de cantidad fraccionada al lado del `+`.
+- ⏳ **Mostrar precio fraccionado en vivo** (ej. al cambiar el input de
+  cantidad de 1 a 5, debajo del precio del envase mostrar "× 5u =
+  $X.XXX"). Hoy se ve solo después de agregar.
+- ⏳ **Recordar última cantidad fraccionada** por producto (si el
+  operador agregó 10u de Buscapina antes, al volver a buscarlo que el
+  input ya esté en 10).
+
+**Esfuerzo**: ~30 min en `templates/atencion.html` (rowProducto + el
+onchange del input).
+
+---
+
 **Cómo mantener este doc:**
 - Cuando agregues una idea, ponela en la sección que corresponda.
 - Cuando completes algo, movelo a "Hechos recientes" con la fecha.
