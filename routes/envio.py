@@ -72,7 +72,13 @@ def init_app(app):
             farmacia_lat=b.get('farmacia_lat'), farmacia_lng=b.get('farmacia_lng'),
             factor_cuadras=b.get('factor_cuadras'),
             metros_por_cuadra=b.get('metros_por_cuadra'),
-            alias_transferencia=b.get('alias_transferencia')))
+            alias_transferencia=b.get('alias_transferencia'),
+            sla_publicacion_reaviso_min=b.get('sla_publicacion_reaviso_min'),
+            sla_publicacion_maximo_min=b.get('sla_publicacion_maximo_min'),
+            sla_retiro_maximo_min=b.get('sla_retiro_maximo_min'),
+            sla_factor_urgente=b.get('sla_factor_urgente'),
+            sla_respuesta_cadete_aviso_min=b.get('sla_respuesta_cadete_aviso_min'),
+            sla_respuesta_cadete_modal_min=b.get('sla_respuesta_cadete_modal_min')))
 
     @app.route('/config/envio/geolocalizar', methods=['POST'])
     @login_required

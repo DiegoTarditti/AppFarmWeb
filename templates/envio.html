@@ -112,6 +112,46 @@
         </label>
         <button onclick="guardarConfig()" class="hbtn hbtn-ok">Guardar alias</button>
       </div>
+
+      {# SLA timers de reparto: tiempos máximos y reavisos del flujo
+         publicación → tomado → retirado. El cron del grupo cadetes usa estos
+         valores para reavisar y desasignar pedidos abandonados. #}
+      <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border);">
+        <div style="font-weight:700; font-size:13px; margin-bottom:8px;">⏱ Alertas de reparto (SLA)</div>
+        <div class="muted" style="font-size:11px; margin-bottom:10px;">
+          Tiempos en minutos para los timers del flujo de cadetes. El reaviso vuelve a publicar el pedido en el grupo;
+          si pasa el máximo de retiro, el cadete asignado se desvincula y el pedido vuelve a "publicar".
+        </div>
+        <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;">
+          <label class="fl">Publicación · reaviso (min)
+            <input id="cfSlaReaviso" type="number" min="1" step="1" class="input" style="width:90px;">
+          </label>
+          <label class="fl">Publicación · máximo (min)
+            <input id="cfSlaMaximo" type="number" min="1" step="1" class="input" style="width:90px;">
+          </label>
+          <label class="fl">Retiro · máximo (min)
+            <input id="cfSlaRetiro" type="number" min="1" step="1" class="input" style="width:90px;">
+          </label>
+          <label class="fl">Factor urgente (0.1–1.0)
+            <input id="cfSlaFactor" type="number" min="0.1" max="1.0" step="0.05" class="input" style="width:90px;">
+          </label>
+        </div>
+        <div class="muted" style="font-size:11px; margin-top:6px; margin-bottom:10px;">
+          Factor urgente: los pedidos con prioridad "urgente" usan reaviso × este factor (ej. reaviso=15 × 0.7 = ~10 min).
+        </div>
+        <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; padding-top:10px; border-top:1px dashed var(--border);">
+          <label class="fl">DM cadete · banner aviso (min)
+            <input id="cfSlaDmAviso" type="number" min="1" step="1" class="input" style="width:90px;">
+          </label>
+          <label class="fl">DM cadete · modal (min)
+            <input id="cfSlaDmModal" type="number" min="1" step="1" class="input" style="width:90px;">
+          </label>
+          <button onclick="guardarConfig()" class="hbtn hbtn-ok">Guardar SLA</button>
+        </div>
+        <div class="muted" style="font-size:11px; margin-top:6px;">
+          Si un cadete escribe al bot y nadie le responde: a los <b>aviso</b> min aparece un banner sticky en la planilla; a los <b>modal</b> min se abre un modal que bloquea trabajo hasta atenderlo.
+        </div>
+      </div>
     </div>
 
     <div class="grid2">
@@ -201,6 +241,12 @@ async function cargar(){
   document.getElementById('cfFactor').value = c.factor_cuadras ?? '';
   document.getElementById('cfMpc').value = c.metros_por_cuadra ?? '';
   document.getElementById('cfAlias').value = c.alias_transferencia ?? '';
+  document.getElementById('cfSlaReaviso').value = c.sla_publicacion_reaviso_min ?? 15;
+  document.getElementById('cfSlaMaximo').value = c.sla_publicacion_maximo_min ?? 30;
+  document.getElementById('cfSlaRetiro').value = c.sla_retiro_maximo_min ?? 35;
+  document.getElementById('cfSlaFactor').value = c.sla_factor_urgente ?? 0.7;
+  document.getElementById('cfSlaDmAviso').value = c.sla_respuesta_cadete_aviso_min ?? 10;
+  document.getElementById('cfSlaDmModal').value = c.sla_respuesta_cadete_modal_min ?? 20;
   document.getElementById('cfAviso').textContent = (c.farmacia_lat==null)
     ? '⚠️ Falta la ubicación de la farmacia: sin eso no se puede estimar cuadras desde el pin.'
     : 'Origen configurado ✓';
@@ -282,7 +328,13 @@ async function guardarConfig(){
     farmacia_lng: document.getElementById('cfLng').value,
     factor_cuadras: document.getElementById('cfFactor').value,
     metros_por_cuadra: document.getElementById('cfMpc').value,
-    alias_transferencia: document.getElementById('cfAlias').value });
+    alias_transferencia: document.getElementById('cfAlias').value,
+    sla_publicacion_reaviso_min: document.getElementById('cfSlaReaviso').value,
+    sla_publicacion_maximo_min: document.getElementById('cfSlaMaximo').value,
+    sla_retiro_maximo_min: document.getElementById('cfSlaRetiro').value,
+    sla_factor_urgente: document.getElementById('cfSlaFactor').value,
+    sla_respuesta_cadete_aviso_min: document.getElementById('cfSlaDmAviso').value,
+    sla_respuesta_cadete_modal_min: document.getElementById('cfSlaDmModal').value });
   cargar();
 }
 async function geoFarmacia(){

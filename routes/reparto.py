@@ -945,60 +945,38 @@ def init_app(app):
             cad_nombre = cad.nombre if cad else None
 
         # Toast al cadete que clickeó.
-        tg.answer_callback(callback_qid, '✅ Tomado')
+        tg.answer_callback(callback_qid, '✅ Tomado · vení a retirar')
 
-        # Sacar los botones del mensaje del grupo (queda el texto del pedido
-        # intacto, pero ya nadie puede tomarlo). Diego 2026-06-19: no agregar
-        # texto "Tomado por X" — solo despublicar el botón.
+        # Reemplazar el botón TOMAR por "📦 RETIRADO de farmacia" en el mismo
+        # mensaje del grupo. NO mandar DM al cadete todavía: el detalle (que
+        # tiene info sensible como vuelto, OS, paga_con) se manda recién cuando
+        # confirma el retiro físico (estado en_ruta). Esto evita que el cadete
+        # acumule DMs de pedidos que después se liberan por demora (cron SLA).
         if message_id:
-            tg.sacar_botones_grupo(message_id)
-
-        # DM al cadete con detalle completo + botón "✅ Retirado".
-        # Libero la conexión DB antes del HTTP a Telegram para no bloquear el pool.
-        detalle = None
-        try:
-            with database.get_db() as s:
-                p = s.get(database.PedidoReparto, pedido_id)
-                if p:
-                    detalle = _telegram_armar_detalle_pedido(p)
-        except Exception as e:  # noqa: BLE001
-            log.warning('Telegram armar detalle pedido falló: %s', e)
-        if detalle:
-            botones = [[{'text': '📦 Retirado de farmacia',
+            botones = [[{'text': '📦 RETIRADO de farmacia',
                          'callback_data': f'retirado:{pedido_id}'}]]
-            res_dm = tg.enviar_dm(user_id, detalle, botones=botones)
-            if res_dm.get('ok'):
-                # Persistir el message_id del DM para poder editar el botón
-                # cuando el cadete apriete Retirado/Entregado.
-                try:
-                    with database.get_db() as s:
-                        p2 = s.get(database.PedidoReparto, pedido_id)
-                        if p2:
-                            p2.tomado_dm_msg_id = res_dm.get('telegram_msg_id')
-                            s.commit()
-                except Exception as e:  # noqa: BLE001
-                    log.warning('Persistir tomado_dm_msg_id falló: %s', e)
-            else:
-                # Cadete nunca inició el bot → 403. Deep link en el grupo.
-                log.warning('Telegram DM detalle falló (%s) → fallback deep link',
-                            res_dm.get('error'))
-                link = tg.deep_link_pedido(pedido_id)
-                if link and message_id:
-                    extra = f' ({cad_nombre})' if cad_nombre else ''
-                    tg.editar_mensaje_grupo(
-                        message_id,
-                        f'✅ Pedido #{pedido_id} tomado por <b>{user_name}</b>{extra}\n'
-                        f'📩 {user_name}: tocá para ver el detalle → {link}')
+            tg.setear_botones_grupo(message_id, botones)
 
         return jsonify({'ok': True, 'pedido_id': pedido_id, 'tomado_por': user_name,
                         'cadete_id': cad_id})
 
     def _telegram_procesar_retirado(upd, tg):
-        """Cadete apretó '📦 Retirado de farmacia' en el DM. Estado → 'en_ruta'.
-        Edita el botón del DM a '✅ Entregado'."""
+        """Cadete apretó '📦 RETIRADO de farmacia' en el GRUPO (no en DM).
+        Acciones:
+          1. Valida estado='tomado' (sino: fue desasignado o ya está más adelante).
+          2. Valida que sea el cadete que tomó (anti-abuso).
+          3. Estado → 'en_ruta'.
+          4. Notifica al cliente vía WAHA ('Tu pedido salió').
+          5. Manda DM al cadete con DETALLE COMPLETO + botón '✅ Entregado'.
+             Diego 2026-06-21: el detalle se manda recién acá (no al TOMAR)
+             para no ensuciar Telegram del cadete con pedidos que después
+             se liberan por demora (cron SLA).
+          6. Saca el botón del mensaje del grupo (queda como info sin acción).
+        """
         pedido_id = upd.get('pedido_id')
         user_id = upd.get('user_id')
         callback_qid = upd.get('callback_query_id')
+        message_id_grupo = upd.get('message_id')  # ID del mensaje en el grupo
         if not pedido_id or not callback_qid:
             return jsonify({'ok': False, 'error': 'callback inválido'}), 400
         with database.get_db() as s:
@@ -1006,6 +984,15 @@ def init_app(app):
             if not p:
                 tg.answer_callback(callback_qid, 'Pedido no existe', alert=True)
                 return jsonify({'ok': True, 'ignored': 'pedido_no_existe'})
+            # El pedido tiene que estar en 'tomado' (no en 'en_ruta', 'entregado'
+            # ni 'pendiente' por desasignación del cron SLA).
+            if p.estado != 'tomado':
+                tg.answer_callback(
+                    callback_qid,
+                    f'Pedido ya no disponible (estado: {p.estado})',
+                    alert=True)
+                return jsonify({'ok': True, 'ignored': 'estado_no_tomado',
+                                'estado': p.estado})
             # Validar que sea el cadete que tomó (anti-abuso).
             if p.tomado_dm_user_id and p.tomado_dm_user_id != user_id:
                 tg.answer_callback(callback_qid, 'No sos el cadete asignado', alert=True)
@@ -1016,14 +1003,29 @@ def init_app(app):
                 _notificar_cliente_pedido(s, p, 'en_ruta')
             except Exception as e:  # noqa: BLE001
                 log.warning('notificar cliente en_ruta falló: %s', e)
-            dm_msg_id = p.tomado_dm_msg_id
+            detalle = _telegram_armar_detalle_pedido(p)
             s.commit()
         tg.answer_callback(callback_qid, '✓ En ruta')
-        # Cambiar el botón del DM de Retirado → Entregado.
-        if dm_msg_id and user_id:
-            tg.editar_botones_dm(user_id, dm_msg_id,
-                                 [[{'text': '✅ Entregado al cliente',
-                                    'callback_data': f'entregado:{pedido_id}'}]])
+        # Sacar botón del mensaje del grupo (queda como info, sin acción).
+        if message_id_grupo:
+            tg.sacar_botones_grupo(message_id_grupo)
+        # Mandar DM al cadete con detalle + botón Entregado.
+        botones = [[{'text': '✅ Entregado al cliente',
+                     'callback_data': f'entregado:{pedido_id}'}]]
+        res_dm = tg.enviar_dm(user_id, detalle, botones=botones)
+        if res_dm.get('ok'):
+            # Persistir el message_id del DM para que _telegram_procesar_entregado
+            # pueda editar el botón al apretar Entregado.
+            try:
+                with database.get_db() as s:
+                    p2 = s.get(database.PedidoReparto, pedido_id)
+                    if p2:
+                        p2.tomado_dm_msg_id = res_dm.get('telegram_msg_id')
+                        s.commit()
+            except Exception as e:  # noqa: BLE001
+                log.warning('Persistir tomado_dm_msg_id falló: %s', e)
+        else:
+            log.warning('Telegram DM detalle (en_ruta) falló: %s', res_dm.get('error'))
         return jsonify({'ok': True, 'pedido_id': pedido_id, 'estado': 'en_ruta'})
 
     def _telegram_procesar_entregado(upd, tg):
@@ -1039,6 +1041,15 @@ def init_app(app):
             if not p:
                 tg.answer_callback(callback_qid, 'Pedido no existe', alert=True)
                 return jsonify({'ok': True, 'ignored': 'pedido_no_existe'})
+            # Solo desde 'en_ruta'. Si está en otro estado: doble-click, ya
+            # entregado, o algo raro — abortar sin pisar nada.
+            if p.estado != 'en_ruta':
+                tg.answer_callback(
+                    callback_qid,
+                    f'Pedido no está en ruta (estado: {p.estado})',
+                    alert=True)
+                return jsonify({'ok': True, 'ignored': 'estado_no_en_ruta',
+                                'estado': p.estado})
             if p.tomado_dm_user_id and p.tomado_dm_user_id != user_id:
                 tg.answer_callback(callback_qid, 'No sos el cadete asignado', alert=True)
                 return jsonify({'ok': True, 'ignored': 'cadete_distinto'})
@@ -1408,6 +1419,58 @@ def init_app(app):
             conv.nombre_cliente = cad.nombre
             s.commit()
             return jsonify({'ok': True, 'cadete_id': cad.id})
+
+    @app.route('/api/reparto/alertas-cadetes')
+    @login_required
+    def api_reparto_alertas_cadetes():
+        """Devuelve la lista de DMs de cadetes con un mensaje pendiente de
+        respuesta (último msg es del cadete y pasaron > N min).
+
+        Niveles:
+          - 'aviso': pasó sla_respuesta_cadete_aviso_min → banner sticky.
+          - 'modal': pasó sla_respuesta_cadete_modal_min → modal bloqueante.
+
+        El frontend de /reparto/planilla hace polling a este endpoint para
+        levantar el banner y/o el modal.
+        """
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        from bot import envio as _envio_mod
+        cfg = _envio_mod.get_config()
+        aviso_min = int(cfg['sla_respuesta_cadete_aviso_min'])
+        modal_min = int(cfg['sla_respuesta_cadete_modal_min'])
+        ahora = database.now_ar()
+        alertas = []
+        with database.get_db() as s:
+            from sqlalchemy import desc as _desc
+            # Convs DM cadete. Tomamos también las huérfanas (sin cadete_id)
+            # porque el operador igual tiene que responder.
+            convs = (s.query(database.BotConversacion)
+                     .filter(database.BotConversacion.canal == 'telegram_cadete')
+                     .all())
+            for conv in convs:
+                ultimo = (s.query(database.BotMensaje)
+                          .filter(database.BotMensaje.conversacion_id == conv.id)
+                          .order_by(_desc(database.BotMensaje.creado_en))
+                          .first())
+                if not ultimo or ultimo.origen != 'cliente':
+                    continue
+                minutos = (ahora - ultimo.creado_en).total_seconds() / 60
+                if minutos < aviso_min:
+                    continue
+                nivel = 'modal' if minutos >= modal_min else 'aviso'
+                alertas.append({
+                    'conv_id': conv.id,
+                    'cadete_id': conv.cadete_id,
+                    'cadete_nombre': conv.nombre_cliente or 'Sin vincular',
+                    'ultimo_texto': (ultimo.texto or '')[:80],
+                    'minutos': int(minutos),
+                    'nivel': nivel,
+                })
+        # Ordenar por minutos desc (las más urgentes arriba).
+        alertas.sort(key=lambda a: -a['minutos'])
+        return jsonify({'ok': True, 'alertas': alertas,
+                        'aviso_min': aviso_min, 'modal_min': modal_min})
 
     @app.route('/reparto/pedido/<int:pid>/publicar', methods=['POST'])
     @login_required
@@ -1983,6 +2046,15 @@ def init_app(app):
         for grupo in (sin_asignar, manana, tarde, pendientes_previo):
             for p in grupo:
                 p.zona_externa = _zona_externa(p)
+        # Config SLA del cron de reparto (configurable en /config/envio).
+        from bot import envio as _envio_mod
+        cfg = _envio_mod.get_config()
+        sla = {
+            'reaviso_min': cfg['sla_publicacion_reaviso_min'],
+            'maximo_min':  cfg['sla_publicacion_maximo_min'],
+            'retiro_max':  cfg['sla_retiro_maximo_min'],
+            'urg_factor':  cfg['sla_factor_urgente'],
+        }
         return render_template('reparto_planilla.html',
                                fecha=fecha, hoy=database.now_ar().date(),
                                ahora=database.now_ar(),     # para timers visuales (publicado→tomado)
@@ -1992,7 +2064,8 @@ def init_app(app):
                                pedidos_tarde=tarde,
                                cadetes=cadetes,
                                droguerias=droguerias,
-                               usuarios=usuarios_list)
+                               usuarios=usuarios_list,
+                               sla=sla)
 
     @app.route('/api/reparto/pedido/<int:pid>/actualizar', methods=['POST'])
     @login_required

@@ -135,11 +135,14 @@ def test_cotizar_por_direccion(monkeypatch):
     envio.guardar_config(farmacia_lat=-32.95, farmacia_lng=-60.65)
     # atajo por zona (sin geocodificar)
     assert envio.cotizar_por_direccion('lo que sea', localidad='Roldán')['monto'] == 15000
-    # con geocoder (mockeado) → tramo
-    monkeypatch.setattr(envio, 'geocodificar', lambda *a, **k: (-32.952, -60.652))
+    # con geocoder (mockeado) → tramo. cotizar_por_direccion usa
+    # geocodificar_sugerencias (multi-resultado), no geocodificar.
+    monkeypatch.setattr(envio, 'geocodificar_sugerencias',
+                        lambda *a, **k: [{'lat': -32.952, 'lng': -60.652,
+                                          'localidad': 'Rosario'}])
     assert envio.cotizar_por_direccion('Córdoba 1500')['fuente'] == 'tramo'
     # geocoder falla → no se puede
-    monkeypatch.setattr(envio, 'geocodificar', lambda *a, **k: None)
+    monkeypatch.setattr(envio, 'geocodificar_sugerencias', lambda *a, **k: [])
     assert envio.cotizar_por_direccion('dir rara')['monto'] is None
 
 

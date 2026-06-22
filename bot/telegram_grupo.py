@@ -146,13 +146,20 @@ def editar_mensaje_grupo(message_id, nuevo_texto, sacar_kb=True, chat_id=None):
 
 
 def sacar_botones_grupo(message_id, chat_id=None):
-    """Quita el inline keyboard del mensaje del grupo SIN tocar el texto.
-    Diego 2026-06-19: al TOMAR el botón desaparece pero el detalle del
-    pedido queda visible en el grupo. El seguimiento pasa al DM del cadete."""
+    """Quita el inline keyboard del mensaje del grupo SIN tocar el texto."""
+    return setear_botones_grupo(message_id, [], chat_id=chat_id)
+
+
+def setear_botones_grupo(message_id, botones, chat_id=None):
+    """Reemplaza el inline keyboard del mensaje del grupo SIN tocar el texto.
+    botones: lista de filas de InlineKeyboardButton dicts (vacío para sacar).
+    Diego 2026-06-21: al TOMAR el botón TOMAR se reemplaza por el botón
+    RETIRADO (mismo mensaje, distinto callback). El detalle del pedido queda
+    visible en el grupo y solo el que tomó puede apretar RETIRADO."""
     chat = chat_id or GRUPO_CHAT_ID
     return _post('editMessageReplyMarkup', json={
         'chat_id': chat, 'message_id': int(message_id),
-        'reply_markup': {'inline_keyboard': []},
+        'reply_markup': {'inline_keyboard': botones or []},
     })
 
 

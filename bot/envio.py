@@ -239,12 +239,24 @@ def get_config():
         return {'farmacia_lat': c.farmacia_lat, 'farmacia_lng': c.farmacia_lng,
                 'factor_cuadras': c.factor_cuadras or 1.3,
                 'metros_por_cuadra': c.metros_por_cuadra or 100,
-                'alias_transferencia': c.alias_transferencia or ''}
+                'alias_transferencia': c.alias_transferencia or '',
+                'sla_publicacion_reaviso_min': c.sla_publicacion_reaviso_min or 15,
+                'sla_publicacion_maximo_min': c.sla_publicacion_maximo_min or 30,
+                'sla_retiro_maximo_min': c.sla_retiro_maximo_min or 35,
+                'sla_factor_urgente': c.sla_factor_urgente or 0.7,
+                'sla_respuesta_cadete_aviso_min': c.sla_respuesta_cadete_aviso_min or 10,
+                'sla_respuesta_cadete_modal_min': c.sla_respuesta_cadete_modal_min or 20}
 
 
 def guardar_config(farmacia_lat=None, farmacia_lng=None,
                    factor_cuadras=None, metros_por_cuadra=None,
-                   alias_transferencia=None):
+                   alias_transferencia=None,
+                   sla_publicacion_reaviso_min=None,
+                   sla_publicacion_maximo_min=None,
+                   sla_retiro_maximo_min=None,
+                   sla_factor_urgente=None,
+                   sla_respuesta_cadete_aviso_min=None,
+                   sla_respuesta_cadete_modal_min=None):
     """Actualiza solo los campos provistos (no pisa coords al editar el factor)."""
     with database.get_db() as s:
         c = s.query(database.EnvioConfig).first()
@@ -261,6 +273,20 @@ def guardar_config(farmacia_lat=None, farmacia_lng=None,
             c.metros_por_cuadra = int(_f(metros_por_cuadra))
         if alias_transferencia is not None:
             c.alias_transferencia = (alias_transferencia or '').strip() or None
+        # SLA timers (los validamos mínimo 1 para no romper cron).
+        if _f(sla_publicacion_reaviso_min):
+            c.sla_publicacion_reaviso_min = max(1, int(_f(sla_publicacion_reaviso_min)))
+        if _f(sla_publicacion_maximo_min):
+            c.sla_publicacion_maximo_min = max(1, int(_f(sla_publicacion_maximo_min)))
+        if _f(sla_retiro_maximo_min):
+            c.sla_retiro_maximo_min = max(1, int(_f(sla_retiro_maximo_min)))
+        if _f(sla_factor_urgente) is not None:
+            # Factor 0.1-1.0 (1.0 = mismo timing que normales; <0.1 = corta cualquier alerta).
+            c.sla_factor_urgente = max(0.1, min(1.0, _f(sla_factor_urgente)))
+        if _f(sla_respuesta_cadete_aviso_min):
+            c.sla_respuesta_cadete_aviso_min = max(1, int(_f(sla_respuesta_cadete_aviso_min)))
+        if _f(sla_respuesta_cadete_modal_min):
+            c.sla_respuesta_cadete_modal_min = max(1, int(_f(sla_respuesta_cadete_modal_min)))
         c.actualizado_en = database.now_ar()
         s.commit()
         return {'ok': True}

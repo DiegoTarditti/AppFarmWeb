@@ -72,6 +72,10 @@
   .planilla-table tr.fila-receta td:first-child { border-left:2px solid var(--danger); }
   .planilla-table tr.fila-anulado { opacity:.3; text-decoration:line-through; }
 
+  /* Animación blink para alertas de cadetes sin responder (banner + modal). */
+  @keyframes blinker { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .blink { animation: blinker 1s ease-in-out infinite; }
+
   /* Arqueo: total por columna (bajo el título) + check de selección */
   .col-sum { font-size:10px; color:var(--accent); font-weight:700; margin-top:2px; min-height:12px; }
   .chk-sum { transform:scale(0.8); cursor:pointer; vertical-align:middle; margin-right:2px; accent-color:var(--accent); }
@@ -212,6 +216,29 @@
   <a href="/config/envio" class="hbtn" title="Editar tarifas, zonas y tramos">⚙️ Tarifas de envío</a>
   <a href="/reparto?fecha={{ fecha.strftime('%Y-%m-%d') }}" class="hbtn">🗺️ Ver en reparto</a>
   <a href="/reparto" class="hbtn">← Volver</a>
+</div>
+
+{# Banner SLA cadetes sin respuesta (sticky bajo la topbar). Aparece solo si
+   /api/reparto/alertas-cadetes devuelve alertas. El blink visual lo aporta
+   la animación CSS .blink. #}
+<div id="alertCadetesBanner" style="display:none; background:#FEE2E2; border-bottom:2px solid #B91C1C; padding:10px 18px; gap:10px; align-items:center; flex-wrap:wrap;">
+  <span style="font-size:18px;" class="blink">🚨</span>
+  <span style="font-weight:700; color:#B91C1C;" id="alertCadetesTitulo">cadetes esperando respuesta</span>
+  <div id="alertCadetesLista" style="display:flex; gap:14px; flex-wrap:wrap; flex:1;"></div>
+</div>
+
+{# Modal de escalada cuando algún cadete supera el umbral 'modal'. Bloquea
+   el trabajo hasta que el operador abra el chat. #}
+<div id="alertCadetesModal" class="modal-overlay" style="display:none; background:rgba(127,29,29,.7);">
+  <div class="modal-card" style="max-width:500px; border:3px solid #B91C1C;">
+    <h3 style="margin-top:0; color:#B91C1C; display:flex; align-items:center; gap:8px;">
+      <span class="blink" style="font-size:24px;">🚨</span> Cadete esperando hace mucho
+    </h3>
+    <div id="alertCadetesModalLista" style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;"></div>
+    <div style="text-align:right;">
+      <button onclick="document.getElementById('alertCadetesModal').style.display='none';" class="hbtn">Cerrar</button>
+    </div>
+  </div>
 </div>
 
 <div class="planilla-shell">
@@ -422,13 +449,19 @@
             ✓ {{ p.tomado_por_wsap }}{% if p.tomado_en %} · {{ p.tomado_en.strftime('%H:%M') }}{% endif %}
           </span>
         {% elif p.publicado_en %}
-          {# Timer SLA: 20 min warning, 40 min crítico (sin que ningún cadete lo tome).
+          {# Timer SLA: umbrales configurables en /config/envio (Diego 2026-06-21).
+             - verde:    0  → reaviso
+             - naranja:  reaviso → máximo (acá el cron manda mensaje al grupo)
+             - rojo:     > máximo
+             Urgentes usan reaviso × factor_urgente (default 0.7).
              Formato del tiempo: <60m → "5m", <24h → "2.5h", sino "3d".
              #N del pedido siempre visible para matchear con el msg del grupo.
              nowrap + display:inline-flex para que el ↻ NUNCA salte de linea. #}
           {% set _min = ((ahora - p.publicado_en).total_seconds() / 60) | int %}
-          {% set _col = '#1D9E75' if _min < 20 else ('#EF9F27' if _min < 40 else '#EF4444') %}
-          {% set _icon = '🟢' if _min < 20 else ('🟡' if _min < 40 else '🔴') %}
+          {% set _reaviso = (sla.reaviso_min * sla.urg_factor) | int if p.prioridad == 'urgente' else sla.reaviso_min %}
+          {% set _maximo = sla.maximo_min %}
+          {% set _col = '#1D9E75' if _min < _reaviso else ('#EF9F27' if _min < _maximo else '#EF4444') %}
+          {% set _icon = '🟢' if _min < _reaviso else ('🟡' if _min < _maximo else '🔴') %}
           {% if _min < 60 %}
             {% set _t = _min ~ 'm' %}
           {% elif _min < 1440 %}
@@ -1074,6 +1107,66 @@ function _autorefreshOk(){
 setInterval(() => {
   if (_autorefreshOk()) location.reload();
 }, 30000);
+
+// ── Alertas de DMs de cadetes sin responder ──
+// Polling cada 30s a /api/reparto/alertas-cadetes. Si hay items: pinta banner
+// sticky. Si hay items en nivel 'modal': abre modal bloqueante.
+// El click en cualquier item abre el chat lateral del cadete (chatAbrirDm).
+async function _alertasCadetesTick(){
+  try {
+    const r = await fetch('/api/reparto/alertas-cadetes', {cache:'no-store'});
+    if (!r.ok) return;
+    const d = await r.json();
+    _pintarAlertasCadetes(d.alertas || []);
+  } catch(e){ /* silencioso */ }
+}
+function _pintarAlertasCadetes(alertas){
+  const banner = document.getElementById('alertCadetesBanner');
+  const modal = document.getElementById('alertCadetesModal');
+  if (!alertas.length){
+    banner.style.display = 'none';
+    // No cerramos el modal automáticamente: el operador lo cierra manual.
+    return;
+  }
+  const titulo = document.getElementById('alertCadetesTitulo');
+  titulo.textContent = `${alertas.length} cadete${alertas.length>1?'s':''} esperando respuesta`;
+  const lista = document.getElementById('alertCadetesLista');
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  lista.innerHTML = alertas.map(a => `
+    <span style="display:inline-flex; align-items:center; gap:6px; font-size:12px;">
+      <b style="color:#7F1D1D;">${esc(a.cadete_nombre)}</b>
+      <span style="color:#991B1B;">· hace ${a.minutos} min</span>
+      <span style="color:#7F1D1D; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${esc(a.ultimo_texto)}"</span>
+      <button onclick="_abrirChatDesdeAlerta(${a.conv_id}, ${JSON.stringify(a.cadete_nombre).replace(/"/g,'&quot;')})" class="hbtn" style="background:#B91C1C; color:#fff; border-color:#B91C1C; padding:3px 9px; font-size:11px;">Abrir chat</button>
+    </span>
+  `).join('');
+  banner.style.display = 'flex';
+
+  // Modal: solo si hay items en nivel 'modal' Y el operador no lo dismissó
+  // recientemente para esta lista (re-abrir cada vez sería molesto).
+  const modalItems = alertas.filter(a => a.nivel === 'modal');
+  if (modalItems.length){
+    const modalLista = document.getElementById('alertCadetesModalLista');
+    modalLista.innerHTML = modalItems.map(a => `
+      <div style="border-left:3px solid #B91C1C; padding:8px 11px; background:#FEF2F2; border-radius:6px;">
+        <div style="font-weight:700; color:#7F1D1D;">${esc(a.cadete_nombre)} · hace ${a.minutos} min</div>
+        <div style="font-size:12px; color:#991B1B; margin-top:4px;">"${esc(a.ultimo_texto)}"</div>
+        <button onclick="_abrirChatDesdeAlerta(${a.conv_id}, ${JSON.stringify(a.cadete_nombre).replace(/"/g,'&quot;')}); document.getElementById('alertCadetesModal').style.display='none';" class="hbtn hbtn-ok" style="margin-top:8px; padding:5px 12px;">Abrir chat</button>
+      </div>
+    `).join('');
+    modal.style.display = 'flex';
+  }
+}
+function _abrirChatDesdeAlerta(conv_id, nombre){
+  // Abrir el panel lateral del chat si está colapsado y entrar al DM.
+  const panel = document.getElementById('chatPanel');
+  if (panel && panel.classList.contains('is-collapsed')){
+    if (typeof chatToggle === 'function') chatToggle();
+  }
+  if (typeof chatAbrirDm === 'function') chatAbrirDm(conv_id, nombre, false, '');
+}
+_alertasCadetesTick();             // primer tick inmediato
+setInterval(_alertasCadetesTick, 30000);
 </script>
 </body>
 </html>

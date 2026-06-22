@@ -143,6 +143,13 @@
   .btn-clip { background:var(--clip-bg); color:var(--clip-tx); }
   .btn-send { background:var(--send-bg); color:var(--send-tx); }
   #respuestasRapidas { display:none; }
+  /* Modal genérico (usado por el modal "¿qué hago con el pin?"). */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55);
+                    z-index:1100; align-items:center; justify-content:center; padding:14px; }
+  .modal-overlay.open { display:flex; }
+  .modal-card { background:var(--card); border:1px solid var(--bd); border-radius:12px;
+                 padding:18px 20px; min-width:320px; max-width:90vw; max-height:88vh; overflow:auto; color:var(--txt); }
+  .modal-card h3 { margin:0 0 12px; font-size:15px; color:var(--title); }
   .rr-chip { font-size:11px; padding:3px 9px; border-radius:999px; border:0.5px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.05); color:var(--muted); cursor:pointer; white-space:nowrap; transition:background .15s; }
   .rr-chip:hover { background:rgba(255,255,255,0.12); color:var(--txt); }
   .search-pop { background:var(--pop); border-color:var(--pop-bd); }
@@ -401,6 +408,43 @@
       {# Header "Datos del cliente" sacado (Diego 2026-06-14): el primer campo
          del picker ya dice 'Cliente', no aporta y ocupa una línea vertical
          valiosa en sidebar angosto. #}
+      {# Banner sticky cuando hay una conv abierta SIN cliente vinculado. El
+         operador tiene que buscarlo (campo de abajo) o crear uno nuevo (botón +)
+         antes de poder cerrar la transacción / guardar el pin que envió el
+         cliente. Lo manejamos visualmente desde JS (display none/flex) cuando
+         carga la ficha (Diego 2026-06-21). #}
+      {# Modal "¿qué hago con este pin?" — se abre al tocar "✓ Usar este pin"
+         en una burbuja de ubicación cuando ya hay domicilios guardados (Diego 2026-06-21). #}
+      <div id="pinModalOverlay" class="modal-overlay" onclick="if (event.target===this) cerrarPinModal();">
+        <div class="modal-card" style="max-width:440px;">
+          <h3 style="margin-top:0; color:var(--title); display:flex; align-items:center; gap:8px;">📍 Pin del cliente</h3>
+          <div id="pinModalCoords" class="muted" style="font-family:monospace; font-size:13px; margin-bottom:14px;"></div>
+          <div style="margin-bottom:8px; font-size:12.5px;">¿Qué hacés con este pin?</div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <button onclick="pinModalAccion('nuevo')" class="hbtn hbtn-ok" style="text-align:left; padding:9px 13px;">
+              ✨ <b>Es un domicilio nuevo</b>
+              <div class="muted" style="font-size:11px; margin-top:2px; font-weight:400; color:rgba(255,255,255,.9);">Carga las coords y limpia los campos — pediselo al cliente y escribí la calle en <b>Dirección</b>. Se guarda al cerrar la transacción.</div>
+            </button>
+            <button id="pinModalBtnMismo" onclick="pinModalAccion('mismo')" class="hbtn" style="text-align:left; padding:9px 13px;">
+              🔁 <b>Actualizar coords del domicilio seleccionado</b>
+              <div class="muted" style="font-size:11px; margin-top:2px; font-weight:400;" id="pinModalMismoSub">—</div>
+            </button>
+            <button onclick="cerrarPinModal()" class="hbtn" style="text-align:left; padding:9px 13px;">
+              ✕ Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="banSinCliente" style="display:none; padding:10px 13px; margin:8px 12px;
+                                     background:#FEF3C7; border:1.5px solid #D97706;
+                                     border-radius:8px; color:#7C2D12; font-size:12.5px;
+                                     line-height:1.45;">
+        <div style="font-weight:700; margin-bottom:3px;">⚠️ Cliente no vinculado</div>
+        Buscá el cliente abajo (lupa 🔎) o creá uno nuevo (botón <b>＋</b>) antes de cerrar la transacción.
+        Sin cliente vinculado no se guardan los domicilios ni el historial.
+      </div>
+
       {# Picker reusable (igual que /pedido/nuevo). Se inicializa una sola vez al
          cargar la pantalla; los cambios se sincronizan con la conv abierta vía
          callbacks (ver ClientePicker.init más abajo). #}
@@ -597,7 +641,17 @@
             </select>
           </div>
         </div>
-        <button id="btnCerrarTx" onclick="guardarYCerrarTx()" class="hbtn hbtn-ok" style="width:100%; font-size:12px; padding:10px 6px; font-weight:600;">💳 Cerrar transacción</button>
+        <div style="display:flex; gap:6px;">
+          <button id="btnCerrarTx" onclick="guardarYCerrarTx(false)" class="hbtn hbtn-ok"
+                  style="flex:1; font-size:12px; padding:10px 6px; font-weight:600;">
+            💳 Cerrar transacción
+          </button>
+          <button id="btnCerrarTxImpr" onclick="guardarYCerrarTx(true)" class="hbtn hbtn-ok"
+                  title="Cerrar transacción y abrir el ticket de envío (PDF 80mm) en pestaña nueva"
+                  style="flex:0 0 auto; font-size:12px; padding:10px 12px; font-weight:600; background:#185FA5; border-color:#185FA5;">
+            🖨 + Imprimir
+          </button>
+        </div>
       </div>
 
       <div id="ficha" style="padding:16px 14px; font-size:11px;">
@@ -1031,8 +1085,28 @@ function pintarHeader() {
   else if (mio) sub = '<span class="accent-txt">Te la asignaste</span>';
   else if (c.estado === 'cola') sub = '<span class="accent-txt">En cola</span>';
   else if (c.estado === 'bot') sub = '<span class="muted2">🤖 La está atendiendo el bot — podés intervenir</span>';
+  // Badge "📍 Pin reciente" si hay un DomicilioCliente origen='pin' con
+   // geo_actualizado_en < 60 min. Se pinta acá (y no aparte) porque
+   // refrescarChat() llama a esta función cada 4s y borra el innerHTML.
+  let pinBadge = '';
+  const doms = window._doms || [];
+  const pinsRec = doms.filter(d => d.origen === 'pin' && d.geo_actualizado_en).map(d => {
+    const ts = new Date(d.geo_actualizado_en);
+    return {d, min: Math.round((Date.now() - ts.getTime()) / 60000)};
+  }).filter(x => x.min < 60).sort((a, b) => a.min - b.min);
+  if (pinsRec.length){
+    const p = pinsRec[0];
+    pinBadge = ` <span style="display:inline-flex; align-items:center; gap:4px;
+                              margin-left:6px; padding:1px 8px; border-radius:999px;
+                              background:rgba(16,185,129,.20); color:var(--accent-ink);
+                              border:1px solid var(--accent); font-size:10px; font-weight:700;">
+        📍 Pin reciente · hace ${p.min}min
+        <a href="https://www.google.com/maps?q=${p.d.lat},${p.d.lng}" target="_blank" rel="noopener"
+           style="color:var(--accent); text-decoration:underline;">ver</a>
+      </span>`;
+  }
   document.getElementById('chatHeadInner').innerHTML =
-    `<div class="title" style="font-size:13px; font-weight:600;">${esc(c.nombre)}</div>
+    `<div class="title" style="font-size:13px; font-weight:600;">${esc(c.nombre)}${pinBadge}</div>
      <div style="font-size:10px;">${esc(c.linea)} · ${sub}</div>`;
   // Botón Tomar: visible salvo que ya sea mía. En charlas del bot, "Tomar" = intervenir.
   const btn = document.getElementById('btnTomar');
@@ -1075,10 +1149,154 @@ function burbuja(m) {
   const head = esBot
     ? '<div style="display:flex; align-items:center; gap:5px; margin-bottom:3px;"><i class="ti ti-robot bot-ic" style="font-size:11px"></i><span class="bot-ic" style="font-size:9px;">Bot</span></div>'
     : '';
+  // Detectar burbuja de ubicación compartida por el cliente. El bot persiste
+  // las coords en formato "📍 lat,lng" (ver bot/cerebro._procesar). El operador
+  // ve un card con link a Google Maps en vez de coords sueltas.
+  const matchUbic = (m.texto || '').match(/^📍\s*(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (matchUbic){
+    const lat = matchUbic[1], lng = matchUbic[2];
+    div.innerHTML = `${head}
+      <div class="${cls}" style="padding:10px 13px; border-radius:${radius}; font-size:12px; line-height:1.5;">
+        <div style="display:flex; align-items:center; gap:6px; font-weight:600; margin-bottom:4px;">
+          <span style="font-size:18px;">📍</span> Ubicación compartida
+        </div>
+        <div style="font-family:monospace; font-size:11px; opacity:.85; margin-bottom:6px;">${esc(lat)}, ${esc(lng)}</div>
+        <a href="https://www.google.com/maps?q=${esc(lat)},${esc(lng)}" target="_blank" rel="noopener"
+           style="display:inline-block; padding:5px 11px; border-radius:7px; background:#185FA5; color:#fff; text-decoration:none; font-size:11px; font-weight:600;">
+          🗺 Ver en mapa
+        </a>
+        <button onclick="usarPinCliente(${esc(lat)}, ${esc(lng)})"
+                style="margin-left:6px; padding:5px 11px; border-radius:7px; border:none; background:var(--accent); color:#fff; cursor:pointer; font-size:11px; font-weight:600;">
+          ✓ Usar este pin
+        </button>
+      </div>
+      <div class="muted" style="font-size:9px; margin-top:3px; margin-left:4px;">${esc(m.hora)}</div>`;
+    return div;
+  }
   div.innerHTML = `${head}
     <div class="${cls}" style="padding:8px 12px; border-radius:${radius}; font-size:12px; line-height:1.5; white-space:pre-wrap;">${m.tiene_imagen ? '📷 ' : ''}${esc(m.texto)}</div>
     <div class="muted" style="font-size:9px; margin-top:3px; ${cliente ? 'margin-left:4px;' : 'text-align:right; margin-right:4px;'}">${esc(m.hora)}</div>`;
   return div;
+}
+
+// Estado del modal de pin (lat/lng pendientes de procesar al hacer click en
+// alguna opción).
+let _pinModalState = {lat:null, lng:null};
+
+// Al tocar "✓ Usar este pin" en una burbuja: si hay domicilios guardados,
+// abre modal con 2 opciones (es nuevo / mismo que el seleccionado).
+// Si no hay domicilios o no hay cliente vinculado, va directo a "nuevo".
+function usarPinCliente(lat, lng){
+  const latN = parseFloat(lat), lngN = parseFloat(lng);
+  _pinModalState = {lat:latN, lng:lngN};
+  const doms = window._doms || [];
+  // Sin cliente vinculado o sin doms guardados: no hay nada para "actualizar".
+  // Directo a "nuevo" + toast informativo.
+  if (!window._cid || !doms.length){
+    _pinAplicarNuevo(latN, lngN);
+    _pinToast('nuevo');
+    return;
+  }
+  // Hay doms: abrir modal con las opciones.
+  document.getElementById('pinModalCoords').textContent = `📍 ${latN.toFixed(4)}, ${lngN.toFixed(4)}`;
+  const sel = document.getElementById('pDom');
+  const btnMismo = document.getElementById('pinModalBtnMismo');
+  const subMismo = document.getElementById('pinModalMismoSub');
+  // Habilitar "mismo" solo si hay un dom REAL seleccionado en el dropdown.
+  // Si está "— escribir dirección —" (value vacío), deshabilitar.
+  const selVal = sel ? sel.value : '';
+  if (selVal){
+    const opt = sel.options[sel.selectedIndex];
+    btnMismo.disabled = false;
+    btnMismo.style.opacity = '1';
+    subMismo.textContent = `Pisa las coords del domicilio seleccionado: "${opt.textContent.replace(/\s+📍.*/,'').trim()}".`;
+  } else {
+    btnMismo.disabled = true;
+    btnMismo.style.opacity = '.45';
+    subMismo.textContent = 'No hay ningún domicilio seleccionado en el dropdown.';
+  }
+  document.getElementById('pinModalOverlay').classList.add('open');
+}
+
+function cerrarPinModal(){
+  document.getElementById('pinModalOverlay').classList.remove('open');
+  _pinModalState = {lat:null, lng:null};
+}
+
+async function pinModalAccion(opcion){
+  const {lat, lng} = _pinModalState;
+  if (lat == null || lng == null){ cerrarPinModal(); return; }
+  if (opcion === 'nuevo'){
+    _pinAplicarNuevo(lat, lng);
+    _pinToast('nuevo');
+    cerrarPinModal();
+    return;
+  }
+  if (opcion === 'mismo'){
+    const sel = document.getElementById('pDom');
+    const domId = sel ? sel.value : '';
+    if (!domId){ alert('No hay domicilio seleccionado.'); return; }
+    try {
+      const r = await fetch(`/api/clientes/domicilios/${domId}/geo`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({lat, lng}),
+      });
+      const d = await r.json();
+      if (!d.ok){ alert('Error: ' + (d.error || 'desconocido')); return; }
+      // Refrescar las coords en el picker (window._domLat/Lng + render).
+      window._domLat = lat;
+      window._domLng = lng;
+      window._domGeoAt = d.geo_actualizado_en || new Date().toISOString();
+      if (ClientePicker.renderDomCoords) ClientePicker.renderDomCoords();
+      if (typeof cotizarEnvio === 'function') { try { cotizarEnvio(); } catch(e){} }
+      _pinToast('mismo');
+      cerrarPinModal();
+    } catch(e){ alert('Error de red: ' + e.message); }
+  }
+}
+
+// "Nuevo domicilio": cargar coords en el panel y limpiar campos de dirección
+// textual (el operador va a preguntar al cliente la calle / piso / depto).
+// El DomicilioCliente nuevo se crea al cerrar la transacción (lo hace el
+// endpoint /cerrar-transaccion con los pick_lat/pick_lng del payload).
+function _pinAplicarNuevo(lat, lng){
+  window._domLat = lat;
+  window._domLng = lng;
+  window._domGeoAt = new Date().toISOString();
+  window._domFromPin = true;   // ← protege las coords de onDirInput cuando el operador escriba la dirección
+  // Limpiar campos textuales para no confundir con la dirección vieja.
+  const setIf = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  setIf('pDir', '');
+  setIf('pPiso', '');
+  setIf('pDepto', '');
+  setIf('pRef', '');
+  // Deseleccionar el dropdown pDom (para que no quede asociado a uno guardado).
+  const sel = document.getElementById('pDom');
+  if (sel) sel.value = '';
+  if (ClientePicker.renderDomCoords) ClientePicker.renderDomCoords();
+  const wrap = document.getElementById('pDomWrap');
+  if (wrap) wrap.style.display = '';
+  if (typeof cotizarEnvio === 'function') { try { cotizarEnvio(); } catch(e){} }
+}
+
+// Toast en la parte inferior del chat. tipo: 'nuevo' | 'mismo' | 'sinCli'
+function _pinToast(tipo){
+  const chat = document.getElementById('chat');
+  if (!chat) return;
+  const sinCli = !window._cid;
+  const toast = document.createElement('div');
+  if (sinCli){
+    toast.style.cssText = 'align-self:center; padding:7px 14px; border-radius:999px; background:#FEF3C7; color:#7C2D12; border:1.5px solid #D97706; font-size:11px; font-weight:600; margin:6px 0;';
+    toast.textContent = `⚠️ Pin cargado · vinculá un cliente o no quedará guardado`;
+  } else if (tipo === 'mismo'){
+    toast.style.cssText = 'align-self:center; padding:6px 14px; border-radius:999px; background:rgba(16,185,129,.30); color:var(--accent-ink); font-size:11px; font-weight:600; margin:6px 0;';
+    toast.textContent = `🔁 Coords actualizadas del domicilio guardado`;
+  } else {
+    toast.style.cssText = 'align-self:center; padding:6px 14px; border-radius:999px; background:rgba(16,185,129,.25); color:var(--accent-ink); font-size:11px; font-weight:600; margin:6px 0;';
+    toast.textContent = `✨ Nuevo domicilio · cargá la calle y número`;
+  }
+  chat.appendChild(toast);
+  setTimeout(() => toast.remove(), 5000);
 }
 
 async function tomar() {
@@ -1210,11 +1428,25 @@ async function cargarFicha() {
   // Si no, limpio el picker para que el operador busque uno.
   if (window.ClientePicker) {
     if (f && (f.observer_id || f.cliente_id)) {
-      ClientePicker.loadCliente({observer_id: f.observer_id, cliente_id: f.cliente_id});
+      await ClientePicker.loadCliente({observer_id: f.observer_id, cliente_id: f.cliente_id,
+                                        conv_id: convAbierta});
     } else {
       ClientePicker.clear();
     }
   }
+  // Banner "Cliente no vinculado": visible cuando hay conv abierta pero la ficha
+  // no trae ni observer_id ni cliente_id. Le recuerda al operador que el primer
+  // paso es identificar al cliente.
+  const ban = document.getElementById('banSinCliente');
+  if (ban){
+    const sinCliente = convAbierta && !(f && (f.observer_id || f.cliente_id));
+    ban.style.display = sinCliente ? 'block' : 'none';
+  }
+  // El badge "📍 Pin reciente" en el header del chat se pinta dentro de
+  // pintarHeaderConv (se llama al cargar la conv y en el polling cada 4s).
+  // Si refrescamos aquí sin volver a llamar pintarHeaderConv, el cambio se
+  // ve en el próximo tick — refrescamos manual para feedback inmediato.
+  if (typeof refrescarChat === 'function') refrescarChat(false);
   renderFicha();
   if (typeof cargarPagoAcordado === 'function') cargarPagoAcordado();
   // Precargar OS en la card Detalle del pedido (si el cliente ya tiene OS
@@ -2017,7 +2249,7 @@ async function guardarPagoAcordado(){
 
 // Guarda el pago + abre/refresca el modal Cerrar TX con todo precargado.
 // Valida primero lo MÍNIMO del sidebar (monto + forma); el modal valida el resto.
-async function guardarYCerrarTx(){
+async function guardarYCerrarTx(imprimir){
   const forma = document.getElementById('pgForma').value;
   if (!forma){ alert('Elegí la forma de pago.'); document.getElementById('pgForma').focus(); return; }
   // 'sin_cargo' no exige monto (el operador puede dejarlo en 0).
@@ -2048,12 +2280,12 @@ async function guardarYCerrarTx(){
   // Persistir el pago acordado (BotConversacion) y cerrar la TX directo —
   // ya no abrimos modal (Diego 2026-06-15: refactor C / etapa 3/3).
   await guardarPagoAcordado();
-  await cerrarTxDirecto();
+  await cerrarTxDirecto(imprimir);
 }
 
 // Construye el payload y hace POST a /atencion/<conv>/cerrar-transaccion.
 // Reemplaza al txCerrar() viejo del modal.
-async function cerrarTxDirecto(){
+async function cerrarTxDirecto(imprimir){
   if (!convAbierta) return;
   const get = id => { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; };
   const formaPg = get('pgForma');
@@ -2127,14 +2359,35 @@ async function cerrarTxDirecto(){
       if (vista === 'cerrados' && typeof cargarCerradosHoy === 'function') cargarCerradosHoy();
       return;
     }
-    // Pedido nuevo: pregunta si imprimir el ticket de envío (PDF 80mm) y
-    // después manda a la planilla. El ticket NO sale automático — el
-    // operador decide caso por caso (Diego 2026-06-19).
-    if (confirm(`✅ Pedido #${d.pedido_id} creado.\n\n¿Imprimir ticket de envío?`)){
+    // Pedido nuevo: nos quedamos en /atencion. Si el operador apretó el botón
+    // "🖨 + Imprimir", abrimos el ticket PDF en pestaña nueva. Sino solo
+    // vaciamos el form y mostramos toast con links manuales por si los necesita
+    // después. Antes había confirm() + redirect forzado a /reparto/planilla.
+    vaciarFormCierre();
+    if (typeof refrescarBandeja === 'function') refrescarBandeja();
+    if (typeof cargarBandeja === 'function') cargarBandeja();
+    if (vista === 'cerrados' && typeof cargarCerradosHoy === 'function') cargarCerradosHoy();
+    if (imprimir){
       try { window.open(`/reparto/pedido/${d.pedido_id}/ticket-pdf`, '_blank', 'noopener'); }
-      catch(e){ /* popup bloqueado: no rompe el redirect */ }
+      catch(e){ /* popup bloqueado: el toast queda con link manual */ }
     }
-    window.location.href = '/reparto/planilla';
+    const chat = document.getElementById('chat');
+    if (chat){
+      const toast = document.createElement('div');
+      toast.style.cssText = 'align-self:center; padding:10px 16px; border-radius:10px; background:rgba(16,185,129,.25); color:var(--accent-ink); font-size:12px; font-weight:600; margin:8px 0; display:flex; gap:10px; align-items:center; flex-wrap:wrap;';
+      const ticketLink = imprimir
+        ? `<span style="color:var(--muted); font-size:11px;">🖨 ticket abierto en pestaña nueva</span>`
+        : `<a href="/reparto/pedido/${d.pedido_id}/ticket-pdf" target="_blank" rel="noopener"
+              style="padding:4px 10px; border-radius:6px; background:#185FA5; color:#fff; text-decoration:none; font-size:11px;">🖨 Ticket</a>`;
+      toast.innerHTML = `
+        ✅ Pedido #${d.pedido_id} creado · estado: ${d.estado}
+        ${ticketLink}
+        <a href="/reparto/planilla" target="_blank" rel="noopener"
+           style="padding:4px 10px; border-radius:6px; background:var(--accent); color:#fff; text-decoration:none; font-size:11px;">📋 Planilla</a>
+      `;
+      chat.appendChild(toast);
+      setTimeout(() => toast.remove(), 12000);
+    }
   } catch(e){ alert('Error de red: ' + e.message); }
 }
 
