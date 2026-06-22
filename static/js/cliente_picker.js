@@ -81,8 +81,10 @@
       // usamos las coords precisas (sin redondear) así el pin no se desplaza.
       const latPrec = Number(window._domLat);
       const lngPrec = Number(window._domLng);
-      const lat = latPrec.toFixed(2);
-      const lng = lngPrec.toFixed(2);
+      // 4 decimales: a 2 decimales pines a pocas cuadras se ven idénticos y
+      // el operador no sabe cuál cargó. 4 dec = ~11 m de precisión, suficiente.
+      const lat = latPrec.toFixed(4);
+      const lng = lngPrec.toFixed(4);
       const sem = semaforoGeo(window._domGeoAt);
       // Saco 'reciente' del badge (Diego 2026-06-15): el color del bg ya
       // indica antigüedad (verde=reciente, naranja=>3m, rojo=>1año). Mantenemos
@@ -289,7 +291,9 @@
         setTimeout(autoIntentarGeoref, 150);
       }
       const sel = $('pDom');
-      sel.innerHTML = '<option value="">— escribir dirección —</option>' +
+      // Label del item default: deja claro que NO es un input. El campo
+      // editable es el "Dirección" de arriba (pDir).
+      sel.innerHTML = '<option value="">— ninguno · usar la dirección de arriba —</option>' +
         doms.map(x=>{
           const loc = x.localidad ? ` · ${esc(x.localidad)}` : '';
           const geoBadge = (x.lat!=null && x.lng!=null)
@@ -308,9 +312,17 @@
 
   let _geoTmr = null;
   function onDirInput(){
-    window._domLat = null;
-    window._domLng = null;
-    window._domGeoAt = null;
+    // Si las coords vienen explícitamente de un pin del cliente ("Usar este pin"
+    // → "Es un domicilio nuevo"), NO las limpiamos al tipear la dirección.
+    // Sino el operador completa la calle y las coords desaparecen → backend
+    // cae al primer domicilio guardado y manda al cadete a la dirección vieja.
+    // La bandera _domFromPin se setea en usarPinCliente (atencion.html) y se
+    // limpia al elegir una sugerencia del geocoder o al cargar otro cliente.
+    if (!window._domFromPin){
+      window._domLat = null;
+      window._domLng = null;
+      window._domGeoAt = null;
+    }
     window._geoRefStatus = null;
     renderDomCoords();
     clearTimeout(_geoTmr);
@@ -432,6 +444,7 @@
     window._domLat = s.lat;
     window._domLng = s.lng;
     window._domGeoAt = new Date().toISOString();
+    window._domFromPin = false;    // el operador eligió otra cosa, ya no es el pin del cliente
     window._geoRefStatus = null;   // ya hay coords, limpiar el flag del CTA
     renderDomCoords();
     $('resGeo').style.display='none';
@@ -473,6 +486,7 @@
     if (opt.dataset.lat && opt.dataset.lng){
       window._domLat = parseFloat(opt.dataset.lat);
       window._domLng = parseFloat(opt.dataset.lng);
+      window._domFromPin = false;   // ya no son las coords del pin del cliente
       renderDomCoords();
       if (callbacks.onAddressChange) callbacks.onAddressChange();
     } else {
