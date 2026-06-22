@@ -620,6 +620,12 @@ class EnvioConfig(Base):
     factor_cuadras = Column(Float, nullable=False, default=1.3)
     metros_por_cuadra = Column(Integer, nullable=False, default=100)
     alias_transferencia = Column(String(80), nullable=True)   # alias/CBU para pegar al chat
+    # ── SLA timers de reparto (Diego 2026-06-21) ──
+    # Aplican a la planilla y al cron que manda reavisos al grupo de cadetes.
+    sla_publicacion_reaviso_min = Column(Integer, nullable=False, default=15)
+    sla_publicacion_maximo_min  = Column(Integer, nullable=False, default=30)
+    sla_retiro_maximo_min       = Column(Integer, nullable=False, default=35)
+    sla_factor_urgente          = Column(Float, nullable=False, default=0.7)
     actualizado_en = Column(DateTime, default=now_ar)
 
 
@@ -730,6 +736,9 @@ class PedidoReparto(Base):
     # WhatsApp publicación + tomado por cadete
     waha_msg_id = Column(String(120), nullable=True, index=True)
     publicado_en = Column(DateTime, nullable=True)
+    # Timestamp del último reaviso enviado al grupo cadetes (cron SLA). Evita
+    # mandar el mismo aviso 2 veces. Se resetea al desasignar por retiro vencido.
+    reaviso_enviado_en = Column(DateTime, nullable=True)
     tomado_por_wsap = Column(String(80), nullable=True)
     tomado_en = Column(DateTime, nullable=True)
     # Telegram: DM con detalle + botón evolutivo (Retirado → Entregado → ✓) que
@@ -4702,6 +4711,12 @@ def _pg_add_columns(conn):
          "creado_en TIMESTAMP NOT NULL DEFAULT NOW())"),
         # Por las dudas que la tabla ya existiera con activo NOT NULL sin default.
         "ALTER TABLE envio_config ADD COLUMN IF NOT EXISTS alias_transferencia VARCHAR(80)",
+        # SLA timers de reparto (Diego 2026-06-21). Defaults razonables si la fila
+        # ya existía sin esos campos.
+        "ALTER TABLE envio_config ADD COLUMN IF NOT EXISTS sla_publicacion_reaviso_min INTEGER NOT NULL DEFAULT 15",
+        "ALTER TABLE envio_config ADD COLUMN IF NOT EXISTS sla_publicacion_maximo_min INTEGER NOT NULL DEFAULT 30",
+        "ALTER TABLE envio_config ADD COLUMN IF NOT EXISTS sla_retiro_maximo_min INTEGER NOT NULL DEFAULT 35",
+        "ALTER TABLE envio_config ADD COLUMN IF NOT EXISTS sla_factor_urgente REAL NOT NULL DEFAULT 0.7",
         "ALTER TABLE pedido_obs_presets ALTER COLUMN activo SET DEFAULT TRUE",
         "ALTER TABLE pedido_obs_presets ALTER COLUMN creado_en SET DEFAULT NOW()",
         # Seed inicial idempotente. Listo activo + creado_en explícitos por si la tabla
@@ -4745,6 +4760,7 @@ def _pg_add_columns(conn):
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_producto_obs ON pedidos_reparto(producto_observer_id)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS waha_msg_id VARCHAR(120)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS publicado_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS reaviso_enviado_en TIMESTAMP",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_por_wsap VARCHAR(80)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_en TIMESTAMP",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_dm_msg_id BIGINT",

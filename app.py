@@ -222,6 +222,14 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
+# Cron SLA del flujo de reparto (reaviso de publicación + desasignar retiros
+# vencidos). Lock por socket para que solo un worker corra.
+try:
+    from services import reparto_sla_cron
+    reparto_sla_cron.iniciar_cron_thread()
+except Exception:  # noqa: BLE001
+    pass
+
 
 if __name__ == '__main__':
     app.run(debug=True)

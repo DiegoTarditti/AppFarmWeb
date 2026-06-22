@@ -422,13 +422,19 @@
             ✓ {{ p.tomado_por_wsap }}{% if p.tomado_en %} · {{ p.tomado_en.strftime('%H:%M') }}{% endif %}
           </span>
         {% elif p.publicado_en %}
-          {# Timer SLA: 20 min warning, 40 min crítico (sin que ningún cadete lo tome).
+          {# Timer SLA: umbrales configurables en /config/envio (Diego 2026-06-21).
+             - verde:    0  → reaviso
+             - naranja:  reaviso → máximo (acá el cron manda mensaje al grupo)
+             - rojo:     > máximo
+             Urgentes usan reaviso × factor_urgente (default 0.7).
              Formato del tiempo: <60m → "5m", <24h → "2.5h", sino "3d".
              #N del pedido siempre visible para matchear con el msg del grupo.
              nowrap + display:inline-flex para que el ↻ NUNCA salte de linea. #}
           {% set _min = ((ahora - p.publicado_en).total_seconds() / 60) | int %}
-          {% set _col = '#1D9E75' if _min < 20 else ('#EF9F27' if _min < 40 else '#EF4444') %}
-          {% set _icon = '🟢' if _min < 20 else ('🟡' if _min < 40 else '🔴') %}
+          {% set _reaviso = (sla.reaviso_min * sla.urg_factor) | int if p.prioridad == 'urgente' else sla.reaviso_min %}
+          {% set _maximo = sla.maximo_min %}
+          {% set _col = '#1D9E75' if _min < _reaviso else ('#EF9F27' if _min < _maximo else '#EF4444') %}
+          {% set _icon = '🟢' if _min < _reaviso else ('🟡' if _min < _maximo else '🔴') %}
           {% if _min < 60 %}
             {% set _t = _min ~ 'm' %}
           {% elif _min < 1440 %}
