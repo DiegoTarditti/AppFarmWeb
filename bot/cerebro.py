@@ -167,7 +167,7 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
     # se ejecuta la acción normal. Volver a leer_receta se reactiva sacando el
     # comentario y restaurando el return original.
     if imagen_b64:
-        return ({'texto': '📸 Recibí la foto, gracias — por ahora no analizamos imágenes. Seguí contándome 👇',
+        return ({'texto': '📸 Recibí tu imagen.',
                  'opciones': [],
                  'meta': {'camino': 'receta_bloqueada', 'resuelto': True}},
                 nodo_actual, esperando, False)
@@ -615,6 +615,15 @@ def _precio_txt(p):
     return f'${p:,.0f}'.replace(',', '.') if p else 's/precio'
 
 
+def _mostrar_precio_cliente():
+    """Diego 2026-06-22: el bot NO muestra precio al cliente hasta nuevo aviso.
+    Activar con BOT_MOSTRAR_PRECIO=1 en .env. Las notas internas (panel
+    /atencion) siguen mostrando precio para el operador — esto solo aplica a
+    los textos que se mandan al cliente."""
+    import os as _os
+    return (_os.environ.get('BOT_MOSTRAR_PRECIO') or '').lower() in ('1', 'true', 'yes', 'on')
+
+
 def _flujo_compra(cid, nodo, esperando, texto, imagen_b64):
     """Máquina de estados de Compra Farmacia / Magistral. Devuelve la respuesta
     o None si el mensaje no es parte del flujo (sigue el flujo normal)."""
@@ -695,10 +704,13 @@ def _compra_buscar(cid, texto):
     store.set_producto_pendiente(cid, texto.strip())
     con_stock = next((r for r in rows if r['stock'] > 0), None)
     if con_stock:
+        # Nota interna (panel /atencion): SIEMPRE incluye precio para el operador.
         store.nota_sistema(cid, f'🛒 COMPRA — quiere: {texto.strip()} | EN STOCK: '
                                 f'{con_stock["producto"]} ({con_stock["stock"]}u, {_precio_txt(con_stock["precio"])})')
+        # Texto al cliente: precio condicional (flag _mostrar_precio_cliente).
+        precio_part = f' — {_precio_txt(con_stock["precio"])}' if _mostrar_precio_cliente() else ''
         return _compra_preguntar_os(
-            cid, intro=f'✅ Tengo {con_stock["producto"]} — {_precio_txt(con_stock["precio"])} '
+            cid, intro=f'✅ Tengo {con_stock["producto"]}{precio_part} '
                        f'({con_stock["stock"]}u).\n\n')
     store.nota_sistema(cid, f'🛒 COMPRA — quiere: {texto.strip()} | SIN STOCK')
     store.set_estado_flujo(cid, 'compra_encargo', None)

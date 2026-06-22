@@ -163,20 +163,21 @@ def main():
                     loc = msg['location']
                     ubicacion = {'lat': loc.get('latitude'), 'lng': loc.get('longitude')}
                 elif msg.get('photo'):
-                    # Foto (receta): tomamos la de mayor resolución.
-                    if chat_id:
-                        _aviso(base, chat_id, '📸 Leyendo tu receta, dame unos segundos…')
-                        _typing(base, chat_id)
+                    # Foto: el cerebro (bot/cerebro.py) está configurado para NO
+                    # procesar imágenes — solo acusa recibo. No mandamos "Leyendo
+                    # tu receta…" porque sería engañoso. Diego 2026-06-22.
+                    # Igual la bajamos por si el operador la ve en /atencion.
                     imagen_b64, media_type = _descargar_foto(
                         base, token, msg['photo'][-1]['file_id'])
                 elif msg.get('voice') or msg.get('audio'):
-                    # Nota de voz: transcribimos y lo tratamos como texto.
+                    # Procesamiento de voz desactivado por Diego (2026-06-22):
+                    # el cliente recibe un aviso amigable y el bot ignora el
+                    # audio. Para reactivar: setear BOT_VOZ_HABILITADA=1.
+                    # Forzamos el path "no disponible" si el flag no está activo.
                     a = msg.get('voice') or msg.get('audio')
-                    # ¿Ya la atiende un humano? Entonces NO avisamos "Escuchando…"
-                    # (el bot no va a contestar), pero igual transcribimos para que
-                    # el operador vea el texto en el panel.
                     derivada = bool(chat_id) and cerebro.esta_con_humano('telegram', str(chat_id))
-                    if not audio.disponible():
+                    _voz_on = (os.environ.get('BOT_VOZ_HABILITADA') or '').lower() in ('1', 'true', 'yes', 'on')
+                    if not _voz_on or not audio.disponible():
                         if not derivada and chat_id:
                             _enviar(base, chat_id, {'texto': 'Por ahora no puedo escuchar '
                                     'audios 🙉 Escribime tu consulta por texto y te ayudo 🙂',

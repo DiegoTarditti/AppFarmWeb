@@ -61,11 +61,20 @@ def procesar_evento(payload_json):
                             imagen_b64 = base64.b64encode(img_bytes).decode('utf-8')
                             media_type = msg.get('image', {}).get('mime_type', 'image/jpeg')
                 elif msg_type == 'audio':
-                    media_id = msg.get('audio', {}).get('id')
-                    if media_id:
-                        audio_bytes = _descargar_media(media_id)
-                        if audio_bytes:
-                            texto = _transcribir(audio_bytes) or ''
+                    # Procesamiento de voz desactivado por Diego (2026-06-22).
+                    # Para reactivar: BOT_VOZ_HABILITADA=1 en .env.
+                    import os as _os
+                    if (_os.environ.get('BOT_VOZ_HABILITADA') or '').lower() in ('1', 'true', 'yes', 'on'):
+                        media_id = msg.get('audio', {}).get('id')
+                        if media_id:
+                            audio_bytes = _descargar_media(media_id)
+                            if audio_bytes:
+                                texto = _transcribir(audio_bytes) or ''
+                    else:
+                        _enviar(from_number, {'texto': 'Por ahora no puedo escuchar '
+                                'audios 🙉 Escribime tu consulta por texto y te ayudo 🙂',
+                                'opciones': []})
+                        continue
                 else:
                     continue  # tipo no soportado (status, document, sticker, etc.)
 
