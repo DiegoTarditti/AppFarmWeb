@@ -76,7 +76,9 @@ def init_app(app):
             sla_publicacion_reaviso_min=b.get('sla_publicacion_reaviso_min'),
             sla_publicacion_maximo_min=b.get('sla_publicacion_maximo_min'),
             sla_retiro_maximo_min=b.get('sla_retiro_maximo_min'),
-            sla_factor_urgente=b.get('sla_factor_urgente')))
+            sla_factor_urgente=b.get('sla_factor_urgente'),
+            sla_respuesta_cadete_aviso_min=b.get('sla_respuesta_cadete_aviso_min'),
+            sla_respuesta_cadete_modal_min=b.get('sla_respuesta_cadete_modal_min')))
 
     @app.route('/config/envio/geolocalizar', methods=['POST'])
     @login_required

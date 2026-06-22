@@ -1420,6 +1420,58 @@ def init_app(app):
             s.commit()
             return jsonify({'ok': True, 'cadete_id': cad.id})
 
+    @app.route('/api/reparto/alertas-cadetes')
+    @login_required
+    def api_reparto_alertas_cadetes():
+        """Devuelve la lista de DMs de cadetes con un mensaje pendiente de
+        respuesta (último msg es del cadete y pasaron > N min).
+
+        Niveles:
+          - 'aviso': pasó sla_respuesta_cadete_aviso_min → banner sticky.
+          - 'modal': pasó sla_respuesta_cadete_modal_min → modal bloqueante.
+
+        El frontend de /reparto/planilla hace polling a este endpoint para
+        levantar el banner y/o el modal.
+        """
+        if not _ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        from bot import envio as _envio_mod
+        cfg = _envio_mod.get_config()
+        aviso_min = int(cfg['sla_respuesta_cadete_aviso_min'])
+        modal_min = int(cfg['sla_respuesta_cadete_modal_min'])
+        ahora = database.now_ar()
+        alertas = []
+        with database.get_db() as s:
+            from sqlalchemy import desc as _desc
+            # Convs DM cadete. Tomamos también las huérfanas (sin cadete_id)
+            # porque el operador igual tiene que responder.
+            convs = (s.query(database.BotConversacion)
+                     .filter(database.BotConversacion.canal == 'telegram_cadete')
+                     .all())
+            for conv in convs:
+                ultimo = (s.query(database.BotMensaje)
+                          .filter(database.BotMensaje.conversacion_id == conv.id)
+                          .order_by(_desc(database.BotMensaje.creado_en))
+                          .first())
+                if not ultimo or ultimo.origen != 'cliente':
+                    continue
+                minutos = (ahora - ultimo.creado_en).total_seconds() / 60
+                if minutos < aviso_min:
+                    continue
+                nivel = 'modal' if minutos >= modal_min else 'aviso'
+                alertas.append({
+                    'conv_id': conv.id,
+                    'cadete_id': conv.cadete_id,
+                    'cadete_nombre': conv.nombre_cliente or 'Sin vincular',
+                    'ultimo_texto': (ultimo.texto or '')[:80],
+                    'minutos': int(minutos),
+                    'nivel': nivel,
+                })
+        # Ordenar por minutos desc (las más urgentes arriba).
+        alertas.sort(key=lambda a: -a['minutos'])
+        return jsonify({'ok': True, 'alertas': alertas,
+                        'aviso_min': aviso_min, 'modal_min': modal_min})
+
     @app.route('/reparto/pedido/<int:pid>/publicar', methods=['POST'])
     @login_required
     def reparto_pedido_publicar(pid):

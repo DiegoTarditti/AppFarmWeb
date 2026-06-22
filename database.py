@@ -626,6 +626,12 @@ class EnvioConfig(Base):
     sla_publicacion_maximo_min  = Column(Integer, nullable=False, default=30)
     sla_retiro_maximo_min       = Column(Integer, nullable=False, default=35)
     sla_factor_urgente          = Column(Float, nullable=False, default=0.7)
+    # SLA de respuesta a DM de cadetes (banner blinking + modal de escalada).
+    # Cuando un cadete escribe al bot y nadie le responde:
+    #   - aviso_min  → banner sticky en /reparto/planilla.
+    #   - modal_min  → modal centrado bloqueando trabajo.
+    sla_respuesta_cadete_aviso_min = Column(Integer, nullable=False, default=10)
+    sla_respuesta_cadete_modal_min = Column(Integer, nullable=False, default=20)
     actualizado_en = Column(DateTime, default=now_ar)
 
 
@@ -4717,6 +4723,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE envio_config ADD COLUMN IF NOT EXISTS sla_publicacion_maximo_min INTEGER NOT NULL DEFAULT 30",
         "ALTER TABLE envio_config ADD COLUMN IF NOT EXISTS sla_retiro_maximo_min INTEGER NOT NULL DEFAULT 35",
         "ALTER TABLE envio_config ADD COLUMN IF NOT EXISTS sla_factor_urgente REAL NOT NULL DEFAULT 0.7",
+        "ALTER TABLE envio_config ADD COLUMN IF NOT EXISTS sla_respuesta_cadete_aviso_min INTEGER NOT NULL DEFAULT 10",
+        "ALTER TABLE envio_config ADD COLUMN IF NOT EXISTS sla_respuesta_cadete_modal_min INTEGER NOT NULL DEFAULT 20",
         "ALTER TABLE pedido_obs_presets ALTER COLUMN activo SET DEFAULT TRUE",
         "ALTER TABLE pedido_obs_presets ALTER COLUMN creado_en SET DEFAULT NOW()",
         # Seed inicial idempotente. Listo activo + creado_en explícitos por si la tabla

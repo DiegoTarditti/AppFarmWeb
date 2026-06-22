@@ -750,12 +750,16 @@ def init_app(app):
     @login_required
     def api_clientes_ficha():
         """Ficha de un cliente para precarga del form.
-        Acepta ?cliente_id= o ?observer_id= (resuelve con get_or_create)."""
+        Acepta ?cliente_id= o ?observer_id= (resuelve con get_or_create).
+        Opcional ?conv_id= : si viene, suma los DomicilioCliente huérfanos
+        de la conversación (pin que el cliente compartió ANTES de vincularse
+        al Cliente). Sin conv_id solo trae los del cliente."""
         if not _api_ok():
             return jsonify({'error': 'sin permiso'}), 403
         from bot import store
         cliente_id = request.args.get('cliente_id', type=int)
         observer_id = request.args.get('observer_id', type=int)
+        conv_id = request.args.get('conv_id', type=int)
         if not cliente_id and not observer_id:
             return jsonify({'error': 'falta cliente_id o observer_id'}), 400
         with database.get_db() as s:
@@ -765,8 +769,14 @@ def init_app(app):
                 s.commit()
             ficha = store._ficha_de_cliente(s, cliente_id)
             if ficha:
-                ficha['domicilios'] = store.listar_domicilios_de_cliente(
-                    cliente_id=cliente_id)
+                # Si tenemos conv_id usamos listar_domicilios() que une
+                # cliente_id + conversacion_id (incluye los pin huérfanos).
+                # Sin conv_id caemos al fallback de solo cliente_id.
+                if conv_id:
+                    ficha['domicilios'] = store.listar_domicilios(conv_id)
+                else:
+                    ficha['domicilios'] = store.listar_domicilios_de_cliente(
+                        cliente_id=cliente_id)
                 c = s.get(database.Cliente, cliente_id)
                 if c:
                     ficha['raw'] = {

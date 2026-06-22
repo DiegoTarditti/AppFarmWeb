@@ -736,9 +736,17 @@ def procesar(canal, canal_user_id, texto, imagen_b64=None,
             store.revisar_inactividad(cid, AUTO_BOT_MINUTOS):
         conv['estado_atencion'] = 'bot'
 
-    # Guardar el mensaje entrante.
-    entrante = texto or ('[imagen recibida]' if imagen_b64
-                         else ('[ubicación recibida]' if ubicacion else ''))
+    # Guardar el mensaje entrante. Si es una ubicación, persistimos las coords
+    # en formato parseable "📍 lat,lng" para que el frontend de /atencion las
+    # detecte y rendee una burbuja especial con link al mapa (Diego 2026-06-21).
+    if texto:
+        entrante = texto
+    elif imagen_b64:
+        entrante = '[imagen recibida]'
+    elif ubicacion and ubicacion.get('lat') is not None:
+        entrante = f'📍 {ubicacion["lat"]:.6f},{ubicacion["lng"]:.6f}'
+    else:
+        entrante = ''
     store.guardar_mensaje(cid, 'cliente', entrante, tiene_imagen=bool(imagen_b64))
 
     # Si ya está derivada (en cola) o la tomó un operador (humano), el bot NO

@@ -203,12 +203,17 @@
 
   // Carga ficha sin pasar por el autocomplete (entrada externa: deep-link
   // /pedido/nuevo?observer_id=X, transición desde /atencion, etc.).
-  async function loadCliente({cliente_id, observer_id} = {}){
+  async function loadCliente({cliente_id, observer_id, conv_id} = {}){
     window._oid = observer_id || null;
     window._cid = cliente_id || null;
     _pintarVinculoBadge();
-    const params = cliente_id ? `cliente_id=${cliente_id}`
-                              : `observer_id=${observer_id}`;
+    let params = cliente_id ? `cliente_id=${cliente_id}`
+                            : `observer_id=${observer_id}`;
+    // Si tenemos conv_id (caso /atencion), el endpoint suma los DomicilioCliente
+    // huérfanos de la conv — pin que el cliente compartió antes del vínculo
+    // al Cliente. Sin esto el operador no ve esos domicilios y queda sin saber
+    // que el cliente ya compartió pin.
+    if (conv_id) params += `&conv_id=${conv_id}`;
     const ficha = await (await fetch(`/api/clientes/ficha?${params}`)).json();
     if(ficha && !ficha.error){
       // La ficha local trae el cliente_id real (si en el load original solo
