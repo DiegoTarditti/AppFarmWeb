@@ -7,6 +7,22 @@ Orden: P0 = afecta producción AHORA · P1 = riesgo/correctitud · P2 = deuda qu
 
 ---
 
+## 🟠 P1 — Búsqueda de clientes por DNI (Diego 2026-06-22)
+
+**Qué pasa:** hoy `bot/data.buscar_clientes` y el cliente_picker (`/api/clientes/buscar`)
+buscan por nombre/apellido/teléfono pero NO por DNI. El bot tiene flujo de
+identificación que pide DNI (`identificar_por_dni`) pero solo lo usa para
+matchear contra ObServer; los Cliente locales con `dni` guardado no se levantan
+por ese campo en otros buscadores (panel /atencion, picker /pedido/nuevo).
+
+**Acción:** sumar `Cliente.dni` al buscador. Que un operador pueda escribir
+"30123456" en el campo Cliente y traiga el match. También revisar `Cliente.dni`
+indexado (¿hay índice?) — si hay 50k clientes vale tenerlo.
+
+**Esfuerzo:** ~30 min. **Tocá:** `bot/data.py`, `routes/clientes.py` `/api/clientes/buscar`.
+
+---
+
 ## 🔴 P0 — Re-sync de ventas (prod muestra ventas INFLADAS)
 
 **Qué pasa:** el fix `ee12bc6` (ventas netas) hace que `sync_ventas_mensuales`

@@ -754,6 +754,10 @@ class PedidoReparto(Base):
     tomado_dm_user_id = Column(BigInteger, nullable=True)
     retirado_en = Column(DateTime, nullable=True)
     entregado_en = Column(DateTime, nullable=True)
+    # Última vez que el cliente consultó el estado de este pedido por chat
+    # (botón "📦 Consultar estado de pedido" del bot). Se muestra como bandera
+    # en /reparto/planilla así el operador sabe que el cliente preguntó.
+    cliente_consulto_en = Column(DateTime, nullable=True)
     # ── Cerrar transacción (Fase A, spec docs/fase_a_transaccion.md) ─────────
     # Datos capturados por el operador en /atencion antes de mandar a caja.
     # El `importe` viejo es el total bruto desde ObServer; `total_paciente` es lo
@@ -4775,6 +4779,7 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_dm_user_id BIGINT",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS retirado_en TIMESTAMP",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS entregado_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS cliente_consulto_en TIMESTAMP",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_waha_msg ON pedidos_reparto(waha_msg_id)",
         "ALTER TABLE domicilios_cliente ADD COLUMN IF NOT EXISTS geo_actualizado_en TIMESTAMP",
         # Domicilios estructurados: piso/depto/referencia separados de direccion

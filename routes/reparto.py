@@ -40,9 +40,12 @@ def _notificar_cliente_pedido(s, pedido, nuevo_estado):
         return None
     nombre = (cli.nombre or '').strip().split(' ')[0] or 'Cliente'
     if nuevo_estado == 'en_ruta':
+        # Diego 2026-06-22: NO estimar tiempo de llegada (sin cálculo por cuadras).
+        # Antes decía "En unos minutos pasa el repartidor" — confundía cuando el
+        # cliente vivía lejos y tardaba 30+ min.
         texto = (f'🛵 Hola {nombre}! Tu pedido ya salió a domicilio.\n'
                  f'📍 {pedido.direccion or "tu dirección"}\n\n'
-                 f'En unos minutos pasa el repartidor.')
+                 f'Está en camino.')
     else:
         texto = f'✅ Hola {nombre}! Tu pedido fue entregado. ¡Gracias por elegirnos!'
     try:
