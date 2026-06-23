@@ -1070,14 +1070,44 @@ def init_app(app):
     def _telegram_armar_detalle_pedido(p):
         """Texto HTML con el detalle del pedido para el DM al cadete.
         Incluye total, lo que tiene que cobrar (si no está pagado), forma de
-        pago, vuelto. Diego 2026-06-19: el cadete usa este DM como única
-        fuente de info en la calle."""
+        pago, vuelto. Diego 2026-06-19/23: el cadete usa este DM como única
+        fuente de info en la calle.
+
+        Mejoras 2026-06-23:
+        - Header con hora de publicación (creado_en) → 'publicado HH:MM'
+        - Badge ⭐ PAMI cuando p.obra_social contiene 'PAMI'
+        - Link MP en línea aparte si forma=link_mp (Telegram lo hace clickeable)
+        - Caja 'COBRAR' más visible con separadores
+        """
         def _arg(n):
             return f'$ {float(n):,.0f}'.replace(',', '.')
 
-        partes = [f'📦 <b>Pedido #{p.id}</b>']
+        # Header con timestamp del pedido
+        header = f'📦 <b>Pedido #{p.id}</b>'
+        if p.creado_en:
+            try:
+                # Hora local; ahora calculamos cuánto tiempo pasó.
+                ahora = database.now_ar()
+                delta = ahora - p.creado_en
+                mins = int(delta.total_seconds() // 60)
+                if 0 <= mins < 60:
+                    when = f'hace {mins} min'
+                elif mins < 60 * 24 and mins >= 0:
+                    when = f'a las {p.creado_en.strftime("%H:%M")}'
+                else:
+                    when = p.creado_en.strftime('%d/%m %H:%M')
+                header += f' · <i>{when}</i>'
+            except Exception:  # noqa: BLE001
+                pass
+        partes = [header]
+
         if p.cliente_nombre:
-            partes.append(f'👤 <b>{p.cliente_nombre}</b>')
+            cliente_n = f'👤 <b>{p.cliente_nombre}</b>'
+            # Badge PAMI destacado al lado del nombre (más fácil de ver que
+            # como 'OS: PAMI' enterrado en Detalle).
+            if p.obra_social and 'pami' in p.obra_social.lower():
+                cliente_n += ' ⭐ <b>PAMI</b>'
+            partes.append(cliente_n)
         if p.telefono:
             partes.append(f'📞 {p.telefono}')
         if p.direccion:
@@ -1103,20 +1133,31 @@ def init_app(app):
             partes.append(f'💵 Total: <b>{_arg(total)}</b>')
         if p.envio_costo is not None:
             envio_txt = 'SIN CARGO' if p.envio_sin_cargo else _arg(p.envio_costo)
-            partes.append(f'🛵 Envío: {envio_txt}')
+            partes.append(f'🛵 Envío al cliente: {envio_txt}')
         if p.forma_pago:
-            partes.append(f'💳 Forma: {p.forma_pago}')
-        # Cobrar / pagado
+            partes.append(f'💳 Forma: <b>{p.forma_pago}</b>')
+
+        # Cobrar / pagado — caja destacada
         if p.pagado:
-            partes.append('✅ <b>Ya está pagado · no cobrar</b>')
+            partes.append('')
+            partes.append('✅ <b>YA ESTÁ PAGADO</b>')
+            partes.append('   <i>no cobrar al cliente</i>')
         elif total is not None:
+            partes.append('')
+            partes.append('🟡 <b>━━━━━━━━━━━━━━━━━</b>')
             partes.append(f'💰 <b>COBRAR: {_arg(total)}</b>')
+            partes.append('🟡 <b>━━━━━━━━━━━━━━━━━</b>')
+
+        # Detalles de pago según forma
         if p.paga_con is not None:
             partes.append(f'   paga con: {_arg(p.paga_con)}')
         if p.vuelto:
             partes.append(f'   vuelto: $ {p.vuelto}')
+        # Link MP clickeable (Telegram lo autoreconoce) si forma es link_mp.
+        if (p.forma_pago or '').lower() in ('link_mp', 'link mp', 'mercado pago', 'mp') and p.link_mp:
+            partes.append(f'   🔗 {p.link_mp}')
         if p.dato_pago_mp:
-            partes.append(f'   nro op: {p.dato_pago_mp}')
+            partes.append(f'   nro op: <code>{p.dato_pago_mp}</code>')
 
         partes.append('')
         partes.append('━━━ <b>DETALLE</b> ━━━')
@@ -1124,7 +1165,8 @@ def init_app(app):
             partes.append(f'💊 {p.producto}')
         if p.observacion:
             partes.append(f'📝 {p.observacion}')
-        if p.obra_social:
+        # OS solo si NO es PAMI (PAMI ya se mostró arriba como badge).
+        if p.obra_social and 'pami' not in p.obra_social.lower():
             partes.append(f'🏥 OS: {p.obra_social}')
         meta = []
         if p.prioridad and p.prioridad != 'normal':
