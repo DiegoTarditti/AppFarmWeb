@@ -80,6 +80,15 @@
             </div>
         </div>
 
+        {# ═══════════════════ REPARTO / SLA ═══════════════════ #}
+        <div class="inf-section mb-5">
+            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2"><span>📊</span> Reparto · SLA</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {{ inf_card('informes_eventos_sla', '⏱️', 'rose', 'Nuevo', 'amber', 'Eventos SLA (log)',
+                   'Demoras y desvíos del flujo de reparto: cadetes que no retiran, entregas tardías, droguerías colgadas, DMs sin responder.', 'reparto sla cadetes droguería') }}
+            </div>
+        </div>
+
         {# ═══════════════════ CATÁLOGO Y VENTAS ═══════════════════ #}
         <div class="inf-section mb-5">
             <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2"><span>📊</span> Catálogo y ventas</h2>

@@ -121,6 +121,36 @@ def init_app(app):
         """Índice con tarjetas para cada informe disponible."""
         return render_template('informes_index.html')
 
+    @app.route('/informes/eventos-sla')
+    @login_required
+    def informes_eventos_sla():
+        """Log de eventos SLA (cadetes, droguería, demoras, sin respuesta).
+        Solo lectura. Filtros: tipo, severidad, resuelto/pendiente."""
+        from sqlalchemy import desc
+        tipo = request.args.get('tipo') or ''
+        sev = request.args.get('sev') or ''
+        estado = request.args.get('estado') or 'pendientes'  # pendientes | resueltos | todos
+        with database.get_db() as s:
+            E = database.EventoSLA
+            q = s.query(E)
+            if tipo:
+                q = q.filter(E.tipo == tipo)
+            if sev:
+                q = q.filter(E.severidad == sev)
+            if estado == 'pendientes':
+                q = q.filter(E.resuelto_en.is_(None))
+            elif estado == 'resueltos':
+                q = q.filter(E.resuelto_en.isnot(None))
+            eventos = q.order_by(desc(E.id)).limit(500).all()
+            # Resumen contadores por tipo (todos, sin filtros)
+            from sqlalchemy import func
+            por_tipo = (s.query(E.tipo, func.count(E.id))
+                        .filter(E.resuelto_en.is_(None))
+                        .group_by(E.tipo).all())
+        return render_template('eventos_sla.html',
+                               eventos=eventos, por_tipo=por_tipo,
+                               tipo=tipo, sev=sev, estado=estado)
+
     @app.route('/informes/ventas-vendedor')
     @login_required
     def informes_ventas_vendedor():
