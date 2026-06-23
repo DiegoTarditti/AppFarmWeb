@@ -1780,13 +1780,24 @@ function rowProducto(p) {
   }));
   // Si es fraccionable, input numérico al lado del + para vender N unidades
   // sueltas (precio = precio_envase / cantidad_envase * N). Default 1 u.
+  // oninput dispara recalcFracPrecio() que muestra el subtotal en vivo
+  // arriba del input (sin agregar al carrito).
   const fracInput = (!sin && p.fraccionable && p.cantidad_envase)
     ? `<input id="qty_${p.observer_id}" type="number" min="1" step="1" value="1"
-        onclick="event.stopPropagation()" title="Unidades sueltas (envase = ${p.cantidad_envase})"
+        onclick="event.stopPropagation()"
+        oninput="recalcFracPrecio(${p.observer_id}, ${p.precio || 0}, ${p.cantidad_envase})"
+        title="Unidades sueltas (envase = ${p.cantidad_envase})"
         style="width:42px; padding:3px 5px; font-size:11px; background:rgba(0,0,0,0.25); color:var(--txt); border:1px solid rgba(255,255,255,0.18); border-radius:5px; text-align:center; margin-top:4px;">`
     : '';
   const plus = sin ? ''
     : `<div class="card-ic" onclick="agregarProductoEnc('${arg}')" title="Agregar al pedido" style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; margin-top:4px; cursor:pointer;"><i class="ti ti-plus" style="font-size:13px"></i></div>`;
+  // Subtotal fraccionado en vivo. Inicialmente muestra el precio de 1 unidad
+  // (= precio_envase / cantidad_envase). Se actualiza al cambiar el input.
+  const fracSubInicial = (!sin && p.fraccionable && p.cantidad_envase && p.precio)
+    ? fmtPrecio(p.precio / p.cantidad_envase) : '';
+  const fracSubDisplay = (!sin && p.fraccionable && p.cantidad_envase)
+    ? `<div id="fracsub_${p.observer_id}" style="font-size:10px; color:#a78bfa; font-weight:600; margin-top:1px;">1u · ${fracSubInicial}</div>`
+    : '';
   return `
     <div class="sp-row" style="display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:0.5px solid; ${sin ? 'opacity:0.5;' : ''}">
       <div style="flex:1; min-width:0;">
@@ -1801,12 +1812,25 @@ function rowProducto(p) {
       </div>
       <div style="text-align:right; flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:0;">
         <div class="${sin ? 'muted2' : 'title'}" style="font-size:13px; font-weight:600;">${fmtPrecio(p.precio)}</div>
+        ${fracSubDisplay}
         <div style="display:flex; align-items:center; gap:5px;">
           ${fracInput}
           ${plus}
         </div>
       </div>
     </div>`;
+}
+
+// Recalcula el subtotal fraccionado en vivo cuando el operador cambia la
+// cantidad de unidades sueltas. Muestra 'Nu · $X.XXX' arriba del input para
+// que sepa cuánto sale antes de apretar el +. Diego 2026-06-23.
+function recalcFracPrecio(oid, precioEnvase, cantEnvase) {
+  const inp = document.getElementById(`qty_${oid}`);
+  const out = document.getElementById(`fracsub_${oid}`);
+  if (!inp || !out) return;
+  const n = Math.max(1, parseInt(inp.value || '1', 10));
+  const subtotal = precioEnvase > 0 ? (precioEnvase / cantEnvase * n) : 0;
+  out.textContent = `${n}u · ${subtotal > 0 ? fmtPrecio(subtotal) : 's/precio'}`;
 }
 
 /* ── Detalle del pedido (Fase C) ── */
