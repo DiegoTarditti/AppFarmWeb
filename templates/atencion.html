@@ -938,9 +938,16 @@ async function reabrirPedido(id){
 // Limpia el form lateral después de cerrar (INSERT o UPDATE) para que el
 // operador pueda arrancar otro pedido sin valores fantasma.
 function vaciarFormCierre(){
+  // Limpiar campos a vacío
   ['pgMonto','pgPagaCon','pgEnvio','pgForma','pgLink','pgDato','pgUlt4','pgTarjNombre','pgMarca','pgCupon',
-   'dProducto','dNota','dObservacion','dStock','dDrogueria','dSalida','dPrioridad','dObraSocial','dReceta','dCanal']
+   'dProducto','dNota','dObservacion','dStock','dDrogueria','dObraSocial','dReceta','dCanal']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  // Defaults razonables para los selects de destino/prioridad (no vacío) —
+  // sino el operador tiene que volver a elegir Reparto + Normal cada vez.
+  // Diego 2026-06-22.
+  const setDef = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  setDef('dSalida', 'reparto');
+  setDef('dPrioridad', 'normal');
   const cbEsc = document.getElementById('pgEnvioSinCargo');
   if (cbEsc){ cbEsc.checked = false; pgEnvioSinCargoChange(); }
   pedidoEditando = null;

@@ -1470,6 +1470,15 @@ def init_app(app):
                     'minutos': int(minutos),
                     'nivel': nivel,
                 })
+                # Registro persistente del evento SLA (dedup automático: una sola
+                # fila por conv hasta que el operador responda).
+                from services import eventos_sla as _eventos_sla
+                _eventos_sla.registrar(
+                    'sin_respuesta_cadete',
+                    severidad='critico' if nivel == 'modal' else 'aviso',
+                    conv_id=conv.id, cadete_id=conv.cadete_id,
+                    minutos=int(minutos),
+                    detalle=f'{(ultimo.texto or "")[:80]}')
         # Ordenar por minutos desc (las más urgentes arriba).
         alertas.sort(key=lambda a: -a['minutos'])
         return jsonify({'ok': True, 'alertas': alertas,
@@ -1485,6 +1494,15 @@ def init_app(app):
             p = s.get(database.PedidoReparto, pid)
             if not p:
                 return jsonify({'ok': False, 'error': 'no existe'}), 404
+            # Defensa: no publicar pedidos que están esperando llegada de droguería
+            # — el cadete no tiene producto para retirar. El operador tiene que
+            # cambiar primero el estado a 'pendiente' cuando llega el producto.
+            # Diego 2026-06-22 — la UI ya lo deshabilita; esto cubre llamadas
+            # directas al endpoint.
+            if p.estado == 'esperando_drog':
+                return jsonify({'ok': False,
+                                'error': 'Pedido esperando llegada de droguería — '
+                                         'cambiá el estado antes de publicar.'}), 400
             # Armar texto del mensaje. ⚠️ PRIVACIDAD: el grupo de cadetes solo
             # necesita ubicación para decidir si lo toma. NO mandar nombre, teléfono,
             # producto, total, forma de pago, vuelto, observación ni receta — todo

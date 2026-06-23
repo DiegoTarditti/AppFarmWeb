@@ -2789,6 +2789,49 @@ class InformeEnviado(Base):
     )
 
 
+class EventoSLA(Base):
+    """Registro de eventos que se salen del SLA esperado (Diego 2026-06-22).
+
+    Inserción desde:
+      - services/reparto_sla_cron.py (cron interno cada 60s):
+          * 'reaviso_publicacion' — pedido publicado sin tomar > N min
+          * 'retiro_excedido'     — cadete tomó pero no retiró > N min
+          * 'entrega_excedida'    — pedido en_ruta sin entregar > N min
+          * 'drogueria_excedida'  — pedido esperando_drog > N min
+      - routes/reparto.py /api/reparto/alertas-cadetes:
+          * 'sin_respuesta_cadete' — DM cadete sin responder > N min
+      - cron de bandeja /atencion (TODO):
+          * 'sin_respuesta_cliente' — conv en cola sin operador > N min
+
+    Dedup: el helper services.eventos_sla.registrar() no inserta si ya hay
+    un evento del mismo tipo + entidad (conv_id o pedido_id) sin resolver.
+    Esto evita un registro por tick del cron.
+    """
+    __tablename__ = 'eventos_sla'
+    id = Column(Integer, primary_key=True)
+    creado_en = Column(DateTime, default=now_ar, index=True)
+    tipo = Column(String(40), nullable=False, index=True)
+    severidad = Column(String(20), nullable=False, default='aviso')  # aviso | critico
+    conv_id = Column(Integer,
+                     ForeignKey('bot_conversaciones.id', ondelete='SET NULL'),
+                     nullable=True, index=True)
+    pedido_id = Column(Integer,
+                       ForeignKey('pedidos_reparto.id', ondelete='SET NULL'),
+                       nullable=True, index=True)
+    operador_id = Column(Integer,
+                         ForeignKey('usuarios.id', ondelete='SET NULL'),
+                         nullable=True)
+    cadete_id = Column(Integer,
+                       ForeignKey('cadetes.id', ondelete='SET NULL'),
+                       nullable=True)
+    minutos = Column(Integer, nullable=True)
+    detalle = Column(Text, nullable=True)
+    resuelto_en = Column(DateTime, nullable=True)
+    resuelto_por = Column(Integer,
+                          ForeignKey('usuarios.id', ondelete='SET NULL'),
+                          nullable=True)
+
+
 class BotInteraccion(Base):
     """Analítica: una fila por mensaje del cliente que procesa el bot, clasificada
     por camino/intent y con el motivo si NO se pudo resolver. Alimenta el panel de
@@ -2864,6 +2907,7 @@ def init_db(database_url=None):
                         'parser_ofertas_lab', 'factura_faltante',
                         'analisis_ia_cache', 'panel_heartbeat',
                         'bot_conversaciones', 'bot_mensajes', 'bot_interacciones',
+                        'eventos_sla',
                         'clientes_locales',
                         'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago',
                         'envio_tramos', 'envio_zonas', 'envio_config',
