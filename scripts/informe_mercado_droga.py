@@ -213,7 +213,7 @@ def main():
     ws_idx['A4'].font = font_bold
     ws_idx['A5'] = f'Productos buscados: {", ".join(PRODUCTOS_BUSCADOS)}'
     ws_idx['A6'] = f'Farmacia ID: {id_farmacia}'
-    ws_idx['A7'] = f'Fuente: ObServer (obs_ventas_mensuales) + datos propios'
+    ws_idx['A7'] = 'Fuente: ObServer (obs_ventas_mensuales) + datos propios'
     ws_idx['A9'] = 'Monodroga'
     ws_idx['B9'] = '# Productos'
     ws_idx['A9'].font = font_bold
@@ -305,8 +305,8 @@ def main():
         ws.cell(row=HEAD, column=1).alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
         headers_periodos = [
-            f'Mes Actual\nvs Mes\nAnterior',
-            f'Mismo\nMes año\nanterior',
+            'Mes Actual\nvs Mes\nAnterior',
+            'Mismo\nMes año\nanterior',
             f'Acumulado\nAño {ref_y}/{ref_y-1}\n(ENERO-{MESES_ES[ref_m]})\n({ref_m}meses ) YTD',
             f'Acumulado\n12 Meses Móviles\n({MESES_ES[ref_m]} {ref_y}/ {MESES_ES[meses_mat_anterior[0][1]]} {meses_mat_anterior[0][0]}) MAT',
             f'Incremento\naño {ref_y} ({ref_m} meses)',
