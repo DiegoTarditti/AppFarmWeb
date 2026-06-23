@@ -843,7 +843,11 @@ def buscar_productos_detalle(query, limite=12):
     sql = database.text(f"""
         SELECT op.descripcion,
                COALESCE(os.stock_actual, 0)  AS stock,
+               -- Prioridad: precio_lista (importado del dump dbo.IdProductoPrecio)
+               -- → master local → product_analytics. Diego 2026-06-23: precio_lista
+               -- es el precio EXACTO de Observer.
                COALESCE(
+                 op.precio_lista,
                  pr.precio_pvp,
                  (SELECT pa.precio_pvp
                     FROM product_analytics pa

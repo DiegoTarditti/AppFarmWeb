@@ -151,6 +151,14 @@ class ObsProducto(Base):
     requiere_cadena_frio   = Column(Boolean, nullable=False, default=False)
     es_fraccionable        = Column(Boolean, nullable=False, default=False, server_default=text('false'))  # DW.Productos.EsFraccionable
     fecha_baja             = Column(DateTime, nullable=True)
+    # Precio lista actual exacto de Observer (dbo.IdProductoPrecio.Precio del
+    # registro con max FechaVigencia). Se carga importando el dump de la tabla
+    # IdProductoPrecio con scripts/importar_precios_observer.py. Diego 2026-06-23:
+    # más confiable que el promedio histórico de product_analytics; coincide
+    # 1:1 con lo que muestra la UI de Observer.
+    precio_lista                = Column(DECIMAL(14, 2), nullable=True)
+    precio_lista_fecha_vigencia = Column(DateTime, nullable=True)
+    precio_lista_actualizado_en = Column(DateTime, nullable=True)
     sync_en                = Column(DateTime, default=now_ar)
     __table_args__ = (
         Index('idx_obs_prod_lab', 'laboratorio_observer'),
@@ -3847,6 +3855,12 @@ def _pg_add_columns(conn):
     # stock_actual viene en UNIDADES sueltas, no en envases.
     conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS es_fraccionable BOOLEAN NOT NULL DEFAULT FALSE"))
     conn.execute(text("ALTER TABLE obs_stock ADD COLUMN IF NOT EXISTS fraccionado BOOLEAN NOT NULL DEFAULT FALSE"))
+    # Precio lista exacto desde Observer (dbo.IdProductoPrecio). Lo carga el
+    # script scripts/importar_precios_observer.py procesando el dump TXT.
+    # Diego 2026-06-23.
+    conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS precio_lista DECIMAL(14, 2)"))
+    conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS precio_lista_fecha_vigencia TIMESTAMP"))
+    conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS precio_lista_actualizado_en TIMESTAMP"))
     # Provider: mínimo de compra (puede no estar en deploys viejos)
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS compra_minima_pesos DECIMAL(14, 2)"))
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS descuento_con_transfer DECIMAL(5, 2)"))
