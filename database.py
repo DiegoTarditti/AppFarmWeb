@@ -762,6 +762,12 @@ class PedidoReparto(Base):
     tomado_dm_user_id = Column(BigInteger, nullable=True)
     retirado_en = Column(DateTime, nullable=True)
     entregado_en = Column(DateTime, nullable=True)
+    # No atiende: cadete fue al domicilio y nadie atendió. Diego 2026-06-24:
+    # estado='no_atiende' con timestamp + contador de intentos. Visible en
+    # planilla con badge rojo. El cadete puede reintentar (vuelve a 'en_ruta')
+    # o seguir marcando no_atiende (incrementa intentos).
+    no_atiende_en        = Column(DateTime, nullable=True)
+    no_atiende_intentos  = Column(Integer, nullable=False, default=0, server_default='0')
     # ── Cerrar transacción (Fase A, spec docs/fase_a_transaccion.md) ─────────
     # Datos capturados por el operador en /atencion antes de mandar a caja.
     # El `importe` viejo es el total bruto desde ObServer; `total_paciente` es lo
@@ -4789,6 +4795,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_dm_user_id BIGINT",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS retirado_en TIMESTAMP",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS entregado_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS no_atiende_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS no_atiende_intentos INTEGER NOT NULL DEFAULT 0",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_waha_msg ON pedidos_reparto(waha_msg_id)",
         "ALTER TABLE domicilios_cliente ADD COLUMN IF NOT EXISTS geo_actualizado_en TIMESTAMP",
         # Domicilios estructurados: piso/depto/referencia separados de direccion
