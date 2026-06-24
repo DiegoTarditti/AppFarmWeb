@@ -364,6 +364,69 @@ class ObsPlan(Base):
     sync_en           = Column(DateTime, default=now_ar)
 
 
+class ObsCondicionComercial(Base):
+    """Espejo de Gestion.CondicionesComerciales (descuentos / promos vigentes).
+
+    Diego 2026-06-24: la UI de Observer expone una grilla con descuentos por
+    producto / lab / rubro / forma de pago / convenio. Esta tabla refleja
+    1:1 esa grilla. La vista de Observer ya filtra solo las VIGENTES (el
+    historial completo está en CondicionesComerciales_HIS, lo dejamos fuera
+    por ahora; si hace falta lo agregamos como tabla aparte).
+
+    Los campos "Conjunto*" son listas de IDs separadas por coma (formato
+    nativo Observer). Ej. ConjuntoProductos = '21873, 17558, 6264'. Para
+    consumirlos, parsear con split(',') y limpiar espacios.
+    """
+    __tablename__ = 'obs_condiciones_comerciales'
+    observer_id              = Column(Integer, primary_key=True, autoincrement=False)  # IdCondicionComercial
+    his_id                   = Column(Integer, nullable=True, index=True)  # HIS_IdCondicionComercial (versión)
+    tipo                     = Column(String(1), nullable=True)            # IdTipoCondicionComercial (V = ventas)
+    tipo_promocion           = Column(String(1), nullable=True)            # D = descuento, M = MxN, ...
+    descripcion              = Column(String(200), nullable=True)
+    orden                    = Column(Integer, nullable=True)
+    porcentaje               = Column(DECIMAL(10, 4), nullable=True)
+    aplica_sobre_pvp         = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    aplica_en_ofertas        = Column(String(1), nullable=True)
+    aplica_en_particular_os  = Column(String(1), nullable=True)            # AplicaEnParticularObraSocial: O / P / ' '
+    aplica_en_fraccionado    = Column(String(1), nullable=True)
+    aplica_con_cuotas        = Column(String(1), nullable=True)
+    mxn                      = Column(String(5), nullable=True)            # 'M x N', ej. '2x1'
+    cantidad_para_2da        = Column(Integer, nullable=True)              # CantidadPara2daUnidad
+    # Vigencia (fecha + horario + días de la semana)
+    vigencia_desde           = Column(Date, nullable=True)
+    vigencia_hasta           = Column(Date, nullable=True)
+    hora_desde               = Column(String(5), nullable=True)
+    hora_hasta               = Column(String(5), nullable=True)
+    lunes                    = Column(Boolean, nullable=False, default=False)
+    martes                   = Column(Boolean, nullable=False, default=False)
+    miercoles                = Column(Boolean, nullable=False, default=False)
+    jueves                   = Column(Boolean, nullable=False, default=False)
+    viernes                  = Column(Boolean, nullable=False, default=False)
+    sabado                   = Column(Boolean, nullable=False, default=False)
+    domingo                  = Column(Boolean, nullable=False, default=False)
+    # Conjuntos (listas de IDs separadas por coma)
+    conj_productos           = Column(Text, nullable=True)
+    conj_laboratorios        = Column(Text, nullable=True)
+    conj_rubros              = Column(Text, nullable=True)
+    conj_subrubros           = Column(Text, nullable=True)
+    conj_formas_pago         = Column(Text, nullable=True)
+    conj_tarjetas            = Column(Text, nullable=True)
+    id_tipo_tarjeta          = Column(String(1), nullable=True)
+    conj_convenios           = Column(Text, nullable=True)
+    conj_planes              = Column(Text, nullable=True)
+    conj_tipos_producto      = Column(Text, nullable=True)
+    conj_tipos_venta         = Column(Text, nullable=True)
+    conj_grupos              = Column(Text, nullable=True)
+    conj_clientes            = Column(Text, nullable=True)
+    conj_farmacias           = Column(Text, nullable=True)
+    formula                  = Column(Text, nullable=True)
+    sync_en                  = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_obs_cc_tipo', 'tipo'),
+        Index('idx_obs_cc_vigencia_hasta', 'vigencia_hasta'),
+    )
+
+
 class ClienteOsConfirmada(Base):
     """OS confirmada manualmente por un operador. Toma precedencia sobre la inferida."""
     __tablename__ = 'cliente_os_confirmada'
