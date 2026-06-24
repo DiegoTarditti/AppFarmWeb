@@ -857,6 +857,12 @@ class PedidoReparto(Base):
     # botón "Liquidar" del control por cadete los marca pagados (saldo → 0).
     envio_liquidado = Column(Boolean, nullable=False, default=False, server_default='false')
     envio_liquidado_en = Column(DateTime, nullable=True)
+    # Prepago del cadete: el cadete deja la plata en la farmacia ANTES de salir
+    # y asume el riesgo de cobrar al cliente. Equivale a "pagado" para la
+    # conciliación (no hay que rendir), pero se distingue visualmente del cobro
+    # real al cliente. Diego 2026-06-24.
+    prepagado_cadete = Column(Boolean, nullable=False, default=False, server_default='false')
+    prepagado_cadete_en = Column(DateTime, nullable=True)
     # Etiqueta libre con color (arqueo/marcado manual en la planilla): texto
     # corto (<=10) + color hex. Solo presentación, no afecta la lógica.
     etiqueta = Column(String(10), nullable=True)
@@ -4890,6 +4896,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS destino VARCHAR(10)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS envio_liquidado BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS envio_liquidado_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS prepagado_cadete BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS prepagado_cadete_en TIMESTAMP",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS etiqueta VARCHAR(10)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS etiqueta_color VARCHAR(7)",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_drogueria ON pedidos_reparto(drogueria_id)",

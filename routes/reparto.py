@@ -2251,7 +2251,8 @@ def init_app(app):
         campo = (b.get('campo') or '').strip()
         valor = b.get('valor')
         EDITABLES = {'tomo', 'importe', 'forma_pago', 'vuelto', 'producto',
-                     'observacion', 'pagado', 'requiere_receta',
+                     'observacion', 'pagado', 'prepagado_cadete',
+                     'requiere_receta',
                      'entregado_por', 'cadete_id', 'recibio', 'estado', 'turno',
                      'etiqueta', 'etiqueta_color',
                      'envio_costo', 'envio_sin_cargo'}
@@ -2262,7 +2263,8 @@ def init_app(app):
             if not p:
                 return jsonify({'ok': False, 'error': 'no existe'}), 404
             # Tipos especiales
-            if campo in ('pagado', 'requiere_receta', 'envio_sin_cargo'):
+            if campo in ('pagado', 'prepagado_cadete', 'requiere_receta',
+                         'envio_sin_cargo'):
                 valor = bool(valor)
             elif campo in ('importe', 'envio_costo') and valor is not None and valor != '':
                 try:
@@ -2277,6 +2279,9 @@ def init_app(app):
             else:
                 valor = (str(valor).strip() if valor else None)
             setattr(p, campo, valor)
+            # Timestamp del prepago del cadete (audit trail).
+            if campo == 'prepagado_cadete':
+                p.prepagado_cadete_en = database.now_ar() if valor else None
             # Avisar al cliente cuando el estado avanza a en_ruta o entregado.
             if campo == 'estado':
                 _notificar_cliente_pedido(s, p, valor)

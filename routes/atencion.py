@@ -188,7 +188,11 @@ def init_app(app):
     @app.route('/atencion/api/clientes/buscar')
     @login_required
     def atencion_clientes_buscar():
-        return jsonify({'clientes': store.buscar_clientes(request.args.get('q', ''))})
+        # Diego 2026-06-24: cambio a la versión unificada para que la
+        # búsqueda funcione por DNI (parcial) y también encuentre clientes
+        # locales que no estén sincronizados desde Observer.
+        return jsonify({'clientes': store.buscar_clientes_unificado(
+            request.args.get('q', ''))})
 
     @app.route('/atencion/api/productos/buscar')
     @login_required

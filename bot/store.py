@@ -5,7 +5,7 @@ el historial, multi-línea y que sobreviva reinicios.
 """
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import String, and_, cast, func, or_
 
 import database
 
@@ -395,8 +395,12 @@ def buscar_clientes_unificado(query, limite=12):
         tokens = [t for t in q.split() if len(t) >= 2]
         obs_results = []
         if q.isdigit():
+            # Diego 2026-06-24: DNI parcial → LIKE. ObsCliente.documento_numero
+            # es INTEGER, lo casteamos a string para usar ILIKE. Si q tiene
+            # 7+ dígitos (DNI argentino completo), igual matchea por prefijo.
             rows = (s.query(database.ObsCliente)
-                    .filter(database.ObsCliente.documento_numero == int(q))
+                    .filter(cast(database.ObsCliente.documento_numero,
+                                  String).ilike(f'{q}%'))
                     .order_by(database.ObsCliente.apellido_nombre)
                     .limit(limite).all())
         elif tokens:
@@ -859,7 +863,8 @@ def buscar_productos_detalle(query, limite=12):
                op.cantidad_envase            AS cantidad_envase,
                op.es_fraccionable            AS fraccionable,
                op.id_tipo_venta_control      AS tvc,
-               op.observer_id
+               op.observer_id,
+               op.laboratorio_observer       AS lab_id
           FROM obs_productos op
           JOIN obs_stock os
             ON os.producto_observer = op.observer_id
@@ -876,6 +881,7 @@ def buscar_productos_detalle(query, limite=12):
     try:
         with database.get_db() as s:
             rows = s.execute(sql, params).fetchall()
+            descuentos_prod, descuentos_lab = _cargar_descuentos_vigentes(s)
     except Exception:  # noqa: BLE001 (SQLite en tests no tiene estas tablas/funciones)
         return []
     out = []
@@ -884,10 +890,41 @@ def buscar_productos_detalle(query, limite=12):
         nivel = 'none' if stock <= 0 else ('low' if stock <= 5 else 'ok')
         tvc = (r.tvc or '').strip()
         cant_env = int(r.cantidad_envase) if r.cantidad_envase else None
+        # Descuento aplicable: solo si el observer_id está en conj_productos
+        # de alguna condición vigente. Diego 2026-06-24: SOLO matching por
+        # producto, no por laboratorio ni otros conjuntos.
+        # Match: primero por producto exacto (conj_productos); si no hay,
+        # fallback por laboratorio (conj_laboratorios) usando lab_id.
+        # Diego 2026-06-24 (rev): se reactiva el matching por lab.
+        d = descuentos_prod.get(r.observer_id)
+        if not d and r.lab_id:
+            d = descuentos_lab.get(r.lab_id)
+        desc_pct = d[0] if d else None
+        desc_nombre = d[1] if d else None
+        # Solo mostrar las columnas de condiciones cuando NO están vacías.
+        desc_aplica_a = d[2] if d else None
+        desc_convenios = d[3] if d else None
+        desc_formas_pago = d[4] if d else None
+        desc_vig_desde = d[5] if d else None
+        desc_vig_hasta = d[6] if d else None
+        desc_sobre_pvp = d[7] if d else False
+        precio_lista = float(r.precio_pvp) if r.precio_pvp is not None else None
+        precio_final = None
+        if precio_lista is not None and desc_pct:
+            precio_final = round(precio_lista * (1 - desc_pct / 100), 2)
         out.append({
             'nombre': r.descripcion, 'droga': r.droga or '',
             'presentacion': _fmt_presentacion(r),
-            'precio': float(r.precio_pvp) if r.precio_pvp is not None else None,
+            'precio': precio_lista,
+            'precio_final': precio_final,
+            'descuento_pct': desc_pct,
+            'descuento_desc': desc_nombre,
+            'descuento_aplica_a': desc_aplica_a,
+            'descuento_convenios': desc_convenios,
+            'descuento_formas_pago': desc_formas_pago,
+            'descuento_vig_desde': desc_vig_desde,
+            'descuento_vig_hasta': desc_vig_hasta,
+            'descuento_sobre_pvp': desc_sobre_pvp,
             'stock': stock, 'nivel': nivel,
             'receta': bool(tvc and tvc != 'L'),
             'observer_id': r.observer_id,
@@ -895,6 +932,79 @@ def buscar_productos_detalle(query, limite=12):
             'cantidad_envase': cant_env,
         })
     return out
+
+
+def _cargar_descuentos_vigentes(session):
+    """Devuelve (por_producto, por_laboratorio) — dicts keyed por observer_id /
+    laboratorio_id apuntando a la mejor condición vigente aplicable.
+
+    Filtros:
+      - tipo_promocion='D' (descuento). Otros tipos (MxN) no se procesan acá.
+      - vigencia_desde <= hoy <= vigencia_hasta (NULL = sin límite).
+      - porcentaje > 0.
+
+    Campos del tuple:
+      (porcentaje, descripcion, aplica_a, convenios, formas_pago,
+       vig_desde, vig_hasta, sobre_pvp)
+
+    - aplica_a: 'Particular' / 'Obra social' / None (de aplica_en_particular_os).
+    - convenios, formas_pago: string raw de IDs separados por coma, o None.
+    - sobre_pvp: bool (solo se muestra cuando es True).
+
+    Si un producto tiene varias condiciones aplicables, se queda con el % mayor.
+    El matching final (producto vs lab) lo decide el caller — acá se cargan
+    los dos índices. Diego 2026-06-24 (rev): se reactiva el match por lab.
+    """
+    from datetime import date
+    hoy = date.today()
+    rows = session.execute(database.text("""
+        SELECT descripcion, porcentaje, conj_productos, conj_laboratorios,
+               aplica_en_particular_os, conj_convenios,
+               conj_formas_pago, vigencia_desde, vigencia_hasta,
+               aplica_sobre_pvp
+          FROM obs_condiciones_comerciales
+         WHERE (tipo_promocion = 'D' OR tipo_promocion IS NULL)
+           AND porcentaje IS NOT NULL AND porcentaje > 0
+           AND (conj_productos IS NOT NULL OR conj_laboratorios IS NOT NULL)
+           AND (vigencia_desde IS NULL OR vigencia_desde <= :hoy)
+           AND (vigencia_hasta IS NULL OR vigencia_hasta >= :hoy)
+    """), {'hoy': hoy}).fetchall()
+    por_prod, por_lab = {}, {}
+    for r in rows:
+        porc = float(r.porcentaje or 0)
+        if porc <= 0:
+            continue
+        nombre = (r.descripcion or '').strip()
+        ap_raw = (r.aplica_en_particular_os or '').strip().upper()
+        aplica_a = {'P': 'Particular', 'O': 'Obra social'}.get(ap_raw)
+        conv_raw = (r.conj_convenios or '').strip()
+        convenios = conv_raw if conv_raw else None
+        fp_raw = (r.conj_formas_pago or '').strip()
+        formas_pago = fp_raw if fp_raw else None
+        vig_desde = r.vigencia_desde.isoformat() if r.vigencia_desde else None
+        vig_hasta = r.vigencia_hasta.isoformat() if r.vigencia_hasta else None
+        sobre_pvp = bool(r.aplica_sobre_pvp)
+        payload = (porc, nombre, aplica_a, convenios, formas_pago,
+                   vig_desde, vig_hasta, sobre_pvp)
+        if r.conj_productos:
+            for pid_str in r.conj_productos.split(','):
+                pid_str = pid_str.strip()
+                if not pid_str.isdigit():
+                    continue
+                pid = int(pid_str)
+                prev = por_prod.get(pid)
+                if prev is None or porc > prev[0]:
+                    por_prod[pid] = payload
+        if r.conj_laboratorios:
+            for lid_str in r.conj_laboratorios.split(','):
+                lid_str = lid_str.strip()
+                if not lid_str.isdigit():
+                    continue
+                lid = int(lid_str)
+                prev = por_lab.get(lid)
+                if prev is None or porc > prev[0]:
+                    por_lab[lid] = payload
+    return por_prod, por_lab
 
 
 def _nota_sistema(session, conv_id, texto):

@@ -35,6 +35,10 @@
   th { text-align:left; font-weight:600; color:var(--muted); font-size:11px; padding:7px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
   td { padding:8px 10px; border-bottom:1px solid var(--row-bd); vertical-align:middle; }
   tr.entregado td { opacity:.55; }
+  /* Esperando droguería: pedido no salió todavía. Toda la fila desactivada.
+     Diego 2026-06-24. */
+  tr.esp-drog td { opacity:.45; }
+  tr.esp-drog .mini, tr.esp-drog button { pointer-events:none; }
   tr:last-child td { border-bottom:none; }
   .pill { font-size:10px; padding:2px 9px; border-radius:999px; font-weight:700; white-space:nowrap; }
   .pill.ruta { background:#3a3417; color:var(--warn); }
@@ -66,7 +70,15 @@ async function jpost(u,b){ return (await fetch(u,{method:'POST',headers:{'Conten
 
 // Pendiente de cobro por el cadete: efectivo todavía no cobrado.
 function pendienteCobro(p){ return p.forma_pago==='efectivo' && !p.pagado; }
-function montoCobro(p){ return p.total_paciente!=null ? p.total_paciente : (p.importe||0); }
+// Lo que el cadete debe rendir = lo que cobra al cliente. Si hay vuelto
+// (cliente paga con más), el operador ya le adelantó esa diferencia al cadete
+// → el cadete trae paga_con = importe + vuelto, no solo el importe.
+// Diego 2026-06-24.
+function montoCobro(p){
+  const base = p.total_paciente!=null ? p.total_paciente : (p.importe||0);
+  const vuelto = vNum(p);
+  return base + vuelto;
+}
 
 function recetaCell(p){
   const e = p.receta_estado || (p.requiere_receta ? 'pendiente' : '');
@@ -76,21 +88,31 @@ function recetaCell(p){
 }
 function estadoCell(p){
   const ent = p.estado==='entregado';
+  const espDrog = p.estado==='esperando_drog';
   const pill = ent ? '<span class="pill ok">entregado</span>'
                    : `<span class="pill ruta">${esc(p.estado==='en_ruta'?'en ruta':p.estado)}</span>`;
-  const btn = ent ? `<button class="mini" onclick="estado(${p.id},'en_ruta')" title="Volver a en ruta">↩</button>`
-                  : `<button class="mini ok" onclick="estado(${p.id},'entregado')">✓ entregado</button>`;
+  // esperando_drog: no salió todavía, no se puede marcar entregado.
+  // Diego 2026-06-24.
+  let btn = '';
+  if (!espDrog){
+    btn = ent ? `<button class="mini" onclick="estado(${p.id},'en_ruta')" title="Volver a en ruta">↩</button>`
+              : `<button class="mini ok" onclick="estado(${p.id},'entregado')" title="El cadete rindió el pedido (entregado al cliente + plata/receta cerradas)">✓ Rendido</button>`;
+  }
   return `<div style="display:flex; gap:6px; align-items:center;">${pill} ${btn}</div>`;
 }
 function cobroCell(p){
+  // esperando_drog: no salió, no hay nada que cobrarle al cadete todavía.
+  if(p.estado==='esperando_drog') return '<span class="muted2">—</span>';
   if(p.forma_pago!=='efectivo'){
+    // No es efectivo → el cadete no maneja plata; el cobro va por link/transf/tarjeta.
     return p.forma_pago ? `<span class="muted2" style="font-size:11px;">${esc(p.forma_pago)}</span>` : '<span class="muted2">—</span>';
   }
-  if(p.pagado) return '<span class="pill ok">💵 cobrado</span>';
-  return `<button class="mini warn" onclick="cobrar(${p.id})" title="${money(montoCobro(p))}">💵 cobrar ${money(montoCobro(p))}</button>`;
+  if(p.pagado) return '<span class="pill ok">✓ cobrado</span>';
+  return `<button class="mini warn" onclick="cobrar(${p.id})" title="Marca que el cadete ya rindió este monto">⏳ pendiente ${money(montoCobro(p))}</button>`;
 }
 // ¿Le pagué el envío al cadete? (toggle envio_liquidado por fila)
 function liqCell(p){
+  if(p.estado==='esperando_drog') return '<span class="muted2">—</span>';
   if(p.envio_costo==null) return '<span class="muted2">—</span>';
   if(p.envio_liquidado) return `<button class="mini ok" onclick="liquidarUno(${p.id})" title="Pagado al cadete — clic para deshacer">✓ pagado</button>`;
   return `<button class="mini" onclick="liquidarUno(${p.id})" title="Marcar que le pagaste este envío al cadete">pagar ${money(p.envio_costo)}</button>`;
@@ -125,7 +147,7 @@ async function cargar(){
                             .reduce((a,p)=>a+(p.envio_costo||0),0);
     const filas = g.items
       .sort((a,b)=> (a.estado==='entregado')-(b.estado==='entregado') || (a.cliente_nombre||'').localeCompare(b.cliente_nombre||''))
-      .map(p=>`<tr class="${p.estado==='entregado'?'entregado':''}">
+      .map(p=>`<tr class="${p.estado==='entregado'?'entregado':''}${p.estado==='esperando_drog'?' esp-drog':''}">
         <td><b>${esc(p.cliente_nombre)}</b></td>
         <td>${esc(p.direccion)||DASH}</td>
         <td>${p.telefono?esc(p.telefono):DASH}</td>
@@ -147,7 +169,7 @@ async function cargar(){
         <span class="cad-name">🛵 ${esc(g.nombre)}</span>
         <span class="muted2" style="font-size:11px;">${g.items.length} envío(s)</span>
         <div style="flex:1"></div>
-        <span class="stat cobrar">a cobrar <b>${money(aCobrar)}</b></span>
+        <span class="stat cobrar">a cobrar al cadete <b>${money(aCobrar)}</b></span>
         <span class="stat debe">se le debe <b>${money(seLeDebe)}</b></span>
         ${liq}
       </div>
@@ -155,7 +177,7 @@ async function cargar(){
         <thead><tr>
           <th>Cliente</th><th>Dirección</th><th>Tel</th><th>Forma pago</th>
           <th>Operación</th><th>Envío</th><th>Importe</th><th>Paga con</th><th>Vuelto</th>
-          <th>Observación</th><th>Rx</th><th>Estado</th><th>Cobro</th><th>Pago cadete</th>
+          <th>Observación</th><th>Rx</th><th>Estado</th><th>Cobrar al cadete</th><th>Pago cadete</th>
         </tr></thead>
         <tbody>${filas}</tbody>
       </table>

@@ -532,6 +532,10 @@ def sync_condiciones_comerciales(session):
         ahora = now_ar()
         with conn.cursor(as_dict=True) as cur:
             try:
+                # Filtro: dejar afuera las ya vencidas (VigenciaHasta < hoy).
+                # Sí traemos las sin VigenciaHasta (NULL = sin límite) y las
+                # futuras (vigencia_desde > hoy). El filtro de "vigente HOY"
+                # lo aplica el caller en runtime. Diego 2026-06-24.
                 cur.execute("""
                     SELECT IdCondicionComercial, HIS_IdCondicionComercial,
                            IdTipoCondicionComercial, TipoPromocion,
@@ -551,6 +555,8 @@ def sync_condiciones_comerciales(session):
                            ConjuntoGrupos, ConjuntoClientes, ConjuntoFarmacias,
                            Formula
                       FROM Gestion.CondicionesComerciales
+                     WHERE VigenciaHasta IS NULL
+                        OR VigenciaHasta >= CAST(GETDATE() AS DATE)
                 """)
             except Exception as e:  # noqa: BLE001
                 _log.warning('sync_condiciones_comerciales: sin acceso a '
