@@ -239,11 +239,17 @@ def parsear_update(payload):
     cb = payload.get('callback_query')
     if cb:
         data = cb.get('data') or ''
-        # Tres callbacks soportados: 'tomar:<pid>', 'retirado:<pid>',
-        # 'entregado:<pid>'. Cada uno avanza un paso del workflow del cadete.
+        # Callbacks del workflow del cadete:
+        #   tomar:<pid>      → toma el pedido (grupo → estado=tomado)
+        #   retirado:<pid>   → retiró de farmacia (grupo → estado=en_ruta + DM)
+        #   entregado:<pid>  → entregó al cliente (DM → estado=entregado)
+        #   no_atiende:<pid> → fue al domicilio y no atendió nadie (DM → estado=no_atiende)
+        #   reintentar:<pid> → volver a intentar entregar (DM → estado=en_ruta)
         _PREFIJOS = {'tomar:': 'callback_tomar',
                      'retirado:': 'callback_retirado',
-                     'entregado:': 'callback_entregado'}
+                     'entregado:': 'callback_entregado',
+                     'no_atiende:': 'callback_no_atiende',
+                     'reintentar:': 'callback_reintentar'}
         prefijo_match = next((p for p in _PREFIJOS if data.startswith(p)), None)
         if prefijo_match:
             try:
