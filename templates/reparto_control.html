@@ -98,10 +98,11 @@ function liqCell(p){
 
 const DASH = '<span class="muted2">—</span>';
 function num(v){ return v!=null ? money(v) : DASH; }
-function vNum(p){ const s=(p.vuelto||'').toString().trim(); return /^\d+$/.test(s) ? parseFloat(s) : 0; }
+// Parseo formato argentino: puntos de miles + coma decimal. "3.000" → 3000, "3.000,50" → 3000.5.
+function vNum(p){ const s=(p.vuelto||'').toString().trim().replace(/\./g,'').replace(',','.'); return /^\d+(\.\d+)?$/.test(s) ? parseFloat(s) : 0; }
 function operacionCell(p){ return (p.importe!=null||p.envio_costo!=null) ? money((p.importe||0)-(p.envio_costo||0)) : DASH; }
 function pagaConCell(p){ return p.importe!=null ? money((p.importe||0)+vNum(p)) : DASH; }   // Importe + Vuelto
-function vueltoCell(p){ const s=(p.vuelto||'').toString().trim(); if(!s) return DASH; return /^\d+$/.test(s) ? money(parseFloat(s)) : esc(s); }
+function vueltoCell(p){ const raw=(p.vuelto||'').toString().trim(); if(!raw) return DASH; const s=raw.replace(/\./g,'').replace(',','.'); return /^\d+(\.\d+)?$/.test(s) ? money(parseFloat(s)) : esc(raw); }
 
 async function cargar(){
   const d = await (await fetch('/reparto/api?fecha='+fechaVal())).json();
