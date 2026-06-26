@@ -23,6 +23,12 @@
     {% else %}
     <span class="ml-auto"></span>
     {% endif %}
+    {# Export XLS simple: planilla fija con todos los items, sin plantilla. #}
+    <a href="{{ url_for('api_pedido_emitido_export_xls', pedido_id=pedido.id) }}"
+       class="text-[11px] border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded font-semibold"
+       title="Descargar XLSX simple con todos los items (EAN, descripción, cantidades, estado)">
+        📊 Exportar XLS
+    </a>
     {# Regenerar plantilla: re-descarga el XLSX/TXT con la plantilla default de la drog. #}
     <a href="{{ url_for('api_pedido_emitido_export_plantilla', pedido_id=pedido.id) }}"
        class="text-[11px] border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded font-semibold"
