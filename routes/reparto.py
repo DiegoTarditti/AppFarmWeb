@@ -189,7 +189,7 @@ def _persistir_dm_telegram(telegram_user_id, push_name, body):
         s.add(database.BotMensaje(conversacion_id=conv.id, origen='cliente', texto=body))
         conv.ultimo_en = database.now_ar()
         s.commit()
-        log.warning('[telegram DM] guardado conv_id=%s cadete_id=%s body=%r',
+        log.info('[telegram DM] guardado conv_id=%s cadete_id=%s body=%r',
                     conv.id, conv.cadete_id, body[:60])
         return conv.id
 
@@ -680,12 +680,16 @@ def init_app(app):
           2) Auto-vincula Cadete.wa_id si el push_name matchea inequivocamente.
           3) Si es frase de toma con reply citando el msg del pedido → asigna.
 
-        Sin login: WAHA hace POST desde la red docker."""
+        Sin login (WAHA hace POST). Si WAHA_WEBHOOK_SECRET está seteado en el
+        server, se exige ese valor en el header X-Webhook-Secret o ?secret= —
+        así no cualquiera con la URL puede inyectar "tomas" de pedidos."""
+        secret = os.environ.get('WAHA_WEBHOOK_SECRET', '').strip()
+        if secret and (request.headers.get('X-Webhook-Secret')
+                       or request.args.get('secret', '')) != secret:
+            return jsonify({'ok': False, 'error': 'forbidden'}), 403
         from bot import whatsapp_grupo
         payload = request.json or {}
-        # Log temporal para diagnóstico
-        import json as _json
-        print('[WHATSAPP-WEBHOOK]', _json.dumps(payload, ensure_ascii=False)[:1500], flush=True)
+        log.debug('[WHATSAPP-WEBHOOK] %s', json.dumps(payload, ensure_ascii=False)[:1500])
         # WAHA puede mandar {event, session, payload:{...}} o el payload directo
         msg = payload.get('payload') if 'payload' in payload else payload
         if not isinstance(msg, dict):
@@ -823,18 +827,18 @@ def init_app(app):
         payload = request.json or {}
         upd = telegram_grupo.parsear_update(payload)
         tipo = upd.get('tipo')
-        log.warning('[telegram webhook] tipo=%s user=%s', tipo, upd.get('user_name'))
+        log.info('[telegram webhook] tipo=%s user=%s', tipo, upd.get('user_name'))
 
         if tipo == 'callback_tomar':
-            log.warning('[telegram callback_tomar] pid=%s user_id=%s user_name=%s',
+            log.info('[telegram callback_tomar] pid=%s user_id=%s user_name=%s',
                         upd.get('pedido_id'), upd.get('user_id'), upd.get('user_name'))
             return _telegram_procesar_tomar(upd, telegram_grupo)
         if tipo == 'callback_retirado':
-            log.warning('[telegram callback_retirado] pid=%s user_id=%s',
+            log.info('[telegram callback_retirado] pid=%s user_id=%s',
                         upd.get('pedido_id'), upd.get('user_id'))
             return _telegram_procesar_retirado(upd, telegram_grupo)
         if tipo == 'callback_entregado':
-            log.warning('[telegram callback_entregado] pid=%s user_id=%s',
+            log.info('[telegram callback_entregado] pid=%s user_id=%s',
                         upd.get('pedido_id'), upd.get('user_id'))
             return _telegram_procesar_entregado(upd, telegram_grupo)
 
@@ -1613,9 +1617,17 @@ def init_app(app):
         estado = (request.json or {}).get('estado', 'pendiente')
         with database.get_db() as s:
             p = s.get(database.PedidoReparto, pid)
-            if p:
-                p.estado = estado
-                s.commit()
+            if not p:
+                return jsonify({'ok': False, 'error': 'pedido no existe'}), 404
+            # Guard server-side: un pedido esperando stock de droguería NO puede
+            # marcarse entregado. El botón está oculto en la UI, pero el POST
+            # entraba igual (bypass). Diego review 2026-06-24.
+            if p.estado == 'esperando_drog' and estado == 'entregado':
+                return jsonify({'ok': False,
+                                'error': 'El pedido está esperando stock de droguería; '
+                                         'no se puede marcar entregado.'}), 400
+            p.estado = estado
+            s.commit()
         return jsonify({'ok': True})
 
     @app.route('/reparto/pedido/<int:pid>/cobrar', methods=['POST'])
