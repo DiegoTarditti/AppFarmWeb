@@ -34,8 +34,11 @@ name: Cron — Backup semanal a almacenamiento externo (Cloudflare R2)
 #   3. psql "$RENDER_DATABASE_URL_EXTERNAL" < backup-render-*.sql
 
 on:
-  schedule:
-    - cron: '0 4 * * 1'   # lunes 04:00 UTC = 01:00 hora Argentina
+  # PAUSADO (2026): el cron está comentado hasta configurar los secrets de
+  # Cloudflare R2 (ver setup arriba). Sin secrets fallaba todos los lunes.
+  # Para reactivar: descomentar el bloque schedule.
+  # schedule:
+  #   - cron: '0 4 * * 1'   # lunes 04:00 UTC = 01:00 hora Argentina
   workflow_dispatch:
 
 # No ejecutar 2 backups en paralelo aunque haya 2 triggers seguidos.
