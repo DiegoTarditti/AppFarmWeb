@@ -177,6 +177,25 @@ def init_app(app):
                         'origen': 'manual',
                         'id': pa.id,
                     })
+                # Pagos estructurados del módulo Contabilidad → haber.
+                pagos_estr = (session.query(database.Pago)
+                              .filter_by(proveedor_id=provider_id)
+                              .order_by(database.Pago.fecha).all())
+                for pg in pagos_estr:
+                    movimientos.append({
+                        'fecha': pg.fecha,
+                        'fecha_proceso': '',
+                        'tipo': 'PAGO',
+                        'comprobante': pg.nro_comprobante or '',
+                        'debe': 0,
+                        'haber': float(pg.monto or 0),
+                        'obs': pg.observaciones or '',
+                        'ingresada': None,
+                        'reclamo_estado': None,
+                        'conciliado': False,
+                        'origen': 'pago',
+                        'id': pg.id,
+                    })
 
                 movimientos.sort(key=lambda m: (m['fecha'], m['tipo']))
                 saldo = 0

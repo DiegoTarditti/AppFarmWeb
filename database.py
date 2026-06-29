@@ -575,6 +575,33 @@ class CuentaPago(Base):
     creado_en = Column(DateTime, default=now_ar)
 
 
+class Pago(Base):
+    """Pago a un proveedor (contabilidad). Sale de una CuentaPago y puede
+    cancelar N facturas (ver PagoAplicacion). Lo no aplicado queda 'a cuenta'.
+    Entra como haber en la cuenta corriente del proveedor."""
+    __tablename__ = 'pagos'
+    id = Column(Integer, primary_key=True)
+    proveedor_id = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'), nullable=False)
+    cuenta_pago_id = Column(Integer, ForeignKey('cuentas_pago.id'), nullable=True)
+    fecha = Column(Date, nullable=False)
+    monto = Column(DECIMAL(14, 2), nullable=False)   # total del pago
+    nro_comprobante = Column(String(40), nullable=True)
+    observaciones = Column(Text, nullable=True)
+    creado_en = Column(DateTime, default=now_ar)
+    aplicaciones = relationship('PagoAplicacion', back_populates='pago',
+                                cascade='all, delete-orphan')
+
+
+class PagoAplicacion(Base):
+    """Aplicación de un pago a una factura puntual (cancela total o parcial)."""
+    __tablename__ = 'pago_aplicaciones'
+    id = Column(Integer, primary_key=True)
+    pago_id = Column(Integer, ForeignKey('pagos.id', ondelete='CASCADE'), nullable=False)
+    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False)
+    monto = Column(DECIMAL(14, 2), nullable=False)
+    pago = relationship('Pago', back_populates='aplicaciones')
+
+
 class EnvioTramo(Base):
     """Tarifa de envío por distancia (cuadras). `hasta_cuadras` es el límite
     superior inclusive del tramo; el último ("50 o más") usa un número grande
@@ -2906,7 +2933,7 @@ def init_db(database_url=None):
                         'bot_conversaciones', 'bot_mensajes', 'bot_interacciones',
                         'clientes_locales',
                         'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago',
-                        'cuentas_pago',
+                        'cuentas_pago', 'pagos', 'pago_aplicaciones',
                         'envio_tramos', 'envio_zonas', 'envio_config',
                         'domicilios_cliente', 'rutas_reparto', 'pedidos_reparto',
                         'cadetes', 'ofertas_bot', 'ofertas_registro',
@@ -4378,6 +4405,26 @@ def _pg_add_columns(conn):
             nro_cuenta VARCHAR(60),
             activo BOOLEAN NOT NULL DEFAULT true,
             creado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS pagos (
+            id SERIAL PRIMARY KEY,
+            proveedor_id INTEGER NOT NULL REFERENCES proveedores(id) ON DELETE CASCADE,
+            cuenta_pago_id INTEGER REFERENCES cuentas_pago(id),
+            fecha DATE NOT NULL,
+            monto DECIMAL(14,2) NOT NULL,
+            nro_comprobante VARCHAR(40),
+            observaciones TEXT,
+            creado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS pago_aplicaciones (
+            id SERIAL PRIMARY KEY,
+            pago_id INTEGER NOT NULL REFERENCES pagos(id) ON DELETE CASCADE,
+            factura_id INTEGER NOT NULL REFERENCES facturas(id),
+            monto DECIMAL(14,2) NOT NULL
         )
     """))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS analizado_en TIMESTAMP"))

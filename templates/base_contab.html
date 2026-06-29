@@ -27,8 +27,8 @@
           ('proveedores', 'Proveedores',       url_for('contabilidad_proveedores'),  True),
           ('ctacte',      'Cuentas corrientes',url_for('cuentas_corrientes'),        True),
           ('formas_pago', 'Formas de pago',    url_for('contabilidad_formas_pago'),  True),
+          ('pagos',       'Pagos',             url_for('contabilidad_pagos'),        True),
           ('rubros',      'Rubros',            '#',                            False),
-          ('pagos',       'Pagos',             '#',                            False),
           ('libro_iva',   'Libro IVA',         '#',                            False),
       ] %}
       {% for slug, label, href, listo in _menu %}

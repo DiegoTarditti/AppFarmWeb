@@ -69,19 +69,16 @@
       </div>
     </div>
 
-    {# ── Pagos (pronto) ── #}
-    <div class="card" style="opacity:.6;">
+    {# ── Pagos ── #}
+    <a href="{{ url_for('contabilidad_pagos') }}" class="card card-action">
       <div class="action-content">
         <div class="icon-tile">💵</div>
         <div class="action-content__body">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="action-content__title">Pagos</span>
-            <span class="badge badge-mute badge-pill">Próximamente</span>
-          </div>
-          <div class="action-content__desc">Facturas pendientes, conforme y registro de pago.</div>
+          <div class="action-content__title">Pagos</div>
+          <div class="action-content__desc">Registrá pagos a proveedores; un pago cancela varias facturas.</div>
         </div>
       </div>
-    </div>
+    </a>
 
     {# ── Libro IVA (pronto) ── #}
     <div class="card" style="opacity:.6;">
