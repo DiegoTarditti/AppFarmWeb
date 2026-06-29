@@ -269,7 +269,7 @@ def init_app(app):
                     es_nc = f['tipo_cod'] in _ARCA_NC
                     signo = -1 if es_nc else 1
 
-                    def _s(v):
+                    def _s(v, signo=signo):
                         return (signo * v) if v is not None else None
 
                     inv = database.Invoice(
