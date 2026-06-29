@@ -1534,13 +1534,34 @@ class Invoice(Base):
     erp_filename = Column(String(200))
     batch_id = Column(Integer, ForeignKey('invoice_batches.id'), nullable=True)
     conciliado = Column(Boolean, nullable=False, default=False)
-    # Desglose fiscal (opcional, cargado desde converter o /verify)
-    monto_exento  = Column(DECIMAL(14, 2), nullable=True)
-    monto_gravado = Column(DECIMAL(14, 2), nullable=True)
-    iva_105       = Column(DECIMAL(14, 2), nullable=True)
-    iva_21        = Column(DECIMAL(14, 2), nullable=True)
-    percepciones  = Column(DECIMAL(14, 2), nullable=True)
-    otros         = Column(DECIMAL(14, 2), nullable=True)
+    # Identificación ARCA/AFIP ("Mis Comprobantes")
+    origen           = Column(String(15), nullable=False, default='manual')  # arca / pdf / manual
+    punto_venta      = Column(String(10), nullable=True)
+    cae              = Column(String(20), nullable=True)   # Cód. Autorización (CAE/CAEA)
+    arca_tipo_codigo = Column(Integer, nullable=True)      # código numérico AFIP (1,2,3,6,8,11,13…)
+    moneda           = Column(String(8), nullable=True, default='PES')
+    tipo_cambio      = Column(DECIMAL(14, 4), nullable=True)
+    # Desglose fiscal (opcional, cargado desde converter, /verify o import ARCA)
+    monto_exento    = Column(DECIMAL(14, 2), nullable=True)
+    monto_gravado   = Column(DECIMAL(14, 2), nullable=True)   # neto gravado total
+    neto_no_gravado = Column(DECIMAL(14, 2), nullable=True)
+    iva_25          = Column(DECIMAL(14, 2), nullable=True)
+    iva_5           = Column(DECIMAL(14, 2), nullable=True)
+    iva_105         = Column(DECIMAL(14, 2), nullable=True)
+    iva_21          = Column(DECIMAL(14, 2), nullable=True)
+    iva_27          = Column(DECIMAL(14, 2), nullable=True)
+    total_iva       = Column(DECIMAL(14, 2), nullable=True)
+    percepciones    = Column(DECIMAL(14, 2), nullable=True)
+    otros           = Column(DECIMAL(14, 2), nullable=True)
+    # Circuito documento / pago
+    doc_fisico           = Column(Boolean, nullable=False, default=False)  # ingresó el comprobante físico
+    doc_pdf              = Column(Boolean, nullable=False, default=False)  # se adjuntó el PDF
+    conforme_pago        = Column(Boolean, nullable=False, default=False)  # conforme "listo para pagar"
+    conforme_pago_en     = Column(DateTime, nullable=True)
+    pagado               = Column(Boolean, nullable=False, default=False)
+    fecha_pago           = Column(Date, nullable=True)
+    forma_pago           = Column(String(40), nullable=True)
+    nro_comprobante_pago = Column(String(40), nullable=True)
     creado_en = Column(DateTime, default=now_ar)
     items = relationship('InvoiceItem', back_populates='invoice')
     batch = relationship('InvoiceBatch', back_populates='invoices')
@@ -4300,8 +4321,25 @@ def _pg_add_columns(conn):
             pass
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS creado_en TIMESTAMP DEFAULT NOW()"))
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS conciliado BOOLEAN NOT NULL DEFAULT false"))
-    for _col in ('monto_exento', 'monto_gravado', 'iva_105', 'iva_21', 'percepciones', 'otros'):
+    for _col in ('monto_exento', 'monto_gravado', 'neto_no_gravado', 'iva_25', 'iva_5',
+                 'iva_105', 'iva_21', 'iva_27', 'total_iva', 'percepciones', 'otros',
+                 'tipo_cambio'):
         conn.execute(text(f"ALTER TABLE facturas ADD COLUMN IF NOT EXISTS {_col} DECIMAL(14,2)"))
+    # Identificación ARCA/AFIP
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS origen VARCHAR(15) NOT NULL DEFAULT 'manual'"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS punto_venta VARCHAR(10)"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS cae VARCHAR(20)"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS arca_tipo_codigo INTEGER"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS moneda VARCHAR(8) DEFAULT 'PES'"))
+    # Circuito documento / pago
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS doc_fisico BOOLEAN NOT NULL DEFAULT false"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS doc_pdf BOOLEAN NOT NULL DEFAULT false"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS conforme_pago BOOLEAN NOT NULL DEFAULT false"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS conforme_pago_en TIMESTAMP"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS pagado BOOLEAN NOT NULL DEFAULT false"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS fecha_pago DATE"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS forma_pago VARCHAR(40)"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS nro_comprobante_pago VARCHAR(40)"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS pagos_ajustes_cc (
             id SERIAL PRIMARY KEY,
@@ -5221,7 +5259,24 @@ def _sqlite_add_columns(conn):
     existing = {row[1] for row in conn.execute(text("PRAGMA table_info(facturas)"))}
     for col, typedef in [('tipo_comprobante', "VARCHAR(5) NOT NULL DEFAULT 'FAC'"),
                          ('total_articulos', 'INTEGER'), ('total_unidades', 'INTEGER'),
-                         ('pdf_filename', 'VARCHAR(200)'), ('erp_filename', 'VARCHAR(200)')]:
+                         ('pdf_filename', 'VARCHAR(200)'), ('erp_filename', 'VARCHAR(200)'),
+                         # Identificación ARCA/AFIP
+                         ('origen', "VARCHAR(15) NOT NULL DEFAULT 'manual'"),
+                         ('punto_venta', 'VARCHAR(10)'), ('cae', 'VARCHAR(20)'),
+                         ('arca_tipo_codigo', 'INTEGER'), ('moneda', "VARCHAR(8) DEFAULT 'PES'"),
+                         ('tipo_cambio', 'DECIMAL(14,4)'),
+                         # Desglose fiscal extendido
+                         ('neto_no_gravado', 'DECIMAL(14,2)'), ('iva_25', 'DECIMAL(14,2)'),
+                         ('iva_5', 'DECIMAL(14,2)'), ('iva_27', 'DECIMAL(14,2)'),
+                         ('total_iva', 'DECIMAL(14,2)'),
+                         # Circuito documento / pago
+                         ('doc_fisico', 'BOOLEAN NOT NULL DEFAULT 0'),
+                         ('doc_pdf', 'BOOLEAN NOT NULL DEFAULT 0'),
+                         ('conforme_pago', 'BOOLEAN NOT NULL DEFAULT 0'),
+                         ('conforme_pago_en', 'TIMESTAMP'),
+                         ('pagado', 'BOOLEAN NOT NULL DEFAULT 0'),
+                         ('fecha_pago', 'DATE'), ('forma_pago', 'VARCHAR(40)'),
+                         ('nro_comprobante_pago', 'VARCHAR(40)')]:
         if col not in existing:
             conn.execute(text(f"ALTER TABLE facturas ADD COLUMN {col} {typedef}"))
 

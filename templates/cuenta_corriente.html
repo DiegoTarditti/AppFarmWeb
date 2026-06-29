@@ -23,7 +23,11 @@
         <span class="text-xs text-[#6f6f6f]">{% if provider.cuit %}CUIT {{ provider.cuit }}{% endif %}</span>
         {% endif %}
 
-        <div class="sm:ml-auto">
+        <div class="sm:ml-auto flex items-center gap-2">
+            <a href="{{ url_for('comprobantes_importar') }}" title="Importar comprobantes de ARCA"
+               class="text-xs font-medium text-[#1e1e1e] bg-black/[0.04] hover:bg-black/[0.08] rounded-lg px-3 py-1.5 transition-colors">
+                ↓ Importar ARCA
+            </a>
             <a href="{{ url_for('index') }}" title="Inicio"
                class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
