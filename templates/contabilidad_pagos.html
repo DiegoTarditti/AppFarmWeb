@@ -1,0 +1,56 @@
+{% extends "base_contab.html" %}
+{% set contab_active = 'pagos' %}
+
+{% block title %}Pagos · Contabilidad{% endblock %}
+
+{% macro money(x) -%}
+{{ '{:,.2f}'.format(x).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+{%- endmacro %}
+
+{% block contab %}
+  <header class="page-header" style="margin-bottom:14px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+    <div>
+      <h1 class="page-header__title">Pagos a proveedores</h1>
+      <p class="page-header__subtitle">Cada pago sale de una cuenta y cancela una o varias facturas.</p>
+    </div>
+    <a href="{{ url_for('contabilidad_pago_nuevo') }}" class="btn btn-primary btn-sm" style="margin-left:auto;">+ Registrar pago</a>
+  </header>
+
+  <div class="card" style="padding:0; overflow:hidden;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:9px 14px;">Fecha</th>
+          <th style="text-align:left; padding:9px 14px;">Proveedor</th>
+          <th style="text-align:left; padding:9px 14px;">Cuenta</th>
+          <th style="text-align:left; padding:9px 14px;">Comprob.</th>
+          <th style="text-align:center; padding:9px 14px;">Facturas</th>
+          <th style="text-align:right; padding:9px 14px;">Monto</th>
+          <th style="width:60px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pg in pagos %}
+        <tr style="border-top:1px solid var(--ds-line);">
+          <td style="padding:9px 14px; white-space:nowrap;">{{ pg.fecha }}</td>
+          <td style="padding:9px 14px; font-weight:600; font-size:13px;">{{ pg.proveedor }}</td>
+          <td style="padding:9px 14px; color:var(--ds-text-soft); font-size:12px;">{{ pg.cuenta }}</td>
+          <td style="padding:9px 14px; color:var(--ds-text-soft); font-size:12px;">{{ pg.nro or '—' }}</td>
+          <td style="padding:9px 14px; text-align:center; color:var(--ds-text-mute);">{{ pg.n_facturas }}</td>
+          <td style="padding:9px 14px; text-align:right; font-weight:700; font-variant-numeric:tabular-nums; color:#5FE6BC;">${{ money(pg.monto) }}</td>
+          <td style="padding:9px 14px; text-align:right;">
+            <form method="post" action="{{ url_for('contabilidad_pago_delete', pago_id=pg.id) }}" style="display:inline;"
+                  onsubmit="return confirm('¿Eliminar este pago? Las facturas que cancelaba vuelven a quedar pendientes.')">
+              <button class="btn btn-secondary btn-sm" title="Eliminar pago">✕</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="padding:28px; text-align:center; color:var(--ds-text-mute);">
+          No hay pagos registrados. Empezá con «+ Registrar pago».
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

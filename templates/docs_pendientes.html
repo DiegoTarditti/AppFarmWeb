@@ -92,7 +92,7 @@
                                     Procesar
                                 </a>
                                 {% elif doc.factura_id %}
-                                <a href="{{ url_for('results', invoice_id=doc.factura_id) }}"
+                                <a href="{{ url_for('show_results', invoice_id=doc.factura_id) }}"
                                    class="text-xs text-brand hover:underline">Ver resultado</a>
                                 {% endif %}
                                 <form method="POST" action="{{ url_for('docs_pendientes_delete', doc_id=doc.id) }}" class="inline"

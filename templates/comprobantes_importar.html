@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% set nav_active = "ctas_corrientes" %}
+
+{% block title %}Importar comprobantes ARCA — Farmacia{% endblock %}
+
+{% block main %}
+    <!-- Top bar -->
+    <div class="bg-surface border-b border-surface-border px-3 sm:px-6 py-3 flex items-center gap-4 flex-wrap flex-shrink-0">
+        <h1 class="text-base font-bold text-[#1e1e1e]">Importar comprobantes · ARCA «Mis Comprobantes»</h1>
+        <a href="{{ url_for('cuentas_corrientes') }}"
+           class="ml-auto text-sm text-[#1e1e1e] bg-black/[0.04] hover:bg-black/[0.08] rounded-lg px-3 py-1.5 transition-colors">← Cuentas corrientes</a>
+    </div>
+
+    <div class="flex-1 overflow-auto px-4 py-4 space-y-4 max-w-3xl">
+
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-xl px-4 py-3 text-sm">{{ messages[0] }}</div>
+        {% endif %}
+        {% endwith %}
+
+        <form method="POST" enctype="multipart/form-data"
+              class="bg-surface border border-surface-border rounded-2xl p-5 space-y-4">
+            <p class="text-sm text-[#6f6f6f] leading-relaxed">
+                Subí el CSV de <b>Mis Comprobantes</b> (pestaña <b>Recibidos</b>) descargado de ARCA.
+                Se importan como facturas / notas de crédito en la <b>cuenta corriente del proveedor</b>
+                (match por CUIT del emisor; si no existe, se crea automáticamente).
+                Los comprobantes <b>ya importados no se duplican</b> aunque vuelvas a subir el mismo archivo.
+            </p>
+            <input type="file" name="archivo" accept=".csv,.txt" required
+                   class="block w-full text-sm border border-surface-border rounded-lg px-3 py-2 bg-surface-input text-[#1e1e1e]">
+            <button class="bg-brand text-black font-semibold rounded-lg px-4 py-2 text-sm hover:opacity-90 transition-opacity">
+                Importar
+            </button>
+        </form>
+
+        {% if resumen %}
+        <div class="bg-surface border border-surface-border rounded-2xl p-5 space-y-1.5 text-sm">
+            <h2 class="font-bold text-[#1e1e1e] mb-2">Resultado de la importación</h2>
+            <p class="text-[#6f6f6f]">Filas leídas: <b class="text-[#1e1e1e]">{{ resumen.total_filas }}</b></p>
+            <p class="text-green-600">Importados: <b>{{ resumen.importados }}</b></p>
+            <p class="text-yellow-700">Duplicados saltados: <b>{{ resumen.duplicados }}</b></p>
+            {% if resumen.omitidos %}
+            <p class="text-[#999]">Omitidos (fecha / tipo / CUIT incompletos): <b>{{ resumen.omitidos }}</b></p>
+            {% endif %}
+            {% if resumen.provs_creados %}
+            <p class="text-[#1e1e1e] pt-1">
+                Proveedores nuevos ({{ resumen.provs_creados|length }}):
+                <span class="text-[#6f6f6f]">{{ resumen.provs_creados|join(', ') }}</span>
+            </p>
+            {% endif %}
+            <div class="pt-3">
+                <a href="{{ url_for('cuentas_corrientes') }}"
+                   class="inline-block bg-brand text-black font-semibold rounded-lg px-4 py-2 text-sm hover:opacity-90">
+                    Ver cuentas corrientes →
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+{% endblock %}
