@@ -114,6 +114,18 @@ PERFILES = {
                      '/pedidos-emitidos', '/api/pedido-emitido/', '/api/producto/',
                      '/api/observer-product/', '/api/lab-drog/'],
     },
+    # Control de Ingreso: subir facturas, cruzar con ERP y generar reclamos.
+    'control_ingreso': {
+        'label': 'Control de Ingreso', 'icono': '📥',
+        'url': '/ingresos',
+        # Flujo completo: /ingresos (form) → /upload → /invoice/<id>/compare,
+        # apply-mapping, items, header, pick-fields, parse-helper, delete →
+        # /results/<id>. El form también consulta proveedores y previsualiza
+        # parser (/provider/peek, parser-preview-saved, folder-files, probe-create).
+        'prefijos': ['/ingresos', '/upload', '/invoice/', '/results',
+                     '/uploads/', '/provider/', '/api/provider/',
+                     '/api/invoice/'],
+    },
     # Módulo de contabilidad standalone: proveedores, cuentas corrientes,
     # importar comprobantes ARCA y (pronto) rubros / pagos / libro de IVA.
     'contabilidad': {

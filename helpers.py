@@ -266,9 +266,17 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def get_providers():
+def get_providers(solo_drog_activas=False):
+    """Proveedores para los dropdowns. Con solo_drog_activas=True filtra a las
+    droguerías activas para pedido (tipo='drogueria' + activo + activa_ped),
+    el mismo set que el dropdown 'Pedido a droguería' (/api/proveedores/drog-activas)."""
     with database.get_db() as session:
-        providers = session.query(database.Provider).order_by(database.Provider.razon_social).all()
+        q = session.query(database.Provider)
+        if solo_drog_activas:
+            q = q.filter(database.Provider.tipo == 'drogueria',
+                         database.Provider.activo.is_(True),
+                         database.Provider.activa_ped.is_(True))
+        providers = q.order_by(database.Provider.razon_social).all()
         return [{'id': p.id, 'razon_social': p.razon_social, 'cuit': p.cuit or '',
                  'parser_file': p.parser_file or '',
                  'ruta_facturas': p.ruta_facturas or '',
