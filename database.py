@@ -561,6 +561,20 @@ class FormaPago(Base):
     orden = Column(Integer, nullable=False, default=0)
 
 
+class CuentaPago(Base):
+    """Cuentas/medios de pago de CONTABILIDAD: banco, MercadoPago, efectivo.
+    Distinta de FormaPago (catálogo de caja/POS). Sobre estas cuentas se
+    importarán a futuro movimientos de banco/MP para conciliar los pagos a
+    proveedores."""
+    __tablename__ = 'cuentas_pago'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(80), nullable=False)                 # 'Banco Galicia CC', 'MercadoPago'
+    tipo = Column(String(20), nullable=False, default='banco')  # banco / mercadopago / efectivo / otro
+    nro_cuenta = Column(String(60), nullable=True)              # CBU / alias / nro de cuenta
+    activo = Column(Boolean, nullable=False, default=True)
+    creado_en = Column(DateTime, default=now_ar)
+
+
 class EnvioTramo(Base):
     """Tarifa de envío por distancia (cuadras). `hasta_cuadras` es el límite
     superior inclusive del tramo; el último ("50 o más") usa un número grande
@@ -1173,6 +1187,7 @@ class Provider(Base):
     razon_social = Column(String(100), nullable=False)
     cuit = Column(String(20))
     domicilio = Column(String(200))
+    condicion_iva = Column(String(30), nullable=True)  # Resp. Inscripto / Monotributo / Exento / Cons. Final
     parser_file = Column(String(100))
     match_strategy = Column(String(20), nullable=False, default='barcode')
     ruta_facturas = Column(String(500), nullable=True)
@@ -2891,6 +2906,7 @@ def init_db(database_url=None):
                         'bot_conversaciones', 'bot_mensajes', 'bot_interacciones',
                         'clientes_locales',
                         'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago',
+                        'cuentas_pago',
                         'envio_tramos', 'envio_zonas', 'envio_config',
                         'domicilios_cliente', 'rutas_reparto', 'pedidos_reparto',
                         'cadetes', 'ofertas_bot', 'ofertas_registro',
@@ -3883,6 +3899,7 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS precio_lista_fecha_vigencia TIMESTAMP"))
     conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS precio_lista_actualizado_en TIMESTAMP"))
     # Provider: mínimo de compra (puede no estar en deploys viejos)
+    conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS condicion_iva VARCHAR(30)"))
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS compra_minima_pesos DECIMAL(14, 2)"))
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS descuento_con_transfer DECIMAL(5, 2)"))
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS descuento_sin_transfer DECIMAL(5, 2)"))
@@ -4353,6 +4370,16 @@ def _pg_add_columns(conn):
         )
     """))
     conn.execute(text("ALTER TABLE pagos_ajustes_cc ADD COLUMN IF NOT EXISTS conciliado BOOLEAN NOT NULL DEFAULT false"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS cuentas_pago (
+            id SERIAL PRIMARY KEY,
+            nombre VARCHAR(80) NOT NULL,
+            tipo VARCHAR(20) NOT NULL DEFAULT 'banco',
+            nro_cuenta VARCHAR(60),
+            activo BOOLEAN NOT NULL DEFAULT true,
+            creado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS analizado_en TIMESTAMP"))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS analisis_json TEXT"))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS analisis_guardado_en TIMESTAMP"))
@@ -5244,6 +5271,8 @@ def _sqlite_add_columns(conn):
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN parser_file VARCHAR(100)"))
     if 'match_strategy' not in existing:
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN match_strategy VARCHAR(20) NOT NULL DEFAULT 'barcode'"))
+    if 'condicion_iva' not in existing:
+        conn.execute(text("ALTER TABLE proveedores ADD COLUMN condicion_iva VARCHAR(30)"))
     if 'descuento_con_transfer' not in existing:
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN descuento_con_transfer DECIMAL(5, 2)"))
     if 'descuento_sin_transfer' not in existing:

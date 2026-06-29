@@ -1,0 +1,101 @@
+{% extends "base_contab.html" %}
+{% set contab_active = 'inicio' %}
+
+{% block title %}Contabilidad — {{ config.farmacia_nombre }}{% endblock %}
+
+{% block contab %}
+  <header class="page-header" style="margin-bottom:18px;">
+    <h1 class="page-header__title">Módulo de <span class="glow-text">Contabilidad</span></h1>
+    <p class="page-header__subtitle">Comprobantes de ARCA, cuentas corrientes y pagos a proveedores.</p>
+  </header>
+
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+
+    {# ── Proveedores ── #}
+    <a href="{{ url_for('contabilidad_proveedores') }}" class="card card-action">
+      <div class="action-content">
+        <div class="icon-tile">🏢</div>
+        <div class="action-content__body">
+          <div class="action-content__title">Proveedores</div>
+          <div class="action-content__desc">Alta y datos de los proveedores.</div>
+        </div>
+      </div>
+    </a>
+
+    {# ── Cuentas corrientes ── #}
+    <a href="{{ url_for('cuentas_corrientes') }}" class="card card-action">
+      <div class="action-content">
+        <div class="icon-tile icon-tile-info">💳</div>
+        <div class="action-content__body">
+          <div class="action-content__title">Cuentas corrientes</div>
+          <div class="action-content__desc">Saldo por proveedor: facturas, notas de crédito y pagos.</div>
+        </div>
+      </div>
+    </a>
+
+    {# ── Importar ARCA (Mis Comprobantes) ── #}
+    <a href="{{ url_for('comprobantes_importar') }}" class="card card-action">
+      <div class="action-content">
+        <div class="icon-tile">🧾</div>
+        <div class="action-content__body">
+          <div class="action-content__title">Importar comprobantes</div>
+          <div class="action-content__desc">Subí el CSV «Mis Comprobantes» de ARCA. Anti-duplicado.</div>
+        </div>
+      </div>
+    </a>
+
+    {# ── Formas de pago ── #}
+    <a href="{{ url_for('contabilidad_formas_pago') }}" class="card card-action">
+      <div class="action-content">
+        <div class="icon-tile">🏦</div>
+        <div class="action-content__body">
+          <div class="action-content__title">Formas de pago</div>
+          <div class="action-content__desc">Cuentas de banco, MercadoPago y efectivo.</div>
+        </div>
+      </div>
+    </a>
+
+    {# ── Rubros (pronto) ── #}
+    <div class="card" style="opacity:.6;">
+      <div class="action-content">
+        <div class="icon-tile icon-tile-warn">🏷️</div>
+        <div class="action-content__body">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="action-content__title">Rubros</span>
+            <span class="badge badge-mute badge-pill">Próximamente</span>
+          </div>
+          <div class="action-content__desc">Clasificación contable de los comprobantes.</div>
+        </div>
+      </div>
+    </div>
+
+    {# ── Pagos (pronto) ── #}
+    <div class="card" style="opacity:.6;">
+      <div class="action-content">
+        <div class="icon-tile">💵</div>
+        <div class="action-content__body">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="action-content__title">Pagos</span>
+            <span class="badge badge-mute badge-pill">Próximamente</span>
+          </div>
+          <div class="action-content__desc">Facturas pendientes, conforme y registro de pago.</div>
+        </div>
+      </div>
+    </div>
+
+    {# ── Libro IVA (pronto) ── #}
+    <div class="card" style="opacity:.6;">
+      <div class="action-content">
+        <div class="icon-tile icon-tile-info">📒</div>
+        <div class="action-content__body">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="action-content__title">Libro IVA</span>
+            <span class="badge badge-mute badge-pill">Próximamente</span>
+          </div>
+          <div class="action-content__desc">Libro de IVA compras a partir de los comprobantes importados.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+{% endblock %}

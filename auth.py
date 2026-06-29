@@ -114,6 +114,14 @@ PERFILES = {
                      '/pedidos-emitidos', '/api/pedido-emitido/', '/api/producto/',
                      '/api/observer-product/', '/api/lab-drog/'],
     },
+    # Módulo de contabilidad standalone: proveedores, cuentas corrientes,
+    # importar comprobantes ARCA y (pronto) rubros / pagos / libro de IVA.
+    'contabilidad': {
+        'label': 'Contabilidad', 'icono': '📊',
+        'url': '/contabilidad',
+        'prefijos': ['/contabilidad', '/cuentas-corrientes', '/comprobantes',
+                     '/providers', '/provider/', '/api/proveedores'],
+    },
 }
 
 # Paths comunes a todo operador (siempre permitidos).

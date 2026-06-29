@@ -1,0 +1,133 @@
+{% extends "base_contab.html" %}
+{% set contab_active = 'proveedores' %}
+
+{% block title %}Proveedores · Contabilidad{% endblock %}
+
+{% macro money(x) -%}
+{{ '{:,.2f}'.format(x).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+{%- endmacro %}
+
+{% block contab %}
+  <header class="page-header" style="margin-bottom:14px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+    <div>
+      <h1 class="page-header__title">Proveedores</h1>
+      <p class="page-header__subtitle">Datos contables y saldo de cuenta corriente.</p>
+    </div>
+    <div style="margin-left:auto; display:flex; align-items:center; gap:10px;">
+      <form method="GET" style="display:flex; gap:6px;">
+        <input type="text" name="q" value="{{ q }}" placeholder="🔎 Buscar nombre / CUIT…"
+               style="background:var(--ds-surface); border:1px solid var(--ds-line-2); color:var(--ds-text);
+                      border-radius:var(--ds-r-sm); padding:7px 12px; font-size:13px; width:240px;">
+      </form>
+      <button type="button" onclick="abrirModal()" class="btn btn-primary btn-sm">+ Nuevo proveedor</button>
+    </div>
+  </header>
+
+  <div class="card" style="padding:0; overflow:hidden;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:9px 14px;">Razón social</th>
+          <th style="text-align:left; padding:9px 14px;">CUIT</th>
+          <th style="text-align:left; padding:9px 14px;">Cond. IVA</th>
+          <th style="text-align:right; padding:9px 14px;">Comp.</th>
+          <th style="text-align:left; padding:9px 14px;">Últ. mov.</th>
+          <th style="text-align:right; padding:9px 14px;">Saldo</th>
+          <th style="width:120px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in proveedores %}
+        <tr style="border-top:1px solid var(--ds-line);">
+          <td style="padding:9px 14px;">
+            <a href="{{ url_for('cuentas_corrientes', proveedor=p.id) }}"
+               style="color:var(--ds-text); font-weight:600; font-size:13px; text-decoration:none;"
+               title="Ver cuenta corriente">{{ p.razon_social }}</a>
+          </td>
+          <td style="padding:9px 14px; color:var(--ds-text-soft); font-size:12px; white-space:nowrap; font-variant-numeric:tabular-nums;">{{ p.cuit or '—' }}</td>
+          <td style="padding:9px 14px; color:var(--ds-text-soft); font-size:12px;">{{ p.condicion_iva or '—' }}</td>
+          <td style="padding:9px 14px; text-align:right; color:var(--ds-text-mute); font-variant-numeric:tabular-nums;">{{ p.n_comprobantes }}</td>
+          <td style="padding:9px 14px; color:var(--ds-text-soft); font-size:12px;">{{ p.ultimo_mov or '—' }}</td>
+          <td style="padding:9px 14px; text-align:right; font-weight:700; font-variant-numeric:tabular-nums;
+                     color:{% if p.saldo > 0.005 %}#FCA5A5{% elif p.saldo < -0.005 %}#5FE6BC{% else %}var(--ds-text-mute){% endif %};">
+            ${{ money(p.saldo) }}
+          </td>
+          <td style="padding:9px 14px; text-align:right; white-space:nowrap;">
+            <a href="{{ url_for('cuentas_corrientes', proveedor=p.id) }}" class="btn btn-secondary btn-sm" title="Cuenta corriente">CC</a>
+            <button type="button" class="btn btn-secondary btn-sm"
+                    onclick='editarProveedor({{ {"id":p.id,"razon_social":p.razon_social,"cuit":p.cuit,"domicilio":p.domicilio,"condicion_iva":p.condicion_iva}|tojson }})'>Editar</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="padding:28px; text-align:center; color:var(--ds-text-mute);">
+          {% if q %}Sin resultados para «{{ q }}».{% else %}No hay proveedores todavía. Importá comprobantes ARCA o creá uno.{% endif %}
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:10px; font-size:11.5px; color:var(--ds-text-mute);">
+    {{ proveedores|length }} proveedor(es). Saldo en <span style="color:#FCA5A5;">rojo = deuda</span> ·
+    <span style="color:#5FE6BC;">verde = a favor</span>.
+  </p>
+
+  {# ── Modal alta / edición ─────────────────────────────────────────────── #}
+  <div id="prov-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:80; align-items:center; justify-content:center; padding:16px;"
+       onclick="if(event.target===this) cerrarModal()">
+    <div style="background:var(--ds-surface); border:1px solid var(--ds-line-2); border-radius:var(--ds-r-lg);
+                width:100%; max-width:460px; padding:22px; box-shadow:var(--ds-shadow-lg);">
+      <h2 id="prov-modal-title" style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:17px; color:var(--ds-text); margin:0 0 16px;">Nuevo proveedor</h2>
+      <form method="POST" action="{{ url_for('contabilidad_proveedor_guardar') }}" style="display:flex; flex-direction:column; gap:12px;">
+        <input type="hidden" name="id" id="f-id">
+        <label style="font-size:12px; color:var(--ds-text-soft);">Razón social *
+          <input type="text" name="razon_social" id="f-razon" required
+                 style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
+        </label>
+        <label style="font-size:12px; color:var(--ds-text-soft);">CUIT
+          <input type="text" name="cuit" id="f-cuit" placeholder="30-12345678-9"
+                 style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
+        </label>
+        <label style="font-size:12px; color:var(--ds-text-soft);">Condición IVA
+          <select name="condicion_iva" id="f-condiva"
+                  style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
+            <option value="">— sin especificar —</option>
+            {% for c in condiciones_iva %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+          </select>
+        </label>
+        <label style="font-size:12px; color:var(--ds-text-soft);">Domicilio
+          <input type="text" name="domicilio" id="f-domicilio"
+                 style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
+        </label>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:6px;">
+          <button type="button" onclick="cerrarModal()" class="btn btn-secondary btn-sm">Cancelar</button>
+          <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const modal = document.getElementById('prov-modal');
+    function abrirModal() {
+      document.getElementById('prov-modal-title').textContent = 'Nuevo proveedor';
+      document.getElementById('f-id').value = '';
+      document.getElementById('f-razon').value = '';
+      document.getElementById('f-cuit').value = '';
+      document.getElementById('f-condiva').value = '';
+      document.getElementById('f-domicilio').value = '';
+      modal.style.display = 'flex';
+      document.getElementById('f-razon').focus();
+    }
+    function editarProveedor(p) {
+      document.getElementById('prov-modal-title').textContent = 'Editar proveedor';
+      document.getElementById('f-id').value = p.id;
+      document.getElementById('f-razon').value = p.razon_social || '';
+      document.getElementById('f-cuit').value = p.cuit || '';
+      document.getElementById('f-condiva').value = p.condicion_iva || '';
+      document.getElementById('f-domicilio').value = p.domicilio || '';
+      modal.style.display = 'flex';
+    }
+    function cerrarModal() { modal.style.display = 'none'; }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarModal(); });
+  </script>
+{% endblock %}
