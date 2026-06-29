@@ -11,7 +11,6 @@ import pdfplumber
 
 from helpers import _normalize_quadrupled, extract_text_with_ocr_fallback
 
-
 PATTERN = r"""^([\d.,]+)\s+([\d.,]+)\s+(.+?)\s*([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$"""
 FIELDS = ['codigo_barra', 'cantidad', 'descripcion', 'precio_publico', 'dto', 'precio_unitario', 'importe']
 
