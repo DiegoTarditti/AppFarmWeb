@@ -100,7 +100,7 @@ def _ejecutar_sync(app, modo='', skip_push=False, skip_match=False):
                 return resultado
 
             orden = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
-                     'productos', 'condiciones_comerciales',
+                     'productos', 'precios_vigentes', 'condiciones_comerciales',
                      'stock', 'ventas_mensuales',
                      'grupos_clientes', 'categorias_clientes',
                      'obras_sociales', 'convenios', 'planes', 'clientes',
@@ -112,6 +112,7 @@ def _ejecutar_sync(app, modo='', skip_push=False, skip_match=False):
                 'subrubros':            observer_source.sync_subrubros,
                 'nombres_drogas':       observer_source.sync_nombres_drogas,
                 'productos':            observer_source.sync_productos,
+                'precios_vigentes':     observer_source.sync_precios_vigentes,
                 'condiciones_comerciales': observer_source.sync_condiciones_comerciales,
                 'stock':                observer_source.sync_stock,
                 'ventas_mensuales':     observer_source.sync_ventas_mensuales,
@@ -447,6 +448,7 @@ def init_app(app):
             'subrubros':            observer_source.sync_subrubros,
             'nombres_drogas':       observer_source.sync_nombres_drogas,
             'productos':            observer_source.sync_productos,
+            'precios_vigentes':     observer_source.sync_precios_vigentes,
             'condiciones_comerciales': observer_source.sync_condiciones_comerciales,
             'stock':                observer_source.sync_stock,
             'ventas_mensuales':     observer_source.sync_ventas_mensuales,
