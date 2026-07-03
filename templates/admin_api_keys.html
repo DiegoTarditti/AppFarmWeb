@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% block title %}API Keys — Admin{% endblock %}
+{% block main %}
+<div class="max-w-5xl mx-auto p-4 space-y-4">
+
+  <div class="flex items-baseline justify-between gap-3 flex-wrap">
+    <div>
+      <h1 class="text-2xl font-bold">🔑 API Keys — API pública Praxis</h1>
+      <p class="text-sm text-gray-500">
+        Keys emitidas para consumir <code class="text-xs bg-gray-100 px-1 rounded">/api/publica/*</code>
+        desde productos externos (AppChatFarm, etc.).
+      </p>
+    </div>
+  </div>
+
+  {# Token recién creado (visible una única vez) #}
+  {% if token_nuevo %}
+  <div class="bg-emerald-50 border-2 border-emerald-400 rounded-xl p-4">
+    <div class="flex items-center gap-2 mb-2">
+      <span class="text-emerald-900 font-bold">✓ Key generada — copiala AHORA</span>
+    </div>
+    <p class="text-xs text-emerald-900 mb-2">
+      Esta es la ÚNICA vez que se muestra el token completo. Copialo y guardalo en un lugar seguro.
+      Después solo verás el prefix (primeros 8 chars) para identificarla.
+    </p>
+    <div class="flex items-center gap-2 bg-white border border-emerald-300 rounded-lg px-3 py-2">
+      <code id="token-nuevo" class="flex-1 font-mono text-sm break-all">{{ token_nuevo }}</code>
+      <button onclick="navigator.clipboard.writeText(document.getElementById('token-nuevo').textContent); this.textContent='✓ Copiado'"
+              class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded font-semibold">
+        📋 Copiar
+      </button>
+    </div>
+    <p class="text-[11px] text-emerald-800 mt-2">
+      Uso: en cada request agregar el header <code class="bg-white px-1 rounded">X-Api-Key: {{ token_nuevo[:15] }}…</code>
+    </p>
+  </div>
+  {% endif %}
+
+  {# Flash messages ya renderizadas en base.html #}
+
+  <div class="bg-white rounded-lg border border-gray-200 p-4">
+    <h2 class="text-sm font-bold mb-3">Emitir nueva key</h2>
+    <form method="post" action="{{ url_for('admin_api_keys_crear') }}" class="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Cliente / producto</label>
+        <input name="cliente_nombre" required placeholder="ej. AppChatFarm - Farmacia Rodríguez"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Cuota diaria (opcional)</label>
+        <input name="cuota_diaria" type="number" min="1" placeholder="ej. 10000 (sin límite si vacío)"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Notas</label>
+        <input name="notas" placeholder="referencia interna, contacto, etc."
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div class="md:col-span-4">
+        <button class="bg-slate-900 hover:bg-slate-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+          + Generar key
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600 text-[10px] uppercase tracking-wide">
+        <tr>
+          <th class="px-3 py-2 text-left">Cliente</th>
+          <th class="px-3 py-2 text-left">Prefix</th>
+          <th class="px-3 py-2 text-left">Estado</th>
+          <th class="px-3 py-2 text-right">Cuota / Hoy</th>
+          <th class="px-3 py-2 text-right">Total usos</th>
+          <th class="px-3 py-2 text-left">Último uso</th>
+          <th class="px-3 py-2 text-left">Notas</th>
+          <th class="px-3 py-2 w-32"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for k in keys %}
+        <tr class="hover:bg-blue-50">
+          <td class="px-3 py-2 font-semibold">{{ k.cliente_nombre }}</td>
+          <td class="px-3 py-2 font-mono text-xs text-gray-500">{{ k.prefix }}…</td>
+          <td class="px-3 py-2">
+            {% if k.activo %}
+              <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">● activa</span>
+            {% else %}
+              <span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-800 font-semibold">● revocada</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-right font-mono text-xs">
+            {% if k.cuota_diaria %}
+              {{ k.usos_hoy }} / {{ k.cuota_diaria }}
+            {% else %}
+              {{ k.usos_hoy }} / <span class="text-gray-400">∞</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-right font-mono text-xs">{{ '{:,}'.format(k.total_usos).replace(',', '.') }}</td>
+          <td class="px-3 py-2 text-xs text-gray-500">
+            {% if k.ultimo_uso %}
+              {{ k.ultimo_uso.strftime('%d/%m/%Y %H:%M') }}
+              {% if k.ultimo_ip %}<br><span class="text-gray-400 font-mono">{{ k.ultimo_ip }}</span>{% endif %}
+            {% else %}
+              <span class="text-gray-400">nunca</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs text-gray-500">{{ k.notas[:40] }}{% if k.notas|length > 40 %}…{% endif %}</td>
+          <td class="px-3 py-2 text-right">
+            <form method="post" action="{{ url_for('admin_api_keys_toggle', kid=k.id) }}" style="display:inline;">
+              <button class="text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 px-2 py-1 rounded font-semibold">
+                {% if k.activo %}Revocar{% else %}Reactivar{% endif %}
+              </button>
+            </form>
+            <form method="post" action="{{ url_for('admin_api_keys_delete', kid=k.id) }}" style="display:inline;"
+                  onsubmit="return confirm('Eliminar la key de {{ k.cliente_nombre }}? Esta acción es permanente.');">
+              <button class="text-xs bg-red-100 hover:bg-red-200 text-red-900 px-2 py-1 rounded font-semibold">✕</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="px-3 py-8 text-center text-gray-400 text-sm">
+            No hay keys emitidas. Emití una arriba para el primer cliente externo.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 text-xs text-gray-600 space-y-1">
+    <p><strong>Endpoints disponibles</strong> (todos requieren header <code class="bg-white px-1 rounded">X-Api-Key</code>):</p>
+    <ul class="list-disc list-inside space-y-0.5 font-mono">
+      <li>GET <code>/api/publica/ping</code> — chequeo de conectividad</li>
+      <li>GET <code>/api/publica/producto/&lt;observer_id&gt;</code> — un producto con precio</li>
+      <li>GET <code>/api/publica/producto/buscar?q=texto</code> — búsqueda por nombre/droga</li>
+      <li>GET <code>/api/publica/obras-sociales</code> — lista de OS</li>
+      <li>GET <code>/api/publica/obras-sociales/&lt;observer_id&gt;/planes</code> — planes + convenios</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}

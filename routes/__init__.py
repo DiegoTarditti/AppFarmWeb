@@ -2,6 +2,8 @@
 
 from routes import (
     admin,
+    api_keys_admin,
+    api_publica,
     atencion,
     auth_routes,
     batch,
@@ -83,6 +85,8 @@ _modules = [
     observer,
     observer_sync,
     admin,
+    api_publica,
+    api_keys_admin,
     memoria_no_resueltos,
     home_cards,
     core,

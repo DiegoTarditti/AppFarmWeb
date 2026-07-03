@@ -2857,6 +2857,32 @@ class BotInteraccion(Base):
     creado_en = Column(DateTime, default=now_ar, index=True)
 
 
+class ApiKey(Base):
+    """Keys emitidas para consumir la API pública de AppFarmWeb (datos maestros
+    Praxis: obs_productos + obs_obras_sociales + precio_lista). Se usa para
+    productos externos tipo AppChatFarm que necesitan estos catálogos comunes.
+
+    `key_hash` = SHA-256 del token en claro (nunca guardamos el token). El token
+    se muestra UNA sola vez al crearlo.
+
+    `cuota_diaria` = None → ilimitada; entero → tope de requests por día."""
+    __tablename__ = 'api_keys'
+    id = Column(Integer, primary_key=True)
+    cliente_nombre = Column(String(120), nullable=False)   # ej. 'Farmacia Rodríguez' o 'AppChatFarm-Cliente-1'
+    key_hash = Column(String(64), unique=True, nullable=False, index=True)
+    prefix = Column(String(8), nullable=False)             # primeros 8 chars, para identificar en logs
+    activo = Column(Boolean, nullable=False, default=True)
+    cuota_diaria = Column(Integer, nullable=True)
+    usos_hoy = Column(Integer, nullable=False, default=0)
+    usos_hoy_fecha = Column(Date, nullable=True)
+    total_usos = Column(Integer, nullable=False, default=0)
+    ultimo_uso = Column(DateTime, nullable=True)
+    ultimo_ip = Column(String(45), nullable=True)
+    notas = Column(Text, nullable=True)
+    creado_en = Column(DateTime, default=now_ar)
+    creado_por = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
+
+
 def init_db(database_url=None):
     database_url = init_engine(database_url)
     if not database_url.startswith('sqlite'):
@@ -2913,7 +2939,8 @@ def init_db(database_url=None):
                         'envio_tramos', 'envio_zonas', 'envio_config',
                         'domicilios_cliente', 'rutas_reparto', 'pedidos_reparto',
                         'cadetes', 'ofertas_bot', 'ofertas_registro',
-                        'respuestas_rapidas', 'informe_enviado')
+                        'respuestas_rapidas', 'informe_enviado',
+                        'api_keys')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
