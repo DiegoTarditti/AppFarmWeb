@@ -5290,6 +5290,31 @@ def _pg_add_columns(conn):
     ]:
         conn.execute(text(stmt))
 
+    # Tienda pública: tablas nuevas (Diego 2026-06-24).
+    # SQLite (tests) crea todo via Base.metadata.create_all — esto es
+    # PostgreSQL-only y por eso vive en _pg_add_columns.
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS web_rubros_publicados (
+            id                    SERIAL PRIMARY KEY,
+            rubro_observer_id     INTEGER NOT NULL REFERENCES obs_rubros(observer_id) ON DELETE CASCADE,
+            subrubro_observer_id  INTEGER REFERENCES obs_subrubros(observer_id) ON DELETE CASCADE,
+            activo                BOOLEAN NOT NULL DEFAULT TRUE,
+            creado_en             TIMESTAMP NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_web_rubros_pub UNIQUE (rubro_observer_id, subrubro_observer_id)
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_web_rubros_pub_rubro ON web_rubros_publicados(rubro_observer_id)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_web_rubros_pub_subrubro ON web_rubros_publicados(subrubro_observer_id)"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS web_producto_imagen (
+            observer_id   INTEGER PRIMARY KEY REFERENCES obs_productos(observer_id) ON DELETE CASCADE,
+            ruta_archivo  VARCHAR(300) NOT NULL,
+            subido_en     TIMESTAMP NOT NULL DEFAULT NOW(),
+            subido_por    VARCHAR(80)
+        )
+    """))
+    conn.execute(text("ALTER TABLE web_producto_imagen ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAULT FALSE"))
+
 
 def _sqlite_add_columns(conn):
     """Migraciones para SQLite (no soporta IF NOT EXISTS en ALTER TABLE)."""
@@ -5699,31 +5724,6 @@ def _sqlite_add_columns(conn):
         import logging
         logging.getLogger(__name__).warning(
             'Migración SQLite ofertas_minimo falló (puede ser idempotente): %s', e)
-
-    # Tienda pública: tablas nuevas (Diego 2026-06-24).
-    # PostgreSQL only — SQLite (tests) usa Base.metadata.create_all para crearlas.
-    if not database_url.startswith('sqlite'):
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS web_rubros_publicados (
-                id                    SERIAL PRIMARY KEY,
-                rubro_observer_id     INTEGER NOT NULL REFERENCES obs_rubros(observer_id) ON DELETE CASCADE,
-                subrubro_observer_id  INTEGER REFERENCES obs_subrubros(observer_id) ON DELETE CASCADE,
-                activo                BOOLEAN NOT NULL DEFAULT TRUE,
-                creado_en             TIMESTAMP NOT NULL DEFAULT NOW(),
-                CONSTRAINT uq_web_rubros_pub UNIQUE (rubro_observer_id, subrubro_observer_id)
-            )
-        """))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_web_rubros_pub_rubro ON web_rubros_publicados(rubro_observer_id)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_web_rubros_pub_subrubro ON web_rubros_publicados(subrubro_observer_id)"))
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS web_producto_imagen (
-                observer_id   INTEGER PRIMARY KEY REFERENCES obs_productos(observer_id) ON DELETE CASCADE,
-                ruta_archivo  VARCHAR(300) NOT NULL,
-                subido_en     TIMESTAMP NOT NULL DEFAULT NOW(),
-                subido_por    VARCHAR(80)
-            )
-        """))
-        conn.execute(text("ALTER TABLE web_producto_imagen ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAULT FALSE"))
 
     # Índices para queries frecuentes
     for stmt in [
