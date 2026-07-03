@@ -94,7 +94,15 @@ def init_app(app):
                     r['label'] = desc_map.get(r['key'], f'#{r["key"]}')
 
             elif group_by == 'medico':
-                rows = _agrupar(base, database.ObsVentaDetalle.medico_observer)
+                # Solo recetados con médico asignado: excluir venta libre
+                # (id_tipo_venta_control = 'L'/NULL) y operaciones sin médico.
+                base_med = (base.join(
+                                database.ObsProducto,
+                                database.ObsProducto.observer_id == database.ObsVentaDetalle.producto_observer)
+                            .filter(database.ObsVentaDetalle.medico_observer.isnot(None),
+                                    database.ObsProducto.id_tipo_venta_control.isnot(None),
+                                    database.ObsProducto.id_tipo_venta_control != 'L'))
+                rows = _agrupar(base_med, database.ObsVentaDetalle.medico_observer)
                 ids = [r['key'] for r in rows if r['key']]
                 med_map = {}
                 if ids:

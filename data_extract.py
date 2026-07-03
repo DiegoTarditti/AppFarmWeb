@@ -119,10 +119,17 @@ def parse_erp_excel(excel_path):
                 precio = float(precio_raw or 0)
             except (ValueError, TypeError):
                 precio = 0
+            try:
+                cantidad = int(float(row.get('cantidad', row.get('Recibido', 0)) or 0))
+            except (ValueError, TypeError):
+                cantidad = 0
+            # Saltear ítems sin ingreso (cantidad recibida = 0).
+            if cantidad == 0:
+                continue
             items.append({
                 'codigo_barra': barcode,
                 'descripcion': str(row.get('descripcion', row.get('Producto', ''))).strip(),
-                'cantidad': int(float(row.get('cantidad', row.get('Recibido', 0)) or 0)),
+                'cantidad': cantidad,
                 'precio_unitario': precio,
             })
         return items
@@ -170,6 +177,11 @@ def parse_erp_excel(excel_path):
             cantidad = int(float(row.iloc[col_recibido])) if col_recibido is not None else 0
         except (ValueError, TypeError):
             cantidad = 0
+
+        # Saltear ítems sin ingreso (cantidad recibida = 0): no son parte del
+        # ingreso real, ensucian el cruce contra la factura.
+        if cantidad == 0:
+            continue
 
         try:
             precio = float(row.iloc[col_precio]) if col_precio is not None else 0
@@ -339,7 +351,13 @@ def compare_invoice_vs_erp(session, factura_id):
         for m in session.query(BarcodeMapping).filter_by(proveedor_id=proveedor_id).all():
             mappings_by_factura_barcode[m.codigo_barra_factura] = m.codigo_barra_erp
 
-    differences = []
+    # Resolver cada línea a su ítem de ERP y AGRUPAR: una misma factura puede
+    # traer el mismo producto en varios renglones (ej. "2 + 1" bonificación).
+    # El ingreso del ERP viene consolidado (cantidad 3), así que hay que sumar
+    # las cantidades de factura del grupo antes de comparar; si no, cada renglón
+    # se compara solo contra el total del ERP y aparecen diferencias falsas.
+    grupos = {}   # key -> acumulador
+    orden = []    # preserva el orden de aparición
     for line in invoice_items:
         erp = None
         match_type = None
@@ -367,32 +385,52 @@ def compare_invoice_vs_erp(session, factura_id):
             erp = erp_by_barcode.get(mapped_erp_barcode)
             match_type = 'mapping'
 
-        cantidad_erp = erp.cantidad if erp else 0
-        diferencia = line.cantidad - cantidad_erp
-
         # Guardar precio unitario del ERP en el ítem de factura
         if erp and erp.precio_unitario is not None:
             line.precio_erp = erp.precio_unitario
-        session.flush()
 
-        if diferencia != 0:
-            if erp is None:
-                obs = 'Artículo no encontrado en ERP'
-            elif match_type == 'descripcion':
-                obs = 'Coincidencia por descripción (código de barra diferente)'
-            elif match_type == 'mapping':
-                obs = f'Coincidencia por correspondencia guardada ({erp.codigo_barra})'
-            else:
-                obs = 'No coincide con ERP'
+        # Clave: por ítem de ERP si matcheó (consolida renglones duplicados),
+        # o por código/descripción de factura si no se encontró.
+        if erp is not None:
+            key = ('erp', erp.codigo_barra)
+        else:
+            key = ('nf', line.codigo_barra or _normalize(line.descripcion))
 
-            differences.append({
-                'codigo_barra': line.codigo_barra,
-                'descripcion': line.descripcion,
-                'cantidad_factura': line.cantidad,
-                'cantidad_erp': cantidad_erp,
-                'diferencia': diferencia,
-                'observaciones': obs,
-            })
+        g = grupos.get(key)
+        if g is None:
+            g = {'codigo_barra': line.codigo_barra, 'descripcion': line.descripcion,
+                 'cantidad_factura': 0, 'erp': erp, 'match_type': match_type}
+            grupos[key] = g
+            orden.append(key)
+        g['cantidad_factura'] += line.cantidad
+
+    session.flush()
+
+    differences = []
+    for key in orden:
+        g = grupos[key]
+        erp = g['erp']
+        cantidad_erp = erp.cantidad if erp else 0
+        diferencia = g['cantidad_factura'] - cantidad_erp
+        if diferencia == 0:
+            continue
+        if erp is None:
+            obs = 'Artículo no encontrado en ERP'
+        elif g['match_type'] == 'descripcion':
+            obs = 'Coincidencia por descripción (código de barra diferente)'
+        elif g['match_type'] == 'mapping':
+            obs = f'Coincidencia por correspondencia guardada ({erp.codigo_barra})'
+        else:
+            obs = 'No coincide con ERP'
+
+        differences.append({
+            'codigo_barra': g['codigo_barra'],
+            'descripcion': g['descripcion'],
+            'cantidad_factura': g['cantidad_factura'],
+            'cantidad_erp': cantidad_erp,
+            'diferencia': diferencia,
+            'observaciones': obs,
+        })
     return differences
 
 

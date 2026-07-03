@@ -198,7 +198,7 @@ def init_app(app):
             return redirect(url_for('parse_helper', invoice_id=result['invoice_id']))
         if status != 200:
             flash(result['error'])
-            return redirect(url_for('index'))
+            return redirect(url_for('ingresos'))
 
         doc_pendiente_id = request.form.get('doc_pendiente_id', type=int)
         if doc_pendiente_id:

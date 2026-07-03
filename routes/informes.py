@@ -1720,6 +1720,19 @@ def init_app(app):
         droga_id = request.args.get('droga_id', type=int)
         producto_id = request.args.get('producto_id', type=int)
         medico_id = request.args.get('medico_id', type=int)
+        lab_id = request.args.get('lab_id', type=int)
+        os_id = request.args.get('os_id', type=int)
+        # Mismos filtros de producto que el informe principal, para que el
+        # drill-down sea un subconjunto real (si no, mostraba venta libre y
+        # otros rubros bajo el grupo filtrado).
+        if 'rubro_id' in request.args:
+            rubro_id = request.args.get('rubro_id', type=int)
+        else:
+            rubro_id = 12  # Medicamentos por default (igual que el informe)
+        if rubro_id == 0:
+            rubro_id = None
+        solo_con_receta = request.args.get('solo_con_receta') == '1'
+        excluir_sin_droga = request.args.get('excluir_sin_droga') == '1'
         drill_dim = (request.args.get('drill_dim') or '').strip()
         drill_value = (request.args.get('drill_value') or '').strip()
 
@@ -1734,13 +1747,30 @@ def init_app(app):
                 from helpers import medicos_observer_ids_compartidos
                 ids_med = medicos_observer_ids_compartidos(session, medico_id)
                 base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
+            if os_id:
+                base = base.filter(ObsVentaDetalle.obra_social_observer == os_id)
             ya_joined_obs = False
-            if droga_id:
+            if droga_id or lab_id or rubro_id or solo_con_receta or excluir_sin_droga:
                 base = base.join(
                     ObsProducto,
                     ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
-                ).filter(ObsProducto.nombre_droga_observer == droga_id)
+                )
                 ya_joined_obs = True
+            if droga_id:
+                base = base.filter(ObsProducto.nombre_droga_observer == droga_id)
+            if lab_id:
+                base = base.filter(ObsProducto.laboratorio_observer == lab_id)
+            if excluir_sin_droga:
+                base = base.filter(ObsProducto.nombre_droga_observer.isnot(None))
+            if solo_con_receta:
+                base = base.filter(ObsProducto.id_tipo_venta_control.isnot(None),
+                                   ObsProducto.id_tipo_venta_control != 'L')
+            if rubro_id:
+                from database import ObsSubrubro
+                base = base.join(
+                    ObsSubrubro,
+                    ObsSubrubro.observer_id == ObsProducto.subrubro_observer,
+                ).filter(ObsSubrubro.rubro_observer == rubro_id)
 
             # Aplicar el drill: filtrar por la dimensión clickeada.
             if drill_dim == 'medico':

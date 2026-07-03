@@ -135,11 +135,12 @@ def _ejecutar_sync(app, modo='', skip_push=False, skip_match=False):
                 from database import ObsSyncLog, now_ar
                 TOL_HORAS = {
                     'stock': 3, 'ventas_mensuales': 24, 'productos': 24 * 7,
+                    'precios_vigentes': 24,
                     'laboratorios': 24 * 7, 'rubros': 24 * 7,
                     'subrubros': 24 * 7, 'nombres_drogas': 24 * 7,
                 }
                 nivel1 = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
-                          'productos', 'stock', 'ventas_mensuales']
+                          'productos', 'precios_vigentes', 'stock', 'ventas_mensuales']
                 with database.get_db() as _s:
                     ultimos = dict(
                         _s.query(ObsSyncLog.entidad, _f2.max(ObsSyncLog.ejecutado_en))

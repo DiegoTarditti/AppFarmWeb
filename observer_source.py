@@ -509,6 +509,86 @@ def sync_productos(session):
     return {'upsert': n, 'duracion_ms': duracion}
 
 
+def sync_precios_vigentes(session):
+    """Sync de Gestion.ProductosPreciosVigentes → obs_productos.precio_lista.
+
+    Esta vista de Observer expone el precio actual vigente por producto
+    (lo mismo que se ve en la UI de Observer). Sincronizando esto tenemos
+    el precio EXACTO, sin promedios históricos ni dumps manuales.
+
+    Requiere usuario con permisos sobre el schema `Gestion`. El `usuarioDW`
+    no lee ese schema → si la query falla por permisos, loggea warning y
+    devuelve sin tocar nada. Diego 2026-06-24: pasar a `sa` para tener el
+    precio actualizado automático.
+    """
+    from sqlalchemy import text
+
+    from database import now_ar
+    t0 = time.time()
+    conn = _connect(timeout=120)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    actualizados = 0
+    sin_match = 0
+    try:
+        ahora = now_ar()
+        # Traer todos los observer_id existentes localmente (universo a updatear)
+        existentes = {r[0] for r in session.execute(
+            text('SELECT observer_id FROM obs_productos')
+        ).fetchall()}
+        # Pull masivo de la vista. Procesamos en batches para no llenar memoria.
+        with conn.cursor(as_dict=True) as cur:
+            try:
+                cur.execute("""
+                    SELECT IdProducto, Precio, FechaVigencia
+                      FROM Gestion.ProductosPreciosVigentes
+                """)
+            except Exception as e:  # noqa: BLE001
+                _log.warning('sync_precios_vigentes: sin acceso a '
+                             'Gestion.ProductosPreciosVigentes (%s). Asegurate '
+                             'de usar OBSERVER_USER con permiso al schema Gestion.', e)
+                return {'upsert': 0, 'duracion_ms': int((time.time() - t0) * 1000),
+                        'error': 'permiso denegado'}
+
+            # UPDATE en batches de 1000 vía SQL crudo (el bulk ORM se queja
+            # con bindparam en la WHERE clause). Suficiente para 123k
+            # productos en ~10s.
+            stmt = text("""
+                UPDATE obs_productos
+                   SET precio_lista = :precio,
+                       precio_lista_fecha_vigencia = :fv,
+                       precio_lista_actualizado_en = :ahora
+                 WHERE observer_id = :oid
+            """)
+            BATCH = 1000
+            buffer = []
+            for r in cur:
+                obs_id = int(r['IdProducto'])
+                if obs_id not in existentes:
+                    sin_match += 1
+                    continue
+                buffer.append({
+                    'oid': obs_id, 'precio': float(r['Precio']),
+                    'fv': r['FechaVigencia'], 'ahora': ahora,
+                })
+                if len(buffer) >= BATCH:
+                    session.execute(stmt, buffer)
+                    actualizados += len(buffer)
+                    buffer.clear()
+            if buffer:
+                session.execute(stmt, buffer)
+                actualizados += len(buffer)
+        session.flush()
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'precios_vigentes', actualizados, duracion)
+    _log.info('sync_precios_vigentes: %d actualizados, %d sin_match local, %d ms',
+              actualizados, sin_match, duracion)
+    return {'upsert': actualizados, 'sin_match': sin_match,
+            'duracion_ms': duracion}
+
+
 def sync_condiciones_comerciales(session):
     """Sync de Gestion.CondicionesComerciales (descuentos / promos vigentes).
 
