@@ -7,19 +7,29 @@ Orden: P0 = afecta producción AHORA · P1 = riesgo/correctitud · P2 = deuda qu
 
 ---
 
-## 🟠 P1 — Búsqueda de clientes por DNI (Diego 2026-06-22)
+## ✅ Búsqueda de clientes por DNI (Diego 2026-06-22 → 2026-06-23)
 
-**Qué pasa:** hoy `bot/data.buscar_clientes` y el cliente_picker (`/api/clientes/buscar`)
-buscan por nombre/apellido/teléfono pero NO por DNI. El bot tiene flujo de
-identificación que pide DNI (`identificar_por_dni`) pero solo lo usa para
-matchear contra ObServer; los Cliente locales con `dni` guardado no se levantan
-por ese campo en otros buscadores (panel /atencion, picker /pedido/nuevo).
+Cerrado. El operador puede tipear el DNI (exacto o parcial) en cualquier
+buscador de clientes (panel `/atencion`, picker `/pedido/nuevo`, etc.).
 
-**Acción:** sumar `Cliente.dni` al buscador. Que un operador pueda escribir
-"30123456" en el campo Cliente y traiga el match. También revisar `Cliente.dni`
-indexado (¿hay índice?) — si hay 50k clientes vale tenerlo.
+**Hecho en 2 pasos:**
 
-**Esfuerzo:** ~30 min. **Tocá:** `bot/data.py`, `routes/clientes.py` `/api/clientes/buscar`.
+1. **Diego 2026-06-22** — `bot/store.buscar_clientes_unificado` incluye
+   `Cliente.dni` y `Cliente.telefono` con ilike en el brazo multi-token, y
+   `Cliente.dni == q` exacto en el brazo numérico. `Cliente.dni` ya tiene
+   `index=True`. Cubrió el cliente_picker (`/api/clientes/buscar`).
+
+2. **2026-06-23** — `bot/store.buscar_clientes` (la firma vieja, usada
+   por `/atencion`) delega en `buscar_clientes_unificado`. Los leads
+   locales sin observer_id ahora aparecen también en `/atencion`. Como
+   los leads no tienen observer_id, se extendió `store.vincular_cliente`
+   para aceptar `cliente_id` directo, `/atencion/<conv>/vincular-cliente`
+   lo pasa en el body, y `atencion.html` etiqueta esos matches con
+   `(lead)` y vincula por cliente_id cuando falta observer_id.
+
+**Gaps aceptados:** DNI parcial-numérico solo matchea partial en tokens
+(brazo `q.isdigit()` sigue exacto). El operador tipea el DNI completo,
+no es un problema real.
 
 ---
 

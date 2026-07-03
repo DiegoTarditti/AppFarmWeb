@@ -366,21 +366,11 @@ def get_producto_pendiente(conv_id):
 
 
 def buscar_clientes(query, limite=10):
-    """Búsqueda de clientes por nombre (multi-token AND) o documento exacto."""
-    q = (query or '').strip()
-    if len(q) < 2:
-        return []
-    with database.get_db() as s:
-        base = s.query(database.ObsCliente)
-        if q.isdigit():
-            base = base.filter(database.ObsCliente.documento_numero == int(q))
-        else:
-            tokens = [t for t in q.split() if len(t) >= 2]
-            filtros = [database.ObsCliente.apellido_nombre.ilike(f'%{t}%') for t in tokens]
-            base = base.filter(and_(*filtros))
-        rows = base.order_by(database.ObsCliente.apellido_nombre).limit(limite).all()
-        return [{'observer_id': r.observer_id, 'nombre': r.apellido_nombre,
-                 'documento': r.documento_numero, 'telefono': r.telefono} for r in rows]
+    """Alias de `buscar_clientes_unificado` — hoy es la búsqueda canónica.
+    Se mantiene el nombre viejo para no romper callers ([routes/atencion.py]
+    y tests). También busca en `Cliente` locales por DNI/teléfono, no solo en
+    ObServer."""
+    return buscar_clientes_unificado(query, limite=limite)
 
 
 def buscar_clientes_unificado(query, limite=12):
@@ -557,15 +547,22 @@ def get_ficha_cliente(observer_id):
         }
 
 
-def vincular_cliente(conv_id, observer_id):
-    """Vincula la conversación a un cliente de ObServer (get-or-create en la tabla
-    única de clientes)."""
+def vincular_cliente(conv_id, observer_id=None, cliente_id=None):
+    """Vincula la conversación a un cliente. Dos modos:
+    - `observer_id`: get-or-create en `clientes` a partir del ObServer.
+    - `cliente_id`: vínculo directo con una fila existente de `clientes`
+      (usado para leads locales que no están en ObServer).
+    Sin nada → desvincula."""
     with database.get_db() as s:
         c = s.get(database.BotConversacion, conv_id)
         if not c:
             return {'ok': False, 'error': 'no existe'}
-        c.cliente_id = (database.get_or_create_cliente(s, observer_id=observer_id)
-                        if observer_id else None)
+        if cliente_id:
+            c.cliente_id = cliente_id
+        elif observer_id:
+            c.cliente_id = database.get_or_create_cliente(s, observer_id=observer_id)
+        else:
+            c.cliente_id = None
         s.commit()
         return {'ok': True}
 
