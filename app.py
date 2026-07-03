@@ -54,6 +54,24 @@ if os.environ.get('RUN_INIT_DB_ON_STARTUP') == '1':
     init_db(DATABASE_URL)
 
 
+# Hosts del dominio propio de la tienda pública. Cuando alguien entra a
+# https://farmbadia.com.ar/ (o /www) lo mandamos directo a /tienda (la landing).
+# El resto de rutas (admin, atencion, etc.) siguen funcionando normal desde
+# el mismo dominio con login. Diego 2026-06-24.
+_TIENDA_HOSTS = {'farmbadia.com.ar', 'www.farmbadia.com.ar'}
+
+
+@app.before_request
+def redirigir_root_a_tienda():
+    from flask import redirect, request
+    if request.path != '/':
+        return None
+    host = (request.host or '').split(':')[0].lower()
+    if host in _TIENDA_HOSTS:
+        return redirect('/tienda', code=302)
+    return None
+
+
 @app.before_request
 def exigir_login():
     from flask import jsonify, redirect, request, url_for
