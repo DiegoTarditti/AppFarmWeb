@@ -66,6 +66,8 @@ from routes import (
     purchase,
     reparto,
     sucursales,
+    tienda_admin,
+    tienda_publica,
     tipos_pedido,
     transferencias,
     vademecum,
@@ -143,6 +145,8 @@ _modules = [
     transferencias,
     sucursales,
     comparativa_ventas,
+    tienda_admin,
+    tienda_publica,
     whatsapp,
 ]
 

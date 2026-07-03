@@ -100,7 +100,8 @@ def _ejecutar_sync(app, modo='', skip_push=False, skip_match=False):
                 return resultado
 
             orden = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
-                     'productos', 'precios_vigentes', 'stock', 'ventas_mensuales',
+                     'productos', 'precios_vigentes', 'condiciones_comerciales',
+                     'stock', 'ventas_mensuales',
                      'grupos_clientes', 'categorias_clientes',
                      'obras_sociales', 'convenios', 'planes', 'clientes',
                      'colegios_medicos', 'medicos', 'medicos_matriculas',
@@ -112,6 +113,7 @@ def _ejecutar_sync(app, modo='', skip_push=False, skip_match=False):
                 'nombres_drogas':       observer_source.sync_nombres_drogas,
                 'productos':            observer_source.sync_productos,
                 'precios_vigentes':     observer_source.sync_precios_vigentes,
+                'condiciones_comerciales': observer_source.sync_condiciones_comerciales,
                 'stock':                observer_source.sync_stock,
                 'ventas_mensuales':     observer_source.sync_ventas_mensuales,
                 'grupos_clientes':      observer_source.sync_grupos_clientes,
@@ -406,11 +408,32 @@ def init_app(app):
                        .first())
                 ultimos[ent] = log
             disponible = observer_source.observer_disponible()
+            # Cuento extras (precios_vigentes y condiciones_comerciales) si la
+            # farmacia tiene acceso premium. Sino quedan en 0 con badge ⚠.
+            try:
+                cuentas['precios_vigentes'] = session.execute(_text(
+                    'SELECT COUNT(*) FROM obs_productos WHERE precio_lista IS NOT NULL'
+                )).scalar() or 0
+            except Exception:  # noqa: BLE001
+                cuentas['precios_vigentes'] = 0
+            try:
+                cuentas['condiciones_comerciales'] = session.query(database.ObsCondicionComercial).count()
+            except Exception:  # noqa: BLE001
+                cuentas['condiciones_comerciales'] = 0
+            for ent in ('precios_vigentes', 'condiciones_comerciales'):
+                log = (session.query(database.ObsSyncLog)
+                       .filter(database.ObsSyncLog.entidad == ent)
+                       .order_by(database.ObsSyncLog.ejecutado_en.desc())
+                       .first())
+                ultimos[ent] = log
+            # Acceso premium: pasa True solo si tenemos schema Gestion (cache).
+            tiene_premium = observer_source._test_acceso_gestion() if disponible else False
             cfg = session.query(database.Config).first()
             ventas_meses = cfg.observer_ventas_meses if cfg else 16
         return render_template('admin_observer_sync.html',
                                cuentas=cuentas, ultimos=ultimos, disponible=disponible,
-                               ventas_meses=ventas_meses)
+                               ventas_meses=ventas_meses,
+                               tiene_premium=tiene_premium)
 
     @app.route('/admin/observer-sync/<entidad>', methods=['POST'])
     def observer_sync_run(entidad):
@@ -427,6 +450,7 @@ def init_app(app):
             'nombres_drogas':       observer_source.sync_nombres_drogas,
             'productos':            observer_source.sync_productos,
             'precios_vigentes':     observer_source.sync_precios_vigentes,
+            'condiciones_comerciales': observer_source.sync_condiciones_comerciales,
             'stock':                observer_source.sync_stock,
             'ventas_mensuales':     observer_source.sync_ventas_mensuales,
             'grupos_clientes':      observer_source.sync_grupos_clientes,
@@ -574,6 +598,15 @@ def init_app(app):
                 session.commit()
                 flash(f'Vinculado: {p.descripcion[:50]} → {obs.descripcion[:50]}', 'success')
         return redirect(url_for('productos_sin_vincular'))
+
+    @app.route('/admin/observer/diagnostico')
+    def observer_diagnostico():
+        """Diagnóstico de conexión + acceso a schemas. Diego 2026-06-24:
+        permite ver de un vistazo si en la farmacia donde estamos podemos
+        usar features premium (precios exactos, condiciones comerciales,
+        EAN crudo) o solo las basadas en DW.*."""
+        info = observer_source.diagnostico_acceso()
+        return render_template('admin_observer_diagnostico.html', info=info)
 
     @app.route('/admin/observer-config', methods=['POST'])
     def observer_config_save():

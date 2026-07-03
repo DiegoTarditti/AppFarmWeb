@@ -841,6 +841,14 @@ def init_app(app):
             log.info('[telegram callback_entregado] pid=%s user_id=%s',
                         upd.get('pedido_id'), upd.get('user_id'))
             return _telegram_procesar_entregado(upd, telegram_grupo)
+        if tipo == 'callback_no_atiende':
+            log.warning('[telegram callback_no_atiende] pid=%s user_id=%s',
+                        upd.get('pedido_id'), upd.get('user_id'))
+            return _telegram_procesar_no_atiende(upd, telegram_grupo)
+        if tipo == 'callback_reintentar':
+            log.warning('[telegram callback_reintentar] pid=%s user_id=%s',
+                        upd.get('pedido_id'), upd.get('user_id'))
+            return _telegram_procesar_reintentar(upd, telegram_grupo)
 
         if tipo == 'mensaje_dm':
             texto_dm = (upd.get('texto') or '').strip()
@@ -1013,9 +1021,13 @@ def init_app(app):
         # Sacar botón del mensaje del grupo (queda como info, sin acción).
         if message_id_grupo:
             tg.sacar_botones_grupo(message_id_grupo)
-        # Mandar DM al cadete con detalle + botón Entregado.
-        botones = [[{'text': '✅ Entregado al cliente',
-                     'callback_data': f'entregado:{pedido_id}'}]]
+        # Mandar DM al cadete con detalle + botones Entregado / No hay nadie.
+        botones = [
+            [{'text': '✅ Entregado al cliente',
+              'callback_data': f'entregado:{pedido_id}'}],
+            [{'text': '🚪 No hay nadie',
+              'callback_data': f'no_atiende:{pedido_id}'}],
+        ]
         res_dm = tg.enviar_dm(user_id, detalle, botones=botones)
         if res_dm.get('ok'):
             # Persistir el message_id del DM para que _telegram_procesar_entregado
@@ -1070,6 +1082,127 @@ def init_app(app):
         if dm_msg_id and user_id:
             tg.editar_botones_dm(user_id, dm_msg_id, [])
         return jsonify({'ok': True, 'pedido_id': pedido_id, 'estado': 'entregado'})
+
+    def _telegram_procesar_no_atiende(upd, tg):
+        """Cadete apretó '🚪 No hay nadie' en el DM. Acciones:
+          1. estado → 'no_atiende', incrementa contador de intentos.
+          2. Edita el DM: 3 botones (Entregado, Reintentar entregar, Sigo
+             sin que atiendan).
+          3. Notifica al operador que tomó el pedido (BotMensaje urgente
+             en su conv con el cliente, si existe).
+          4. Persiste un BotMensaje en la conv del grupo para que se vea
+             en /reparto/planilla → panel chat → grupo cadetes.
+        """
+        pedido_id = upd.get('pedido_id')
+        user_id = upd.get('user_id')
+        callback_qid = upd.get('callback_query_id')
+        if not pedido_id or not callback_qid:
+            return jsonify({'ok': False, 'error': 'callback inválido'}), 400
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pedido_id)
+            if not p:
+                tg.answer_callback(callback_qid, 'Pedido no existe', alert=True)
+                return jsonify({'ok': True, 'ignored': 'pedido_no_existe'})
+            # Permitido desde 'en_ruta' (1er intento) o desde 'no_atiende' (reintentos).
+            if p.estado not in ('en_ruta', 'no_atiende'):
+                tg.answer_callback(
+                    callback_qid,
+                    f'Estado inválido ({p.estado})',
+                    alert=True)
+                return jsonify({'ok': True, 'ignored': 'estado_invalido',
+                                'estado': p.estado})
+            if p.tomado_dm_user_id and p.tomado_dm_user_id != user_id:
+                tg.answer_callback(callback_qid, 'No sos el cadete asignado', alert=True)
+                return jsonify({'ok': True, 'ignored': 'cadete_distinto'})
+            p.estado = 'no_atiende'
+            p.no_atiende_en = database.now_ar()
+            p.no_atiende_intentos = (p.no_atiende_intentos or 0) + 1
+            dm_msg_id = p.tomado_dm_msg_id
+            tomo_op = (p.tomo or '').strip()
+            cliente_n = p.cliente_nombre or '—'
+            telefono = p.telefono or '—'
+            direccion = p.direccion or '—'
+            intentos = p.no_atiende_intentos
+
+            # Persistir aviso urgente en la conv del grupo de cadetes
+            # (panel chat lateral de /reparto/planilla).
+            grupo_uid = str(tg.GRUPO_CHAT_ID) if tg.GRUPO_CHAT_ID else None
+            if grupo_uid:
+                grupo_conv = (s.query(database.BotConversacion)
+                              .filter_by(canal='whatsapp_grupo',
+                                         canal_user_id=grupo_uid).first())
+                if not grupo_conv:
+                    grupo_conv = database.BotConversacion(
+                        canal='whatsapp_grupo', canal_user_id=grupo_uid,
+                        nombre_cliente='Grupo de cadetes',
+                        estado_atencion='humano', nodo='reparto')
+                    s.add(grupo_conv); s.flush()
+                texto_aviso = (
+                    f'🚨 URGENTE Pedido #{pedido_id} — cliente NO ATIENDE '
+                    f'(intento {intentos})\n'
+                    f'👤 {cliente_n}  📞 {telefono}\n'
+                    f'📍 {direccion}\n'
+                    f'→ Llamar al cliente y avisar al cadete'
+                )
+                s.add(database.BotMensaje(
+                    conversacion_id=grupo_conv.id, origen='sistema',
+                    texto=texto_aviso))
+                grupo_conv.ultimo_en = database.now_ar()
+            s.commit()
+
+        tg.answer_callback(callback_qid, '⚠ Avisamos al operador', alert=False)
+        # Editar el DM: 3 botones para próximas acciones.
+        if dm_msg_id and user_id:
+            botones = [
+                [{'text': '✅ Entregado al cliente',
+                  'callback_data': f'entregado:{pedido_id}'}],
+                [{'text': '🔁 Reintentar entregar',
+                  'callback_data': f'reintentar:{pedido_id}'}],
+                [{'text': '🚪 Sigo sin que atiendan',
+                  'callback_data': f'no_atiende:{pedido_id}'}],
+            ]
+            tg.editar_botones_dm(user_id, dm_msg_id, botones)
+        log.warning('[no_atiende] pid=%s intentos=%s tomo=%s',
+                    pedido_id, intentos, tomo_op)
+        return jsonify({'ok': True, 'pedido_id': pedido_id, 'estado': 'no_atiende',
+                        'intentos': intentos})
+
+    def _telegram_procesar_reintentar(upd, tg):
+        """Cadete apretó '🔁 Reintentar entregar'. Estado vuelve a 'en_ruta'
+        y los botones del DM vuelven a los 2 originales (Entregado, No hay nadie)."""
+        pedido_id = upd.get('pedido_id')
+        user_id = upd.get('user_id')
+        callback_qid = upd.get('callback_query_id')
+        if not pedido_id or not callback_qid:
+            return jsonify({'ok': False, 'error': 'callback inválido'}), 400
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pedido_id)
+            if not p:
+                tg.answer_callback(callback_qid, 'Pedido no existe', alert=True)
+                return jsonify({'ok': True, 'ignored': 'pedido_no_existe'})
+            if p.estado != 'no_atiende':
+                tg.answer_callback(
+                    callback_qid,
+                    f'Estado inválido ({p.estado})', alert=True)
+                return jsonify({'ok': True, 'ignored': 'estado_invalido',
+                                'estado': p.estado})
+            if p.tomado_dm_user_id and p.tomado_dm_user_id != user_id:
+                tg.answer_callback(callback_qid, 'No sos el cadete asignado', alert=True)
+                return jsonify({'ok': True, 'ignored': 'cadete_distinto'})
+            p.estado = 'en_ruta'
+            dm_msg_id = p.tomado_dm_msg_id
+            s.commit()
+        tg.answer_callback(callback_qid, '✓ Reintentando', alert=False)
+        # Volver a los 2 botones originales (Entregado / No hay nadie).
+        if dm_msg_id and user_id:
+            botones = [
+                [{'text': '✅ Entregado al cliente',
+                  'callback_data': f'entregado:{pedido_id}'}],
+                [{'text': '🚪 No hay nadie',
+                  'callback_data': f'no_atiende:{pedido_id}'}],
+            ]
+            tg.editar_botones_dm(user_id, dm_msg_id, botones)
+        return jsonify({'ok': True, 'pedido_id': pedido_id, 'estado': 'en_ruta'})
 
     def _telegram_armar_detalle_pedido(p):
         """Texto HTML con el detalle del pedido para el DM al cadete.
@@ -2130,7 +2263,8 @@ def init_app(app):
         campo = (b.get('campo') or '').strip()
         valor = b.get('valor')
         EDITABLES = {'tomo', 'importe', 'forma_pago', 'vuelto', 'producto',
-                     'observacion', 'pagado', 'requiere_receta',
+                     'observacion', 'pagado', 'prepagado_cadete',
+                     'requiere_receta',
                      'entregado_por', 'cadete_id', 'recibio', 'estado', 'turno',
                      'etiqueta', 'etiqueta_color',
                      'envio_costo', 'envio_sin_cargo'}
@@ -2141,7 +2275,8 @@ def init_app(app):
             if not p:
                 return jsonify({'ok': False, 'error': 'no existe'}), 404
             # Tipos especiales
-            if campo in ('pagado', 'requiere_receta', 'envio_sin_cargo'):
+            if campo in ('pagado', 'prepagado_cadete', 'requiere_receta',
+                         'envio_sin_cargo'):
                 valor = bool(valor)
             elif campo in ('importe', 'envio_costo') and valor is not None and valor != '':
                 try:
@@ -2156,6 +2291,9 @@ def init_app(app):
             else:
                 valor = (str(valor).strip() if valor else None)
             setattr(p, campo, valor)
+            # Timestamp del prepago del cadete (audit trail).
+            if campo == 'prepagado_cadete':
+                p.prepagado_cadete_en = database.now_ar() if valor else None
             # Avisar al cliente cuando el estado avanza a en_ruta o entregado.
             if campo == 'estado':
                 _notificar_cliente_pedido(s, p, valor)

@@ -77,6 +77,15 @@ class Config(Base):
     # excedente = cobertura > N meses; necesita = vende y cobertura < M meses.
     transfer_excedente_meses = Column(DECIMAL(5, 1), nullable=False, default=6.0, server_default='6.0')
     transfer_necesita_meses  = Column(DECIMAL(5, 1), nullable=False, default=2.0, server_default='2.0')
+    # Tienda pública (catálogo OTC + WhatsApp). Diego 2026-06-24.
+    # Si tienda_activa=False, las rutas públicas devuelven 404 (kill switch).
+    # El número debe ir en formato internacional sin '+' ni espacios (ej. '5493411234567').
+    tienda_activa            = Column(Boolean, nullable=False, default=False, server_default='false')
+    tienda_whatsapp_numero   = Column(String(20), nullable=True)
+    tienda_titulo            = Column(String(100), nullable=True)  # ej. 'Farmacia Badia · Rosario'
+    tienda_hero_texto        = Column(Text, nullable=True)          # bajada del home
+    tienda_direccion         = Column(String(200), nullable=True)
+    tienda_horarios          = Column(String(200), nullable=True)   # texto libre corto
 
 
 class Laboratorio(Base):
@@ -362,6 +371,69 @@ class ObsPlan(Base):
     habilitado        = Column(Boolean, nullable=False, default=True)
     fecha_baja        = Column(DateTime, nullable=True)
     sync_en           = Column(DateTime, default=now_ar)
+
+
+class ObsCondicionComercial(Base):
+    """Espejo de Gestion.CondicionesComerciales (descuentos / promos vigentes).
+
+    Diego 2026-06-24: la UI de Observer expone una grilla con descuentos por
+    producto / lab / rubro / forma de pago / convenio. Esta tabla refleja
+    1:1 esa grilla. La vista de Observer ya filtra solo las VIGENTES (el
+    historial completo está en CondicionesComerciales_HIS, lo dejamos fuera
+    por ahora; si hace falta lo agregamos como tabla aparte).
+
+    Los campos "Conjunto*" son listas de IDs separadas por coma (formato
+    nativo Observer). Ej. ConjuntoProductos = '21873, 17558, 6264'. Para
+    consumirlos, parsear con split(',') y limpiar espacios.
+    """
+    __tablename__ = 'obs_condiciones_comerciales'
+    observer_id              = Column(Integer, primary_key=True, autoincrement=False)  # IdCondicionComercial
+    his_id                   = Column(Integer, nullable=True, index=True)  # HIS_IdCondicionComercial (versión)
+    tipo                     = Column(String(1), nullable=True)            # IdTipoCondicionComercial (V = ventas)
+    tipo_promocion           = Column(String(1), nullable=True)            # D = descuento, M = MxN, ...
+    descripcion              = Column(String(200), nullable=True)
+    orden                    = Column(Integer, nullable=True)
+    porcentaje               = Column(DECIMAL(10, 4), nullable=True)
+    aplica_sobre_pvp         = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    aplica_en_ofertas        = Column(String(1), nullable=True)
+    aplica_en_particular_os  = Column(String(1), nullable=True)            # AplicaEnParticularObraSocial: O / P / ' '
+    aplica_en_fraccionado    = Column(String(1), nullable=True)
+    aplica_con_cuotas        = Column(String(1), nullable=True)
+    mxn                      = Column(String(5), nullable=True)            # 'M x N', ej. '2x1'
+    cantidad_para_2da        = Column(Integer, nullable=True)              # CantidadPara2daUnidad
+    # Vigencia (fecha + horario + días de la semana)
+    vigencia_desde           = Column(Date, nullable=True)
+    vigencia_hasta           = Column(Date, nullable=True)
+    hora_desde               = Column(String(5), nullable=True)
+    hora_hasta               = Column(String(5), nullable=True)
+    lunes                    = Column(Boolean, nullable=False, default=False)
+    martes                   = Column(Boolean, nullable=False, default=False)
+    miercoles                = Column(Boolean, nullable=False, default=False)
+    jueves                   = Column(Boolean, nullable=False, default=False)
+    viernes                  = Column(Boolean, nullable=False, default=False)
+    sabado                   = Column(Boolean, nullable=False, default=False)
+    domingo                  = Column(Boolean, nullable=False, default=False)
+    # Conjuntos (listas de IDs separadas por coma)
+    conj_productos           = Column(Text, nullable=True)
+    conj_laboratorios        = Column(Text, nullable=True)
+    conj_rubros              = Column(Text, nullable=True)
+    conj_subrubros           = Column(Text, nullable=True)
+    conj_formas_pago         = Column(Text, nullable=True)
+    conj_tarjetas            = Column(Text, nullable=True)
+    id_tipo_tarjeta          = Column(String(1), nullable=True)
+    conj_convenios           = Column(Text, nullable=True)
+    conj_planes              = Column(Text, nullable=True)
+    conj_tipos_producto      = Column(Text, nullable=True)
+    conj_tipos_venta         = Column(Text, nullable=True)
+    conj_grupos              = Column(Text, nullable=True)
+    conj_clientes            = Column(Text, nullable=True)
+    conj_farmacias           = Column(Text, nullable=True)
+    formula                  = Column(Text, nullable=True)
+    sync_en                  = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_obs_cc_tipo', 'tipo'),
+        Index('idx_obs_cc_vigencia_hasta', 'vigencia_hasta'),
+    )
 
 
 class ClienteOsConfirmada(Base):
@@ -803,6 +875,12 @@ class PedidoReparto(Base):
     tomado_dm_user_id = Column(BigInteger, nullable=True)
     retirado_en = Column(DateTime, nullable=True)
     entregado_en = Column(DateTime, nullable=True)
+    # No atiende: cadete fue al domicilio y nadie atendió. Diego 2026-06-24:
+    # estado='no_atiende' con timestamp + contador de intentos. Visible en
+    # planilla con badge rojo. El cadete puede reintentar (vuelve a 'en_ruta')
+    # o seguir marcando no_atiende (incrementa intentos).
+    no_atiende_en        = Column(DateTime, nullable=True)
+    no_atiende_intentos  = Column(Integer, nullable=False, default=0, server_default='0')
     # ── Cerrar transacción (Fase A, spec docs/fase_a_transaccion.md) ─────────
     # Datos capturados por el operador en /atencion antes de mandar a caja.
     # El `importe` viejo es el total bruto desde ObServer; `total_paciente` es lo
@@ -829,6 +907,12 @@ class PedidoReparto(Base):
     # botón "Liquidar" del control por cadete los marca pagados (saldo → 0).
     envio_liquidado = Column(Boolean, nullable=False, default=False, server_default='false')
     envio_liquidado_en = Column(DateTime, nullable=True)
+    # Prepago del cadete: el cadete deja la plata en la farmacia ANTES de salir
+    # y asume el riesgo de cobrar al cliente. Equivale a "pagado" para la
+    # conciliación (no hay que rendir), pero se distingue visualmente del cobro
+    # real al cliente. Diego 2026-06-24.
+    prepagado_cadete = Column(Boolean, nullable=False, default=False, server_default='false')
+    prepagado_cadete_en = Column(DateTime, nullable=True)
     # Etiqueta libre con color (arqueo/marcado manual en la planilla): texto
     # corto (<=10) + color hex. Solo presentación, no afecta la lógica.
     etiqueta = Column(String(10), nullable=True)
@@ -2881,6 +2965,50 @@ class BotInteraccion(Base):
     creado_en = Column(DateTime, default=now_ar, index=True)
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# Tienda pública (catálogo OTC + pedido por WhatsApp). Diego 2026-06-24.
+# Se controla desde /admin/tienda/* — el operador elige qué rubros/subrubros
+# publica y sube fotos por producto. Ver docs en routes/tienda_admin.py.
+# ──────────────────────────────────────────────────────────────────────────
+
+class WebRubroPublicado(Base):
+    """Qué rubros/subrubros de Observer se publican en la tienda pública.
+
+    Reglas:
+      - Fila con `subrubro_observer_id=NULL` → publica TODO el rubro (todos
+        sus subrubros), salvo que exista una fila específica excluyéndolo.
+      - Fila con `subrubro_observer_id` seteado → publica solo ese subrubro.
+      - Si `activo=False`, la fila se ignora (soft-disable sin borrarla).
+    Diego 2026-06-24.
+    """
+    __tablename__ = 'web_rubros_publicados'
+    id                    = Column(Integer, primary_key=True)
+    rubro_observer_id     = Column(Integer, ForeignKey('obs_rubros.observer_id', ondelete='CASCADE'), nullable=False, index=True)
+    subrubro_observer_id  = Column(Integer, ForeignKey('obs_subrubros.observer_id', ondelete='CASCADE'), nullable=True, index=True)
+    activo                = Column(Boolean, nullable=False, default=True, server_default='true')
+    creado_en             = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        UniqueConstraint('rubro_observer_id', 'subrubro_observer_id',
+                         name='uq_web_rubros_pub'),
+    )
+
+
+class WebProductoImagen(Base):
+    """Imagen custom por producto para la tienda pública. Sin fila = usa
+    placeholder genérico. El archivo vive en UPLOAD_FOLDER/tienda/<observer_id>.<ext>.
+    Diego 2026-06-24.
+    """
+    __tablename__ = 'web_producto_imagen'
+    observer_id   = Column(Integer, ForeignKey('obs_productos.observer_id', ondelete='CASCADE'),
+                            primary_key=True, autoincrement=False)
+    ruta_archivo  = Column(String(300), nullable=False)  # relativa a UPLOAD_FOLDER
+    # Si True, el producto aparece en la sección "Destacados" de la landing (max 3).
+    # Se controla desde /admin/tienda/imagenes. Diego 2026-06-24.
+    destacado     = Column(Boolean, nullable=False, default=False, server_default='false')
+    subido_en     = Column(DateTime, default=now_ar)
+    subido_por    = Column(String(80), nullable=True)
+
+
 def init_db(database_url=None):
     database_url = init_engine(database_url)
     if not database_url.startswith('sqlite'):
@@ -2937,7 +3065,8 @@ def init_db(database_url=None):
                         'envio_tramos', 'envio_zonas', 'envio_config',
                         'domicilios_cliente', 'rutas_reparto', 'pedidos_reparto',
                         'cadetes', 'ofertas_bot', 'ofertas_registro',
-                        'respuestas_rapidas', 'informe_enviado')
+                        'respuestas_rapidas', 'informe_enviado',
+                        'web_rubros_publicados', 'web_producto_imagen')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -4048,6 +4177,13 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS observer_ventas_meses INTEGER NOT NULL DEFAULT 16"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS transfer_excedente_meses DECIMAL(5,1) NOT NULL DEFAULT 6.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS transfer_necesita_meses DECIMAL(5,1) NOT NULL DEFAULT 2.0"))
+    # Tienda pública (catálogo OTC + pedido por WhatsApp). Diego 2026-06-24.
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS tienda_activa BOOLEAN NOT NULL DEFAULT FALSE"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS tienda_whatsapp_numero VARCHAR(20)"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS tienda_titulo VARCHAR(100)"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS tienda_hero_texto TEXT"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS tienda_direccion VARCHAR(200)"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS tienda_horarios VARCHAR(200)"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS farmacia_cuit VARCHAR(20)"))
     # sucursales: se unificó a una sola URL — limpiar la columna interna obsoleta.
     conn.execute(text("ALTER TABLE sucursales DROP COLUMN IF EXISTS url_interna"))
@@ -4901,6 +5037,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_dm_user_id BIGINT",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS retirado_en TIMESTAMP",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS entregado_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS no_atiende_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS no_atiende_intentos INTEGER NOT NULL DEFAULT 0",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_waha_msg ON pedidos_reparto(waha_msg_id)",
         "ALTER TABLE domicilios_cliente ADD COLUMN IF NOT EXISTS geo_actualizado_en TIMESTAMP",
         # Domicilios estructurados: piso/depto/referencia separados de direccion
@@ -4931,6 +5069,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS destino VARCHAR(10)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS envio_liquidado BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS envio_liquidado_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS prepagado_cadete BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS prepagado_cadete_en TIMESTAMP",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS etiqueta VARCHAR(10)",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS etiqueta_color VARCHAR(7)",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_drogueria ON pedidos_reparto(drogueria_id)",
@@ -5149,6 +5289,31 @@ def _pg_add_columns(conn):
         "CREATE INDEX IF NOT EXISTS idx_ofertas_minimo_lab_tipo ON ofertas_minimo(laboratorio_id, tipo_descuento)",
     ]:
         conn.execute(text(stmt))
+
+    # Tienda pública: tablas nuevas (Diego 2026-06-24).
+    # SQLite (tests) crea todo via Base.metadata.create_all — esto es
+    # PostgreSQL-only y por eso vive en _pg_add_columns.
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS web_rubros_publicados (
+            id                    SERIAL PRIMARY KEY,
+            rubro_observer_id     INTEGER NOT NULL REFERENCES obs_rubros(observer_id) ON DELETE CASCADE,
+            subrubro_observer_id  INTEGER REFERENCES obs_subrubros(observer_id) ON DELETE CASCADE,
+            activo                BOOLEAN NOT NULL DEFAULT TRUE,
+            creado_en             TIMESTAMP NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_web_rubros_pub UNIQUE (rubro_observer_id, subrubro_observer_id)
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_web_rubros_pub_rubro ON web_rubros_publicados(rubro_observer_id)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_web_rubros_pub_subrubro ON web_rubros_publicados(subrubro_observer_id)"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS web_producto_imagen (
+            observer_id   INTEGER PRIMARY KEY REFERENCES obs_productos(observer_id) ON DELETE CASCADE,
+            ruta_archivo  VARCHAR(300) NOT NULL,
+            subido_en     TIMESTAMP NOT NULL DEFAULT NOW(),
+            subido_por    VARCHAR(80)
+        )
+    """))
+    conn.execute(text("ALTER TABLE web_producto_imagen ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAULT FALSE"))
 
 
 def _sqlite_add_columns(conn):

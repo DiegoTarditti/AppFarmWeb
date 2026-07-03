@@ -13,8 +13,11 @@
               title="Sin conexión a ObServer. Típico desde Render — solo lectura de las tablas obs_* ya replicadas.">● modo lectura (remoto)</span>
     {% endif %}
     <a href="{{ url_for('sync_audit_panel') }}"
-       class="{% if not disponible %}ml-auto {% endif %}text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-white font-semibold text-[#1e1e1e]"
+       class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-white font-semibold text-[#1e1e1e]"
        title="Matriz de tablas: conteos local vs Render + última sync">🔍 Auditoría de sync</a>
+    <a href="{{ url_for('observer_diagnostico') }}"
+       class="{% if not disponible %}ml-auto {% endif %}text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-white font-semibold text-[#1e1e1e]"
+       title="Estado de conexión + qué schemas premium están accesibles en esta farmacia">🩺 Diagnóstico</a>
     {% if disponible %}
     <div class="ml-auto">
         <button id="sync-todo-btn" onclick="iniciarSyncTodo()"
@@ -173,9 +176,19 @@
                 </tr>
             </thead>
             <tbody>
-                {% for ent in ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas', 'productos', 'stock', 'ventas_mensuales', 'obras_sociales', 'convenios', 'planes', 'colegios_medicos', 'medicos', 'medicos_matriculas', 'operadores', 'ventas_detalle'] %}
-                <tr class="border-t border-surface-border">
-                    <td class="px-4 py-3 font-semibold">{{ ent }}</td>
+                {% set _premium = ['precios_vigentes', 'condiciones_comerciales'] %}
+                {% for ent in ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas', 'productos', 'precios_vigentes', 'condiciones_comerciales', 'stock', 'ventas_mensuales', 'obras_sociales', 'convenios', 'planes', 'colegios_medicos', 'medicos', 'medicos_matriculas', 'operadores', 'ventas_detalle'] %}
+                <tr class="border-t border-surface-border {% if ent in _premium and not tiene_premium %}bg-yellow-50{% endif %}">
+                    <td class="px-4 py-3 font-semibold">
+                        {{ ent }}
+                        {% if ent in _premium %}
+                          {% if tiene_premium %}
+                            <span class="ml-1 text-xs text-green-700" title="Premium · accesible">⭐</span>
+                          {% else %}
+                            <span class="ml-1 text-xs text-yellow-700" title="Premium · requiere usuario SA. En esta farmacia NO se sincroniza, app funciona con datos degradados.">⚠ premium · sin acceso</span>
+                          {% endif %}
+                        {% endif %}
+                    </td>
                     <td class="px-4 py-3 text-right font-mono">{{ '{:,}'.format(cuentas[ent]) }}</td>
                     <td class="px-4 py-3 text-xs text-[#666]">
                         {% if ultimos[ent] %}

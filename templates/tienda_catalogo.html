@@ -1,0 +1,124 @@
+{% extends 'tienda_base.html' %}
+{% block body_class %}bg-emerald-50{% endblock %}
+{% block content %}
+
+<!-- Hero -->
+<section class="bg-gradient-to-br from-brand-50 to-white border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+    <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 mb-2">
+      {{ cfg.tienda_titulo or 'Farmacia' }}
+    </h1>
+    {% if cfg.tienda_hero_texto %}
+    <p class="text-slate-600 text-sm sm:text-base max-w-2xl">{{ cfg.tienda_hero_texto }}</p>
+    {% endif %}
+  </div>
+</section>
+
+<!-- Buscador + filtros -->
+<section class="bg-white border-b border-slate-200 sticky top-[57px] z-30 shadow-sm">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex flex-col sm:flex-row gap-3">
+    <form method="get" action="{{ url_for('tienda_catalogo') }}" class="flex-1 flex gap-2">
+      <input type="text" name="q" value="{{ q }}"
+             placeholder="Buscar producto…"
+             class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+      {% if rubro_sel %}
+        <input type="hidden" name="rubro" value="{{ rubro_sel }}">
+      {% endif %}
+      <button type="submit"
+              class="bg-brand-500 hover:bg-brand-600 text-white font-semibold text-sm px-4 py-2 rounded-lg">
+        Buscar
+      </button>
+    </form>
+    {% if rubros %}
+    <select onchange="location.href=this.value"
+            class="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+      <option value="{{ url_for('tienda_catalogo', q=q) }}"
+              {% if not rubro_sel %}selected{% endif %}>
+        Todas las categorías
+      </option>
+      {% for r in rubros %}
+      <option value="{{ url_for('tienda_catalogo', q=q, rubro=r.id) }}"
+              {% if rubro_sel == r.id %}selected{% endif %}>
+        {{ r.nombre }}
+      </option>
+      {% endfor %}
+    </select>
+    {% endif %}
+    {% if q or rubro_sel %}
+      <a href="{{ url_for('tienda_catalogo') }}"
+         class="text-sm text-slate-500 hover:text-slate-700 px-3 py-2 flex items-center">
+        ✕ Limpiar
+      </a>
+    {% endif %}
+  </div>
+</section>
+
+<!-- Contador de resultados -->
+<div class="max-w-6xl mx-auto px-4 sm:px-6 pt-4 pb-2 text-xs text-slate-500">
+  {% if productos %}
+    Mostrando <b>{{ productos|length }}</b> de <b>{{ total_sin_filtro }}</b> productos
+    {% if q %}para <b>"{{ q }}"</b>{% endif %}
+    {% if rubro_sel %}en categoría seleccionada{% endif %}
+  {% else %}
+    Sin resultados{% if q %} para <b>"{{ q }}"</b>{% endif %}.
+  {% endif %}
+</div>
+
+<!-- Grid de productos -->
+<section class="max-w-6xl mx-auto px-4 sm:px-6 pb-10">
+  {% if productos %}
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+    {% for p in productos %}
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden card-hover flex flex-col">
+      <a href="{{ url_for('tienda_producto', oid=p.oid) }}"
+         class="block bg-slate-100 aspect-square flex items-center justify-center overflow-hidden">
+        {% if p.imagen_ruta %}
+          {% set _fname = p.imagen_ruta.split('/', 1)[1] if '/' in p.imagen_ruta else p.imagen_ruta %}
+          <img src="{{ url_for('tienda_upload_file', filename=_fname) }}"
+               alt="{{ p.nombre }}"
+               class="max-w-full max-h-full object-contain p-2"
+               loading="lazy">
+        {% else %}
+          <span class="text-5xl">💊</span>
+        {% endif %}
+      </a>
+      <div class="p-3 flex-1 flex flex-col">
+        <a href="{{ url_for('tienda_producto', oid=p.oid) }}"
+           class="text-xs sm:text-sm font-semibold text-slate-800 hover:text-brand-700 clamp-2 mb-1"
+           title="{{ p.nombre }}">
+          {{ p.nombre }}
+        </a>
+        <div class="text-[10px] text-green-700 mb-2">
+          ✓ En stock ({{ p.stock }} u.)
+        </div>
+        <div class="mt-auto">
+          {% if p.precio %}
+          <div class="text-lg font-bold text-brand-700 mb-2">
+            ${{ '{:,.0f}'.format(p.precio).replace(',', '.') }}
+          </div>
+          {% else %}
+          <div class="text-xs text-slate-500 mb-2 italic">Precio a consultar</div>
+          {% endif %}
+          <button onclick="agregarAlCarrito({{ p.oid }}, '{{ p.nombre|replace("'", "\\'")|e }}', {{ p.precio or 0 }}, 1)"
+                  class="w-full bg-brand-500 hover:bg-brand-600 text-white text-xs sm:text-sm font-semibold py-2 rounded-lg transition">
+            + Agregar
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center py-16 text-slate-500">
+    <div class="text-4xl mb-3">🔍</div>
+    <div>No encontramos productos con esos filtros.</div>
+    {% if q or rubro_sel %}
+    <a href="{{ url_for('tienda_catalogo') }}" class="inline-block mt-4 text-brand-700 font-semibold hover:underline">
+      Ver todos los productos
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+{% endblock %}
