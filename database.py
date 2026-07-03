@@ -77,6 +77,15 @@ class Config(Base):
     # excedente = cobertura > N meses; necesita = vende y cobertura < M meses.
     transfer_excedente_meses = Column(DECIMAL(5, 1), nullable=False, default=6.0, server_default='6.0')
     transfer_necesita_meses  = Column(DECIMAL(5, 1), nullable=False, default=2.0, server_default='2.0')
+    # Tienda pública (catálogo OTC + WhatsApp). Diego 2026-06-24.
+    # Si tienda_activa=False, las rutas públicas devuelven 404 (kill switch).
+    # El número debe ir en formato internacional sin '+' ni espacios (ej. '5493411234567').
+    tienda_activa            = Column(Boolean, nullable=False, default=False, server_default='false')
+    tienda_whatsapp_numero   = Column(String(20), nullable=True)
+    tienda_titulo            = Column(String(100), nullable=True)  # ej. 'Farmacia Badia · Rosario'
+    tienda_hero_texto        = Column(Text, nullable=True)          # bajada del home
+    tienda_direccion         = Column(String(200), nullable=True)
+    tienda_horarios          = Column(String(200), nullable=True)   # texto libre corto
 
 
 class Laboratorio(Base):
@@ -2893,6 +2902,50 @@ class BotInteraccion(Base):
     creado_en = Column(DateTime, default=now_ar, index=True)
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# Tienda pública (catálogo OTC + pedido por WhatsApp). Diego 2026-06-24.
+# Se controla desde /admin/tienda/* — el operador elige qué rubros/subrubros
+# publica y sube fotos por producto. Ver docs en routes/tienda_admin.py.
+# ──────────────────────────────────────────────────────────────────────────
+
+class WebRubroPublicado(Base):
+    """Qué rubros/subrubros de Observer se publican en la tienda pública.
+
+    Reglas:
+      - Fila con `subrubro_observer_id=NULL` → publica TODO el rubro (todos
+        sus subrubros), salvo que exista una fila específica excluyéndolo.
+      - Fila con `subrubro_observer_id` seteado → publica solo ese subrubro.
+      - Si `activo=False`, la fila se ignora (soft-disable sin borrarla).
+    Diego 2026-06-24.
+    """
+    __tablename__ = 'web_rubros_publicados'
+    id                    = Column(Integer, primary_key=True)
+    rubro_observer_id     = Column(Integer, ForeignKey('obs_rubros.observer_id', ondelete='CASCADE'), nullable=False, index=True)
+    subrubro_observer_id  = Column(Integer, ForeignKey('obs_subrubros.observer_id', ondelete='CASCADE'), nullable=True, index=True)
+    activo                = Column(Boolean, nullable=False, default=True, server_default='true')
+    creado_en             = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        UniqueConstraint('rubro_observer_id', 'subrubro_observer_id',
+                         name='uq_web_rubros_pub'),
+    )
+
+
+class WebProductoImagen(Base):
+    """Imagen custom por producto para la tienda pública. Sin fila = usa
+    placeholder genérico. El archivo vive en UPLOAD_FOLDER/tienda/<observer_id>.<ext>.
+    Diego 2026-06-24.
+    """
+    __tablename__ = 'web_producto_imagen'
+    observer_id   = Column(Integer, ForeignKey('obs_productos.observer_id', ondelete='CASCADE'),
+                            primary_key=True, autoincrement=False)
+    ruta_archivo  = Column(String(300), nullable=False)  # relativa a UPLOAD_FOLDER
+    # Si True, el producto aparece en la sección "Destacados" de la landing (max 3).
+    # Se controla desde /admin/tienda/imagenes. Diego 2026-06-24.
+    destacado     = Column(Boolean, nullable=False, default=False, server_default='false')
+    subido_en     = Column(DateTime, default=now_ar)
+    subido_por    = Column(String(80), nullable=True)
+
+
 def init_db(database_url=None):
     database_url = init_engine(database_url)
     if not database_url.startswith('sqlite'):
@@ -2948,7 +3001,8 @@ def init_db(database_url=None):
                         'envio_tramos', 'envio_zonas', 'envio_config',
                         'domicilios_cliente', 'rutas_reparto', 'pedidos_reparto',
                         'cadetes', 'ofertas_bot', 'ofertas_registro',
-                        'respuestas_rapidas', 'informe_enviado')
+                        'respuestas_rapidas', 'informe_enviado',
+                        'web_rubros_publicados', 'web_producto_imagen')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -4058,6 +4112,13 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS observer_ventas_meses INTEGER NOT NULL DEFAULT 16"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS transfer_excedente_meses DECIMAL(5,1) NOT NULL DEFAULT 6.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS transfer_necesita_meses DECIMAL(5,1) NOT NULL DEFAULT 2.0"))
+    # Tienda pública (catálogo OTC + pedido por WhatsApp). Diego 2026-06-24.
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS tienda_activa BOOLEAN NOT NULL DEFAULT FALSE"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS tienda_whatsapp_numero VARCHAR(20)"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS tienda_titulo VARCHAR(100)"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS tienda_hero_texto TEXT"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS tienda_direccion VARCHAR(200)"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS tienda_horarios VARCHAR(200)"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS farmacia_cuit VARCHAR(20)"))
     # sucursales: se unificó a una sola URL — limpiar la columna interna obsoleta.
     conn.execute(text("ALTER TABLE sucursales DROP COLUMN IF EXISTS url_interna"))
@@ -5507,6 +5568,31 @@ def _sqlite_add_columns(conn):
         import logging
         logging.getLogger(__name__).warning(
             'Migración SQLite ofertas_minimo falló (puede ser idempotente): %s', e)
+
+    # Tienda pública: tablas nuevas (Diego 2026-06-24).
+    # PostgreSQL only — SQLite (tests) usa Base.metadata.create_all para crearlas.
+    if not database_url.startswith('sqlite'):
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS web_rubros_publicados (
+                id                    SERIAL PRIMARY KEY,
+                rubro_observer_id     INTEGER NOT NULL REFERENCES obs_rubros(observer_id) ON DELETE CASCADE,
+                subrubro_observer_id  INTEGER REFERENCES obs_subrubros(observer_id) ON DELETE CASCADE,
+                activo                BOOLEAN NOT NULL DEFAULT TRUE,
+                creado_en             TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_web_rubros_pub UNIQUE (rubro_observer_id, subrubro_observer_id)
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_web_rubros_pub_rubro ON web_rubros_publicados(rubro_observer_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_web_rubros_pub_subrubro ON web_rubros_publicados(subrubro_observer_id)"))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS web_producto_imagen (
+                observer_id   INTEGER PRIMARY KEY REFERENCES obs_productos(observer_id) ON DELETE CASCADE,
+                ruta_archivo  VARCHAR(300) NOT NULL,
+                subido_en     TIMESTAMP NOT NULL DEFAULT NOW(),
+                subido_por    VARCHAR(80)
+            )
+        """))
+        conn.execute(text("ALTER TABLE web_producto_imagen ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAULT FALSE"))
 
     # Índices para queries frecuentes
     for stmt in [

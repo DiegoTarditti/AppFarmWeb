@@ -1,0 +1,142 @@
+{% extends 'tienda_base.html' %}
+{% block title %}{{ producto.nombre }} · {{ cfg.tienda_titulo or 'Farmacia' }}{% endblock %}
+{% block content %}
+
+<!-- Migas -->
+<div class="max-w-6xl mx-auto px-4 sm:px-6 pt-4">
+  <a href="{{ url_for('tienda_catalogo') }}"
+     class="text-xs text-slate-500 hover:text-slate-800">← Volver al catálogo</a>
+</div>
+
+<!-- Detalle producto -->
+<section class="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+  <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden grid md:grid-cols-2 gap-6 md:gap-10 p-4 sm:p-8">
+
+    <!-- Imagen -->
+    <div class="bg-slate-100 rounded-xl aspect-square flex items-center justify-center overflow-hidden">
+      {% if producto.imagen_ruta %}
+        {% set _fname = producto.imagen_ruta.split('/', 1)[1] if '/' in producto.imagen_ruta else producto.imagen_ruta %}
+        <img src="{{ url_for('tienda_upload_file', filename=_fname) }}"
+             alt="{{ producto.nombre }}"
+             class="max-w-full max-h-full object-contain p-4">
+      {% else %}
+        <span class="text-7xl">💊</span>
+      {% endif %}
+    </div>
+
+    <!-- Info -->
+    <div class="flex flex-col">
+      <h1 class="text-xl sm:text-2xl font-bold text-slate-900 mb-3">{{ producto.nombre }}</h1>
+
+      <div class="text-sm text-green-700 mb-4">
+        ✓ En stock ({{ producto.stock }} unidades disponibles)
+      </div>
+
+      {% if producto.precio %}
+      <div class="text-3xl font-bold text-brand-700 mb-1">
+        ${{ '{:,.0f}'.format(producto.precio).replace(',', '.') }}
+      </div>
+      <div class="text-xs text-slate-500 mb-6">
+        Precio de lista · confirmá el total en el chat de WhatsApp.
+      </div>
+      {% else %}
+      <div class="text-lg text-slate-600 italic mb-6">Precio a consultar</div>
+      {% endif %}
+
+      <!-- Selector cantidad + agregar -->
+      <div class="flex gap-2 mb-3">
+        <div class="flex items-center border border-slate-300 rounded-lg overflow-hidden">
+          <button onclick="cantMinus()" type="button"
+                  class="w-10 h-11 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold">−</button>
+          <input type="number" id="cantidad" value="1" min="1" max="{{ producto.stock }}"
+                 class="w-14 h-11 text-center border-x border-slate-300 focus:outline-none">
+          <button onclick="cantPlus()" type="button"
+                  class="w-10 h-11 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold">+</button>
+        </div>
+        <button onclick="agregarConCantidad()"
+                class="flex-1 bg-brand-500 hover:bg-brand-600 text-white font-bold py-3 rounded-lg text-sm">
+          🛒 Agregar al pedido
+        </button>
+      </div>
+
+      <div class="text-xs text-slate-500 mb-6">
+        Después completás el pedido y lo confirmás por WhatsApp con la farmacia.
+      </div>
+
+      <!-- Info secundaria -->
+      <div class="text-xs text-slate-600 space-y-1 border-t border-slate-200 pt-4 mt-auto">
+        <div>📦 Retiro en local o envío a domicilio (a coordinar).</div>
+        <div>💳 Pago en efectivo, transferencia, o link MP al confirmar.</div>
+        {% if cfg.tienda_horarios %}
+        <div>🕒 Atendemos {{ cfg.tienda_horarios }}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Similares -->
+{% if similares %}
+<section class="max-w-6xl mx-auto px-4 sm:px-6 pb-12">
+  <h2 class="text-lg font-bold text-slate-800 mb-4">Productos relacionados</h2>
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+    {% for p in similares %}
+    <a href="{{ url_for('tienda_producto', oid=p.oid) }}"
+       class="bg-white border border-slate-200 rounded-xl overflow-hidden card-hover flex flex-col">
+      <div class="bg-slate-100 aspect-square flex items-center justify-center overflow-hidden">
+        {% if p.imagen_ruta %}
+          {% set _fname = p.imagen_ruta.split('/', 1)[1] if '/' in p.imagen_ruta else p.imagen_ruta %}
+          <img src="{{ url_for('tienda_upload_file', filename=_fname) }}"
+               alt="{{ p.nombre }}"
+               class="max-w-full max-h-full object-contain p-2" loading="lazy">
+        {% else %}
+          <span class="text-4xl">💊</span>
+        {% endif %}
+      </div>
+      <div class="p-3">
+        <div class="text-xs font-semibold text-slate-800 clamp-2 mb-1" title="{{ p.nombre }}">
+          {{ p.nombre }}
+        </div>
+        {% if p.precio %}
+        <div class="text-sm font-bold text-brand-700">
+          ${{ '{:,.0f}'.format(p.precio).replace(',', '.') }}
+        </div>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const MAX = {{ producto.stock }};
+  const NOMBRE = {{ producto.nombre|tojson }};
+  const PRECIO = {{ producto.precio or 0 }};
+  const OID = {{ producto.oid }};
+
+  function getCant() {
+    const inp = document.getElementById('cantidad');
+    let n = parseInt(inp.value || '1', 10);
+    if (isNaN(n) || n < 1) n = 1;
+    if (n > MAX) n = MAX;
+    inp.value = n;
+    return n;
+  }
+  function cantMinus() {
+    const inp = document.getElementById('cantidad');
+    inp.value = Math.max(1, (parseInt(inp.value, 10) || 1) - 1);
+  }
+  function cantPlus() {
+    const inp = document.getElementById('cantidad');
+    inp.value = Math.min(MAX, (parseInt(inp.value, 10) || 1) + 1);
+  }
+  function agregarConCantidad() {
+    const cant = getCant();
+    agregarAlCarrito(OID, NOMBRE, PRECIO, cant);
+  }
+</script>
+{% endblock %}
