@@ -198,3 +198,68 @@ def init_app(app):
                             'convenio_observer': p.convenio_observer}
                            for p in planes],
             })
+
+    # ── Pacientes (para consumo desde AppClinica) ──────────────────────────
+
+    @app.route('/api/publica/paciente/<int:observer_id>')
+    @requiere_api_key
+    def api_publica_paciente(observer_id):
+        """Ficha del paciente de esta farmacia. Devuelve identidad + OS."""
+        with database.get_db() as s:
+            c = s.get(database.ObsCliente, observer_id)
+            if not c:
+                return jsonify({'error': 'no encontrado'}), 404
+            os_nombre = None
+            if c.obra_social_observer:
+                os_row = s.get(database.ObsObraSocial, c.obra_social_observer)
+                if os_row:
+                    os_nombre = os_row.descripcion
+            return jsonify({
+                'observer_id': c.observer_id,
+                'apellido_nombre': c.apellido_nombre,
+                'documento_tipo': c.documento_tipo,
+                'documento_numero': c.documento_numero,
+                'telefono': c.telefono,
+                'domicilio_direccion': c.domicilio_direccion,
+                'localidad': c.localidad,
+                'obra_social_observer': c.obra_social_observer,
+                'obra_social_nombre': os_nombre,
+                'baja': bool(c.fecha_baja),
+            })
+
+    @app.route('/api/publica/paciente/buscar')
+    @requiere_api_key
+    def api_publica_paciente_buscar():
+        """Busca pacientes por DNI (exacto) o por texto en apellido/nombre.
+        Params: dni=X | q=texto | limite (default 12)."""
+        dni = (request.args.get('dni') or '').strip()
+        q = (request.args.get('q') or '').strip()
+        try:
+            limite = min(50, max(1, int(request.args.get('limite') or 12)))
+        except (TypeError, ValueError):
+            limite = 12
+        with database.get_db() as s:
+            base = s.query(database.ObsCliente).filter(
+                database.ObsCliente.fecha_baja.is_(None))
+            if dni:
+                if not dni.isdigit():
+                    return jsonify({'error': 'dni debe ser numérico'}), 400
+                base = base.filter(database.ObsCliente.documento_numero == int(dni))
+            elif q:
+                # Multi-token AND sobre apellido_nombre
+                palabras = [p for p in q.split() if len(p) >= 2][:5]
+                if not palabras:
+                    return jsonify({'pacientes': []})
+                for p in palabras:
+                    base = base.filter(database.ObsCliente.apellido_nombre.ilike(f'%{p}%'))
+            else:
+                return jsonify({'error': 'especificá dni o q'}), 400
+            rows = base.order_by(database.ObsCliente.apellido_nombre).limit(limite).all()
+            out = [{
+                'observer_id': c.observer_id,
+                'apellido_nombre': c.apellido_nombre,
+                'documento_numero': c.documento_numero,
+                'telefono': c.telefono,
+                'localidad': c.localidad,
+            } for c in rows]
+        return jsonify({'pacientes': out})
