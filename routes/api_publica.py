@@ -263,3 +263,62 @@ def init_app(app):
                 'localidad': c.localidad,
             } for c in rows]
         return jsonify({'pacientes': out})
+
+    @app.route('/api/publica/paciente/<int:observer_id>/compras')
+    @requiere_api_key
+    def api_publica_paciente_compras(observer_id):
+        """Compras del paciente en Badia (via obs_ventas_detalle).
+
+        Consumido por el cron receta→compra de AppClinica: dado un paciente
+        (observer_id) y una fecha desde X, devuelve las compras posteriores.
+
+        Params:
+          desde=YYYY-MM-DD (obligatorio) — solo compras desde esa fecha.
+          hasta=YYYY-MM-DD (opcional)    — solo compras hasta esa fecha.
+          limite (default 100, max 500).
+        """
+        from datetime import datetime, date
+        desde_str = (request.args.get('desde') or '').strip()
+        hasta_str = (request.args.get('hasta') or '').strip()
+        try:
+            limite = min(500, max(1, int(request.args.get('limite') or 100)))
+        except (TypeError, ValueError):
+            limite = 100
+        if not desde_str:
+            return jsonify({'error': 'falta desde=YYYY-MM-DD'}), 400
+        try:
+            desde_dt = datetime.strptime(desde_str, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'error': 'desde inválido, formato YYYY-MM-DD'}), 400
+        hasta_dt = None
+        if hasta_str:
+            try:
+                hasta_dt = datetime.strptime(hasta_str, '%Y-%m-%d')
+            except ValueError:
+                return jsonify({'error': 'hasta inválido, formato YYYY-MM-DD'}), 400
+        with database.get_db() as s:
+            V = database.ObsVentaDetalle
+            q = (s.query(V)
+                 .filter(V.cliente_observer == observer_id)
+                 .filter(V.fecha_operacion >= desde_dt))
+            if hasta_dt:
+                q = q.filter(V.fecha_operacion < hasta_dt)
+            rows = q.order_by(V.fecha_operacion.desc()).limit(limite).all()
+            # Descripciones de producto (una query por lote de IDs, no N+1)
+            prod_ids = list({r.producto_observer for r in rows if r.producto_observer})
+            prod_ix = {}
+            if prod_ids:
+                prods = s.query(database.ObsProducto).filter(
+                    database.ObsProducto.observer_id.in_(prod_ids)).all()
+                prod_ix = {p.observer_id: p.descripcion for p in prods}
+            out = [{
+                'id_producto_vendido': r.id_producto_vendido,
+                'id_operacion': r.id_operacion,
+                'fecha_operacion': r.fecha_operacion.isoformat() if r.fecha_operacion else None,
+                'producto_observer': r.producto_observer,
+                'producto_descripcion': prod_ix.get(r.producto_observer),
+                'importe': float(r.importe) if r.importe is not None else None,
+                'importe_a_cargo_os': float(r.importe_a_cargo_os) if r.importe_a_cargo_os is not None else None,
+                'importe_efectivo': float(r.importe_efectivo) if r.importe_efectivo is not None else None,
+            } for r in rows]
+        return jsonify({'compras': out, 'total': len(out)})
