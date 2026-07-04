@@ -1422,6 +1422,10 @@ function _scrollToVisible(row) {
 
 // ── Agregar producto último momento ─────────────────────────────────
 const _PROV_ID = {{ prov.id if prov else 'null' }};
+// Modo lab: la droguería/canal se elige en el selector de Canal de arriba,
+// no en la matriz por fila. La emisión usa un único destino para todos los items.
+const _ES_MODO_LAB = {{ 'true' if lab_id else 'false' }};
+const _LAB_NOMBRE = {{ (lab_nombre or '') | tojson }};
 const _agregarInput = document.getElementById('agregar-q');
 const _agregarResults = document.getElementById('agregar-results');
 let _agregarTimer = null;
@@ -1793,8 +1797,61 @@ async function _descargarPlantillaPedido(pedidoId, status) {
 }
 
 async function emitirPedido() {
+    if (_ES_MODO_LAB) return emitirPedidoLab();
     if (_ES_MULTI_DROG) return emitirPedidoMultiDrog();
     return emitirPedidoSingleDrog();
+}
+
+// Modo lab: emite TODOS los items a un único destino según el selector de Canal.
+//   · Vía droguería → la droguería elegida en el dropdown (#ar-canal-drog).
+//   · Directo al lab → el laboratorio (el backend resuelve/crea su Provider).
+async function emitirPedidoLab() {
+    const status = document.getElementById('emitir-status');
+    const btn = document.getElementById('btn-emitir');
+    const items = [];
+    document.querySelectorAll('.producto-row').forEach(row => {
+        const it = _itemDeFila(row);
+        if (it) items.push(it);
+    });
+    if (!items.length) { status.textContent = 'No hay items con cantidad > 0.'; return; }
+
+    const radio = document.querySelector('input[name="ar-canal-radio"]:checked');
+    const esDrog = radio && radio.value === 'drogueria';
+    const body = {items};
+    let destino;
+    if (esDrog) {
+        const sel = document.getElementById('ar-canal-drog');
+        const provId = parseInt(sel && sel.value || 0);
+        if (!provId) { status.textContent = 'Elegí una droguería en el selector de Canal.'; return; }
+        body.prov_id = provId;
+        destino = 'vía ' + sel.options[sel.selectedIndex].text;
+    } else {
+        body.lab_nombre = _LAB_NOMBRE;
+        destino = 'directo a ' + (_LAB_NOMBRE || 'laboratorio');
+    }
+    const operador = await _pedirOperador('¿Quién emite el pedido?');
+    if (!operador) return;
+    if (!await _confirmar(
+            `Emitir pedido (${destino}) con ${items.length} items (${items.reduce((a,b)=>a+b.cantidad,0)} u)?`,
+            'Emitir pedido')) return;
+    body.emitido_por = operador;
+    btn.disabled = true; status.textContent = 'Emitiendo…';
+    try {
+        const r = await fetch('/api/pedidos/dia/emitir', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (!d.ok) { status.textContent = 'Error: ' + (d.error || ''); btn.disabled = false; return; }
+        status.textContent = '✓ Pedido #' + d.pedido_id + ' emitido';
+        if (await _descargarPlantillaPedido(d.pedido_id, status)) {
+            status.textContent += ' — descargando plantilla…';
+        }
+        setTimeout(() => { location.href = '/pedidos-emitidos/' + d.pedido_id; }, 1200);
+    } catch (e) {
+        status.textContent = 'Error de red'; btn.disabled = false;
+    }
 }
 
 async function emitirPedidoSingleDrog() {

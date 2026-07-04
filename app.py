@@ -54,6 +54,24 @@ if os.environ.get('RUN_INIT_DB_ON_STARTUP') == '1':
     init_db(DATABASE_URL)
 
 
+# Hosts del dominio propio de la tienda pública. Cuando alguien entra a
+# https://farmbadia.com.ar/ (o /www) lo mandamos directo a /tienda (la landing).
+# El resto de rutas (admin, atencion, etc.) siguen funcionando normal desde
+# el mismo dominio con login. Diego 2026-06-24.
+_TIENDA_HOSTS = {'farmbadia.com.ar', 'www.farmbadia.com.ar'}
+
+
+@app.before_request
+def redirigir_root_a_tienda():
+    from flask import redirect, request
+    if request.path != '/':
+        return None
+    host = (request.host or '').split(':')[0].lower()
+    if host in _TIENDA_HOSTS:
+        return redirect('/tienda', code=302)
+    return None
+
+
 @app.before_request
 def exigir_login():
     from flask import jsonify, redirect, request, url_for
@@ -79,7 +97,11 @@ def exigir_login():
                       # Sync local↔Render: auth propia via X-Panel-Token header.
                       'api_ofertas_sync_from_local', 'api_ofertas_from_server',
                       # Push master local→Render: auth propia via X-Auto-Sync-Token.
-                      'push_productos_master', 'push_cadencias'}
+                      'push_productos_master', 'push_cadencias',
+                      # Tienda pública (catálogo OTC + pedido por WhatsApp).
+                      # Diego 2026-06-24. Kill switch via Config.tienda_activa.
+                      'tienda_home', 'tienda_catalogo', 'tienda_producto',
+                      'tienda_pedir', 'tienda_upload_file'}
     if request.endpoint in rutas_publicas or request.endpoint is None:
         return None
     if not current_user.is_authenticated:

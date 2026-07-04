@@ -216,6 +216,39 @@ def init_app(app):
             candidatos=['nombre_modulo', 'codigo', 'ean', 'descripcion',
                         'cantidad', 'descuento_psl'],
         )
+
+        # Limpieza de filas basura: algunos Excel de módulos traen VARIAS tablas
+        # apiladas (ej. Roemmers separa con un divisor "VENTA LIBRE" + repite el
+        # encabezado a mitad de archivo). Sin esto, el header repetido entra como
+        # un "módulo" fantasma y corre toda la segunda tanda. Salteamos:
+        #   · filas-encabezado repetidas (≥2 celdas == labels conocidos)
+        #   · divisores/títulos de sección (sin EAN y sin descripción)
+        _m = preview['mapping']
+        _c_ean, _c_desc, _c_nom = _m.get('ean'), _m.get('descripcion'), _m.get('nombre_modulo')
+        _TOKENS = {'NOMBRE MODULO', 'CODIGO EAN', 'DESCRIPCION', 'CANTIDAD',
+                   'CANT', 'DESCUENTO', 'DESC', 'COD MOD', 'COD MOD.', 'EAN PACK'}
+
+        def _cell(r, i):
+            return r[i] if (i is not None and i < len(r)) else ''
+
+        def _norm(s):
+            return str(s or '').strip().upper()
+
+        _rows_in = preview.get('rows') or []
+        _dest_in = preview.get('rows_destacadas') or [False] * len(_rows_in)
+        _rows_out, _dest_out = [], []
+        for _r, _d in zip(_rows_in, _dest_in):
+            _ean, _desc, _nom = _norm(_cell(_r, _c_ean)), _norm(_cell(_r, _c_desc)), _norm(_cell(_r, _c_nom))
+            if sum(1 for _v in (_ean, _desc, _nom) if _v in _TOKENS) >= 2:
+                continue  # encabezado repetido
+            if not _ean and not _desc:
+                continue  # divisor / título de sección (sin producto)
+            _rows_out.append(_r)
+            _dest_out.append(_d)
+        preview['rows'] = _rows_out
+        preview['rows_destacadas'] = _dest_out
+        preview['count_filas'] = len(_rows_out)
+
         return jsonify({**preview, 'filename': f.filename})
 
     @app.route('/api/modulos/import-validar', methods=['POST'])

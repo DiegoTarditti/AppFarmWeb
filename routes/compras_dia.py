@@ -2198,9 +2198,24 @@ def init_app(app):
         except (TypeError, ValueError):
             return jsonify({'ok': False, 'error': 'prov_id inválido'}), 400
         items = data.get('items') or []
-        if not prov_id or not items:
+        # Canal "Directo al lab" (modo lab): no viene prov_id sino lab_nombre.
+        # Resolvemos/creamos un Provider tipo 'laboratorio' para colgar el pedido.
+        lab_nombre_in = (data.get('lab_nombre') or '').strip()
+        if not items:
+            return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
+        if not prov_id and not lab_nombre_in:
             return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
         with get_db() as session:
+            if not prov_id and lab_nombre_in:
+                lab_prov = (session.query(Provider)
+                            .filter(Provider.razon_social == lab_nombre_in,
+                                    Provider.tipo == 'laboratorio').first())
+                if not lab_prov:
+                    lab_prov = Provider(razon_social=lab_nombre_in,
+                                        tipo='laboratorio', activo=True)
+                    session.add(lab_prov)
+                    session.flush()
+                prov_id = lab_prov.id
             # Pre-cargar observer_ids de los productos locales para auto-bridging
             prod_ids = [int(it['producto_id_local']) for it in items
                         if it.get('producto_id_local') and not it.get('observer_id')]
@@ -2765,6 +2780,78 @@ def init_app(app):
             content = '\r\n'.join(lines)
             return Response(content, mimetype='text/plain',
                             headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+
+    @app.route('/api/pedido-emitido/<int:pedido_id>/export-xls')
+    @login_required
+    def api_pedido_emitido_export_xls(pedido_id):
+        """Export XLSX simple del pedido (no depende de plantilla de droguería).
+
+        Columnas fijas: EAN, Descripción, Laboratorio, Cant. pedida,
+        Cant. recibida, Estado.
+        """
+        import unicodedata as _ud
+        from io import BytesIO
+
+        from flask import send_file
+
+        from database import ObsCodigoBarras, PedidoEmitido, Producto, ProductoCodigoBarra
+
+        with get_db() as session:
+            ped = session.get(PedidoEmitido, pedido_id)
+            if not ped:
+                return jsonify({'ok': False, 'error': 'Pedido no encontrado'}), 404
+            items = sorted(ped.items, key=lambda i: (i.descripcion or '').lower())
+
+            # Resolver EAN: ObServer (obs_codigos_barras) → master local.
+            obs_ids = [it.observer_id for it in items if it.observer_id]
+            ean_map = {}
+            if obs_ids:
+                for oid, cb in (session.query(ObsCodigoBarras.producto_observer,
+                                              ObsCodigoBarras.codigo_barras)
+                                .filter(ObsCodigoBarras.producto_observer.in_(obs_ids),
+                                        ObsCodigoBarras.fecha_baja.is_(None))
+                                .order_by(ObsCodigoBarras.orden.asc()).all()):
+                    if oid not in ean_map and cb:
+                        ean_map[oid] = cb
+            prod_ids = [it.producto_id_local for it in items if it.producto_id_local]
+            local_ean = {}
+            if prod_ids:
+                for pid, cb in (session.query(Producto.id, Producto.codigo_barra)
+                                .filter(Producto.id.in_(prod_ids)).all()):
+                    if cb and not str(cb).startswith('OBS-'):
+                        local_ean[pid] = cb
+                for pid, cb in (session.query(ProductoCodigoBarra.producto_id,
+                                              ProductoCodigoBarra.codigo_barra)
+                                .filter(ProductoCodigoBarra.producto_id.in_(prod_ids)).all()):
+                    if pid not in local_ean and cb:
+                        local_ean[pid] = cb
+
+            import openpyxl
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = f'Pedido {ped.id}'
+            ws.append(['EAN', 'Descripción', 'Laboratorio',
+                       'Cant. pedida', 'Cant. recibida', 'Estado'])
+            for it in items:
+                ean = ean_map.get(it.observer_id) or local_ean.get(it.producto_id_local) or ''
+                try:
+                    ean = int(str(ean).strip()) if ean else ''
+                except (ValueError, TypeError):
+                    pass
+                ws.append([ean, it.descripcion or '', it.lab_nombre or '',
+                           it.cantidad_pedida or 0, it.cantidad_recibida or 0,
+                           it.estado or ''])
+                ws.cell(row=ws.max_row, column=1).number_format = '0'
+
+            _drog_raw = ped.drogueria.razon_social if ped.drogueria else 'drog'
+            drog = (_ud.normalize('NFKD', _drog_raw).encode('ascii', 'ignore')
+                    .decode().replace(' ', '_').strip('_')) or 'drog'
+            fname = f'Pedido_{ped.id}_{drog}.xlsx'
+            buf = BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            return send_file(buf, as_attachment=True, download_name=fname,
+                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
     # ── Usuarios de pedidos (operadores) ──────────────────────────────────
     @app.route('/api/usuarios-pedidos', methods=['GET', 'POST'])

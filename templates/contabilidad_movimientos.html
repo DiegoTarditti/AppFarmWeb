@@ -1,0 +1,24 @@
+{% extends "base_contab.html" %}
+{% set contab_active = 'formas_pago' %}
+
+{% block title %}Movimientos · {{ cuenta.nombre }}{% endblock %}
+
+{% block contab %}
+  <header class="page-header" style="margin-bottom:14px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+    <div>
+      <h1 class="page-header__title">{{ cuenta.nombre }}</h1>
+      <p class="page-header__subtitle">Movimientos de la cuenta{% if cuenta.nro_cuenta %} · {{ cuenta.nro_cuenta }}{% endif %}</p>
+    </div>
+    <a href="{{ url_for('contabilidad_formas_pago') }}" style="margin-left:auto; color:var(--ds-text-mute); text-decoration:none; font-size:13px;">← Formas de pago</a>
+  </header>
+
+  <div class="card" style="text-align:center; padding:42px 22px;">
+    <div style="font-size:40px; line-height:1; margin-bottom:12px;">📥</div>
+    <h2 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--ds-text); margin:0 0 8px;">Próximamente</h2>
+    <p style="color:var(--ds-text-soft); font-size:13.5px; max-width:480px; margin:0 auto; line-height:1.6;">
+      Acá vas a poder <b>importar los movimientos</b> de
+      {% if cuenta.tipo == 'mercadopago' %}MercadoPago{% elif cuenta.tipo == 'banco' %}tu banco{% else %}esta cuenta{% endif %}
+      y <b>conciliarlos</b> con los pagos registrados a proveedores.
+    </p>
+  </div>
+{% endblock %}

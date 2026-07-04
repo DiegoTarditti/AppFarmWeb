@@ -24,6 +24,7 @@ from routes import (
     consulta_paciente,
     consulta_producto,
     consulta_producto_stats,
+    contabilidad,
     converter,
     core,
     cronograma,
@@ -67,6 +68,8 @@ from routes import (
     purchase,
     reparto,
     sucursales,
+    tienda_admin,
+    tienda_publica,
     tipos_pedido,
     transferencias,
     vademecum,
@@ -101,6 +104,7 @@ _modules = [
     modulos_import,
     productos,
     cuentas,
+    contabilidad,
     dashboard,
     docs_pendientes,
     batch,
@@ -145,6 +149,8 @@ _modules = [
     transferencias,
     sucursales,
     comparativa_ventas,
+    tienda_admin,
+    tienda_publica,
     whatsapp,
 ]
 

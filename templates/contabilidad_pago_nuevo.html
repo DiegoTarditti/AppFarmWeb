@@ -1,0 +1,133 @@
+{% extends "base_contab.html" %}
+{% set contab_active = 'pagos' %}
+
+{% block title %}Registrar pago · Contabilidad{% endblock %}
+
+{% macro money(x) -%}
+{{ '{:,.2f}'.format(x).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+{%- endmacro %}
+
+{% block contab %}
+  <header class="page-header" style="margin-bottom:14px;">
+    <h1 class="page-header__title">Registrar pago</h1>
+    <p class="page-header__subtitle">Elegí el proveedor, la cuenta de pago y las facturas que cancela.</p>
+  </header>
+
+  {% with messages = get_flashed_messages() %}
+  {% if messages %}
+  <div class="card" style="margin-bottom:14px; border-color:#FBBF24;">{{ messages[0] }}</div>
+  {% endif %}
+  {% endwith %}
+
+  {# Selector de proveedor (recarga con ?proveedor=) #}
+  <div class="card" style="margin-bottom:14px;">
+    <form method="GET" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <label style="font-size:13px; color:var(--ds-text-soft);">Proveedor:</label>
+      <select name="proveedor" onchange="this.form.submit()"
+              style="background:var(--ds-surface); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:7px 12px; font-size:13px; min-width:280px;">
+        <option value="">— elegir proveedor —</option>
+        {% for p in proveedores %}
+        <option value="{{ p.id }}" {% if provider and p.id == provider.id %}selected{% endif %}>{{ p.razon_social }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  {% if provider %}
+  <form method="POST" action="{{ url_for('contabilidad_pago_guardar') }}">
+    <input type="hidden" name="proveedor_id" value="{{ provider.id }}">
+
+    <div class="card" style="margin-bottom:14px; display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px;">
+      <label style="font-size:12px; color:var(--ds-text-soft);">Cuenta de pago
+        <select name="cuenta_pago_id"
+                style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
+          <option value="">— sin especificar —</option>
+          {% for c in cuentas %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
+        </select>
+      </label>
+      <label style="font-size:12px; color:var(--ds-text-soft);">Fecha
+        <input type="date" name="fecha" value="{{ hoy }}"
+               style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
+      </label>
+      <label style="font-size:12px; color:var(--ds-text-soft);">Nro. comprobante
+        <input type="text" name="nro_comprobante" placeholder="transferencia / recibo"
+               style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
+      </label>
+      <label style="font-size:12px; color:var(--ds-text-soft);">Observaciones
+        <input type="text" name="observaciones"
+               style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
+      </label>
+    </div>
+
+    <div class="card" style="padding:0; overflow:hidden; margin-bottom:14px;">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="width:42px; text-align:center; padding:9px 10px;">Pagar</th>
+            <th style="text-align:left; padding:9px 14px;">Factura</th>
+            <th style="text-align:left; padding:9px 14px;">Fecha</th>
+            <th style="text-align:right; padding:9px 14px;">Total</th>
+            <th style="text-align:right; padding:9px 14px;">Pendiente</th>
+            <th style="text-align:right; padding:9px 14px;">Monto a aplicar</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in facturas %}
+          <tr style="border-top:1px solid var(--ds-line);">
+            <td style="text-align:center; padding:9px 10px;">
+              <input type="checkbox" class="fchk" data-id="{{ f.id }}" onchange="toggle(this)" style="width:auto;">
+            </td>
+            <td style="padding:9px 14px; font-weight:600; font-size:13px;">
+              {{ f.numero }}
+              {% if f.conforme %}<span class="badge badge-mint badge-pill" style="margin-left:6px;">conforme</span>{% endif %}
+            </td>
+            <td style="padding:9px 14px; color:var(--ds-text-soft); font-size:12px;">{{ f.fecha }}</td>
+            <td style="padding:9px 14px; text-align:right; color:var(--ds-text-soft); font-variant-numeric:tabular-nums;">${{ money(f.total) }}</td>
+            <td style="padding:9px 14px; text-align:right; font-weight:600; font-variant-numeric:tabular-nums;">${{ money(f.pendiente) }}</td>
+            <td style="padding:9px 14px; text-align:right;">
+              <input type="number" step="0.01" min="0" name="factura_{{ f.id }}" class="fmonto"
+                     data-id="{{ f.id }}" data-pend="{{ f.pendiente }}" oninput="recalc()"
+                     style="width:120px; text-align:right; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:6px 8px; font-size:13px;">
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" style="padding:24px; text-align:center; color:var(--ds-text-mute);">Este proveedor no tiene facturas pendientes de pago. 🎉</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <label style="font-size:13px; color:var(--ds-text-soft);">Monto total del pago
+        <input type="number" step="0.01" min="0" name="monto" id="monto"
+               style="margin-left:8px; width:160px; text-align:right; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:15px; font-weight:700;">
+      </label>
+      <span id="acuenta" style="font-size:12px; color:var(--ds-text-mute);"></span>
+      <button type="submit" class="btn btn-primary btn-sm" style="margin-left:auto;">Guardar pago</button>
+    </div>
+  </form>
+
+  <script>
+    function toggle(chk){
+      const inp = document.querySelector(`.fmonto[data-id="${chk.dataset.id}"]`);
+      inp.value = chk.checked ? inp.dataset.pend : '';
+      recalc();
+    }
+    function recalc(){
+      let suma = 0;
+      document.querySelectorAll('.fmonto').forEach(i => {
+        const v = parseFloat((i.value||'').toString().replace(',', '.'));
+        if (!isNaN(v) && v > 0) suma += v;
+      });
+      const tot = document.getElementById('monto');
+      // Si el usuario no tocó el total a mano, lo seguimos al sumar aplicaciones.
+      if (!tot.dataset.touched) tot.value = suma ? suma.toFixed(2) : '';
+      const totVal = parseFloat((tot.value||'').replace(',', '.')) || 0;
+      const dif = (totVal - suma);
+      document.getElementById('acuenta').textContent =
+        dif > 0.005 ? ('A cuenta (sin aplicar): $' + dif.toFixed(2)) : '';
+    }
+    document.getElementById('monto').addEventListener('input', function(){ this.dataset.touched = '1'; recalc(); });
+  </script>
+  {% endif %}
+{% endblock %}

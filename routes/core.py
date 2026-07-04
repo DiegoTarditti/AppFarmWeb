@@ -89,7 +89,7 @@ def init_app(app):
         pdf_pendiente = request.args.get('pdf_pendiente', '')
         doc_pendiente_id = request.args.get('doc_pendiente_id', '', type=int)
         proceso_id = request.args.get('proceso_id', '', type=int)
-        return render_template('ingresos.html', providers=get_providers(), config=get_config(),
+        return render_template('ingresos.html', providers=get_providers(solo_drog_activas=True), config=get_config(),
                                pdf_pendiente=pdf_pendiente, doc_pendiente_id=doc_pendiente_id or '',
                                proceso_id=proceso_id or '')
 

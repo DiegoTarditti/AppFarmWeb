@@ -192,7 +192,7 @@ def _persistir_dm_telegram(telegram_user_id, push_name, body):
         s.add(database.BotMensaje(conversacion_id=conv.id, origen='cliente', texto=body))
         conv.ultimo_en = database.now_ar()
         s.commit()
-        log.warning('[telegram DM] guardado conv_id=%s cadete_id=%s body=%r',
+        log.info('[telegram DM] guardado conv_id=%s cadete_id=%s body=%r',
                     conv.id, conv.cadete_id, body[:60])
         return conv.id
 
@@ -683,12 +683,16 @@ def init_app(app):
           2) Auto-vincula Cadete.wa_id si el push_name matchea inequivocamente.
           3) Si es frase de toma con reply citando el msg del pedido → asigna.
 
-        Sin login: WAHA hace POST desde la red docker."""
+        Sin login (WAHA hace POST). Si WAHA_WEBHOOK_SECRET está seteado en el
+        server, se exige ese valor en el header X-Webhook-Secret o ?secret= —
+        así no cualquiera con la URL puede inyectar "tomas" de pedidos."""
+        secret = os.environ.get('WAHA_WEBHOOK_SECRET', '').strip()
+        if secret and (request.headers.get('X-Webhook-Secret')
+                       or request.args.get('secret', '')) != secret:
+            return jsonify({'ok': False, 'error': 'forbidden'}), 403
         from bot import whatsapp_grupo
         payload = request.json or {}
-        # Log temporal para diagnóstico
-        import json as _json
-        print('[WHATSAPP-WEBHOOK]', _json.dumps(payload, ensure_ascii=False)[:1500], flush=True)
+        log.debug('[WHATSAPP-WEBHOOK] %s', json.dumps(payload, ensure_ascii=False)[:1500])
         # WAHA puede mandar {event, session, payload:{...}} o el payload directo
         msg = payload.get('payload') if 'payload' in payload else payload
         if not isinstance(msg, dict):
@@ -826,20 +830,28 @@ def init_app(app):
         payload = request.json or {}
         upd = telegram_grupo.parsear_update(payload)
         tipo = upd.get('tipo')
-        log.warning('[telegram webhook] tipo=%s user=%s', tipo, upd.get('user_name'))
+        log.info('[telegram webhook] tipo=%s user=%s', tipo, upd.get('user_name'))
 
         if tipo == 'callback_tomar':
-            log.warning('[telegram callback_tomar] pid=%s user_id=%s user_name=%s',
+            log.info('[telegram callback_tomar] pid=%s user_id=%s user_name=%s',
                         upd.get('pedido_id'), upd.get('user_id'), upd.get('user_name'))
             return _telegram_procesar_tomar(upd, telegram_grupo)
         if tipo == 'callback_retirado':
-            log.warning('[telegram callback_retirado] pid=%s user_id=%s',
+            log.info('[telegram callback_retirado] pid=%s user_id=%s',
                         upd.get('pedido_id'), upd.get('user_id'))
             return _telegram_procesar_retirado(upd, telegram_grupo)
         if tipo == 'callback_entregado':
-            log.warning('[telegram callback_entregado] pid=%s user_id=%s',
+            log.info('[telegram callback_entregado] pid=%s user_id=%s',
                         upd.get('pedido_id'), upd.get('user_id'))
             return _telegram_procesar_entregado(upd, telegram_grupo)
+        if tipo == 'callback_no_atiende':
+            log.warning('[telegram callback_no_atiende] pid=%s user_id=%s',
+                        upd.get('pedido_id'), upd.get('user_id'))
+            return _telegram_procesar_no_atiende(upd, telegram_grupo)
+        if tipo == 'callback_reintentar':
+            log.warning('[telegram callback_reintentar] pid=%s user_id=%s',
+                        upd.get('pedido_id'), upd.get('user_id'))
+            return _telegram_procesar_reintentar(upd, telegram_grupo)
 
         if tipo == 'mensaje_dm':
             texto_dm = (upd.get('texto') or '').strip()
@@ -1012,9 +1024,13 @@ def init_app(app):
         # Sacar botón del mensaje del grupo (queda como info, sin acción).
         if message_id_grupo:
             tg.sacar_botones_grupo(message_id_grupo)
-        # Mandar DM al cadete con detalle + botón Entregado.
-        botones = [[{'text': '✅ Entregado al cliente',
-                     'callback_data': f'entregado:{pedido_id}'}]]
+        # Mandar DM al cadete con detalle + botones Entregado / No hay nadie.
+        botones = [
+            [{'text': '✅ Entregado al cliente',
+              'callback_data': f'entregado:{pedido_id}'}],
+            [{'text': '🚪 No hay nadie',
+              'callback_data': f'no_atiende:{pedido_id}'}],
+        ]
         res_dm = tg.enviar_dm(user_id, detalle, botones=botones)
         if res_dm.get('ok'):
             # Persistir el message_id del DM para que _telegram_procesar_entregado
@@ -1070,17 +1086,168 @@ def init_app(app):
             tg.editar_botones_dm(user_id, dm_msg_id, [])
         return jsonify({'ok': True, 'pedido_id': pedido_id, 'estado': 'entregado'})
 
+    def _telegram_procesar_no_atiende(upd, tg):
+        """Cadete apretó '🚪 No hay nadie' en el DM. Acciones:
+          1. estado → 'no_atiende', incrementa contador de intentos.
+          2. Edita el DM: 3 botones (Entregado, Reintentar entregar, Sigo
+             sin que atiendan).
+          3. Notifica al operador que tomó el pedido (BotMensaje urgente
+             en su conv con el cliente, si existe).
+          4. Persiste un BotMensaje en la conv del grupo para que se vea
+             en /reparto/planilla → panel chat → grupo cadetes.
+        """
+        pedido_id = upd.get('pedido_id')
+        user_id = upd.get('user_id')
+        callback_qid = upd.get('callback_query_id')
+        if not pedido_id or not callback_qid:
+            return jsonify({'ok': False, 'error': 'callback inválido'}), 400
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pedido_id)
+            if not p:
+                tg.answer_callback(callback_qid, 'Pedido no existe', alert=True)
+                return jsonify({'ok': True, 'ignored': 'pedido_no_existe'})
+            # Permitido desde 'en_ruta' (1er intento) o desde 'no_atiende' (reintentos).
+            if p.estado not in ('en_ruta', 'no_atiende'):
+                tg.answer_callback(
+                    callback_qid,
+                    f'Estado inválido ({p.estado})',
+                    alert=True)
+                return jsonify({'ok': True, 'ignored': 'estado_invalido',
+                                'estado': p.estado})
+            if p.tomado_dm_user_id and p.tomado_dm_user_id != user_id:
+                tg.answer_callback(callback_qid, 'No sos el cadete asignado', alert=True)
+                return jsonify({'ok': True, 'ignored': 'cadete_distinto'})
+            p.estado = 'no_atiende'
+            p.no_atiende_en = database.now_ar()
+            p.no_atiende_intentos = (p.no_atiende_intentos or 0) + 1
+            dm_msg_id = p.tomado_dm_msg_id
+            tomo_op = (p.tomo or '').strip()
+            cliente_n = p.cliente_nombre or '—'
+            telefono = p.telefono or '—'
+            direccion = p.direccion or '—'
+            intentos = p.no_atiende_intentos
+
+            # Persistir aviso urgente en la conv del grupo de cadetes
+            # (panel chat lateral de /reparto/planilla).
+            grupo_uid = str(tg.GRUPO_CHAT_ID) if tg.GRUPO_CHAT_ID else None
+            if grupo_uid:
+                grupo_conv = (s.query(database.BotConversacion)
+                              .filter_by(canal='whatsapp_grupo',
+                                         canal_user_id=grupo_uid).first())
+                if not grupo_conv:
+                    grupo_conv = database.BotConversacion(
+                        canal='whatsapp_grupo', canal_user_id=grupo_uid,
+                        nombre_cliente='Grupo de cadetes',
+                        estado_atencion='humano', nodo='reparto')
+                    s.add(grupo_conv); s.flush()
+                texto_aviso = (
+                    f'🚨 URGENTE Pedido #{pedido_id} — cliente NO ATIENDE '
+                    f'(intento {intentos})\n'
+                    f'👤 {cliente_n}  📞 {telefono}\n'
+                    f'📍 {direccion}\n'
+                    f'→ Llamar al cliente y avisar al cadete'
+                )
+                s.add(database.BotMensaje(
+                    conversacion_id=grupo_conv.id, origen='sistema',
+                    texto=texto_aviso))
+                grupo_conv.ultimo_en = database.now_ar()
+            s.commit()
+
+        tg.answer_callback(callback_qid, '⚠ Avisamos al operador', alert=False)
+        # Editar el DM: 3 botones para próximas acciones.
+        if dm_msg_id and user_id:
+            botones = [
+                [{'text': '✅ Entregado al cliente',
+                  'callback_data': f'entregado:{pedido_id}'}],
+                [{'text': '🔁 Reintentar entregar',
+                  'callback_data': f'reintentar:{pedido_id}'}],
+                [{'text': '🚪 Sigo sin que atiendan',
+                  'callback_data': f'no_atiende:{pedido_id}'}],
+            ]
+            tg.editar_botones_dm(user_id, dm_msg_id, botones)
+        log.warning('[no_atiende] pid=%s intentos=%s tomo=%s',
+                    pedido_id, intentos, tomo_op)
+        return jsonify({'ok': True, 'pedido_id': pedido_id, 'estado': 'no_atiende',
+                        'intentos': intentos})
+
+    def _telegram_procesar_reintentar(upd, tg):
+        """Cadete apretó '🔁 Reintentar entregar'. Estado vuelve a 'en_ruta'
+        y los botones del DM vuelven a los 2 originales (Entregado, No hay nadie)."""
+        pedido_id = upd.get('pedido_id')
+        user_id = upd.get('user_id')
+        callback_qid = upd.get('callback_query_id')
+        if not pedido_id or not callback_qid:
+            return jsonify({'ok': False, 'error': 'callback inválido'}), 400
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pedido_id)
+            if not p:
+                tg.answer_callback(callback_qid, 'Pedido no existe', alert=True)
+                return jsonify({'ok': True, 'ignored': 'pedido_no_existe'})
+            if p.estado != 'no_atiende':
+                tg.answer_callback(
+                    callback_qid,
+                    f'Estado inválido ({p.estado})', alert=True)
+                return jsonify({'ok': True, 'ignored': 'estado_invalido',
+                                'estado': p.estado})
+            if p.tomado_dm_user_id and p.tomado_dm_user_id != user_id:
+                tg.answer_callback(callback_qid, 'No sos el cadete asignado', alert=True)
+                return jsonify({'ok': True, 'ignored': 'cadete_distinto'})
+            p.estado = 'en_ruta'
+            dm_msg_id = p.tomado_dm_msg_id
+            s.commit()
+        tg.answer_callback(callback_qid, '✓ Reintentando', alert=False)
+        # Volver a los 2 botones originales (Entregado / No hay nadie).
+        if dm_msg_id and user_id:
+            botones = [
+                [{'text': '✅ Entregado al cliente',
+                  'callback_data': f'entregado:{pedido_id}'}],
+                [{'text': '🚪 No hay nadie',
+                  'callback_data': f'no_atiende:{pedido_id}'}],
+            ]
+            tg.editar_botones_dm(user_id, dm_msg_id, botones)
+        return jsonify({'ok': True, 'pedido_id': pedido_id, 'estado': 'en_ruta'})
+
     def _telegram_armar_detalle_pedido(p):
         """Texto HTML con el detalle del pedido para el DM al cadete.
         Incluye total, lo que tiene que cobrar (si no está pagado), forma de
-        pago, vuelto. Diego 2026-06-19: el cadete usa este DM como única
-        fuente de info en la calle."""
+        pago, vuelto. Diego 2026-06-19/23: el cadete usa este DM como única
+        fuente de info en la calle.
+
+        Mejoras 2026-06-23:
+        - Header con hora de publicación (creado_en) → 'publicado HH:MM'
+        - Badge ⭐ PAMI cuando p.obra_social contiene 'PAMI'
+        - Link MP en línea aparte si forma=link_mp (Telegram lo hace clickeable)
+        - Caja 'COBRAR' más visible con separadores
+        """
         def _arg(n):
             return f'$ {float(n):,.0f}'.replace(',', '.')
 
-        partes = [f'📦 <b>Pedido #{p.id}</b>']
+        # Header con timestamp del pedido
+        header = f'📦 <b>Pedido #{p.id}</b>'
+        if p.creado_en:
+            try:
+                # Hora local; ahora calculamos cuánto tiempo pasó.
+                ahora = database.now_ar()
+                delta = ahora - p.creado_en
+                mins = int(delta.total_seconds() // 60)
+                if 0 <= mins < 60:
+                    when = f'hace {mins} min'
+                elif mins < 60 * 24 and mins >= 0:
+                    when = f'a las {p.creado_en.strftime("%H:%M")}'
+                else:
+                    when = p.creado_en.strftime('%d/%m %H:%M')
+                header += f' · <i>{when}</i>'
+            except Exception:  # noqa: BLE001
+                pass
+        partes = [header]
+
         if p.cliente_nombre:
-            partes.append(f'👤 <b>{p.cliente_nombre}</b>')
+            cliente_n = f'👤 <b>{p.cliente_nombre}</b>'
+            # Badge PAMI destacado al lado del nombre (más fácil de ver que
+            # como 'OS: PAMI' enterrado en Detalle).
+            if p.obra_social and 'pami' in p.obra_social.lower():
+                cliente_n += ' ⭐ <b>PAMI</b>'
+            partes.append(cliente_n)
         if p.telefono:
             partes.append(f'📞 {p.telefono}')
         if p.direccion:
@@ -1106,20 +1273,31 @@ def init_app(app):
             partes.append(f'💵 Total: <b>{_arg(total)}</b>')
         if p.envio_costo is not None:
             envio_txt = 'SIN CARGO' if p.envio_sin_cargo else _arg(p.envio_costo)
-            partes.append(f'🛵 Envío: {envio_txt}')
+            partes.append(f'🛵 Envío al cliente: {envio_txt}')
         if p.forma_pago:
-            partes.append(f'💳 Forma: {p.forma_pago}')
-        # Cobrar / pagado
+            partes.append(f'💳 Forma: <b>{p.forma_pago}</b>')
+
+        # Cobrar / pagado — caja destacada
         if p.pagado:
-            partes.append('✅ <b>Ya está pagado · no cobrar</b>')
+            partes.append('')
+            partes.append('✅ <b>YA ESTÁ PAGADO</b>')
+            partes.append('   <i>no cobrar al cliente</i>')
         elif total is not None:
+            partes.append('')
+            partes.append('🟡 <b>━━━━━━━━━━━━━━━━━</b>')
             partes.append(f'💰 <b>COBRAR: {_arg(total)}</b>')
+            partes.append('🟡 <b>━━━━━━━━━━━━━━━━━</b>')
+
+        # Detalles de pago según forma
         if p.paga_con is not None:
             partes.append(f'   paga con: {_arg(p.paga_con)}')
         if p.vuelto:
             partes.append(f'   vuelto: $ {p.vuelto}')
+        # Link MP clickeable (Telegram lo autoreconoce) si forma es link_mp.
+        if (p.forma_pago or '').lower() in ('link_mp', 'link mp', 'mercado pago', 'mp') and p.link_mp:
+            partes.append(f'   🔗 {p.link_mp}')
         if p.dato_pago_mp:
-            partes.append(f'   nro op: {p.dato_pago_mp}')
+            partes.append(f'   nro op: <code>{p.dato_pago_mp}</code>')
 
         partes.append('')
         partes.append('━━━ <b>DETALLE</b> ━━━')
@@ -1127,7 +1305,8 @@ def init_app(app):
             partes.append(f'💊 {p.producto}')
         if p.observacion:
             partes.append(f'📝 {p.observacion}')
-        if p.obra_social:
+        # OS solo si NO es PAMI (PAMI ya se mostró arriba como badge).
+        if p.obra_social and 'pami' not in p.obra_social.lower():
             partes.append(f'🏥 OS: {p.obra_social}')
         meta = []
         if p.prioridad and p.prioridad != 'normal':
@@ -1592,9 +1771,17 @@ def init_app(app):
         estado = (request.json or {}).get('estado', 'pendiente')
         with database.get_db() as s:
             p = s.get(database.PedidoReparto, pid)
-            if p:
-                p.estado = estado
-                s.commit()
+            if not p:
+                return jsonify({'ok': False, 'error': 'pedido no existe'}), 404
+            # Guard server-side: un pedido esperando stock de droguería NO puede
+            # marcarse entregado. El botón está oculto en la UI, pero el POST
+            # entraba igual (bypass). Diego review 2026-06-24.
+            if p.estado == 'esperando_drog' and estado == 'entregado':
+                return jsonify({'ok': False,
+                                'error': 'El pedido está esperando stock de droguería; '
+                                         'no se puede marcar entregado.'}), 400
+            p.estado = estado
+            s.commit()
         return jsonify({'ok': True})
 
     @app.route('/reparto/pedido/<int:pid>/cobrar', methods=['POST'])
@@ -2097,7 +2284,8 @@ def init_app(app):
         campo = (b.get('campo') or '').strip()
         valor = b.get('valor')
         EDITABLES = {'tomo', 'importe', 'forma_pago', 'vuelto', 'producto',
-                     'observacion', 'pagado', 'requiere_receta',
+                     'observacion', 'pagado', 'prepagado_cadete',
+                     'requiere_receta',
                      'entregado_por', 'cadete_id', 'recibio', 'estado', 'turno',
                      'etiqueta', 'etiqueta_color',
                      'envio_costo', 'envio_sin_cargo'}
@@ -2108,7 +2296,8 @@ def init_app(app):
             if not p:
                 return jsonify({'ok': False, 'error': 'no existe'}), 404
             # Tipos especiales
-            if campo in ('pagado', 'requiere_receta', 'envio_sin_cargo'):
+            if campo in ('pagado', 'prepagado_cadete', 'requiere_receta',
+                         'envio_sin_cargo'):
                 valor = bool(valor)
             elif campo in ('importe', 'envio_costo') and valor is not None and valor != '':
                 try:
@@ -2123,6 +2312,9 @@ def init_app(app):
             else:
                 valor = (str(valor).strip() if valor else None)
             setattr(p, campo, valor)
+            # Timestamp del prepago del cadete (audit trail).
+            if campo == 'prepagado_cadete':
+                p.prepagado_cadete_en = database.now_ar() if valor else None
             # Avisar al cliente cuando el estado avanza a en_ruta o entregado.
             if campo == 'estado':
                 _notificar_cliente_pedido(s, p, valor)

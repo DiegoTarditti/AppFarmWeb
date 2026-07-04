@@ -54,6 +54,98 @@ def _connect(timeout=30):
     )
 
 
+# Cache module-level del resultado de "¿puedo leer schema Gestion?". Lo
+# probamos UNA vez por proceso para no spammear el server con tests cada
+# vez que arranca un sync premium. Se invalida en restart (cuando cambian
+# las credenciales OBSERVER_USER/PASS).
+# None = no testeado todavía, True/False = última respuesta cacheada.
+_ACCESO_GESTION = None
+
+
+def _test_acceso_gestion():
+    """Hace UN query mínimo al schema Gestion para detectar si tenemos
+    permisos. Devuelve True/False. Cachea el resultado.
+
+    Diego 2026-06-24: en la farmacia de Lisandro tenemos credenciales SA
+    con acceso a Gestion.* (precios exactos, condiciones comerciales, etc).
+    En otras farmacias solo hay usuarioDW con acceso a DW.* — las features
+    premium se skipean limpio para no romper el sync general.
+    """
+    global _ACCESO_GESTION
+    if _ACCESO_GESTION is not None:
+        return _ACCESO_GESTION
+    try:
+        conn = _connect(timeout=5)
+        if conn is None:
+            _ACCESO_GESTION = False
+            return False
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT TOP 1 1 FROM Gestion.CondicionesComerciales")
+                cur.fetchone()
+            _ACCESO_GESTION = True
+        finally:
+            conn.close()
+    except Exception as e:  # noqa: BLE001
+        _log.info('Sin acceso al schema Gestion (%s). Las features premium '
+                  'se saltarán: precios_vigentes, condiciones_comerciales.',
+                  type(e).__name__)
+        _ACCESO_GESTION = False
+    return _ACCESO_GESTION
+
+
+def reset_cache_acceso_gestion():
+    """Invalida el cache (útil tras cambiar OBSERVER_USER/PASS en runtime)."""
+    global _ACCESO_GESTION
+    _ACCESO_GESTION = None
+
+
+def diagnostico_acceso():
+    """Diagnóstico para /admin/observer/diagnostico. Devuelve qué schemas
+    son accesibles + nivel de privilegio del usuario actual."""
+    cfg = _config()
+    info = {
+        'host': cfg['host'] if cfg else None,
+        'port': cfg['port'] if cfg else None,
+        'user': cfg['user'] if cfg else None,
+        'database': cfg['database'] if cfg else None,
+        'observer_disponible': observer_disponible(),
+        'schemas': {},
+        'es_sysadmin': False,
+        'server_name': None,
+        'features_premium_disponibles': [],
+    }
+    if not info['observer_disponible']:
+        return info
+    try:
+        conn = _connect(timeout=10)
+        if conn is None:
+            return info
+        with conn.cursor() as cur:
+            cur.execute("SELECT @@SERVERNAME, IS_SRVROLEMEMBER('sysadmin')")
+            r = cur.fetchone()
+            info['server_name'] = r[0]
+            info['es_sysadmin'] = bool(r[1])
+            for schema, tabla_probe in (('DW', 'DW.Productos'),
+                                         ('Gestion', 'Gestion.CondicionesComerciales'),
+                                         ('dbo', 'dbo.FW_Permisos')):
+                try:
+                    cur.execute(f"SELECT TOP 1 1 FROM {tabla_probe}")
+                    cur.fetchone()
+                    info['schemas'][schema] = True
+                except Exception:  # noqa: BLE001
+                    info['schemas'][schema] = False
+        conn.close()
+        # Mapeo schema → features
+        if info['schemas'].get('Gestion'):
+            info['features_premium_disponibles'].extend([
+                'precios_vigentes', 'condiciones_comerciales',
+            ])
+    except Exception as e:  # noqa: BLE001
+        info['error'] = str(e)[:200]
+    return info
+
+
 def observer_disponible():
     if not _config():
         return False
@@ -415,6 +507,206 @@ def sync_productos(session):
     duracion = int((time.time() - t0) * 1000)
     _log_sync(session, 'productos', n, duracion)
     return {'upsert': n, 'duracion_ms': duracion}
+
+
+def sync_precios_vigentes(session):
+    """Sync de Gestion.ProductosPreciosVigentes → obs_productos.precio_lista.
+
+    Esta vista de Observer expone el precio actual vigente por producto
+    (lo mismo que se ve en la UI de Observer). Sincronizando esto tenemos
+    el precio EXACTO, sin promedios históricos ni dumps manuales.
+
+    Requiere usuario con permisos sobre el schema `Gestion`. El `usuarioDW`
+    no lee ese schema → si la query falla por permisos, loggea warning y
+    devuelve sin tocar nada. Diego 2026-06-24: pasar a `sa` para tener el
+    precio actualizado automático.
+    """
+    from sqlalchemy import text
+
+    from database import now_ar
+    t0 = time.time()
+    conn = _connect(timeout=120)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    actualizados = 0
+    sin_match = 0
+    try:
+        ahora = now_ar()
+        # Traer todos los observer_id existentes localmente (universo a updatear)
+        existentes = {r[0] for r in session.execute(
+            text('SELECT observer_id FROM obs_productos')
+        ).fetchall()}
+        # Pull masivo de la vista. Procesamos en batches para no llenar memoria.
+        with conn.cursor(as_dict=True) as cur:
+            try:
+                cur.execute("""
+                    SELECT IdProducto, Precio, FechaVigencia
+                      FROM Gestion.ProductosPreciosVigentes
+                """)
+            except Exception as e:  # noqa: BLE001
+                _log.warning('sync_precios_vigentes: sin acceso a '
+                             'Gestion.ProductosPreciosVigentes (%s). Asegurate '
+                             'de usar OBSERVER_USER con permiso al schema Gestion.', e)
+                return {'upsert': 0, 'duracion_ms': int((time.time() - t0) * 1000),
+                        'error': 'permiso denegado'}
+
+            # UPDATE en batches de 1000 vía SQL crudo (el bulk ORM se queja
+            # con bindparam en la WHERE clause). Suficiente para 123k
+            # productos en ~10s.
+            stmt = text("""
+                UPDATE obs_productos
+                   SET precio_lista = :precio,
+                       precio_lista_fecha_vigencia = :fv,
+                       precio_lista_actualizado_en = :ahora
+                 WHERE observer_id = :oid
+            """)
+            BATCH = 1000
+            buffer = []
+            for r in cur:
+                obs_id = int(r['IdProducto'])
+                if obs_id not in existentes:
+                    sin_match += 1
+                    continue
+                buffer.append({
+                    'oid': obs_id, 'precio': float(r['Precio']),
+                    'fv': r['FechaVigencia'], 'ahora': ahora,
+                })
+                if len(buffer) >= BATCH:
+                    session.execute(stmt, buffer)
+                    actualizados += len(buffer)
+                    buffer.clear()
+            if buffer:
+                session.execute(stmt, buffer)
+                actualizados += len(buffer)
+        session.flush()
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'precios_vigentes', actualizados, duracion)
+    _log.info('sync_precios_vigentes: %d actualizados, %d sin_match local, %d ms',
+              actualizados, sin_match, duracion)
+    return {'upsert': actualizados, 'sin_match': sin_match,
+            'duracion_ms': duracion}
+
+
+def sync_condiciones_comerciales(session):
+    """Sync de Gestion.CondicionesComerciales (descuentos / promos vigentes).
+
+    Diego 2026-06-24: la vista Observer ya filtra las VIGENTES (149 filas
+    típicas vs 7.646 del historial). Hacemos un reemplazo total — borramos
+    todas las locales y volvemos a insertar — porque al ser tan pocas no
+    vale la pena un upsert. Requiere SA (el schema Gestion no es accesible
+    para usuarioDW).
+    """
+    # Skip limpio si no hay acceso al schema Gestion (otras farmacias).
+    if not _test_acceso_gestion():
+        return {'upsert': 0, 'skipped': True,
+                'razon': 'sin acceso al schema Gestion (requiere usuario sa)'}
+    from database import ObsCondicionComercial, now_ar
+    t0 = time.time()
+    conn = _connect(timeout=120)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    insertadas = 0
+    try:
+        ahora = now_ar()
+        with conn.cursor(as_dict=True) as cur:
+            try:
+                # Filtro: dejar afuera las ya vencidas (VigenciaHasta < hoy).
+                # Sí traemos las sin VigenciaHasta (NULL = sin límite) y las
+                # futuras (vigencia_desde > hoy). El filtro de "vigente HOY"
+                # lo aplica el caller en runtime. Diego 2026-06-24.
+                cur.execute("""
+                    SELECT IdCondicionComercial, HIS_IdCondicionComercial,
+                           IdTipoCondicionComercial, TipoPromocion,
+                           Descripcion, Orden, Porcentaje, AplicaSobrePVP,
+                           AplicaEnOfertas, AplicaEnParticularObraSocial,
+                           AplicaEnFraccionado, AplicaConCuotas,
+                           MxN, CantidadPara2daUnidad,
+                           VigenciaDesde, VigenciaHasta,
+                           HoraDesde, HoraHasta,
+                           Lunes, Martes, Miercoles, Jueves,
+                           Viernes, Sabado, Domingo,
+                           ConjuntoProductos, ConjuntoLaboratorios,
+                           ConjuntoRubros, ConjuntoSubrubros,
+                           ConjuntoFormasDePago, ConjuntoTarjetas, IdTipoTarjeta,
+                           ConjuntoConvenios, ConjuntoPlanes,
+                           ConjuntoTiposProducto, ConjuntoTiposVenta,
+                           ConjuntoGrupos, ConjuntoClientes, ConjuntoFarmacias,
+                           Formula
+                      FROM Gestion.CondicionesComerciales
+                     WHERE VigenciaHasta IS NULL
+                        OR VigenciaHasta >= CAST(GETDATE() AS DATE)
+                """)
+            except Exception as e:  # noqa: BLE001
+                _log.warning('sync_condiciones_comerciales: sin acceso a '
+                             'Gestion.CondicionesComerciales (%s). Requiere '
+                             'OBSERVER_USER con permiso al schema Gestion (ej. sa).', e)
+                return {'upsert': 0,
+                        'duracion_ms': int((time.time() - t0) * 1000),
+                        'error': 'permiso denegado'}
+            filas = cur.fetchall()
+
+        # Reemplazo total: 149 filas no vale la pena el overhead de upsert.
+        session.query(ObsCondicionComercial).delete()
+        session.flush()
+
+        def _str(v):
+            return (v or '').strip() or None if isinstance(v, str) else None
+
+        for r in filas:
+            cc = ObsCondicionComercial(
+                observer_id              = r['IdCondicionComercial'],
+                his_id                   = r['HIS_IdCondicionComercial'],
+                tipo                     = _str(r['IdTipoCondicionComercial']),
+                tipo_promocion           = _str(r['TipoPromocion']),
+                descripcion              = _str(r['Descripcion']),
+                orden                    = r['Orden'],
+                porcentaje               = r['Porcentaje'],
+                aplica_sobre_pvp         = bool(r['AplicaSobrePVP']),
+                aplica_en_ofertas        = _str(r['AplicaEnOfertas']),
+                aplica_en_particular_os  = _str(r['AplicaEnParticularObraSocial']),
+                aplica_en_fraccionado    = _str(r['AplicaEnFraccionado']),
+                aplica_con_cuotas        = _str(r['AplicaConCuotas']),
+                mxn                      = _str(r['MxN']),
+                cantidad_para_2da        = r['CantidadPara2daUnidad'],
+                vigencia_desde           = r['VigenciaDesde'],
+                vigencia_hasta           = r['VigenciaHasta'],
+                hora_desde               = _str(r['HoraDesde']),
+                hora_hasta               = _str(r['HoraHasta']),
+                lunes                    = bool(r['Lunes']),
+                martes                   = bool(r['Martes']),
+                miercoles                = bool(r['Miercoles']),
+                jueves                   = bool(r['Jueves']),
+                viernes                  = bool(r['Viernes']),
+                sabado                   = bool(r['Sabado']),
+                domingo                  = bool(r['Domingo']),
+                conj_productos           = r['ConjuntoProductos'],
+                conj_laboratorios        = r['ConjuntoLaboratorios'],
+                conj_rubros              = r['ConjuntoRubros'],
+                conj_subrubros           = r['ConjuntoSubrubros'],
+                conj_formas_pago         = r['ConjuntoFormasDePago'],
+                conj_tarjetas            = r['ConjuntoTarjetas'],
+                id_tipo_tarjeta          = _str(r['IdTipoTarjeta']),
+                conj_convenios           = r['ConjuntoConvenios'],
+                conj_planes              = r['ConjuntoPlanes'],
+                conj_tipos_producto      = r['ConjuntoTiposProducto'],
+                conj_tipos_venta         = r['ConjuntoTiposVenta'],
+                conj_grupos              = r['ConjuntoGrupos'],
+                conj_clientes            = r['ConjuntoClientes'],
+                conj_farmacias           = r['ConjuntoFarmacias'],
+                formula                  = r['Formula'],
+                sync_en                  = ahora,
+            )
+            session.add(cc)
+            insertadas += 1
+        session.flush()
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'condiciones_comerciales', insertadas, duracion)
+    _log.info('sync_condiciones_comerciales: %d filas en %d ms', insertadas, duracion)
+    return {'upsert': insertadas, 'duracion_ms': duracion}
 
 
 def sync_fraccionado_master(session):

@@ -1,0 +1,110 @@
+{% extends "base_contab.html" %}
+{% set contab_active = 'formas_pago' %}
+
+{% block title %}Formas de pago · Contabilidad{% endblock %}
+
+{% block contab %}
+  <header class="page-header" style="margin-bottom:14px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+    <div>
+      <h1 class="page-header__title">Formas de pago</h1>
+      <p class="page-header__subtitle">Cuentas de banco, MercadoPago y efectivo. Desde acá se importarán movimientos para conciliar.</p>
+    </div>
+    <div style="margin-left:auto;">
+      <button type="button" onclick="abrirModal()" class="btn btn-primary btn-sm">+ Nueva forma de pago</button>
+    </div>
+  </header>
+
+  <div class="card" style="padding:0; overflow:hidden;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:9px 14px;">Nombre</th>
+          <th style="text-align:left; padding:9px 14px;">Tipo</th>
+          <th style="text-align:left; padding:9px 14px;">Nro. de cuenta</th>
+          <th style="text-align:center; padding:9px 14px;">Activo</th>
+          <th style="width:180px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in cuentas %}
+        <tr style="border-top:1px solid var(--ds-line);">
+          <td style="padding:9px 14px; font-weight:600; font-size:13px;">{{ c.nombre }}</td>
+          <td style="padding:9px 14px;">
+            <span class="badge badge-info badge-pill">{{ tipos_lbl.get(c.tipo, c.tipo) }}</span>
+          </td>
+          <td style="padding:9px 14px; color:var(--ds-text-soft); font-size:12px; font-variant-numeric:tabular-nums;">{{ c.nro_cuenta or '—' }}</td>
+          <td style="padding:9px 14px; text-align:center;">
+            {% if c.activo %}<span style="color:#5FE6BC;">● Sí</span>{% else %}<span style="color:var(--ds-text-mute);">○ No</span>{% endif %}
+          </td>
+          <td style="padding:9px 14px; text-align:right; white-space:nowrap;">
+            <a href="{{ url_for('contabilidad_forma_pago_movimientos', cuenta_id=c.id) }}" class="btn btn-secondary btn-sm" title="Ver movimientos">Movimientos</a>
+            <button type="button" class="btn btn-secondary btn-sm"
+                    onclick='editar({{ {"id":c.id,"nombre":c.nombre,"tipo":c.tipo,"nro_cuenta":c.nro_cuenta,"activo":c.activo}|tojson }})'>Editar</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" style="padding:28px; text-align:center; color:var(--ds-text-mute);">
+          No hay formas de pago todavía. Creá tu primera cuenta (banco / MercadoPago / efectivo).
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── Modal alta / edición ─────────────────────────────────────────────── #}
+  <div id="fp-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:80; align-items:center; justify-content:center; padding:16px;"
+       onclick="if(event.target===this) cerrarModal()">
+    <div style="background:var(--ds-surface); border:1px solid var(--ds-line-2); border-radius:var(--ds-r-lg); width:100%; max-width:440px; padding:22px; box-shadow:var(--ds-shadow-lg);">
+      <h2 id="fp-title" style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:17px; color:var(--ds-text); margin:0 0 16px;">Nueva forma de pago</h2>
+      <form method="POST" action="{{ url_for('contabilidad_forma_pago_guardar') }}" style="display:flex; flex-direction:column; gap:12px;">
+        <input type="hidden" name="id" id="f-id">
+        <label style="font-size:12px; color:var(--ds-text-soft);">Nombre *
+          <input type="text" name="nombre" id="f-nombre" required placeholder="Banco Galicia CC / MercadoPago"
+                 style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
+        </label>
+        <label style="font-size:12px; color:var(--ds-text-soft);">Tipo
+          <select name="tipo" id="f-tipo"
+                  style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
+            {% for val, lbl in tipos %}<option value="{{ val }}">{{ lbl }}</option>{% endfor %}
+          </select>
+        </label>
+        <label style="font-size:12px; color:var(--ds-text-soft);">Nro. de cuenta / CBU / alias
+          <input type="text" name="nro_cuenta" id="f-nro"
+                 style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
+        </label>
+        <label style="font-size:13px; color:var(--ds-text-soft); display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" name="activo" id="f-activo" checked style="width:auto;"> Activo
+        </label>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:6px;">
+          <button type="button" onclick="cerrarModal()" class="btn btn-secondary btn-sm">Cancelar</button>
+          <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const modal = document.getElementById('fp-modal');
+    function abrirModal() {
+      document.getElementById('fp-title').textContent = 'Nueva forma de pago';
+      document.getElementById('f-id').value = '';
+      document.getElementById('f-nombre').value = '';
+      document.getElementById('f-tipo').value = 'banco';
+      document.getElementById('f-nro').value = '';
+      document.getElementById('f-activo').checked = true;
+      modal.style.display = 'flex';
+      document.getElementById('f-nombre').focus();
+    }
+    function editar(c) {
+      document.getElementById('fp-title').textContent = 'Editar forma de pago';
+      document.getElementById('f-id').value = c.id;
+      document.getElementById('f-nombre').value = c.nombre || '';
+      document.getElementById('f-tipo').value = c.tipo || 'banco';
+      document.getElementById('f-nro').value = c.nro_cuenta || '';
+      document.getElementById('f-activo').checked = !!c.activo;
+      modal.style.display = 'flex';
+    }
+    function cerrarModal() { modal.style.display = 'none'; }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarModal(); });
+  </script>
+{% endblock %}

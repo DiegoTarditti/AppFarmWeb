@@ -71,6 +71,16 @@
   .planilla-table tr.fila-entregado { opacity:.5; }
   .planilla-table tr.fila-receta td:first-child { border-left:2px solid var(--danger); }
   .planilla-table tr.fila-anulado { opacity:.3; text-decoration:line-through; }
+  /* Entregado pero cadete todavía debe rendir efectivo / receta: fila ACTIVA
+     con borde ámbar a la izquierda como señal visual. Diego 2026-06-24. */
+  .planilla-table tr.fila-pend-rendir td:first-child { border-left:2px solid #F8B95E; }
+  .planilla-table tr.fila-pend-rendir { background:rgba(248,185,94,0.05); }
+  .badge-pend-rendir {
+    font-size:8px; padding:1px 5px; border-radius:6px; margin-left:4px;
+    background:rgba(248,185,94,0.18); color:#F8B95E;
+    border:1px solid rgba(248,185,94,0.45); font-weight:600;
+    white-space:nowrap;
+  }
 
   /* Animación blink para alertas de cadetes sin responder (banner + modal). */
   @keyframes blinker { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
@@ -92,6 +102,14 @@
   .badge-en_ruta   { background:#185FA5; color:#fff; }
   .badge-entregado { background:var(--accent); color:var(--accent-ink); }
   .badge-anulado   { background:#5a2a2a; color:#F09595; }
+  .badge-no_atiende{ background:#C03434; color:#fff; animation:pulse-warn 1.6s infinite; }
+  @keyframes pulse-warn {
+    0%,100% { box-shadow:0 0 0 0 rgba(192,52,52,0.55); }
+    50%     { box-shadow:0 0 0 5px rgba(192,52,52,0); }
+  }
+  /* Fila completa resaltada cuando hay no_atiende — gana atención sin tener que mirar el badge */
+  tr.fila-no_atiende { background:rgba(192,52,52,0.10) !important; }
+  tr.fila-no_atiende td { border-top:1px solid rgba(192,52,52,0.45); border-bottom:1px solid rgba(192,52,52,0.45); }
 
   /* ── Barra de progreso de estado (P-L-U-T-R-E) ────────────────────────── */
   .estado-bar { display:inline-flex; flex-direction:column; align-items:flex-start;
@@ -273,9 +291,20 @@
   </thead>
   <tbody>
     {% for p in pedidos %}
+    {# Pendiente de rendir: el cadete entregó pero todavía tiene que volver
+       con efectivo cobrado, receta a recoger, etc. La fila sigue activa
+       (sin opacar) hasta que se resuelva. Diego 2026-06-24.
+       Si prepagado_cadete=True, el cadete ya dejó la plata antes de salir
+       → el efectivo NO es pendiente (no necesita volver por eso). #}
+    {% set _pend_rendir = (p.estado == 'entregado') and (
+        (p.forma_pago == 'efectivo' and not p.pagado and not p.prepagado_cadete)
+        or (p.receta_estado == 'pendiente')
+    ) %}
     {% set row_class = '' %}
     {% if p.estado == 'anulado' %}{% set row_class = 'fila-anulado' %}
-    {% elif p.estado == 'entregado' %}{% set row_class = 'fila-entregado' %}
+    {% elif p.estado == 'no_atiende' %}{% set row_class = 'fila-no_atiende' %}
+    {% elif p.estado == 'entregado' and not _pend_rendir %}{% set row_class = 'fila-entregado' %}
+    {% elif p.estado == 'entregado' and _pend_rendir %}{% set row_class = 'fila-pend-rendir' %}
     {% elif p.requiere_receta %}{% set row_class = 'fila-receta' %}
     {% endif %}
     <tr class="{{ row_class }}" data-pid="{{ p.id }}">
@@ -358,7 +387,8 @@
       {# Con cuánto paga = Importe (total) + Vuelto. Derivado de lo ya calculado. #}
       {% set _vstr = (p.vuelto or '').strip() %}
       {% set _vclean = _vstr.replace('.','').replace(',','').replace('-','').replace(' ','') %}
-      {% set _vnum = (_vstr|float) if (_vstr and _vclean.isdigit()) else 0 %}
+      {# AR: sacar puntos de miles, coma→decimal. float("3.000") daría 3.0 (mal). #}
+      {% set _vnum = (_vstr.replace('.','').replace(',','.')|float) if (_vstr and _vclean.isdigit()) else 0 %}
       {% set _imp = (p.importe|float) if p.importe is not none else 0 %}
       <td>
         <span>{{ '$ {:,.0f}'.format(_imp + _vnum) if p.importe is not none else '—' }}</span>
@@ -369,7 +399,7 @@
         {% set _vn = _v.replace('.','').replace(',','').replace('-','').replace(' ','') %}
         <span class="celda-valor" style="color:var(--warn); font-weight:600;">
           {% if _v and _vn.isdigit() %}
-            $ {{ '{:,.0f}'.format(_v|float)|replace(',', '.') }}
+            $ {{ '{:,.0f}'.format(_v.replace('.','').replace(',','.')|float)|replace(',', '.') }}
           {% else %}
             {{ p.vuelto or '—' }}
           {% endif %}
@@ -411,6 +441,14 @@
           <span class="nombre">
             {% if p.estado == 'esperando_drog' and _drog_abrev %}{{ _drog_abrev|lower }}{% else %}{{ _estado_norm.replace('_', ' ') }}{% endif %}
           </span>
+          {% if _pend_rendir %}
+            {# Cadete entregó pero todavía debe volver a rendir (efectivo
+               cobrado o receta a recoger). Diego 2026-06-24. #}
+            {% set _motivos = [] %}
+            {% if p.forma_pago == 'efectivo' and not p.pagado %}{% set _ = _motivos.append('efectivo') %}{% endif %}
+            {% if p.receta_estado == 'pendiente' %}{% set _ = _motivos.append('receta') %}{% endif %}
+            <span class="badge-pend-rendir" title="Pendiente de rendir: {{ _motivos|join(' + ') }}">⏳ {{ _motivos|join('+') }}</span>
+          {% endif %}
           <span class="pasos">
             {# esperando_drog va ANTES del flujo: es un estado pre-publicación
                (el pedido espera que llegue de la droguería para poder salir). #}
@@ -443,8 +481,18 @@
         <span class="celda-valor">{{ p.recibio or '—' }}</span>
       </td>
       <td style="text-align:center;">
-        <span style="cursor:pointer; font-size:14px;" onclick="toggleBooleano({{ p.id }}, 'pagado', {{ 'true' if p.pagado else 'false' }})">
+        <span style="cursor:pointer; font-size:14px;"
+              onclick="toggleBooleano({{ p.id }}, 'pagado', {{ 'true' if p.pagado else 'false' }})"
+              title="Pagado por el cliente (cadete cobró al recibir)">
           {% if p.pagado %}💲{% else %}<span style="color:var(--muted2);">—</span>{% endif %}
+        </span>
+        {# Prepago del cadete: dejó la plata antes de salir y no necesita
+           volver a rendir. Distinto de "pagado por el cliente" para arqueo.
+           Diego 2026-06-24. #}
+        <span style="cursor:pointer; font-size:14px; margin-left:4px;"
+              onclick="toggleBooleano({{ p.id }}, 'prepagado_cadete', {{ 'true' if p.prepagado_cadete else 'false' }})"
+              title="Prepagó el cadete (dejó la plata antes de salir)">
+          {% if p.prepagado_cadete %}<span style="color:#a78bfa;">💵</span>{% else %}<span style="color:var(--muted2);">·</span>{% endif %}
         </span>
         {# Etiqueta libre con color (marcado manual): texto ≤10 + color. #}
         <div style="display:flex; align-items:center; gap:2px; justify-content:center; margin-top:3px;">
@@ -459,9 +507,29 @@
       </td>
       <td style="text-align:center;">
         {% if p.tomado_por_wsap %}
-          <span title="Tomado por {{ p.tomado_por_wsap }}{% if p.tomado_en %} a las {{ p.tomado_en.strftime('%H:%M') }}{% endif %}" style="font-size:10px; color:var(--accent);">
-            ✓ {{ p.tomado_por_wsap }}{% if p.tomado_en %} · {{ p.tomado_en.strftime('%H:%M') }}{% endif %}
-          </span>
+          {# Si todavía no retiró de la farmacia (estado='tomado'), mostramos
+             cuenta regresiva al SLA de retiro. A los `sla.retiro_max` min sin
+             retirar, el cron desasigna y el pedido vuelve a publicarse.
+             Diego 2026-06-24. #}
+          {% if p.estado == 'tomado' and p.tomado_en %}
+            {% set _tmin = ((ahora - p.tomado_en).total_seconds() / 60) | int %}
+            {% set _rmax = sla.retiro_max %}
+            {% set _rwarn = (_rmax * 0.6) | int %}
+            {% set _rcol = '#1D9E75' if _tmin < _rwarn else ('#EF9F27' if _tmin < _rmax else '#EF4444') %}
+            {% set _ricon = '🟢' if _tmin < _rwarn else ('🟡' if _tmin < _rmax else '🔴') %}
+            {% if _tmin < 60 %}{% set _rt = _tmin ~ 'm' %}{% else %}{% set _rt = ('%.1f' % (_tmin/60)) ~ 'h' %}{% endif %}
+            <span title="Tomado por {{ p.tomado_por_wsap }} a las {{ p.tomado_en.strftime('%H:%M') }} — {{ _tmin }} min sin retirar (máx {{ _rmax }})"
+                  style="display:block; font-size:12px; color:{{ _rcol }}; font-weight:700;">
+              {{ _ricon }} {{ _rt }}
+            </span>
+            <span style="display:block; font-size:9px; color:var(--muted2); margin-top:1px;">
+              ✓ {{ p.tomado_por_wsap }} · {{ p.tomado_en.strftime('%H:%M') }}
+            </span>
+          {% else %}
+            <span title="Tomado por {{ p.tomado_por_wsap }}{% if p.tomado_en %} a las {{ p.tomado_en.strftime('%H:%M') }}{% endif %}" style="font-size:10px; color:var(--accent);">
+              ✓ {{ p.tomado_por_wsap }}{% if p.tomado_en %} · {{ p.tomado_en.strftime('%H:%M') }}{% endif %}
+            </span>
+          {% endif %}
         {% elif p.publicado_en %}
           {# Timer SLA: umbrales configurables en /config/envio (Diego 2026-06-21).
              - verde:    0  → reaviso
@@ -492,7 +560,10 @@
         {% elif p.estado == 'esperando_drog' %}
           {# No publicar mientras esperamos llegada de droguería: el cadete no
              tiene producto para retirar. Se habilita cuando el operador
-             cambia el estado a 'pendiente' (= producto en farmacia). #}
+             cambia el estado a 'pendiente' (= producto en farmacia).
+             Restaurado de e00e383 — había sido borrado por un merge mal
+             resuelto que también trajo de vuelta "WhatsApp" en lugar de
+             "Telegram". Diego 2026-06-24. #}
           <button disabled class="hbtn" style="font-size:10px; padding:2px 6px; opacity:.45; cursor:not-allowed;" title="Esperando llegada de droguería — no se puede publicar todavía">📤 Esperando droguería</button>
         {% else %}
           <button onclick="publicarPedido({{ p.id }}, this)" class="hbtn" style="font-size:10px; padding:2px 6px;" title="Publicar en grupo de cadetes (Telegram)">📤 Publicar</button>

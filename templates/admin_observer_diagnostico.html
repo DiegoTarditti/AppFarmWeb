@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% block title %}Diagnóstico ObServer{% endblock %}
+{% block content %}
+<style>
+  .diag-card { background:var(--surface); border:1px solid var(--border);
+               border-radius:12px; padding:18px; margin:12px 0; }
+  .diag-row { display:flex; justify-content:space-between; align-items:center;
+              padding:8px 0; border-bottom:1px solid var(--row-bd); }
+  .diag-row:last-child { border-bottom:none; }
+  .diag-row .key { color:var(--muted); font-size:13px; }
+  .diag-row .val { color:var(--txt); font-family:monospace; }
+  .badge-ok   { background:var(--accent); color:var(--accent-ink); padding:3px 10px;
+                border-radius:999px; font-size:11px; font-weight:700; }
+  .badge-fail { background:#5a2a2a; color:#F09595; padding:3px 10px;
+                border-radius:999px; font-size:11px; font-weight:700; }
+  .badge-warn { background:#A56A00; color:#FFEFB5; padding:3px 10px;
+                border-radius:999px; font-size:11px; font-weight:700; }
+  .feat-list { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  .feat-list .badge-ok { font-size:10px; }
+</style>
+
+<div style="max-width:780px; margin:0 auto; padding:20px;">
+  <h1 style="font-size:22px; margin-bottom:4px;">🩺 Diagnóstico ObServer</h1>
+  <p style="color:var(--muted); margin-bottom:18px; font-size:13px;">
+    Estado de la conexión + qué schemas puede leer este usuario. Útil al instalar
+    una farmacia nueva — para saber si funcionan las features premium o no.
+  </p>
+
+  <!-- Conexión -->
+  <div class="diag-card">
+    <h2 style="font-size:14px; color:var(--title); margin-bottom:12px;">Conexión</h2>
+    <div class="diag-row">
+      <span class="key">ObServer disponible</span>
+      <span class="{{ 'badge-ok' if info.observer_disponible else 'badge-fail' }}">
+        {{ '✓ Conectado' if info.observer_disponible else '✗ No responde' }}
+      </span>
+    </div>
+    <div class="diag-row"><span class="key">Host</span><span class="val">{{ info.host or '—' }}:{{ info.port or '' }}</span></div>
+    <div class="diag-row"><span class="key">Database</span><span class="val">{{ info.database or '—' }}</span></div>
+    <div class="diag-row"><span class="key">Usuario</span><span class="val">{{ info.user or '—' }}</span></div>
+    <div class="diag-row"><span class="key">Server name (interno)</span><span class="val">{{ info.server_name or '—' }}</span></div>
+    <div class="diag-row">
+      <span class="key">sysadmin</span>
+      <span class="{{ 'badge-ok' if info.es_sysadmin else 'badge-warn' }}">
+        {{ '✓ Sí (acceso completo)' if info.es_sysadmin else 'No (limitado)' }}
+      </span>
+    </div>
+  </div>
+
+  <!-- Schemas accesibles -->
+  {% if info.observer_disponible %}
+  <div class="diag-card">
+    <h2 style="font-size:14px; color:var(--title); margin-bottom:12px;">Schemas accesibles</h2>
+    {% set _schema_desc = {
+      'DW':       'Vistas oficiales (catálogo + ventas + clientes). Base mínima.',
+      'Gestion':  'Tablas operativas (precios exactos, condiciones, etc). PREMIUM.',
+      'dbo':      'Tablas crudas (historiales, kardex). PREMIUM, raro de usar.',
+    } %}
+    {% for schema in ['DW', 'Gestion', 'dbo'] %}
+    {% set ok = info.schemas.get(schema, False) %}
+    <div class="diag-row">
+      <div>
+        <span class="val">{{ schema }}</span>
+        <div class="key" style="font-size:11px; margin-top:2px;">{{ _schema_desc[schema] }}</div>
+      </div>
+      <span class="{{ 'badge-ok' if ok else 'badge-fail' }}">
+        {{ '✓ Acceso' if ok else '✗ Sin permiso' }}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Features premium -->
+  <div class="diag-card">
+    <h2 style="font-size:14px; color:var(--title); margin-bottom:12px;">Features premium disponibles</h2>
+    <p class="key" style="font-size:12px; margin-bottom:10px;">
+      Estas features requieren acceso a schemas privilegiados.
+      Si no están disponibles, el resto de la app sigue funcionando con datos
+      degradados (precio promedio histórico en lugar de precio exacto, etc).
+    </p>
+    {% if info.features_premium_disponibles %}
+      <div class="feat-list">
+        {% for feat in info.features_premium_disponibles %}
+        <span class="badge-ok">{{ feat }}</span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <span class="badge-warn">⚠ Ninguna — esta farmacia funciona con DW.* solamente</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if info.error %}
+  <div class="diag-card" style="border-color:#5a2a2a;">
+    <h2 style="font-size:14px; color:#F09595; margin-bottom:8px;">Error</h2>
+    <pre style="font-size:11px; color:var(--txt); white-space:pre-wrap;">{{ info.error }}</pre>
+  </div>
+  {% endif %}
+
+  <div style="margin-top:18px; text-align:center;">
+    <a href="{{ url_for('observer_sync_panel') }}" class="hbtn">← Volver a /admin/observer-sync</a>
+  </div>
+</div>
+{% endblock %}

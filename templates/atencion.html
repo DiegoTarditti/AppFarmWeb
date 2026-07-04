@@ -344,8 +344,10 @@
             </div>
           </div>
           <div style="display:flex; gap:6px; margin-top:6px;">
-            <button onclick="enviarPedido()" class="hbtn" style="flex:1; border-radius:9px; padding:7px; font-size:12px;">Enviar al cliente</button>
-            <button onclick="confirmarPedidoCaja()" class="hbtn hbtn-ok" style="flex:1; border-radius:9px; padding:7px; font-size:12px;">Confirmar a caja ▸</button>
+            <button onclick="enviarPedido()" class="hbtn hbtn-ok" style="flex:1; border-radius:9px; padding:7px; font-size:12px;">📤 Enviar al cliente</button>
+          </div>
+          <div class="muted2" style="font-size:10px; margin-top:4px; text-align:center;">
+            al enviar, quedan copiados arriba del campo 'Producto' del cliente. Tildá los que confirme.
           </div>
         </div>
 
@@ -459,7 +461,9 @@
               Envío $
               <span id="pgEnvioPill" style="display:none; font-size:8px; padding:1px 6px; border-radius:999px;"></span>
             </label>
-            <input id="pgEnvio" type="number" min="0" oninput="pagoRecalcVuelto()" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+            <input id="pgEnvio" type="number" min="0" oninput="pagoRecalcVuelto(); proponerMonto();" placeholder="$" class="input" style="width:100%; border-radius:8px; padding:6px 9px; font-size:12px;">
+            <button onclick="enviarEnvioAlChat()" class="hbtn" title="Pegar costo de envío en el chat del cliente"
+                    style="margin-top:4px; width:100%; border-radius:6px; padding:4px 6px; font-size:10px; font-weight:600;">📤 Enviar al chat</button>
           </div>
           <div style="flex:0 0 90px;">
             <label class="muted2" style="font-size:10px; display:block;" title="Override manual de cuadras">o Cuadras</label>
@@ -486,6 +490,17 @@
                 title="Cómo va a salir el domicilio en el ticket de envío"></span>
         </div>
         <div style="display:flex; flex-direction:column; gap:6px;">
+          {# Productos sugeridos: los que el operador mandó al cliente desde 💊
+             Cliente confirma cuál(es) compra → operador tilda → al cerrar TX,
+             solo los tildados pasan al campo 'producto' del PedidoReparto.
+             Diego 2026-06-24. #}
+          <div id="sugeridosWrap" style="display:none;">
+            <label class="muted2" style="font-size:10px; display:flex; justify-content:space-between; align-items:center;">
+              <span>📋 Sugeridos al cliente · tildá lo que confirma</span>
+              <span id="sugeridosBadge" style="font-size:9px; padding:1px 6px; border-radius:999px; background:rgba(167,139,250,0.18); color:#a78bfa; font-weight:700;">0/0</span>
+            </label>
+            <div id="sugeridosList" style="display:flex; flex-direction:column; gap:2px; background:rgba(167,139,250,0.08); border:1px solid rgba(167,139,250,0.25); border-radius:8px; padding:4px 6px; margin-top:2px; max-height:140px; overflow-y:auto;"></div>
+          </div>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
             <div style="flex:1; min-width:180px;">
               <label class="muted2" style="font-size:10px; display:block;">Producto</label>
@@ -942,15 +957,19 @@ function vaciarFormCierre(){
   ['pgMonto','pgPagaCon','pgEnvio','pgForma','pgLink','pgDato','pgUlt4','pgTarjNombre','pgMarca','pgCupon',
    'dProducto','dNota','dObservacion','dStock','dDrogueria','dObraSocial','dReceta','dCanal']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  // Defaults razonables para los selects de destino/prioridad (no vacío) —
-  // sino el operador tiene que volver a elegir Reparto + Normal cada vez.
-  // Diego 2026-06-22.
-  const setDef = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  // Defaults predeterminados al reiniciar TX (Diego 2026-06-24): sale por
+  // 'reparto', stock 'ok', prioridad 'normal'. El operador puede cambiar
+  // cualquiera antes de cerrar; estos son los más comunes.
+  const setDef = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   setDef('dSalida', 'reparto');
+  setDef('dStock', 'ok');
   setDef('dPrioridad', 'normal');
   const cbEsc = document.getElementById('pgEnvioSinCargo');
   if (cbEsc){ cbEsc.checked = false; pgEnvioSinCargoChange(); }
   pedidoEditando = null;
+  // La lista de sugeridos también se limpia al cerrar la TX (el pedido ya
+  // capturó lo tildado en el campo 'producto').
+  vaciarSugeridos();
   const btn = document.getElementById('btnCerrarTx');
   if (btn) btn.textContent = '💳 Cerrar transacción';
   try { if (typeof dStockChange === 'function') dStockChange(); } catch(e){}
@@ -963,6 +982,7 @@ async function abrirConv(id) {
   document.getElementById('panelTransfer').style.display = 'none';
   document.getElementById('searchPop').style.display = 'none';
   vaciarPedido();
+  cargarSugeridos();   // restaura la lista persistente de esta conv
   document.getElementById('chat').innerHTML = '<div class="muted" style="text-align:center; margin-top:40px; font-size:13px;">Cargando…</div>';
   await refrescarChat(true);
   cargarFicha();
@@ -1783,24 +1803,60 @@ function rowProducto(p) {
     ? '<span class="rx" style="font-size:8px; padding:2px 6px; border-radius:8px; background:#a78bfa22; color:#a78bfa; border:1px solid #a78bfa55;" title="Se vende fraccionado">FR</span>'
     : '';
   const sub = [esc(p.droga), esc(p.presentacion)].filter(Boolean).join(' · ');
+  // Badge de descuento (condiciones comerciales Observer). Solo se muestra si
+  // el producto está enumerado en conj_productos de alguna condición vigente.
+  // Las columnas extra (Particular/OS, Convenios, Formas de pago, Vigencia,
+  // Aplica sobre PVP) se concatenan al tooltip solo si tienen datos.
+  // Diego 2026-06-24.
+  let descBadge = '';
+  if (p.descuento_pct) {
+    const extras = [];
+    if (p.descuento_aplica_a) extras.push(esc(p.descuento_aplica_a));
+    if (p.descuento_convenios) extras.push('Conv: ' + esc(p.descuento_convenios));
+    if (p.descuento_formas_pago) extras.push('F. pago: ' + esc(p.descuento_formas_pago));
+    if (p.descuento_vig_desde || p.descuento_vig_hasta) {
+      const desde = p.descuento_vig_desde ? esc(p.descuento_vig_desde) : '…';
+      const hasta = p.descuento_vig_hasta ? esc(p.descuento_vig_hasta) : '…';
+      extras.push(`Vig: ${desde} → ${hasta}`);
+    }
+    if (p.descuento_sobre_pvp) extras.push('Sobre PVP');
+    const tipTxt = [p.descuento_desc || 'Descuento vigente'].concat(extras).filter(Boolean).join(' · ');
+    descBadge = `<span class="rx" title="${tipTxt}" style="font-size:8px; padding:2px 6px; border-radius:8px; background:#a78bfa22; color:#c4b5fd; border:1px solid #a78bfa55; font-weight:700;">-${(+p.descuento_pct).toFixed(0)}%</span>`;
+  }
+  // Si hay descuento vigente, el carrito usa el precio FINAL (ya con dto).
+  // El precio de lista queda como referencia visual en el dropdown.
+  // Diego 2026-06-24.
+  const precioCarrito = (p.descuento_pct && p.precio_final != null)
+    ? p.precio_final : p.precio;
   const arg = encodeURIComponent(JSON.stringify({
-    n: p.nombre, pr: p.precio, s: sub,
+    n: p.nombre, pr: precioCarrito, s: sub,
     oid: p.observer_id, ce: p.cantidad_envase || 0, fr: !!p.fraccionable
   }));
   // Si es fraccionable, input numérico al lado del + para vender N unidades
   // sueltas (precio = precio_envase / cantidad_envase * N). Default 1 u.
+  // oninput dispara recalcFracPrecio() que muestra el subtotal en vivo
+  // arriba del input (sin agregar al carrito).
   const fracInput = (!sin && p.fraccionable && p.cantidad_envase)
     ? `<input id="qty_${p.observer_id}" type="number" min="1" step="1" value="1"
-        onclick="event.stopPropagation()" title="Unidades sueltas (envase = ${p.cantidad_envase})"
+        onclick="event.stopPropagation()"
+        oninput="recalcFracPrecio(${p.observer_id}, ${precioCarrito || 0}, ${p.cantidad_envase})"
+        title="Unidades sueltas (envase = ${p.cantidad_envase})"
         style="width:42px; padding:3px 5px; font-size:11px; background:rgba(0,0,0,0.25); color:var(--txt); border:1px solid rgba(255,255,255,0.18); border-radius:5px; text-align:center; margin-top:4px;">`
     : '';
   const plus = sin ? ''
     : `<div class="card-ic" onclick="agregarProductoEnc('${arg}')" title="Agregar al pedido" style="width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; margin-top:4px; cursor:pointer;"><i class="ti ti-plus" style="font-size:13px"></i></div>`;
+  // Subtotal fraccionado en vivo. Inicialmente muestra el precio de 1 unidad
+  // (= precio_envase / cantidad_envase). Se actualiza al cambiar el input.
+  const fracSubInicial = (!sin && p.fraccionable && p.cantidad_envase && precioCarrito)
+    ? fmtPrecio(precioCarrito / p.cantidad_envase) : '';
+  const fracSubDisplay = (!sin && p.fraccionable && p.cantidad_envase)
+    ? `<div id="fracsub_${p.observer_id}" style="font-size:10px; color:#a78bfa; font-weight:600; margin-top:1px;">1u · ${fracSubInicial}</div>`
+    : '';
   return `
     <div class="sp-row" style="display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:0.5px solid; ${sin ? 'opacity:0.5;' : ''}">
       <div style="flex:1; min-width:0;">
         <div style="display:flex; align-items:center; gap:6px;">
-          <span class="title" style="font-size:13px; font-weight:600;">${esc(p.nombre)}</span> ${rx} ${frac}
+          <span class="title" style="font-size:13px; font-weight:600;">${esc(p.nombre)}</span> ${rx} ${frac} ${descBadge}
         </div>
         ${sub ? `<div style="font-size:12px; margin-top:2px; color:rgba(255,255,255,0.78);">${sub}</div>` : ''}
         <div style="display:flex; align-items:center; gap:6px; margin-top:4px;">
@@ -1809,13 +1865,29 @@ function rowProducto(p) {
         </div>
       </div>
       <div style="text-align:right; flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:0;">
-        <div class="${sin ? 'muted2' : 'title'}" style="font-size:13px; font-weight:600;">${fmtPrecio(p.precio)}</div>
+        ${(p.descuento_pct && p.precio_final != null && !sin)
+          ? `<div class="muted2" style="font-size:10px; text-decoration:line-through; line-height:1;">${fmtPrecio(p.precio)}</div>
+             <div class="title" style="font-size:13px; font-weight:700; color:#c4b5fd;">${fmtPrecio(p.precio_final)}</div>`
+          : `<div class="${sin ? 'muted2' : 'title'}" style="font-size:13px; font-weight:600;">${fmtPrecio(p.precio)}</div>`}
+        ${fracSubDisplay}
         <div style="display:flex; align-items:center; gap:5px;">
           ${fracInput}
           ${plus}
         </div>
       </div>
     </div>`;
+}
+
+// Recalcula el subtotal fraccionado en vivo cuando el operador cambia la
+// cantidad de unidades sueltas. Muestra 'Nu · $X.XXX' arriba del input para
+// que sepa cuánto sale antes de apretar el +. Diego 2026-06-23.
+function recalcFracPrecio(oid, precioEnvase, cantEnvase) {
+  const inp = document.getElementById(`qty_${oid}`);
+  const out = document.getElementById(`fracsub_${oid}`);
+  if (!inp || !out) return;
+  const n = Math.max(1, parseInt(inp.value || '1', 10));
+  const subtotal = precioEnvase > 0 ? (precioEnvase / cantEnvase * n) : 0;
+  out.textContent = `${n}u · ${subtotal > 0 ? fmtPrecio(subtotal) : 's/precio'}`;
 }
 
 /* ── Detalle del pedido (Fase C) ── */
@@ -1855,11 +1927,113 @@ function cambiarCant(i, d) {
 }
 function vaciarPedido() { pedido = []; renderPedido(); }
 
+// ── Sugeridos: lista persistente de productos que mandé al cliente ─────
+// Diego 2026-06-24: el cliente decide cuál(es) quiere; el operador tilda
+// los confirmados. Al cerrar TX, solo los tildados van al campo 'producto'.
+// Persiste en localStorage keyed por conv para sobrevivir refresh.
+let sugeridos = [];
+
+function _claveSugeridos() {
+  return convAbierta ? `at_sugeridos_${convAbierta}` : null;
+}
+
+function guardarSugeridos() {
+  const k = _claveSugeridos(); if (!k) return;
+  try { localStorage.setItem(k, JSON.stringify(sugeridos)); } catch(e){}
+}
+
+function cargarSugeridos() {
+  const k = _claveSugeridos();
+  if (!k) { sugeridos = []; renderSugeridos(); return; }
+  try {
+    const raw = localStorage.getItem(k);
+    sugeridos = raw ? JSON.parse(raw) : [];
+  } catch(e){ sugeridos = []; }
+  renderSugeridos();
+  proponerMonto();
+}
+
+function tildarSugerido(i){
+  if (!sugeridos[i]) return;
+  sugeridos[i].tildado = !sugeridos[i].tildado;
+  guardarSugeridos();
+  renderSugeridos();
+  proponerMonto();
+}
+
+function eliminarSugerido(i){
+  sugeridos.splice(i, 1);
+  guardarSugeridos();
+  renderSugeridos();
+  proponerMonto();
+}
+
+function vaciarSugeridos(){
+  sugeridos = [];
+  const k = _claveSugeridos();
+  if (k) { try { localStorage.removeItem(k); } catch(e){} }
+  renderSugeridos();
+}
+
+// Propone el valor de "Monto $" (pgMonto) sumando los sugeridos TILDADOS
+// (precio * cantidad) + envío (salvo "sin cargo"). Es solo propuesta — el
+// operador puede sobrescribirla a mano, y se vuelve a sugerir al cambiar
+// los tildes o el envío. Diego 2026-06-24.
+function proponerMonto(){
+  const inp = document.getElementById('pgMonto');
+  if (!inp) return;
+  const subtotal = (sugeridos || []).filter(s => s.tildado)
+                   .reduce((s, it) => s + (it.precio || 0) * (it.cant || 1), 0);
+  if (!subtotal) return;   // sin tildados → no piso lo que haya cargado el operador
+  const envEl = document.getElementById('pgEnvio');
+  const envSc = document.getElementById('pgEnvioSinCargo');
+  const envio = envEl ? (parseFloat(envEl.value) || 0) : 0;
+  const sinCargo = !!(envSc && envSc.checked);
+  const total = subtotal + (sinCargo ? 0 : envio);
+  inp.value = total.toFixed(2);
+  if (typeof pagoRecalcVuelto === 'function') pagoRecalcVuelto();
+}
+
+function renderSugeridos(){
+  const wrap = document.getElementById('sugeridosWrap');
+  const lst = document.getElementById('sugeridosList');
+  const badge = document.getElementById('sugeridosBadge');
+  if (!wrap || !lst) return;
+  if (!sugeridos.length){ wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  const tildados = sugeridos.filter(s => s.tildado).length;
+  badge.textContent = `${tildados}/${sugeridos.length}`;
+  lst.innerHTML = sugeridos.map((s, i) => `
+    <div style="display:flex; align-items:center; gap:6px; padding:3px 2px; ${s.tildado ? '' : 'opacity:.5;'}">
+      <input type="checkbox" ${s.tildado ? 'checked' : ''} onchange="tildarSugerido(${i})"
+             style="margin:0; cursor:pointer;">
+      <span style="flex:1; min-width:0; font-size:11px; line-height:1.25; ${s.tildado ? '' : 'text-decoration:line-through;'}">
+        ${esc(s.nombre)}${s.cant > 1 ? ` x${s.cant}` : ''}${s.precio ? ` — ${fmtPrecio(s.precio * s.cant)}` : ''}
+      </span>
+      <span onclick="eliminarSugerido(${i})" title="Quitar de la lista"
+            style="cursor:pointer; color:var(--muted2); font-size:13px; padding:0 4px;">✕</span>
+    </div>`).join('');
+}
+
+// Devuelve el texto a usar como 'producto' al cerrar TX. Tiene prioridad
+// el campo 'dProducto' (texto libre) si el operador lo llenó; si no, se
+// arma con los sugeridos tildados.
+function _productoParaCierre(){
+  const txt = (document.getElementById('dProducto') || {}).value || '';
+  if (txt.trim()) return txt.trim();
+  const tildados = sugeridos.filter(s => s.tildado);
+  if (!tildados.length) return '';
+  return tildados.map(s => `${s.nombre}${s.cant > 1 ? ' x' + s.cant : ''}`).join(', ');
+}
+
 function renderPedido() {
   const card = document.getElementById('pedidoCard');
   if (!pedido.length) { card.style.display = 'none'; return; }
   card.style.display = 'block';
+  // Total = solo productos. El envío se manda al chat por separado (botón
+  // al lado del costo de envío en el sidebar). Diego 2026-06-24.
   const total = pedido.reduce((s, it) => s + it.precio * it.cant, 0);
+
   const qb = 'width:18px; height:18px; border-radius:5px; display:inline-flex; align-items:center; justify-content:center;';
   document.getElementById('pedidoRows').innerHTML = pedido.map((it, i) => `
     <div class="row" style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid;">
@@ -1883,13 +2057,21 @@ async function enviarPedido() {
   if (!pedido.length || !convAbierta) return;
   const lineas = pedido.map(it => `• ${it.nombre} x${it.cant} — ${fmtPrecio(it.precio * it.cant)}`);
   const total = pedido.reduce((s, it) => s + it.precio * it.cant, 0);
-  const texto = '🧾 Detalle de tu pedido:\n' + lineas.join('\n') + '\nTotal: ' + fmtPrecio(total) +
-                '\n\n(El pago y la entrega se coordinan por fuera.)';
+  const texto = '🧾 Opciones que te paso:\n' + lineas.join('\n') + '\nTotal: ' + fmtPrecio(total);
   const d = await (await fetch(`/atencion/${convAbierta}/responder`, {
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto})
   })).json();
   if (!d.enviado) alert('⚠️ No se pudo enviar al canal (revisá el token del bot).');
+  // Mover items del carrito a 'sugeridos' (tildados por default). Si ya
+  // existían sugeridos previos para esta conv, los acumulamos (no pisamos).
+  for (const it of pedido) {
+    sugeridos.push({nombre: it.nombre, precio: it.precio || 0, sub: it.sub || '',
+                    cant: it.cant || 1, tildado: true});
+  }
   vaciarPedido();
+  guardarSugeridos();
+  renderSugeridos();
+  proponerMonto();
   await refrescarChat(false); cargarBandeja();
 }
 
@@ -2256,36 +2438,73 @@ async function guardarPagoAcordado(){
   await cargarPagoAcordado();
 }
 
-// Guarda el pago + abre/refresca el modal Cerrar TX con todo precargado.
-// Valida primero lo MÍNIMO del sidebar (monto + forma); el modal valida el resto.
+// Guarda el pago + cierra la TX. Valida TODOS los campos obligatorios.
+// Diego 2026-06-24: bloquea cierre si falta cliente, georef, envío, forma de pago,
+// vuelto, stock, sale por, prioridad o turno.
 async function guardarYCerrarTx(imprimir){
-  const forma = document.getElementById('pgForma').value;
-  if (!forma){ alert('Elegí la forma de pago.'); document.getElementById('pgForma').focus(); return; }
-  // 'sin_cargo' no exige monto (el operador puede dejarlo en 0).
-  const monto = parseFloat(document.getElementById('pgMonto').value) || 0;
-  if (!monto && forma !== 'sin_cargo'){
-    alert('Cargá el monto de la operación.'); document.getElementById('pgMonto').focus(); return;
-  }
   const get = id => { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; };
-  // Validaciones por forma
+  const focusId = id => { const el = document.getElementById(id); if (el) el.focus(); };
+
+  // 1) Cliente asignado: ClientePicker setea window._oid / _cid al elegir.
+  if (!window._oid && !window._cid){
+    alert('Asigná un cliente (lupa 🔎 o botón ＋).');
+    return;
+  }
+  // 2) Georeferenciación: el envío depende de coords (cotización + mapa cadete).
+  if (window._domLat == null || window._domLng == null){
+    alert('Falta georeferenciar el domicilio (pin en el mapa o pediselo al cliente).');
+    focusId('pDir'); return;
+  }
+  // 3) Costo de envío: sí o sí > 0, salvo "Sin cargo" tildado.
+  const envio = parseFloat(get('pgEnvio')) || 0;
+  const envioSC = (document.getElementById('pgEnvioSinCargo') || {}).checked;
+  if (envio <= 0 && !envioSC){
+    alert('Cargá el costo de envío (o tildá "Sin cargo").');
+    focusId('pgEnvio'); return;
+  }
+  // 4) Forma de pago.
+  const forma = get('pgForma');
+  if (!forma){ alert('Elegí la forma de pago.'); focusId('pgForma'); return; }
+  // 'sin_cargo' no exige monto.
+  const monto = parseFloat(get('pgMonto')) || 0;
+  if (!monto && forma !== 'sin_cargo'){
+    alert('Cargá el monto de la operación.'); focusId('pgMonto'); return;
+  }
+  // 5) Cálculo de vuelto (efectivo): paga_con válido y ≥ total (no negativo).
+  if (forma === 'efectivo'){
+    const pagaCon = parseFloat(get('pgPagaCon')) || 0;
+    if (pagaCon <= 0){
+      alert('Cargá con cuánto paga (efectivo).'); focusId('pgPagaCon'); return;
+    }
+    if (pagaCon < monto){
+      alert('"Paga con" es menor que el total — el vuelto da negativo. Revisá.');
+      focusId('pgPagaCon'); return;
+    }
+  }
+  // Validaciones por forma (link / transferencia / tarjeta).
   if (forma === 'link_mp' && !get('pgLink')){
-    alert('Pegá el link de MP que le mandaste al cliente.'); document.getElementById('pgLink').focus(); return;
+    alert('Pegá el link de MP que le mandaste al cliente.'); focusId('pgLink'); return;
   }
   if ((forma === 'link_mp' || forma === 'transferencia') && !get('pgDato')){
-    alert('Cargá el nro de operación / comprobante.');
-    document.getElementById('pgDato').focus(); return;
-  }
-  if (forma === 'efectivo' && (!get('pgPagaCon') || parseFloat(get('pgPagaCon')) <= 0)){
-    alert('Cargá con cuánto paga (efectivo).'); document.getElementById('pgPagaCon').focus(); return;
+    alert('Cargá el nro de operación / comprobante.'); focusId('pgDato'); return;
   }
   if (forma === 'tarjeta'){
     if (!get('pgUlt4')){ alert('Cargá los últimos 4 de la tarjeta.'); return; }
     if (!get('pgTarjNombre')){ alert('Cargá el nombre del titular.'); return; }
   }
+  // 6) Stock.
   const stock = get('dStock');
+  if (!stock){ alert('Elegí estado de stock (hay / esperar).'); focusId('dStock'); return; }
   if (stock === 'esperar' && !get('dDrogueria')){
-    alert('Elegí una droguería para pedir.'); document.getElementById('dDrogueria').focus(); return;
+    alert('Elegí una droguería para pedir.'); focusId('dDrogueria'); return;
   }
+  // 7) Sale por (destino: reparto / retiro).
+  if (!get('dSalida')){ alert('Elegí cómo sale (reparto o retiro).'); focusId('dSalida'); return; }
+  // 8) Prioridad.
+  if (!get('dPrioridad')){ alert('Elegí prioridad.'); focusId('dPrioridad'); return; }
+  // 9) Turno.
+  if (!get('dTurno')){ alert('Elegí turno (mañana / tarde / noche).'); focusId('dTurno'); return; }
+
   // Persistir el pago acordado (BotConversacion) y cerrar la TX directo —
   // ya no abrimos modal (Diego 2026-06-15: refactor C / etapa 3/3).
   await guardarPagoAcordado();
@@ -2332,7 +2551,7 @@ async function cerrarTxDirecto(imprimir){
     prioridad: get('dPrioridad') || 'normal',
     turno: get('dTurno') || null,
     pagado,
-    producto: get('dProducto') || null,
+    producto: _productoParaCierre() || null,
     producto_observer_id: window._dProductoObsId || null,
     nota: get('dNota') || null,
     observacion: get('dObservacion') || null,
@@ -2413,6 +2632,32 @@ function pgEnvioSinCargoChange(){
     inp.style.opacity = '';
     inp.title = '';
   }
+  // Re-proponer monto: si pasó a "sin cargo", el envío deja de sumar al total.
+  if (typeof proponerMonto === 'function') proponerMonto();
+}
+
+// Manda el costo de envío al chat del cliente. Si "Sin cargo" está tildado,
+// avisa "sin cargo". Si está vacío/0, no manda nada. Diego 2026-06-24.
+async function enviarEnvioAlChat(){
+  if (!convAbierta){ alert('Abrí una conversación primero.'); return; }
+  const envEl = document.getElementById('pgEnvio');
+  const envSc = document.getElementById('pgEnvioSinCargo');
+  const envio = envEl ? (parseFloat(envEl.value) || 0) : 0;
+  const sinCargo = !!(envSc && envSc.checked);
+  let texto;
+  if (sinCargo){
+    texto = '🛵 Envío sin cargo';
+  } else if (envio > 0){
+    texto = `🛵 Envío: ${fmtPrecio(envio)}`;
+  } else {
+    alert('Cargá el costo de envío primero (o tildá "Sin cargo").'); return;
+  }
+  const d = await (await fetch(`/atencion/${convAbierta}/responder`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({texto}),
+  })).json();
+  if (!d.enviado) alert('⚠️ No se pudo enviar al canal.');
+  await refrescarChat(false);
 }
 
 // Stock = falta → mostrar dropdown de droguería + cargar opciones la primera vez.

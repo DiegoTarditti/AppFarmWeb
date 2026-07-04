@@ -1450,6 +1450,48 @@ onchange del input).
 
 ---
 
+## 🛡 Audit /atencion + /reparto (2026-06-24)
+
+Quality auditor pasado al cierre del día sobre `feat/condiciones-comerciales` (commit `a286c14`). Items priorizados:
+
+### Críticos (afectan dinero o data)
+
+- [ ] **`vNum` en `reparto_control.html:123` rechaza vuelto con punto de miles.** El regex `/^\d+$/` no matchea `"3.000"` → devuelve 0 → `montoCobro` muestra menos del que el cadete realmente debe rendir. Mismo bug afecta `pagaConCell`. Fix: aceptar `"3.000"` / `"3,000"` quitando puntos y comas antes de parsear. ~10 min.
+
+- [ ] **Mejor descuento no gana en `bot/store.py:898-901`.** El match por `conj_productos` (aunque sea 5%) bloquea al de `conj_laboratorios` (aunque sea 20%) porque hay `if not d and r.lab_id`. Debería elegir el % mayor entre ambos en vez de hacer fallback. ~20 min.
+
+- [ ] **Bypass server-side de `esperando_drog`.** El botón "Rendido" está oculto en UI cuando `estado=esperando_drog`, pero `POST /reparto/pedido/<id>/estado` con `entregado` pasa igual sin validación. Cerrar en el endpoint (`routes/reparto.py`, `actualizar_pedido` y `estado`). ~30 min.
+
+### Importantes (atomicidad / seguridad)
+
+- [ ] **Domicilio huérfano en `atencion_cerrar_transaccion` (routes/atencion.py:465-500).** Hay dos `with database.get_db() as s` independientes antes del bloque principal: si el commit del pedido falla, el domicilio creado queda sin pedido asociado. Unificar en una sola sesión.
+
+- [ ] **f-string SQL en `bot/store.py:157-160` (`listar_conversaciones`).** Hoy los IDs son ints (inofensivo), pero rompe la convención `:param` del resto del código. Si alguien copia el patrón, es una inyección. Reemplazar por bind params.
+
+- [ ] **Webhook WhatsApp sin auth (`routes/reparto.py:673`).** A diferencia del de Telegram que valida `X-Telegram-Bot-Api-Secret-Token`, este endpoint acepta cualquier POST. Riesgo: inyección de mensajes falsos al panel, incluyendo frases de "toma" de pedidos. Agregar verificación de firma/header WAHA.
+
+- [ ] **`_pend_rendir` vs `montoCobro` desalineados respecto a `prepagado_cadete`.** Planilla considera el prepago para no marcar pendiente, pero control sigue mostrando `pendiente $X` aunque el cadete haya prepagado. Decidir si control también debe respetarlo (probablemente sí).
+
+### Higiene de código y logs
+
+- [ ] **`print` de diagnóstico en `routes/reparto.py:688`.** Cada webhook WAHA escribe 1.5 KB a stdout — satura logs de Render. Sacarlo o bajarlo a `log.debug`.
+
+- [ ] **`log.warning` usado como traza normal** en handlers de webhook Telegram (`routes/reparto.py:826-847, 930, 1161`). En producción WARNING es el mínimo de alerta — degradado a `log.info`/`log.debug`.
+
+- [ ] **`print('registrar_interaccion error:', e)` en `bot/store.py:1163`.** Inconsistente con el resto del código que usa `log.exception`. Cambiar.
+
+### Inconsistencias entre pantallas
+
+- [ ] **`vNum` duplicado** en JS (`reparto_control.html:123`) y Jinja (`reparto_planilla.html:374-376`) con lógica distinta. La de Jinja sí acepta "3.000", la JS no. Mismo pedido se ve distinto en planilla y control. Solución: unificar (idealmente en un endpoint que devuelva el monto computado).
+
+- [ ] **`operacionCell` en control no respeta `envio_sin_cargo`.** `reparto_control.html:124` hace `importe - envio_costo` siempre; planilla sí chequea el flag. Si `envio_sin_cargo=True` y `envio_costo > 0`, control muestra un negativo.
+
+### Notas (no son issues, solo dejar registro)
+
+- Filtro `VigenciaHasta IS NULL OR >= GETDATE` en sync de condiciones es correcto: deja entrar las futuras (vigencia_desde > hoy) y el helper `_cargar_descuentos_vigentes` las filtra en runtime. Documentar.
+
+---
+
 **Cómo mantener este doc:**
 - Cuando agregues una idea, ponela en la sección que corresponda.
 - Cuando completes algo, movelo a "Hechos recientes" con la fecha.

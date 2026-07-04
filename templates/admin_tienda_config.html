@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block title %}Config Tienda{% endblock %}
+{% block main %}
+<style>
+  .form-card { background:var(--surface); border:1px solid var(--border);
+               border-radius:12px; padding:18px; margin:12px 0; }
+  .form-row { display:flex; flex-direction:column; margin-bottom:12px; }
+  .form-row label { color:var(--muted); font-size:12px; margin-bottom:4px; }
+  .form-row input[type="text"],
+  .form-row input[type="tel"],
+  .form-row textarea {
+    background:rgba(0,0,0,0.2); color:var(--txt); border:1px solid var(--border);
+    border-radius:6px; padding:8px 10px; font-size:13px; font-family:inherit;
+  }
+  .form-row textarea { min-height:70px; resize:vertical; }
+  .hint { color:var(--muted); font-size:11px; margin-top:4px; }
+  .toggle-row { display:flex; align-items:center; gap:8px; padding:10px 0;
+                border-bottom:1px solid var(--row-bd); }
+  .toggle-row input[type=checkbox] { transform:scale(1.2); }
+  .toggle-row .lbl { font-size:14px; color:var(--title); }
+  .btn-primary { background:var(--accent); color:var(--accent-ink);
+                  border:none; padding:10px 20px; border-radius:8px;
+                  font-weight:600; cursor:pointer; font-size:13px; }
+</style>
+
+<div style="max-width:720px; margin:0 auto; padding:20px;">
+  <h1 style="font-size:22px; margin-bottom:4px;">🛒 Configuración de la Tienda</h1>
+  <p style="color:var(--muted); margin-bottom:18px; font-size:13px;">
+    Datos globales de la tienda pública. El número de WhatsApp es el destino
+    de los pedidos (mientras no esté verificado Meta / WhatsApp Business API).
+  </p>
+
+  <form method="post">
+    <div class="form-card">
+      <div class="toggle-row">
+        <input type="checkbox" id="tienda_activa" name="tienda_activa"
+               {% if cfg.tienda_activa %}checked{% endif %}>
+        <label for="tienda_activa" class="lbl">Tienda pública activa</label>
+      </div>
+      <div class="hint">
+        Si está apagada, las rutas públicas (<code>/tienda</code>, etc.) devuelven 404.
+        Kill-switch rápido si querés bajar el catálogo temporalmente.
+      </div>
+    </div>
+
+    <div class="form-card">
+      <h2 style="font-size:14px; color:var(--title); margin-bottom:12px;">Contacto</h2>
+      <div class="form-row">
+        <label for="tienda_whatsapp_numero">Número de WhatsApp (destino de pedidos)</label>
+        <input type="tel" id="tienda_whatsapp_numero" name="tienda_whatsapp_numero"
+               value="{{ cfg.tienda_whatsapp_numero or '' }}"
+               placeholder="5493411234567">
+        <div class="hint">
+          Formato internacional sin <code>+</code> ni espacios ni guiones.
+          Ej: <code>5493411234567</code> (Argentina + Rosario).
+        </div>
+      </div>
+      <div class="form-row">
+        <label for="tienda_direccion">Dirección de la farmacia</label>
+        <input type="text" id="tienda_direccion" name="tienda_direccion"
+               value="{{ cfg.tienda_direccion or '' }}"
+               placeholder="Calle 123, Rosario">
+      </div>
+      <div class="form-row">
+        <label for="tienda_horarios">Horarios</label>
+        <input type="text" id="tienda_horarios" name="tienda_horarios"
+               value="{{ cfg.tienda_horarios or '' }}"
+               placeholder="Lun a Sáb 8:00 a 22:00 · Dom 9:00 a 13:00">
+      </div>
+    </div>
+
+    <div class="form-card">
+      <h2 style="font-size:14px; color:var(--title); margin-bottom:12px;">Presentación</h2>
+      <div class="form-row">
+        <label for="tienda_titulo">Título (aparece en el header y en el navegador)</label>
+        <input type="text" id="tienda_titulo" name="tienda_titulo"
+               value="{{ cfg.tienda_titulo or '' }}"
+               placeholder="Farmacia Badia · Rosario">
+      </div>
+      <div class="form-row">
+        <label for="tienda_hero_texto">Bajada del home (mensaje bajo el título)</label>
+        <textarea id="tienda_hero_texto" name="tienda_hero_texto"
+                  placeholder="Dermocosmética, perfumería e higiene con envío a domicilio.">{{ cfg.tienda_hero_texto or '' }}</textarea>
+      </div>
+    </div>
+
+    <div style="text-align:right; margin-top:16px;">
+      <button type="submit" class="btn-primary">Guardar</button>
+    </div>
+  </form>
+
+  <div style="margin-top:24px; text-align:center;">
+    <a href="{{ url_for('admin_tienda_rubros') }}" class="hbtn"
+       style="margin-right:6px;">📂 Rubros publicados</a>
+    <a href="{{ url_for('admin_tienda_imagenes') }}" class="hbtn">📷 Imágenes</a>
+  </div>
+</div>
+{% endblock %}
