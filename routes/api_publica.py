@@ -207,11 +207,6 @@ def init_app(app):
             c = s.get(database.ObsCliente, observer_id)
             if not c:
                 return jsonify({'error': 'no encontrado'}), 404
-            os_nombre = None
-            if c.obra_social_observer:
-                os_row = s.get(database.ObsObraSocial, c.obra_social_observer)
-                if os_row:
-                    os_nombre = os_row.descripcion
             return jsonify({
                 'observer_id': c.observer_id,
                 'apellido_nombre': c.apellido_nombre,
@@ -220,9 +215,11 @@ def init_app(app):
                 'telefono': c.telefono,
                 'domicilio_direccion': c.domicilio_direccion,
                 'localidad': c.localidad,
-                'obra_social_observer': c.obra_social_observer,
-                'obra_social_nombre': os_nombre,
-                'baja': bool(c.fecha_baja),
+                # ObsCliente no tiene obra_social_observer ni fecha_baja hoy.
+                # La OS del paciente vive en el modelo Cliente (extension local).
+                'obra_social_observer': None,
+                'obra_social_nombre': None,
+                'baja': False,
             })
 
     @app.route('/api/publica/paciente/buscar')
@@ -237,8 +234,9 @@ def init_app(app):
         except (TypeError, ValueError):
             limite = 12
         with database.get_db() as s:
-            base = s.query(database.ObsCliente).filter(
-                database.ObsCliente.fecha_baja.is_(None))
+            # NOTA: ObsCliente no tiene columna fecha_baja hoy — el filtro por
+            # 'no dados de baja' que existia antes matcheaba 0 filas siempre.
+            base = s.query(database.ObsCliente)
             if dni:
                 if not dni.isdigit():
                     return jsonify({'error': 'dni debe ser numérico'}), 400
