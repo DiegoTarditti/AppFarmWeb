@@ -2308,14 +2308,19 @@ class DockerPanel(tk.Tk):
                    "cmd")
         self._update_panel_remoto_label_text(f"● panel · ejecutando #{cmd_id}", YELLOW)
         # Ejecutar
-        whitelist = self._comandos_remotos_whitelist()
-        steps = whitelist.get(cmd_name)
         t0 = time.time()
-        if not steps:
-            estado = 'error'
-            output = f'Comando "{cmd_name}" no está en el whitelist del DockerPanel.'
+        # Handler especial para consultas de stock en vivo desde AppClinica.
+        # Formato: 'stock:<observer_id>'. Ver docs/BACKLOG.md item 17 opcion C.
+        if cmd_name.startswith('stock:'):
+            estado, output = self._ejecutar_stock_query(cmd_name)
         else:
-            estado, output = self._ejecutar_comando_remoto(steps)
+            whitelist = self._comandos_remotos_whitelist()
+            steps = whitelist.get(cmd_name)
+            if not steps:
+                estado = 'error'
+                output = f'Comando "{cmd_name}" no está en el whitelist del DockerPanel.'
+            else:
+                estado, output = self._ejecutar_comando_remoto(steps)
         dur_ms = int((time.time() - t0) * 1000)
         # Reportar
         reporte_url = cfg['url'].rstrip('/') + f'/api/panel/comandos/{cmd_id}/resultado'
@@ -2372,6 +2377,47 @@ class DockerPanel(tk.Tk):
                 out_lines.append(f'[EXCEPCIÓN en paso "{desc}": {e}]')
                 return 'error', '\n'.join(out_lines)
         return 'ok', '\n'.join(out_lines)
+
+    def _ejecutar_stock_query(self, cmd_name):
+        """Handler para comandos 'stock:<observer_id>'.
+        Ejecuta python dentro del container farm_web para consultar obs_stock
+        y devuelve {stock, sync_en} como JSON string.
+
+        Ver docs/BACKLOG.md item 17 opcion C (AppClinica → consulta stock en vivo).
+        """
+        try:
+            observer_id = int(cmd_name.split(':', 1)[1])
+        except (ValueError, IndexError):
+            return 'error', f'Formato de comando invalido: {cmd_name}'
+        # docker exec farm_web python -c "..."
+        # Consulta obs_stock, suma stock_actual, devuelve JSON.
+        py = (
+            "import json; import database; database.init_db(); "
+            "s = next(iter(database.get_db().gen if hasattr(database.get_db(), 'gen') "
+            "else [database.get_db().__enter__()])); "
+            f"rows = s.query(database.ObsStock).filter_by(producto_observer={observer_id}).all(); "
+            "total = sum(int(r.stock_actual or 0) for r in rows); "
+            "syncs = [r.sync_en for r in rows if r.sync_en]; "
+            "sync_en = max(syncs).isoformat() if syncs else None; "
+            "print(json.dumps({'stock': total, 'sync_en': sync_en, 'filas': len(rows)}))"
+        )
+        # Container name asumido: farm_web (ver docker-compose.yml). Si es
+        # distinto en tu setup, cambiar aca. Timeout corto porque el
+        # cliente polea con timeout 5s.
+        cmd = f'docker exec -T farm_web python -c "{py}"'
+        try:
+            proc = subprocess.run(
+                cmd, shell=True, cwd=self.dir_var.get(),
+                capture_output=True, text=True, timeout=8,
+                encoding='utf-8', errors='replace',
+            )
+            if proc.returncode != 0:
+                return 'error', f'docker exec fallo: {proc.stderr.strip()[:500]}'
+            return 'ok', (proc.stdout or '').strip()
+        except subprocess.TimeoutExpired:
+            return 'error', 'timeout (>8s)'
+        except Exception as e:  # noqa: BLE001
+            return 'error', f'excepcion: {e}'
 
     def _update_panel_remoto_label(self):
         """Refresca el indicador visual del panel remoto en la status bar."""

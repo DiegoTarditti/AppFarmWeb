@@ -318,3 +318,70 @@ def init_app(app):
                 'importe_efectivo': float(r.importe_efectivo) if r.importe_efectivo is not None else None,
             } for r in rows]
         return jsonify({'compras': out, 'total': len(out)})
+
+    @app.route('/api/publica/stock/<int:observer_id>')
+    @requiere_api_key
+    def api_publica_stock_snapshot(observer_id):
+        """Stock snapshot desde obs_stock (última sync desde ObServer). Se
+        usa como fallback cuando el DockerPanel esta apagado y no puede
+        responder la consulta en vivo. Suma stock de todas las farmacias
+        (habitualmente solo Badia = 1)."""
+        with database.get_db() as s:
+            rows = (s.query(database.ObsStock)
+                    .filter_by(producto_observer=observer_id).all())
+            if not rows:
+                return jsonify({'ok': False, 'error': 'sin registro de stock'}), 404
+            total = sum(int(r.stock_actual or 0) for r in rows)
+            # Tomamos la sync_en mas reciente entre todas las farmacias
+            syncs = [r.sync_en for r in rows if r.sync_en]
+            sync_en = max(syncs).isoformat() if syncs else None
+            return jsonify({
+                'ok': True,
+                'observer_id': observer_id,
+                'stock': total,
+                'sync_en': sync_en,
+            })
+
+    # ── Panel remoto: consultas de stock en vivo ──────────────────────────
+    # AppClinica encola una consulta de stock que el DockerPanel de la
+    # farmacia local ejecuta contra su DB (stock en tiempo real) y devuelve
+    # el resultado. Ver docs/BACKLOG.md item 17 opcion C.
+
+    @app.route('/api/publica/panel/stock', methods=['POST'])
+    @requiere_api_key
+    def api_publica_panel_stock_encolar():
+        """Encola una consulta de stock. Body JSON: {observer_id}.
+        Devuelve {cmd_id} para que el cliente polee el resultado."""
+        body = request.get_json(silent=True) or {}
+        try:
+            observer_id = int(body.get('observer_id'))
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'observer_id invalido'}), 400
+        comando = f'stock:{observer_id}'
+        cliente = request.api_client.get('cliente', 'api')
+        with database.get_db() as s:
+            cmd = database.PanelComando(
+                comando=comando, estado='pendiente',
+                solicitado_por=f'api:{cliente}'[:80])
+            s.add(cmd)
+            s.commit()
+            cmd_id = cmd.id
+        return jsonify({'ok': True, 'cmd_id': cmd_id, 'comando': comando})
+
+    @app.route('/api/publica/panel/comandos/<int:cmd_id>')
+    @requiere_api_key
+    def api_publica_panel_comando_estado(cmd_id):
+        """Polea el estado + resultado del comando. Cualquier cliente con
+        api key puede consultar cualquier cmd_id — no hay ownership. Aceptable
+        porque los resultados son de stock (no datos sensibles)."""
+        with database.get_db() as s:
+            cmd = s.get(database.PanelComando, cmd_id)
+            if not cmd:
+                return jsonify({'ok': False, 'error': 'no existe'}), 404
+            return jsonify({
+                'ok': True,
+                'estado': cmd.estado,
+                'resultado': cmd.resultado,
+                'duracion_ms': cmd.duracion_ms,
+                'comando': cmd.comando,
+            })
