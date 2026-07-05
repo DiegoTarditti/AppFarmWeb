@@ -18,7 +18,6 @@ from flask import jsonify, request
 
 import database
 
-
 # ── Auth por API key ──────────────────────────────────────────────────────
 
 def _hash_key(clave):
