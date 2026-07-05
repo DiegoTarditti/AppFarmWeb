@@ -104,6 +104,10 @@ def exigir_login():
                       'tienda_pedir', 'tienda_upload_file'}
     if request.endpoint in rutas_publicas or request.endpoint is None:
         return None
+    # API pública (auth por X-Api-Key, no por sesión Flask-Login).
+    # Todos los endpoints /api/publica/* usan @requiere_api_key — dejalos pasar.
+    if request.path.startswith('/api/publica/'):
+        return None
     if not current_user.is_authenticated:
         # Para rutas /api/* devolvemos 401 JSON en vez de redirect HTML, así
         # el JS puede manejar la sesión expirada con un mensaje claro
