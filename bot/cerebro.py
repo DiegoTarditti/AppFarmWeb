@@ -744,8 +744,9 @@ def _estado_pedido_para_conv(conv):
 
     Devuelve (resp_dict, derivar_bool).
     """
-    import database
     from datetime import timedelta
+
+    import database
     conv_id = (conv or {}).get('id') if conv else None
 
     def _derivar(motivo):

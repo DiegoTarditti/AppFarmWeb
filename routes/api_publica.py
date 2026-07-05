@@ -15,7 +15,6 @@ import hashlib
 from functools import wraps
 
 from flask import jsonify, request
-from sqlalchemy import and_, or_
 
 import database
 
@@ -277,7 +276,7 @@ def init_app(app):
           hasta=YYYY-MM-DD (opcional)    — solo compras hasta esa fecha.
           limite (default 100, max 500).
         """
-        from datetime import datetime, date
+        from datetime import date, datetime  # noqa: F401
         desde_str = (request.args.get('desde') or '').strip()
         hasta_str = (request.args.get('hasta') or '').strip()
         try:

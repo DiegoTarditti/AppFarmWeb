@@ -391,14 +391,16 @@ def test_procesar_guarda_mensaje_entrante_aunque_este_en_humano():
 
 # ── Analítica: memoria de no-resueltos (bot_interacciones) ───────────────────
 
-def test_resolver_marca_sin_stock_y_preserva_loop(monkeypatch):
-    # Producto no encontrado → meta sin_stock, y NO corta el loop de búsqueda.
+def test_resolver_marca_sin_match_y_deriva(monkeypatch):
+    # Producto no encontrado (buscar_productos devuelve []) → motivo
+    # 'sin_match' + deriva al operador (comportamiento actual, actualizado
+    # de la versión previa que preservaba el loop con motivo 'sin_stock').
     monkeypatch.setattr(bot.acciones, 'buscar_productos', lambda *a, **k: [])
     resp, nodo, esp, deriv = _resolver('consultar_producto', 'consultar_producto',
                                        'xyzzy', None, IMG)
-    assert resp['meta']['motivo'] == 'sin_stock'
+    assert resp['meta']['motivo'] == 'sin_match'
     assert resp['meta']['producto'] == 'xyzzy' and resp['meta']['resuelto'] is False
-    assert esp == 'consultar_producto' and not deriv   # loop preservado
+    assert deriv   # deriva al operador (no preserva loop)
 
 
 def test_resolver_no_entendido_y_derivado_meta():
