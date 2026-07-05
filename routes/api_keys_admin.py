@@ -91,6 +91,22 @@ def init_app(app):
         flash(f'Key creada para "{cliente}". Copiala AHORA — no se muestra otra vez.', 'success')
         return redirect(url_for('admin_api_keys', token=token))
 
+    @app.route('/admin/api-keys/debug-hashes')
+    @login_required
+    def admin_api_keys_debug_hashes():
+        """DEBUG: devuelve el hash guardado por cada key para comparar con
+        lo que hashea el cliente. Solo admin. Sacar cuando termine el diagnostico."""
+        if not _es_admin():
+            return jsonify({'error': 'admin only'}), 403
+        with database.get_db() as s:
+            rows = s.query(database.ApiKey).all()
+            return jsonify({'keys': [
+                {'id': k.id, 'cliente': k.cliente_nombre, 'prefix': k.prefix,
+                 'activo': k.activo,
+                 'hash_inicio': (k.key_hash or '')[:20],
+                 'hash_largo': len(k.key_hash or '')}
+                for k in rows]})
+
     @app.route('/admin/api-keys/<int:kid>/toggle', methods=['POST'])
     @login_required
     def admin_api_keys_toggle(kid):
