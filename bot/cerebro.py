@@ -167,7 +167,7 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
     # se ejecuta la acción normal. Volver a leer_receta se reactiva sacando el
     # comentario y restaurando el return original.
     if imagen_b64:
-        return ({'texto': '📸 Recibí la foto, gracias — por ahora no analizamos imágenes. Seguí contándome 👇',
+        return ({'texto': '📸 Recibí tu imagen.',
                  'opciones': [],
                  'meta': {'camino': 'receta_bloqueada', 'resuelto': True}},
                 nodo_actual, esperando, False)
@@ -321,6 +321,9 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type, historial=N
                  'opciones': ['✅ Sí, ya la tengo', '❌ Todavía no'],
                  'meta': {'camino': 'magistral', 'resuelto': True}},
                 'magistral_receta', None, False)
+    if destino_key == 'estado_pedido':
+        resp, derivar = _estado_pedido_para_conv(conv)
+        return (resp, NODO_INICIO, None, derivar)
     destino = flujo.get(destino_key)
     if not destino:
         resp = _render(flujo[NODO_INICIO])
@@ -615,6 +618,15 @@ def _precio_txt(p):
     return f'${p:,.0f}'.replace(',', '.') if p else 's/precio'
 
 
+def _mostrar_precio_cliente():
+    """Diego 2026-06-22: el bot NO muestra precio al cliente hasta nuevo aviso.
+    Activar con BOT_MOSTRAR_PRECIO=1 en .env. Las notas internas (panel
+    /atencion) siguen mostrando precio para el operador — esto solo aplica a
+    los textos que se mandan al cliente."""
+    import os as _os
+    return (_os.environ.get('BOT_MOSTRAR_PRECIO') or '').lower() in ('1', 'true', 'yes', 'on')
+
+
 def _flujo_compra(cid, nodo, esperando, texto, imagen_b64):
     """Máquina de estados de Compra Farmacia / Magistral. Devuelve la respuesta
     o None si el mensaje no es parte del flujo (sigue el flujo normal)."""
@@ -695,10 +707,13 @@ def _compra_buscar(cid, texto):
     store.set_producto_pendiente(cid, texto.strip())
     con_stock = next((r for r in rows if r['stock'] > 0), None)
     if con_stock:
+        # Nota interna (panel /atencion): SIEMPRE incluye precio para el operador.
         store.nota_sistema(cid, f'🛒 COMPRA — quiere: {texto.strip()} | EN STOCK: '
                                 f'{con_stock["producto"]} ({con_stock["stock"]}u, {_precio_txt(con_stock["precio"])})')
+        # Texto al cliente: precio condicional (flag _mostrar_precio_cliente).
+        precio_part = f' — {_precio_txt(con_stock["precio"])}' if _mostrar_precio_cliente() else ''
         return _compra_preguntar_os(
-            cid, intro=f'✅ Tengo {con_stock["producto"]} — {_precio_txt(con_stock["precio"])} '
+            cid, intro=f'✅ Tengo {con_stock["producto"]}{precio_part} '
                        f'({con_stock["stock"]}u).\n\n')
     store.nota_sistema(cid, f'🛒 COMPRA — quiere: {texto.strip()} | SIN STOCK')
     store.set_estado_flujo(cid, 'compra_encargo', None)
@@ -714,6 +729,152 @@ def _compra_preguntar_os(cid, intro=''):
 def _compra_preguntar_receta(cid):
     store.set_estado_flujo(cid, 'compra_receta', None)
     return {'texto': '¿Tenés la receta médica? 📋', 'opciones': ['✅ Sí', '❌ No']}
+
+
+def _estado_pedido_para_conv(conv):
+    """Botón 'Consultar estado de pedido' (Diego 2026-06-22).
+
+    Busca el último PedidoReparto del cliente (últimos 5 días) y devuelve un
+    mensaje legible según el estado. Si no encuentra cliente o no hay pedidos
+    recientes, deriva al operador.
+
+    `conv` viene como dict reducido (solo id/estado/nodo/esperando), así que
+    leemos la BotConversacion completa por id para acceder a cliente_id /
+    canal / canal_user_id.
+
+    Devuelve (resp_dict, derivar_bool).
+    """
+    from datetime import timedelta
+
+    import database
+    conv_id = (conv or {}).get('id') if conv else None
+
+    def _derivar(motivo):
+        return ({'texto': '🤔 No encuentro pedidos recientes a tu nombre.\n'
+                          'Te paso con alguien del equipo para que te ayude.',
+                 'opciones': [],
+                 'meta': {'camino': 'estado_pedido', 'resuelto': False,
+                          'motivo': motivo}}, True)
+
+    if not conv_id:
+        return _derivar('sin_conv')
+
+    with database.get_db() as s:
+        bc = s.get(database.BotConversacion, conv_id)
+        if not bc:
+            return _derivar('conv_no_existe')
+        # Resolver Cliente: 1) cliente_id del vínculo de la conv,
+        # 2) (WhatsApp) match por wa/teléfono = canal_user_id.
+        cli = None
+        if bc.cliente_id:
+            cli = s.get(database.Cliente, bc.cliente_id)
+        if not cli and bc.canal == 'whatsapp' and bc.canal_user_id:
+            # canal_user_id en WhatsApp ES el teléfono normalizado
+            tel = (bc.canal_user_id or '').strip()
+            if tel:
+                C = database.Cliente
+                cli = (s.query(C).filter((C.whatsapp == tel) | (C.telefono == tel))
+                       .first())
+        if not cli:
+            return _derivar('cliente_no_identificado')
+
+        # Buscar pedidos del cliente en los últimos 5 días (tope 5, más recientes
+        # primero). Si tiene 1 → mensaje individual. Si tiene 2+ → resumen.
+        P = database.PedidoReparto
+        desde = (database.now_ar() - timedelta(days=5)).date()
+        pedidos = (s.query(P)
+                   .filter(P.cliente_id == cli.id, P.fecha >= desde)
+                   .order_by(P.id.desc())
+                   .limit(5)
+                   .all())
+        if not pedidos:
+            return _derivar('sin_pedidos_recientes')
+
+        nombre = (cli.nombre or '').strip().split(' ')[0] or 'Hola'
+
+        # Marcar TODOS los pedidos mostrados como "consultados por el cliente"
+        # → aparece bandera 👀 en /reparto/planilla.
+        ahora = database.now_ar()
+        for p_mark in pedidos:
+            p_mark.cliente_consulto_en = ahora
+        s.commit()
+
+        # Un solo pedido → mensaje individual completo (como antes).
+        if len(pedidos) == 1:
+            return _msg_pedido_individual(pedidos[0], nombre)
+
+        # Varios pedidos → resumen compacto, NO derivar automáticamente.
+        cab = f'Tenés {len(pedidos)} pedidos recientes 👇\n'
+        lineas = [_resumen_pedido_linea(p) for p in pedidos]
+        pie = '\n\n¿Necesitás algo más? Escribí "menú".'
+        return ({'texto': cab + '\n'.join(lineas) + pie, 'opciones': [],
+                 'meta': {'camino': 'estado_pedido', 'resuelto': True,
+                          'count': len(pedidos)}}, False)
+
+
+def _msg_pedido_individual(p, nombre):
+    """Mensaje completo cuando el cliente tiene UN solo pedido reciente.
+    Devuelve (resp_dict, derivar_bool)."""
+    prod = (p.producto or '').strip()
+    prod_part = f' ({prod[:60]})' if prod else ''
+    direc = (p.direccion or '').strip()
+    direc_part = f' a {direc}' if direc else ''
+    estado = (p.estado or '').lower()
+    if estado in ('pendiente', 'en_planilla'):
+        texto = f'📋 {nombre}, tu pedido #{p.id}{prod_part} está cargado, lo preparamos para reparto.'
+    elif estado == 'esperando_drog':
+        texto = (f'📦 {nombre}, tu pedido #{p.id}{prod_part} está esperando '
+                 f'la llegada de un producto de droguería. Te avisamos cuando esté.')
+    elif estado == 'publicado':
+        texto = f'📤 {nombre}, ya estamos buscando un cadete para tu pedido #{p.id}{prod_part}.'
+    elif estado == 'tomado':
+        texto = f'🛵 {nombre}, un cadete está por buscar tu pedido #{p.id} en la farmacia.'
+    elif estado == 'en_ruta':
+        texto = f'🛵 {nombre}, tu pedido #{p.id} está en camino{direc_part}.'
+    elif estado == 'entregado':
+        hora = p.entregado_en.strftime(' (%d/%m %H:%M)') if p.entregado_en else ''
+        texto = f'✅ {nombre}, tu pedido #{p.id} fue entregado{hora}. ¡Gracias por elegirnos!'
+    elif estado == 'anulado':
+        texto = (f'❌ {nombre}, tu pedido #{p.id} fue anulado.\n'
+                 'Te paso con un operador si necesitás más info.')
+        return ({'texto': texto, 'opciones': [],
+                 'meta': {'camino': 'estado_pedido', 'resuelto': True,
+                          'motivo': 'anulado'}}, True)
+    else:
+        return ({'texto': '🤔 No encuentro pedidos recientes a tu nombre.\n'
+                          'Te paso con alguien del equipo para que te ayude.',
+                 'opciones': [],
+                 'meta': {'camino': 'estado_pedido', 'resuelto': False,
+                          'motivo': f'estado_no_mapeado:{estado}'}}, True)
+    return ({'texto': texto, 'opciones': [],
+             'meta': {'camino': 'estado_pedido', 'resuelto': True,
+                      'estado': estado, 'pedido_id': p.id}}, False)
+
+
+def _resumen_pedido_linea(p):
+    """Una línea por pedido para el caso de varios pedidos recientes.
+    Formato: `<icono> #ID (PRODUCTO) — descripción corta del estado`."""
+    prod = (p.producto or '').strip()
+    prod_part = f' ({prod[:30]})' if prod else ''
+    direc = (p.direccion or '').strip()
+    estado = (p.estado or '').lower()
+    if estado in ('pendiente', 'en_planilla'):
+        return f'📋 #{p.id}{prod_part} — preparándose para reparto'
+    if estado == 'esperando_drog':
+        return f'📦 #{p.id}{prod_part} — esperando droguería'
+    if estado == 'publicado':
+        return f'📤 #{p.id}{prod_part} — buscando cadete'
+    if estado == 'tomado':
+        return f'🛵 #{p.id}{prod_part} — un cadete va a buscarlo'
+    if estado == 'en_ruta':
+        dir_part = f' a {direc}' if direc else ''
+        return f'🛵 #{p.id} — en camino{dir_part}'
+    if estado == 'entregado':
+        hora = p.entregado_en.strftime(' %d/%m %H:%M') if p.entregado_en else ''
+        return f'✅ #{p.id} — entregado{hora}'
+    if estado == 'anulado':
+        return f'❌ #{p.id} — anulado'
+    return f'⚙️ #{p.id} — en proceso'
 
 
 def _compra_cierre(cid, sin_receta=False):
@@ -752,7 +913,16 @@ def procesar(canal, canal_user_id, texto, imagen_b64=None,
     # Si ya está derivada (en cola) o la tomó un operador (humano), el bot NO
     # responde: el cliente espera a la persona, no queremos meter el menú en el
     # medio. Los mensajes igual se guardan arriba para que el operador los vea.
-    if conv['estado_atencion'] in ('cola', 'humano'):
+    # Excepción: si está en cola (sin operador atendiendo todavía) y el cliente
+    # escribe un comando global (menú/hola/start), reseteamos a bot y le
+    # mostramos el menú — útil cuando el cliente derivó por error o se arrepintió
+    # antes que el operador lo tome (Diego 2026-06-22). En 'humano' (operador
+    # activo) NO se hace para no pisar al operador.
+    if conv['estado_atencion'] == 'cola' and texto.lower() in _GLOBALES:
+        store.set_atencion(cid, 'bot')
+        store.set_estado_flujo(cid, NODO_INICIO, None)
+        conv['estado_atencion'] = 'bot'
+    elif conv['estado_atencion'] in ('cola', 'humano'):
         return None
 
     # Flujo de envío (libreta de domicilios + cotización). Maneja el pin de

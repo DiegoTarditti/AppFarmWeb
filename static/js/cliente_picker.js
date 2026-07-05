@@ -341,7 +341,15 @@
     try {
       const r = await (await fetch(`/api/clientes/geocodificar?q=${encodeURIComponent(q)}&loc=${encodeURIComponent(loc||'')}`)).json();
       let sug = r.sugerencias || [];
-      if (!sug.length){ box.style.display='none'; return; }
+      if (!sug.length){
+        // Diego 2026-06-22: antes ocultaba el box silencioso → operador no
+        // sabía si había buscado o no. Mensaje claro con sugerencias para
+        // reformular (ej. "coronel olavarria" no la encuentra; sin "coronel"
+        // sí — pasa con calles con prefijo "coronel/teniente/general/etc").
+        box.style.display='block';
+        box.innerHTML = `<div class="muted2" style="padding:8px 10px; font-size:11px; background:rgba(239,159,39,.15); color:#EF9F27;">⚠ No encontramos "<b>${esc(q)}</b>".<br>Probá escribirla de otra forma:<br>· sin prefijos (Olavarría en vez de Coronel Olavarría)<br>· con la altura (Olavarría 1500)<br>· o copiá la dirección desde Google Maps.</div>`;
+        return;
+      }
       // Whitelist de ciudades que servimos. Configurable por env
       // ENVIO_CIUDADES_FILTRO (CSV); el template _cliente_picker.html la
       // inyecta como window.ENVIO_CIUDADES_FILTRO. Fallback hardcoded si no.

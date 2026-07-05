@@ -953,8 +953,9 @@ async function reabrirPedido(id){
 // Limpia el form lateral después de cerrar (INSERT o UPDATE) para que el
 // operador pueda arrancar otro pedido sin valores fantasma.
 function vaciarFormCierre(){
+  // Limpiar campos a vacío
   ['pgMonto','pgPagaCon','pgEnvio','pgForma','pgLink','pgDato','pgUlt4','pgTarjNombre','pgMarca','pgCupon',
-   'dProducto','dNota','dObservacion','dStock','dDrogueria','dSalida','dPrioridad','dObraSocial','dReceta','dCanal']
+   'dProducto','dNota','dObservacion','dStock','dDrogueria','dObraSocial','dReceta','dCanal']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   // Defaults predeterminados al reiniciar TX (Diego 2026-06-24): sale por
   // 'reparto', stock 'ok', prioridad 'normal'. El operador puede cambiar
@@ -1714,13 +1715,15 @@ async function buscarClientes() {
   const cs = d.clientes || [];
   if (!cs.length) { box.innerHTML = '<div class="muted" style="font-size:11px;">Sin resultados.</div>'; return; }
   box.innerHTML = cs.map(c => `
-    <div onclick="vincularCliente(${c.observer_id})" class="conv" style="padding:6px 8px; border-bottom:0.5px solid;">
-      <span class="txt" style="font-size:12px;">${esc(c.nombre)}</span>
+    <div onclick="vincularCliente(${c.observer_id || 'null'}, ${c.cliente_id || 'null'})" class="conv" style="padding:6px 8px; border-bottom:0.5px solid;">
+      <span class="txt" style="font-size:12px;">${esc(c.nombre)}${c.cliente_id && !c.observer_id ? ' <span class="muted" style="font-size:10px;">(lead)</span>' : ''}</span>
       <span class="muted" style="font-size:10px;"> ${esc(String(c.documento || ''))}${c.telefono ? ' · ' + esc(c.telefono) : ''}</span>
     </div>`).join('');
 }
-async function vincularCliente(oid) {
-  await fetch(`/atencion/${convAbierta}/vincular-cliente`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({observer_id: oid})});
+async function vincularCliente(oid, cid) {
+  // Un solo body: preferimos observer_id si viene, sino cliente_id (lead local).
+  const body = oid ? {observer_id: oid} : {cliente_id: cid};
+  await fetch(`/atencion/${convAbierta}/vincular-cliente`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   await cargarFicha();
 }
 async function desvincularCliente() {

@@ -202,8 +202,10 @@ def init_app(app):
     @app.route('/atencion/<int:conv_id>/vincular-cliente', methods=['POST'])
     @login_required
     def atencion_vincular_cliente(conv_id):
-        oid = (request.json or {}).get('observer_id')
-        store.vincular_cliente(conv_id, oid)
+        b = request.json or {}
+        store.vincular_cliente(conv_id,
+                               observer_id=b.get('observer_id'),
+                               cliente_id=b.get('cliente_id'))
         return jsonify({'ok': True, 'ficha': store.get_ficha_de_conversacion(conv_id)})
 
     @app.route('/atencion/<int:conv_id>/crear-cliente', methods=['POST'])

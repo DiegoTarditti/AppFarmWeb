@@ -875,6 +875,10 @@ class PedidoReparto(Base):
     tomado_dm_user_id = Column(BigInteger, nullable=True)
     retirado_en = Column(DateTime, nullable=True)
     entregado_en = Column(DateTime, nullable=True)
+    # Última vez que el cliente consultó el estado de este pedido por chat
+    # (botón "📦 Consultar estado de pedido" del bot). Se muestra como bandera
+    # en /reparto/planilla así el operador sabe que el cliente preguntó.
+    cliente_consulto_en = Column(DateTime, nullable=True)
     # No atiende: cadete fue al domicilio y nadie atendió. Diego 2026-06-24:
     # estado='no_atiende' con timestamp + contador de intentos. Visible en
     # planilla con badge rojo. El cadete puede reintentar (vuelve a 'en_ruta')
@@ -2940,6 +2944,49 @@ class InformeEnviado(Base):
     )
 
 
+class EventoSLA(Base):
+    """Registro de eventos que se salen del SLA esperado (Diego 2026-06-22).
+
+    Inserción desde:
+      - services/reparto_sla_cron.py (cron interno cada 60s):
+          * 'reaviso_publicacion' — pedido publicado sin tomar > N min
+          * 'retiro_excedido'     — cadete tomó pero no retiró > N min
+          * 'entrega_excedida'    — pedido en_ruta sin entregar > N min
+          * 'drogueria_excedida'  — pedido esperando_drog > N min
+      - routes/reparto.py /api/reparto/alertas-cadetes:
+          * 'sin_respuesta_cadete' — DM cadete sin responder > N min
+      - cron de bandeja /atencion (TODO):
+          * 'sin_respuesta_cliente' — conv en cola sin operador > N min
+
+    Dedup: el helper services.eventos_sla.registrar() no inserta si ya hay
+    un evento del mismo tipo + entidad (conv_id o pedido_id) sin resolver.
+    Esto evita un registro por tick del cron.
+    """
+    __tablename__ = 'eventos_sla'
+    id = Column(Integer, primary_key=True)
+    creado_en = Column(DateTime, default=now_ar, index=True)
+    tipo = Column(String(40), nullable=False, index=True)
+    severidad = Column(String(20), nullable=False, default='aviso')  # aviso | critico
+    conv_id = Column(Integer,
+                     ForeignKey('bot_conversaciones.id', ondelete='SET NULL'),
+                     nullable=True, index=True)
+    pedido_id = Column(Integer,
+                       ForeignKey('pedidos_reparto.id', ondelete='SET NULL'),
+                       nullable=True, index=True)
+    operador_id = Column(Integer,
+                         ForeignKey('usuarios.id', ondelete='SET NULL'),
+                         nullable=True)
+    cadete_id = Column(Integer,
+                       ForeignKey('cadetes.id', ondelete='SET NULL'),
+                       nullable=True)
+    minutos = Column(Integer, nullable=True)
+    detalle = Column(Text, nullable=True)
+    resuelto_en = Column(DateTime, nullable=True)
+    resuelto_por = Column(Integer,
+                          ForeignKey('usuarios.id', ondelete='SET NULL'),
+                          nullable=True)
+
+
 class BotInteraccion(Base):
     """Analítica: una fila por mensaje del cliente que procesa el bot, clasificada
     por camino/intent y con el motivo si NO se pudo resolver. Alimenta el panel de
@@ -2963,6 +3010,32 @@ class BotInteraccion(Base):
     tema = Column(String(80), index=True)            # reservado para tanda 2 (IA)
     producto = Column(String(160))                   # texto buscado cuando sin_stock
     creado_en = Column(DateTime, default=now_ar, index=True)
+
+
+class ApiKey(Base):
+    """Keys emitidas para consumir la API pública de AppFarmWeb (datos maestros
+    Praxis: obs_productos + obs_obras_sociales + precio_lista). Se usa para
+    productos externos tipo AppChatFarm que necesitan estos catálogos comunes.
+
+    `key_hash` = SHA-256 del token en claro (nunca guardamos el token). El token
+    se muestra UNA sola vez al crearlo.
+
+    `cuota_diaria` = None → ilimitada; entero → tope de requests por día."""
+    __tablename__ = 'api_keys'
+    id = Column(Integer, primary_key=True)
+    cliente_nombre = Column(String(120), nullable=False)   # ej. 'Farmacia Rodríguez' o 'AppChatFarm-Cliente-1'
+    key_hash = Column(String(64), unique=True, nullable=False, index=True)
+    prefix = Column(String(8), nullable=False)             # primeros 8 chars, para identificar en logs
+    activo = Column(Boolean, nullable=False, default=True)
+    cuota_diaria = Column(Integer, nullable=True)
+    usos_hoy = Column(Integer, nullable=False, default=0)
+    usos_hoy_fecha = Column(Date, nullable=True)
+    total_usos = Column(Integer, nullable=False, default=0)
+    ultimo_uso = Column(DateTime, nullable=True)
+    ultimo_ip = Column(String(45), nullable=True)
+    notas = Column(Text, nullable=True)
+    creado_en = Column(DateTime, default=now_ar)
+    creado_por = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -3059,6 +3132,7 @@ def init_db(database_url=None):
                         'parser_ofertas_lab', 'factura_faltante',
                         'analisis_ia_cache', 'panel_heartbeat',
                         'bot_conversaciones', 'bot_mensajes', 'bot_interacciones',
+                        'eventos_sla',
                         'clientes_locales',
                         'ciudades', 'tickets_caja', 'ticket_items', 'formas_pago',
                         'cuentas_pago', 'pagos', 'pago_aplicaciones',
@@ -3066,6 +3140,7 @@ def init_db(database_url=None):
                         'domicilios_cliente', 'rutas_reparto', 'pedidos_reparto',
                         'cadetes', 'ofertas_bot', 'ofertas_registro',
                         'respuestas_rapidas', 'informe_enviado',
+                        'api_keys',
                         'web_rubros_publicados', 'web_producto_imagen')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
@@ -5037,6 +5112,7 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomado_dm_user_id BIGINT",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS retirado_en TIMESTAMP",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS entregado_en TIMESTAMP",
+        "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS cliente_consulto_en TIMESTAMP",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS no_atiende_en TIMESTAMP",
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS no_atiende_intentos INTEGER NOT NULL DEFAULT 0",
         "CREATE INDEX IF NOT EXISTS idx_pedidos_reparto_waha_msg ON pedidos_reparto(waha_msg_id)",

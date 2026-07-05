@@ -7,6 +7,32 @@ Orden: P0 = afecta producción AHORA · P1 = riesgo/correctitud · P2 = deuda qu
 
 ---
 
+## ✅ Búsqueda de clientes por DNI (Diego 2026-06-22 → 2026-06-23)
+
+Cerrado. El operador puede tipear el DNI (exacto o parcial) en cualquier
+buscador de clientes (panel `/atencion`, picker `/pedido/nuevo`, etc.).
+
+**Hecho en 2 pasos:**
+
+1. **Diego 2026-06-22** — `bot/store.buscar_clientes_unificado` incluye
+   `Cliente.dni` y `Cliente.telefono` con ilike en el brazo multi-token, y
+   `Cliente.dni == q` exacto en el brazo numérico. `Cliente.dni` ya tiene
+   `index=True`. Cubrió el cliente_picker (`/api/clientes/buscar`).
+
+2. **2026-06-23** — `bot/store.buscar_clientes` (la firma vieja, usada
+   por `/atencion`) delega en `buscar_clientes_unificado`. Los leads
+   locales sin observer_id ahora aparecen también en `/atencion`. Como
+   los leads no tienen observer_id, se extendió `store.vincular_cliente`
+   para aceptar `cliente_id` directo, `/atencion/<conv>/vincular-cliente`
+   lo pasa en el body, y `atencion.html` etiqueta esos matches con
+   `(lead)` y vincula por cliente_id cuando falta observer_id.
+
+**Gaps aceptados:** DNI parcial-numérico solo matchea partial en tokens
+(brazo `q.isdigit()` sigue exacto). El operador tipea el DNI completo,
+no es un problema real.
+
+---
+
 ## 🔴 P0 — Re-sync de ventas (prod muestra ventas INFLADAS)
 
 **Qué pasa:** el fix `ee12bc6` (ventas netas) hace que `sync_ventas_mensuales`

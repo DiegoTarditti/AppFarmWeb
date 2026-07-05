@@ -93,11 +93,16 @@ def tick():
                               P.tomado_por_wsap.is_(None),
                               P.reaviso_enviado_en.is_(None))
                       .all())
+        from services import eventos_sla
         for p in pendientes:
             minutos = (ahora - p.publicado_en).total_seconds() / 60
             umbral = reaviso_min * factor if p.prioridad == 'urgente' else reaviso_min
             if minutos < umbral:
                 continue
+            # Registrar evento SLA (dedup: una sola fila por pedido).
+            eventos_sla.registrar('reaviso_publicacion', pedido_id=p.id,
+                                  minutos=int(minutos),
+                                  detalle=f'{int(minutos)}min sin tomar')
             # Mandar mensaje nuevo al grupo. Sin botón TOMAR — el botón sigue en el
             # mensaje original. Solo es un "bump" visual para que los cadetes lo vean.
             urgente_mark = ' 🚨' if p.prioridad == 'urgente' else ''
@@ -126,6 +131,11 @@ def tick():
             minutos = (ahora - p.tomado_en).total_seconds() / 60
             if minutos < retiro_max:
                 continue
+            # Crítico: ya estamos por desasignar al cadete.
+            eventos_sla.registrar('retiro_excedido', severidad='critico',
+                                  pedido_id=p.id, cadete_id=p.cadete_id,
+                                  minutos=int(minutos),
+                                  detalle=f'{p.tomado_por_wsap} tomó pero no retiró en {int(minutos)}min — desasignado')
             log.warning('[sla cron] desasignando #%d (cadete %s no retiró en %d min)',
                         p.id, p.tomado_por_wsap, int(minutos))
             if p.waha_msg_id:
@@ -142,6 +152,37 @@ def tick():
             p.waha_msg_id = None         # mensaje original ya no es válido
             p.reaviso_enviado_en = None  # reset para el próximo ciclo
             p.estado = 'pendiente'
+
+        # 3. Entrega excedida: pedido en_ruta sin entregar > 60 min. Solo log,
+        #    no toca el estado (el cadete sigue en ruta).
+        ENTREGA_MAX_MIN = 60
+        en_ruta = (s.query(P)
+                   .filter(P.retirado_en.isnot(None),
+                           P.entregado_en.is_(None),
+                           P.estado == 'en_ruta')
+                   .all())
+        for p in en_ruta:
+            minutos = (ahora - p.retirado_en).total_seconds() / 60
+            if minutos < ENTREGA_MAX_MIN:
+                continue
+            eventos_sla.registrar('entrega_excedida', pedido_id=p.id,
+                                  cadete_id=p.cadete_id, minutos=int(minutos),
+                                  detalle=f'{int(minutos)}min en ruta sin entregar')
+
+        # 4. Droguería excedida: pedido esperando_drog > 4hs. Solo log.
+        DROGUERIA_MAX_MIN = 240
+        esperando = (s.query(P)
+                     .filter(P.estado == 'esperando_drog')
+                     .all())
+        for p in esperando:
+            # Usamos creado_en si no hay otro campo de "entró a esperando_drog".
+            base = p.creado_en or ahora
+            minutos = (ahora - base).total_seconds() / 60
+            if minutos < DROGUERIA_MAX_MIN:
+                continue
+            eventos_sla.registrar('drogueria_excedida', pedido_id=p.id,
+                                  minutos=int(minutos),
+                                  detalle=f'{int(minutos)}min esperando llegada de droguería')
 
         s.commit()
 

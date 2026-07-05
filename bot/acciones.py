@@ -3,9 +3,17 @@
 Cada acción recibe el texto del usuario y devuelve un string (la respuesta).
 La búsqueda vive en `bot.data` (compartida con la IA).
 """
+import os
+
 from bot import store
 from bot.data import buscar_productos
 from bot.ia import consulta_ia
+
+
+# Diego 2026-06-22: el bot NO muestra precio al cliente (hasta nuevo aviso).
+# Para reactivar: setear BOT_MOSTRAR_PRECIO=1 en el .env (sin restart del bot).
+def _mostrar_precio():
+    return (os.environ.get('BOT_MOSTRAR_PRECIO') or '').lower() in ('1', 'true', 'yes', 'on')
 
 
 def _fmt_precio(p):
@@ -13,10 +21,14 @@ def _fmt_precio(p):
 
 
 def consultar_producto(texto):
-    """Búsqueda directa por nombre (sin IA): precio + stock.
+    """Botón 'Consultar Precio/Stock' (Diego 2026-06-22): simplificado a
+    informar stock + derivar al operador. Ya NO se ofrece comprar/encargar
+    automático ni elegir de una lista numerada — el operador toma la conv y
+    cierra la venta a mano.
 
-    Devuelve dict {texto, opciones, esperando, meta}. `meta` alimenta la analítica
-    de no-resueltos: si no hay match —o todo está sin stock— es demanda perdida."""
+    Devuelve dict {texto, opciones, esperando, derivar, meta}. `meta` alimenta
+    la analítica de no-resueltos: si no hay match —o todo está sin stock— es
+    demanda perdida."""
     texto = (texto or '').strip()
     if len(texto) < 3:
         return {'texto': 'Escribime el nombre del producto (al menos 3 letras) 🙂',
@@ -25,12 +37,18 @@ def consultar_producto(texto):
     # Buscamos uno más para detectar si hay demasiados resultados
     rows = buscar_productos(texto, limite=_LIMITE + 1)
     if not rows:
-        return {'texto': (f'No encontré "{texto}" en el sistema. 😕\n'
-                          'Probá con otro nombre, o escribí "menú" y elegí "Hablar con una persona".'),
-                'meta': {'camino': 'precio', 'resuelto': False,
-                         'motivo': 'sin_stock', 'producto': texto}}
+        # Sin matches: también derivamos al operador (puede ser una marca local
+        # que no está en obs_productos, una grafía rara, etc.).
+        return {
+            'texto': (f'No encontré "{texto}" en el sistema. 🤔\n'
+                      'Te paso con alguien del equipo para que te ayude.'),
+            'derivar': True,
+            'esperando': None,
+            'meta': {'camino': 'precio', 'resuelto': False,
+                     'motivo': 'sin_match', 'producto': texto},
+        }
     if len(rows) > _LIMITE:
-        # Búsqueda muy genérica → deriva al operador para que ayude a precisar
+        # Búsqueda muy genérica → deriva sin listar.
         return {
             'texto': (f'Encontré varias opciones para "{texto}" y no quiero confundirte. 🙂\n'
                       'Te paso con alguien del equipo para que te ayuden a elegir.'),
@@ -38,24 +56,26 @@ def consultar_producto(texto):
             'esperando': None,
             'meta': {'camino': 'precio', 'resuelto': False, 'motivo': 'muchas_opciones', 'producto': texto},
         }
+    # 1-3 matches: informamos stock (y precio si BOT_MOSTRAR_PRECIO=1) y derivamos.
     hay_stock = any(r['stock'] > 0 for r in rows)
+    mostrar_precio = _mostrar_precio()
     lineas = []
-    for i, r in enumerate(rows, 1):
+    for r in rows:
         disp = f'✅ {r["stock"]}u' if r['stock'] > 0 else '❌ sin stock'
-        lineas.append(f'{i}. {r["producto"]} — {_fmt_precio(r["precio"])} — {disp}')
+        precio_part = f' — {_fmt_precio(r["precio"])}' if mostrar_precio else ''
+        lineas.append(f'• {r["producto"]}{precio_part} — {disp}')
     meta = {'camino': 'precio', 'resuelto': hay_stock}
     if not hay_stock:
         meta.update({'motivo': 'sin_stock', 'producto': texto})
-    # Detectar ofertas activas para los productos con stock
+    # Detectar ofertas activas para los productos con stock (info para el panel).
     ids_con_stock = [r['observer_id'] for r in rows if r.get('observer_id') and r['stock'] > 0]
     ofertas_meta = store.get_ofertas_para_productos(ids_con_stock) if ids_con_stock else []
-
-    pie = ('\n\nTocá el número para pedirlo, o escribí otro producto 🙂'
-           if hay_stock else '\n\nEscribí otro producto o escribí "menú".')
+    cab = 'Esto encontré 👇' if hay_stock else 'Esto encontré (sin stock) 👇'
+    pie = '\n\nTe paso con alguien del equipo para coordinar 🙂'
     return {
-        'texto': 'Esto encontré 👇\n' + '\n'.join(lineas) + pie,
-        'opciones': [f'{i}. {r["producto"]}'[:64] for i, r in enumerate(rows, 1)],
-        'esperando': f'elegir_producto:{texto[:32]}',
+        'texto': cab + '\n' + '\n'.join(lineas) + pie,
+        'derivar': True,
+        'esperando': None,
         'meta': meta,
         'ofertas_meta': ofertas_meta,
     }
