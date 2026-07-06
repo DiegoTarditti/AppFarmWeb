@@ -2,9 +2,12 @@ databases:
   - name: farmacia-db
     databaseName: farmacia
     user: farmacia
-    # Instancia real: Basic-4gb (4 GB RAM, 2 CPU, 20 GB). El yaml decía 'free'
-    # (stale) — alineado para que un sync del Blueprint no intente bajarla a free.
-    plan: basic_4gb
+    # Instancia real: Basic-1gb (1 GB RAM, 0.5 CPU). Bajada desde Basic-4gb el
+    # 2026-07-06 — la base usaba solo ~0.8 GB de 20 GB, 4 GB era sobredimensionado
+    # (ahorro ~$56/mo). El yaml se mantiene alineado para que un sync del
+    # Blueprint no la re-suba. Si escasea CPU/conexiones, activar el connection
+    # pool o volver a basic_4gb.
+    plan: basic_1gb
     region: oregon
 
 services:
