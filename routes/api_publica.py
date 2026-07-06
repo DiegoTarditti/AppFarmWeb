@@ -121,10 +121,14 @@ def init_app(app):
             SELECT op.observer_id, op.descripcion, op.cantidad_envase,
                    op.es_fraccionable, op.id_tipo_venta_control,
                    op.precio_lista, op.precio_lista_fecha_vigencia,
-                   nd.descripcion AS droga
+                   op.laboratorio_observer,
+                   nd.descripcion AS droga,
+                   ol.descripcion AS laboratorio_nombre
               FROM obs_productos op
               LEFT JOIN obs_nombres_drogas nd
                 ON nd.observer_id = op.nombre_droga_observer
+              LEFT JOIN obs_laboratorios ol
+                ON ol.observer_id = op.laboratorio_observer
              WHERE op.fecha_baja IS NULL
                AND ({cond_prod} OR {cond_droga})
              ORDER BY op.descripcion
@@ -147,6 +151,8 @@ def init_app(app):
                 'requiere_receta': bool(tvc and tvc != 'L'),
                 'precio_lista': float(r.precio_lista) if r.precio_lista is not None else None,
                 'precio_fecha_vigencia': r.precio_lista_fecha_vigencia.isoformat() if r.precio_lista_fecha_vigencia else None,
+                'laboratorio_observer': r.laboratorio_observer,
+                'laboratorio_nombre': r.laboratorio_nombre,
             })
         return jsonify({'productos': out})
 
