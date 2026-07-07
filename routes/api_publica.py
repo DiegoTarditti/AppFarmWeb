@@ -313,6 +313,17 @@ def init_app(app):
                 prods = s.query(database.ObsProducto).filter(
                     database.ObsProducto.observer_id.in_(prod_ids)).all()
                 prod_ix = {p.observer_id: p.descripcion for p in prods}
+            # Blacklist de cargos administrativos (no son productos reales):
+            # 'SELLADO DE RECETAS', 'RETIRA EN FARMACIA', 'Costo Receta/Cupón'.
+            # Diego 2026-07-07: ensucian el histórico clínico de AppClinica.
+            # Match case-insensitive por substring — cubre variantes ("Costo Cupón",
+            # "Costo Receta", etc.). Los datos siguen en la DB por si Badia los
+            # necesita para audit/facturación; solo se descartan en esta respuesta.
+            _BLACKLIST = ('SELLADO DE RECETAS', 'SELLADO RECETAS',
+                          'RETIRA EN FARMACIA', 'COSTO RECETA', 'COSTO CUPON')
+            def _es_administrativo(desc):
+                d = (desc or '').upper()
+                return any(pat in d for pat in _BLACKLIST)
             out = [{
                 'id_producto_vendido': r.id_producto_vendido,
                 'id_operacion': r.id_operacion,
@@ -322,7 +333,7 @@ def init_app(app):
                 'importe': float(r.importe) if r.importe is not None else None,
                 'importe_a_cargo_os': float(r.importe_a_cargo_os) if r.importe_a_cargo_os is not None else None,
                 'importe_efectivo': float(r.importe_efectivo) if r.importe_efectivo is not None else None,
-            } for r in rows]
+            } for r in rows if not _es_administrativo(prod_ix.get(r.producto_observer))]
         return jsonify({'compras': out, 'total': len(out)})
 
     @app.route('/api/publica/stock/<int:observer_id>')
