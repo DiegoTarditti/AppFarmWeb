@@ -428,10 +428,12 @@ def init_app(app):
             "SELECT d.id AS despacho_id, d.fecha_programada, d.modalidad, "
             "       pm.producto_snapshot, pm.observer_id_producto, pm.cantidad, "
             "       p.id AS paciente_id, p.apellido, p.nombre, p.dni, "
-            "       p.observer_id, p.telefono, p.domicilio, p.ciudad "
+            "       p.observer_id, p.telefono, p.domicilio, p.ciudad, "
+            "       p.afiliado_nro, os.nombre AS obra_social_nombre "
             "  FROM despachos_programados d "
             "  JOIN paciente_medicamentos pm ON pm.id = d.paciente_medicamento_id "
             "  JOIN pacientes p ON p.id = d.paciente_id "
+            "  LEFT JOIN obras_sociales os ON os.id = p.obra_social_id "
             " WHERE d.estado = 'a_confirmar' AND d.fecha_programada <= :hoy "
             " ORDER BY d.fecha_programada, p.apellido, p.nombre LIMIT 200")
         try:
@@ -455,6 +457,8 @@ def init_app(app):
                 'telefono': r.telefono or '',
                 'domicilio': r.domicilio or '',
                 'ciudad': r.ciudad or '',
+                'afiliado_nro': r.afiliado_nro or '',
+                'obra_social': r.obra_social_nombre or '',
             })
         return jsonify({'despachos': out})
 
