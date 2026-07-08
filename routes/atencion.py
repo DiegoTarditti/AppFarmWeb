@@ -446,6 +446,7 @@ def init_app(app):
             nombre = ', '.join(x for x in [r.apellido, r.nombre] if x) or '(sin nombre)'
             out.append({
                 'despacho_id': r.despacho_id,
+                'paciente_id': r.paciente_id,  # para sync del observer_id
                 'fecha': r.fecha_programada.isoformat() if r.fecha_programada else None,
                 'modalidad': r.modalidad,
                 'producto': r.producto_snapshot or '',
@@ -462,6 +463,39 @@ def init_app(app):
                 'notas': r.notas or '',
             })
         return jsonify({'despachos': out})
+
+    @app.route('/atencion/api/despachos-clinica/paciente/<int:paciente_id>/observer',
+               methods=['POST'])
+    @login_required
+    def atencion_despachos_set_observer(paciente_id):
+        """Guarda el observer_id del cliente Badia en el paciente clínico
+        (tabla `pacientes` de AppClinica en la DB compartida).
+
+        Se llama cuando el operador vincula manualmente al cliente al procesar
+        un despacho — así los futuros despachos del mismo paciente ya vienen
+        con el observer_id resuelto y se auto-vinculan sin fricción.
+
+        Solo actualiza si observer_id era NULL (no pisar vínculo válido).
+        """
+        from sqlalchemy import text as _text
+        b = request.json or {}
+        try:
+            oid = int(b.get('observer_id'))
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'observer_id inválido'}), 400
+        try:
+            with database.get_db() as s:
+                r = s.execute(_text("""
+                    UPDATE pacientes
+                       SET observer_id = :oid
+                     WHERE id = :pid
+                       AND observer_id IS NULL
+                    RETURNING id
+                """), {'oid': oid, 'pid': paciente_id}).fetchone()
+                s.commit()
+        except Exception as e:  # noqa: BLE001
+            return jsonify({'ok': False, 'error': str(e)}), 500
+        return jsonify({'ok': True, 'actualizado': bool(r)})
 
     @app.route('/atencion/<int:conv_id>/cerrar-transaccion', methods=['POST'])
     @login_required

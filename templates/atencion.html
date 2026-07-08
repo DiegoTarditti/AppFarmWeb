@@ -2875,7 +2875,66 @@ async function seleccionarDespacho(despachoId){
   if (vinculado){
     if (typeof cargarFicha === 'function') cargarFicha();
     if (typeof recargarPicker === 'function') recargarPicker();
+    // Si el paciente clínico no tenía observer_id previo, persistir ya.
+    if (!d.observer_id) sincronizarObserverPaciente(d.paciente_id);
+  } else {
+    // Fallback total: el operador va a buscar/vincular manualmente en el
+    // picker. Polleamos 8s para captar ese vínculo manual y persistirlo
+    // en el paciente clínico (así los otros despachos del mismo paciente
+    // se auto-vinculan sin fricción).
+    if (!d.observer_id) {
+      pollSyncObserverPaciente(d.paciente_id, 8000);
+    }
   }
+}
+
+// Sincroniza el observer_id del cliente Badia vinculado a la conv actual
+// al paciente clínico (pacientes.observer_id). Solo actualiza si el
+// paciente no tenía observer_id previo. Y refresca los otros despachos
+// del mismo paciente en la cola in-memory.
+async function sincronizarObserverPaciente(pacienteId){
+  if (!pacienteId || !convAbierta) return;
+  try {
+    const rf = await fetch(`/atencion/api/${convAbierta}/cliente`);
+    const df = await rf.json();
+    const oid = df && df.ficha ? df.ficha.observer_id : null;
+    if (!oid) return;
+    const r = await fetch(
+      `/atencion/api/despachos-clinica/paciente/${pacienteId}/observer`,
+      {method:'POST', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({observer_id: oid})}
+    );
+    const rj = await r.json();
+    if (rj.ok && rj.actualizado) {
+      // Propago al cache in-memory: todos los despachos del mismo paciente
+      // ahora saben su observer_id → los próximos clicks auto-vinculan.
+      let n = 0;
+      (window.despachosCache || []).forEach(x => {
+        if (x.paciente_id === pacienteId && !x.observer_id) {
+          x.observer_id = oid; n++;
+        }
+      });
+      if (n > 0) {
+        renderDespachos(window.despachosCache);
+        console.info(`[cola clínica] observer_id ${oid} aplicado a ${n} despacho(s) del paciente #${pacienteId}`);
+      }
+    }
+  } catch (e) { console.error('sincronizarObserverPaciente fallo:', e); }
+}
+
+function pollSyncObserverPaciente(pacienteId, maxMs){
+  const start = Date.now();
+  const iv = setInterval(async () => {
+    if (Date.now() - start > maxMs) { clearInterval(iv); return; }
+    try {
+      const rf = await fetch(`/atencion/api/${convAbierta}/cliente`);
+      const df = await rf.json();
+      if (df && df.ficha && df.ficha.observer_id) {
+        clearInterval(iv);
+        sincronizarObserverPaciente(pacienteId);
+      }
+    } catch (e) { /* silencioso, sigue el polling */ }
+  }, 1500);
 }
 
 // En modo manual (walk-in) NO polleamos bandeja ni chat (no aplican).
