@@ -2844,6 +2844,23 @@ function renderDespachos(items){
 
 function _esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+// Auto-crea una conv walk-in si no hay ninguna abierta. Se llama antes de
+// seleccionar/procesar despachos en modo manual, para que el operador no
+// tenga que crear la conv a mano con el "+" del topbar.
+async function asegurarConvManual(){
+  if (typeof convAbierta !== 'undefined' && convAbierta) return true;
+  try {
+    const r = await fetch('/atencion/api/walkin', {method: 'POST'});
+    const d = await r.json();
+    if (d.ok && d.conv_id) {
+      await abrirConv(d.conv_id);
+      return true;
+    }
+  } catch (e) { console.error('asegurarConvManual fallo:', e); }
+  alert('No se pudo crear la conversación walk-in. Refrescá la página.');
+  return false;
+}
+
 // ─── Multi-select de despachos (mismo paciente + misma modalidad) ─────────
 window.despachosSeleccionados = new Set();
 
@@ -2907,6 +2924,8 @@ async function procesarMultiplesDespachos(){
   const items = ids.map(id => window.despachosCache.find(x => x.despacho_id === id))
                    .filter(Boolean);
   if (!items.length) return;
+  // Auto-crea conv walk-in si no hay ninguna abierta.
+  if (!(await asegurarConvManual())) return;
   // Producto concatenado con separador ' + '.
   const productoConcat = items.map(d =>
     `${d.producto || '(sin producto)'}${d.cantidad > 1 ? ' × ' + d.cantidad : ''}`
@@ -2969,6 +2988,8 @@ async function procesarMultiplesDespachos(){
 async function seleccionarDespacho(despachoId){
   const d = window.despachosCache.find(x => x.despacho_id === despachoId);
   if (!d) return;
+  // Auto-crea conv walk-in si no hay ninguna abierta.
+  if (!(await asegurarConvManual())) return;
   window.despachoIdActual = despachoId;
   // Precarga del producto en el form manual.
   const pi = document.getElementById('dProducto');

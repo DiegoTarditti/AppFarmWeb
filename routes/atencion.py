@@ -464,6 +464,27 @@ def init_app(app):
             })
         return jsonify({'despachos': out})
 
+    @app.route('/atencion/api/walkin', methods=['POST'])
+    @login_required
+    def atencion_api_walkin_nueva():
+        """Crea una BotConversacion walk-in (canal='manual') sin redirect.
+        Se usa desde el frontend cuando el operador clickea un despacho de
+        la cola clínica y no hay conv abierta — auto-arma una y sigue el
+        flujo sin perder el estado (checkboxes tildados, etc.)."""
+        import uuid as _uuid
+        with database.get_db() as s:
+            conv = database.BotConversacion(
+                canal='manual',
+                canal_user_id=f'manual-{_uuid.uuid4().hex[:10]}',
+                nombre_cliente='(walk-in)',
+                estado_atencion='humano',
+                nodo='pedido',
+                operador_user_id=current_user.id,
+            )
+            s.add(conv)
+            s.commit()
+            return jsonify({'ok': True, 'conv_id': conv.id})
+
     @app.route('/atencion/api/despachos-clinica/paciente/<int:paciente_id>/observer',
                methods=['POST'])
     @login_required
