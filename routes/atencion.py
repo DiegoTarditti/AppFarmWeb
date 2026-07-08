@@ -735,19 +735,32 @@ def init_app(app):
                 cli = s.get(database.Cliente, conv.cliente_id)
                 if cli:
                     cli.notas = ficha_notas_raw.strip() or None
-            # Si el pedido viene de un despacho de clínica (cola en modo=manual),
-            # marcar el despacho 'programado' y linkearlo al PedidoReparto creado.
-            # despachos_programados solo existe en la DB fusionada con AppClinica.
-            _despacho_id = body.get('despacho_id')
-            if _despacho_id:
+            # Si el pedido viene de despachos de clínica (cola en modo=manual),
+            # marcar TODOS los despachos vinculados como 'programado' + linkear
+            # al PedidoReparto creado. Acepta 1 (legacy despacho_id) o N
+            # (despacho_ids, multi-select 2026-07-08).
+            _ids = []
+            _multi = body.get('despacho_ids') or []
+            if isinstance(_multi, list):
+                for _v in _multi:
+                    try:
+                        _ids.append(int(_v))
+                    except (TypeError, ValueError):
+                        pass
+            elif body.get('despacho_id'):
+                try:
+                    _ids.append(int(body.get('despacho_id')))
+                except (TypeError, ValueError):
+                    pass
+            if _ids:
                 try:
                     from sqlalchemy import text as _text
                     s.execute(_text(
                         "UPDATE despachos_programados SET estado='programado', "
                         "pedido_reparto_id=:pid, programado_en=:ahora "
-                        "WHERE id=:did AND estado='a_confirmar'"),
+                        "WHERE id = ANY(:ids) AND estado='a_confirmar'"),
                         {'pid': p.id, 'ahora': database.now_ar(),
-                         'did': int(_despacho_id)})
+                         'ids': _ids})
                 except Exception:  # noqa: BLE001
                     pass
             s.commit()

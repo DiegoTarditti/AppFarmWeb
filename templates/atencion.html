@@ -238,6 +238,17 @@
   .despacho-item .nota-clinica { font-size: 11px; padding: 4px 6px; margin-top: 2px;
                                   border-radius: 4px; background: rgba(245,158,11,0.14);
                                   color: #b45309; border-left: 3px solid rgba(245,158,11,0.6); }
+  .despacho-item .despacho-chk { position: absolute; top: 6px; right: 6px; cursor: pointer; }
+  .despacho-item { position: relative; }
+  .despacho-item.multi-sel { background: rgba(59,130,246,0.10); border-left: 3px solid rgba(59,130,246,0.6); padding-left: 7px; }
+  #barraMulti { display: none; padding: 8px 10px; border-bottom: 0.5px solid;
+                background: rgba(59,130,246,0.10); font-size: 12px;
+                flex-direction: column; gap: 6px; }
+  #barraMulti.on { display: flex; }
+  #barraMulti .row { display: flex; align-items: center; gap: 8px; }
+  #barraMulti button { padding: 4px 10px; border-radius: 6px; border: none; cursor: pointer; }
+  #barraMulti .btn-procesar { background: #10b981; color: #fff; font-weight: 600; }
+  #barraMulti .btn-limpiar { background: transparent; color: #6b7280; text-decoration: underline; padding: 0; }
   /* En modo manual escondemos el header del cliente que viene de la chat-head
      (que esta DENTRO de colChat → ya esta escondido). Pero el bloque del Reset
      etc. del lado izquierdo del chat-head sigue ahi por si lo necesitamos. */
@@ -305,6 +316,13 @@
         <span style="font-size:12px; font-weight:600;">📋 Cola clínica <b id="cnt-despachos">0</b></span>
         <button onclick="cargarDespachosClinica()" title="Refrescar"
                 style="background:none; border:none; cursor:pointer; font-size:14px; padding:0 4px;">↻</button>
+      </div>
+      <div id="barraMulti">
+        <div class="row"><span id="barraMultiTxt"></span></div>
+        <div class="row">
+          <button class="btn-procesar" onclick="procesarMultiplesDespachos()">🔗 Procesar juntos</button>
+          <button class="btn-limpiar" onclick="limpiarSeleccionDespachos()">Limpiar</button>
+        </div>
       </div>
       <div id="listaDespachos" style="flex:1; overflow-y:auto; min-height:0;">
         <div class="muted" style="padding:16px; font-size:12px;">Cargando…</div>
@@ -1002,7 +1020,13 @@ function vaciarFormCierre(){
   // Reset del despacho de cola clínica seleccionado — safety para que un
   // "vaciar" manual no deje el id fantasma para el próximo cierre.
   window.despachoIdActual = null;
-  document.querySelectorAll('.despacho-item.selected').forEach(el => el.classList.remove('selected'));
+  window.despachosMultiActuales = null;
+  if (window.despachosSeleccionados) window.despachosSeleccionados.clear();
+  document.querySelectorAll('.despacho-item.selected, .despacho-item.multi-sel').forEach(el => {
+    el.classList.remove('selected'); el.classList.remove('multi-sel');
+  });
+  document.querySelectorAll('.despacho-chk').forEach(el => el.checked = false);
+  if (typeof actualizarBarraMulti === 'function') actualizarBarraMulti();
   // La lista de sugeridos también se limpia al cerrar la TX (el pedido ya
   // capturó lo tildado en el campo 'producto').
   vaciarSugeridos();
@@ -2605,9 +2629,12 @@ async function cerrarTxDirecto(imprimir){
     // Si estamos editando un pedido cerrado (botón "Reabrir" desde la pestaña
     // "Cerrados hoy"), el backend hace UPDATE en vez de INSERT.
     pedido_id: (typeof pedidoEditando !== 'undefined' && pedidoEditando) ? pedidoEditando : null,
-    // Cola clínica: si el operador clickeó un despacho en el panel izquierdo,
-    // el backend cierra ese despacho (estado='programado' + pedido_reparto_id).
+    // Cola clínica: single (despacho_id) o multi (despacho_ids: [1,2,3]).
+    // El backend UPDATEa todos los despachos vinculados con el mismo
+    // PedidoReparto id.
     despacho_id: window.despachoIdActual || null,
+    despacho_ids: (window.despachosMultiActuales && window.despachosMultiActuales.length)
+                   ? window.despachosMultiActuales : null,
   };
   try {
     const r = await fetch(`/atencion/${convAbierta}/cerrar-transaccion`, {
@@ -2630,14 +2657,20 @@ async function cerrarTxDirecto(imprimir){
     // "🖨 + Imprimir", abrimos el ticket PDF en pestaña nueva. Sino solo
     // vaciamos el form y mostramos toast con links manuales por si los necesita
     // después. Antes había confirm() + redirect forzado a /reparto/planilla.
-    // Si el pedido cerró un despacho de la cola clínica, lo sacamos ya del
-    // panel izquierdo (el próximo refresh de 30s también lo excluiría).
-    if (payload.despacho_id){
-      window.despachosCache = window.despachosCache.filter(x => x.despacho_id !== payload.despacho_id);
+    // Si el pedido cerró despachos de la cola clínica, los sacamos ya del
+    // panel izquierdo (el próximo refresh de 30s también los excluiría).
+    const idsCerrados = new Set();
+    if (payload.despacho_id) idsCerrados.add(payload.despacho_id);
+    if (Array.isArray(payload.despacho_ids)) payload.despacho_ids.forEach(x => idsCerrados.add(x));
+    if (idsCerrados.size > 0){
+      window.despachosCache = window.despachosCache.filter(x => !idsCerrados.has(x.despacho_id));
       renderDespachos(window.despachosCache);
       const cnt = document.getElementById('cnt-despachos');
       if (cnt) cnt.textContent = String(window.despachosCache.length);
       window.despachoIdActual = null;
+      window.despachosMultiActuales = null;
+      if (window.despachosSeleccionados) window.despachosSeleccionados.clear();
+      actualizarBarraMulti && actualizarBarraMulti();
     }
     vaciarFormCierre();
     if (typeof refrescarBandeja === 'function') refrescarBandeja();
@@ -2786,8 +2819,15 @@ function renderDespachos(items){
     const notaHtml = d.notas
       ? `<div class="nota-clinica">📝 ${_esc(d.notas)}</div>`
       : '';
+    const isSel = window.despachosSeleccionados && window.despachosSeleccionados.has(d.despacho_id);
     return `
-      <div class="despacho-item" data-id="${d.despacho_id}" onclick="seleccionarDespacho(${d.despacho_id})">
+      <div class="despacho-item ${isSel ? 'multi-sel' : ''}" data-id="${d.despacho_id}"
+           data-paciente="${d.paciente_id}" data-modalidad="${d.modalidad}"
+           onclick="seleccionarDespacho(${d.despacho_id})">
+        <input type="checkbox" class="despacho-chk"
+               ${isSel ? 'checked' : ''}
+               onclick="event.stopPropagation(); toggleAgruparDespacho(${d.despacho_id})"
+               title="Agrupar con otros despachos del mismo paciente + modalidad">
         <div class="paciente">${_esc(d.paciente || '(sin nombre)')}</div>
         <div class="producto">${_esc(d.producto || '(sin producto)')}${d.cantidad > 1 ? ' × ' + d.cantidad : ''}</div>
         ${identidad.length ? `<div class="meta">${identidad.join(' · ')}</div>` : ''}
@@ -2799,9 +2839,132 @@ function renderDespachos(items){
         </div>
       </div>`;
   }).join('');
+  actualizarBarraMulti();
 }
 
 function _esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ─── Multi-select de despachos (mismo paciente + misma modalidad) ─────────
+window.despachosSeleccionados = new Set();
+
+function toggleAgruparDespacho(despachoId){
+  const d = (window.despachosCache || []).find(x => x.despacho_id === despachoId);
+  if (!d) return;
+  if (window.despachosSeleccionados.has(despachoId)) {
+    window.despachosSeleccionados.delete(despachoId);
+  } else {
+    // Validar consistencia: mismo paciente + misma modalidad.
+    if (window.despachosSeleccionados.size > 0) {
+      const primero = window.despachosCache.find(
+        x => x.despacho_id === Array.from(window.despachosSeleccionados)[0]);
+      if (primero.paciente_id !== d.paciente_id) {
+        alert('Solo se pueden agrupar despachos del MISMO paciente.');
+        // Desmarco el check para dejar el UI coherente.
+        const chk = document.querySelector(`.despacho-item[data-id="${despachoId}"] .despacho-chk`);
+        if (chk) chk.checked = false;
+        return;
+      }
+      if (primero.modalidad !== d.modalidad) {
+        alert('Solo se pueden agrupar despachos con la MISMA modalidad (retiro o envío).');
+        const chk = document.querySelector(`.despacho-item[data-id="${despachoId}"] .despacho-chk`);
+        if (chk) chk.checked = false;
+        return;
+      }
+    }
+    window.despachosSeleccionados.add(despachoId);
+  }
+  // Repintar clase visual del ítem.
+  const row = document.querySelector(`.despacho-item[data-id="${despachoId}"]`);
+  if (row) row.classList.toggle('multi-sel',
+                                 window.despachosSeleccionados.has(despachoId));
+  actualizarBarraMulti();
+}
+
+function actualizarBarraMulti(){
+  const bar = document.getElementById('barraMulti');
+  const txt = document.getElementById('barraMultiTxt');
+  const n = window.despachosSeleccionados.size;
+  if (!bar || !txt) return;
+  if (n < 2) { bar.classList.remove('on'); return; }
+  const first = window.despachosCache.find(
+    x => x.despacho_id === Array.from(window.despachosSeleccionados)[0]);
+  const mod = first ? (first.modalidad === 'retiro_local' ? '🏬 Retiro'
+                       : first.modalidad === 'envio_domicilio' ? '🛵 Envío' : '') : '';
+  txt.textContent = `${n} despachos seleccionados · ${first ? first.paciente : ''} · ${mod}`;
+  bar.classList.add('on');
+}
+
+function limpiarSeleccionDespachos(){
+  window.despachosSeleccionados.clear();
+  document.querySelectorAll('.despacho-item.multi-sel').forEach(el => el.classList.remove('multi-sel'));
+  document.querySelectorAll('.despacho-chk').forEach(el => el.checked = false);
+  actualizarBarraMulti();
+}
+
+async function procesarMultiplesDespachos(){
+  const ids = Array.from(window.despachosSeleccionados);
+  if (ids.length < 2) return;
+  const items = ids.map(id => window.despachosCache.find(x => x.despacho_id === id))
+                   .filter(Boolean);
+  if (!items.length) return;
+  // Producto concatenado con separador ' + '.
+  const productoConcat = items.map(d =>
+    `${d.producto || '(sin producto)'}${d.cantidad > 1 ? ' × ' + d.cantidad : ''}`
+  ).join(' + ');
+  window.despachoIdActual = null;   // limpia el single-select para que no se pise
+  window.despachosMultiActuales = ids;
+  // Precarga del producto en el form manual (concatenado).
+  const pi = document.getElementById('dProducto');
+  if (pi) pi.value = productoConcat;
+  // El observer_id del producto queda sin setear (son varios).
+  window._dProductoObsId = null;
+
+  // Vincular al cliente (usa el mismo flujo que single, tomando el 1er item).
+  const primero = items[0];
+  if (typeof convAbierta === 'undefined' || !convAbierta) return;
+  let vinculado = false;
+  if (primero.observer_id) {
+    try {
+      const r = await fetch(`/atencion/${convAbierta}/vincular-cliente`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({observer_id: primero.observer_id}),
+      });
+      const rj = await r.json();
+      if (rj.ok && rj.ficha && rj.ficha.nombre) vinculado = true;
+    } catch (e) { console.error('vincular observer_id fallo:', e); }
+  }
+  if (!vinculado && primero.dni) {
+    try {
+      const rBusq = await fetch('/atencion/api/clientes/buscar?q=' + encodeURIComponent(primero.dni));
+      const dj = await rBusq.json();
+      const cli = (dj.clientes || [])[0];
+      if (cli) {
+        const body = {};
+        if (cli.observer_id) body.observer_id = cli.observer_id;
+        else if (cli.cliente_id || cli.id) body.cliente_id = cli.cliente_id || cli.id;
+        if (body.observer_id || body.cliente_id) {
+          const r2 = await fetch(`/atencion/${convAbierta}/vincular-cliente`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(body),
+          });
+          const rj2 = await r2.json();
+          if (rj2.ok) vinculado = true;
+        }
+      }
+    } catch (e) { console.error('fallback DNI fallo:', e); }
+  }
+  if (!vinculado) {
+    const pCliente = document.getElementById('pCliente');
+    if (pCliente) {
+      pCliente.value = primero.paciente || '';
+      pCliente.dispatchEvent(new Event('input', {bubbles: true}));
+    }
+  } else {
+    if (typeof cargarFicha === 'function') cargarFicha();
+    if (typeof recargarPicker === 'function') recargarPicker();
+    if (!primero.observer_id) sincronizarObserverPaciente(primero.paciente_id);
+  }
+}
 
 async function seleccionarDespacho(despachoId){
   const d = window.despachosCache.find(x => x.despacho_id === despachoId);
