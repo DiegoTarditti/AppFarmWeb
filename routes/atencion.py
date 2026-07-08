@@ -415,6 +415,53 @@ def init_app(app):
                 'prioridad': p.prioridad,
             }})
 
+    @app.route('/atencion/api/despachos-clinica')
+    @login_required
+    def atencion_despachos_clinica():
+        """Cola de despachos de clínica 'a_confirmar' cuya fecha ya venció (<= hoy).
+        Alimenta el panel izquierdo de /atencion?modo=manual. La tabla
+        despachos_programados solo existe en la DB fusionada con AppClinica; si no
+        está, devuelve []."""
+        from sqlalchemy import text as _text
+        hoy = database.now_ar().date()
+        sql = _text(
+            "SELECT d.id AS despacho_id, d.fecha_programada, d.modalidad, "
+            "       pm.producto_snapshot, pm.observer_id_producto, pm.cantidad, "
+            "       p.id AS paciente_id, p.apellido, p.nombre, p.dni, "
+            "       p.observer_id, p.telefono, p.domicilio, p.ciudad, "
+            "       p.afiliado_nro, os.nombre AS obra_social_nombre "
+            "  FROM despachos_programados d "
+            "  JOIN paciente_medicamentos pm ON pm.id = d.paciente_medicamento_id "
+            "  JOIN pacientes p ON p.id = d.paciente_id "
+            "  LEFT JOIN obras_sociales os ON os.id = p.obra_social_id "
+            " WHERE d.estado = 'a_confirmar' AND d.fecha_programada <= :hoy "
+            " ORDER BY d.fecha_programada, p.apellido, p.nombre LIMIT 200")
+        try:
+            with database.get_db() as s:
+                rows = s.execute(sql, {'hoy': hoy}).fetchall()
+        except Exception:  # noqa: BLE001
+            return jsonify({'despachos': []})
+        out = []
+        for r in rows:
+            nombre = ', '.join(x for x in [r.apellido, r.nombre] if x) or '(sin nombre)'
+            out.append({
+                'despacho_id': r.despacho_id,
+                'fecha': r.fecha_programada.isoformat() if r.fecha_programada else None,
+                'modalidad': r.modalidad,
+                'producto': r.producto_snapshot or '',
+                'observer_id_producto': r.observer_id_producto,
+                'cantidad': r.cantidad,
+                'paciente': nombre,
+                'dni': r.dni or '',
+                'observer_id': r.observer_id,   # para vincular el cliente Badia
+                'telefono': r.telefono or '',
+                'domicilio': r.domicilio or '',
+                'ciudad': r.ciudad or '',
+                'afiliado_nro': r.afiliado_nro or '',
+                'obra_social': r.obra_social_nombre or '',
+            })
+        return jsonify({'despachos': out})
+
     @app.route('/atencion/<int:conv_id>/cerrar-transaccion', methods=['POST'])
     @login_required
     def atencion_cerrar_transaccion(conv_id):
@@ -653,6 +700,21 @@ def init_app(app):
                 cli = s.get(database.Cliente, conv.cliente_id)
                 if cli:
                     cli.notas = ficha_notas_raw.strip() or None
+            # Si el pedido viene de un despacho de clínica (cola en modo=manual),
+            # marcar el despacho 'programado' y linkearlo al PedidoReparto creado.
+            # despachos_programados solo existe en la DB fusionada con AppClinica.
+            _despacho_id = body.get('despacho_id')
+            if _despacho_id:
+                try:
+                    from sqlalchemy import text as _text
+                    s.execute(_text(
+                        "UPDATE despachos_programados SET estado='programado', "
+                        "pedido_reparto_id=:pid, programado_en=:ahora "
+                        "WHERE id=:did AND estado='a_confirmar'"),
+                        {'pid': p.id, 'ahora': database.now_ar(),
+                         'did': int(_despacho_id)})
+                except Exception:  # noqa: BLE001
+                    pass
             s.commit()
             return jsonify({'ok': True, 'pedido_id': p.id, 'estado': p.estado})
 
