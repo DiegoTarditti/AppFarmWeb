@@ -425,7 +425,7 @@ def init_app(app):
         from sqlalchemy import text as _text
         hoy = database.now_ar().date()
         sql = _text(
-            "SELECT d.id AS despacho_id, d.fecha_programada, d.modalidad, "
+            "SELECT d.id AS despacho_id, d.fecha_programada, d.modalidad, d.notas, "
             "       pm.producto_snapshot, pm.observer_id_producto, pm.cantidad, "
             "       p.id AS paciente_id, p.apellido, p.nombre, p.dni, "
             "       p.observer_id, p.telefono, p.domicilio, p.ciudad, "
@@ -459,6 +459,7 @@ def init_app(app):
                 'ciudad': r.ciudad or '',
                 'afiliado_nro': r.afiliado_nro or '',
                 'obra_social': r.obra_social_nombre or '',
+                'notas': r.notas or '',
             })
         return jsonify({'despachos': out})
 

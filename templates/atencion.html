@@ -235,6 +235,9 @@
                                      border-radius: 6px; background: rgba(59,130,246,0.15);
                                      color: #3b82f6; }
   .despacho-item .badge-modalidad.retiro { background: rgba(16,185,129,0.15); color: #10b981; }
+  .despacho-item .nota-clinica { font-size: 11px; padding: 4px 6px; margin-top: 2px;
+                                  border-radius: 4px; background: rgba(245,158,11,0.14);
+                                  color: #b45309; border-left: 3px solid rgba(245,158,11,0.6); }
   /* En modo manual escondemos el header del cliente que viene de la chat-head
      (que esta DENTRO de colChat → ya esta escondido). Pero el bloque del Reset
      etc. del lado izquierdo del chat-head sigue ahi por si lo necesitamos. */
@@ -2780,12 +2783,16 @@ function renderDespachos(items){
     const cobertura = [];
     if (d.obra_social) cobertura.push(_esc(d.obra_social));
     if (d.afiliado_nro) cobertura.push('N° ' + _esc(d.afiliado_nro));
+    const notaHtml = d.notas
+      ? `<div class="nota-clinica">📝 ${_esc(d.notas)}</div>`
+      : '';
     return `
       <div class="despacho-item" data-id="${d.despacho_id}" onclick="seleccionarDespacho(${d.despacho_id})">
         <div class="paciente">${_esc(d.paciente || '(sin nombre)')}</div>
         <div class="producto">${_esc(d.producto || '(sin producto)')}${d.cantidad > 1 ? ' × ' + d.cantidad : ''}</div>
         ${identidad.length ? `<div class="meta">${identidad.join(' · ')}</div>` : ''}
         ${cobertura.length ? `<div class="meta">${cobertura.join(' · ')}</div>` : ''}
+        ${notaHtml}
         <div class="meta">
           <span>${fechaTxt}</span>
           <span class="badge-modalidad ${modKlass}">${modTxt}</span>
