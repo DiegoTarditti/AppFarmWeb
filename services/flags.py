@@ -1,14 +1,11 @@
 """Source of truth de la presentación de flags (comportamientos excepcionales).
 
-El "armado del dict de display de un flag" (mapa de colores + assembly de
-{slug, nombre, icono, color_clases, nota, ean_reemplazo, efecto_armado}) estaba
-duplicado inline en routes/productos.py y routes/compras_dia.py — dos bloques
-casi idénticos de ~40 líneas. Acá vive UNA sola vez.
+`construir_flag_dict` y `flags_display_por_producto` centralizan el armado del
+dict de display {slug, nombre, icono, color_clases, nota, ean_reemplazo,
+efecto_armado} que antes estaba duplicado en routes/productos.py y compras_dia.py.
 
 Distinto de `obtener_flags_bulk` (services/pedido_estacional.py), que devuelve
-los objetos crudos para el cálculo. Este módulo es la capa de PRESENTACIÓN: el
-dict listo para el chip de la UI (más `efecto_armado`, que el armado usa para
-aplicar efectos sobre la cantidad, ej. tope_uno).
+los objetos crudos para el cálculo. Este módulo es la capa de PRESENTACIÓN.
 """
 import json
 
@@ -20,6 +17,7 @@ FLAG_COLOR_CLASES = {
     'violet': 'bg-violet-100 text-violet-800 border-violet-300',
     'amber':  'bg-amber-100 text-amber-800 border-amber-300',
     'sky':    'bg-sky-100 text-sky-800 border-sky-300',
+    'gray':   'bg-gray-100 text-gray-700 border-gray-300',
 }
 
 

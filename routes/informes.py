@@ -11,27 +11,13 @@ Pendientes (próximas iteraciones):
 2. Drogas con un solo proveedor — alerta de dependencia.
 4. Presentaciones por droga — qué tamaños venden más.
 """
-from datetime import date
-
 from flask import jsonify, render_template, request
 from flask_login import login_required
 from sqlalchemy import distinct, func
 
 import database
 from database import ObsLaboratorio, ObsNombreDroga, ObsProducto, ObsStock, ObsVentaMensual, Producto
-
-
-def _ventana_12m():
-    """Devuelve (desde_ym, hasta_ym) como ints YYYYMM para los últimos 12 meses."""
-    hoy = date.today()
-    hasta = hoy.year * 100 + hoy.month
-    desde_y = hoy.year - 1
-    desde_m = hoy.month + 1
-    if desde_m > 12:
-        desde_m -= 12
-        desde_y += 1
-    desde = desde_y * 100 + desde_m
-    return desde, hasta
+from helpers import _ventana_12m_ym as _ventana_12m
 
 
 def init_app(app):
@@ -129,8 +115,11 @@ def init_app(app):
 
         from helpers import recalcular_snapshot_cadencias
         data = request.get_json(silent=True) or {}
-        cobertura = max(7, min(int(data.get('cobertura') or 30), 90))
-        meses_rot = max(1, min(int(data.get('meses_rot') or 3), 12))
+        try:
+            cobertura = max(7, min(int(data.get('cobertura') or 30), 90))
+            meses_rot = max(1, min(int(data.get('meses_rot') or 3), 12))
+        except (ValueError, TypeError):
+            return jsonify({'ok': False, 'error': 'cobertura/meses_rot deben ser enteros'}), 400
         t0 = time.time()
         with database.get_db() as session:
             n = recalcular_snapshot_cadencias(session, cobertura, meses_rot)

@@ -13,10 +13,11 @@ from datetime import timedelta as _td
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from sqlalchemy import func as _func_sync
 from sqlalchemy import or_, text
 
 import database
-from database import ProveedorHorarioReparto, Provider, get_db
+from database import ObsStock, ObsVentaMensual, ProveedorHorarioReparto, Provider, get_db
 from purchase_engine import AVG_DAYS_PER_MONTH, rotation_index
 from purchase_helpers import calcular_min_sugerido, clasificar_min, pvp_reciente
 from services.horarios import horarios_por_dia, proximo_cierre, urgencia_cierre
@@ -348,9 +349,6 @@ def init_app(app):
             # el armado (stock + ventas). Así el "hace Xh" garantiza que TODO lo
             # que alimenta el pedido está al menos así de fresco. /pedidos/dia es
             # local-only → siempre hay ObServer, no hace falta gatear.
-            from sqlalchemy import func as _func_sync
-
-            from database import ObsStock, ObsVentaMensual
             _maxes = []
             for _modelo in (ObsStock, ObsVentaMensual):
                 _mx = session.query(_func_sync.max(_modelo.sync_en)).scalar()

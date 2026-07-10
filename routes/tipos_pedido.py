@@ -124,10 +124,9 @@ def init_app(app):
         with get_db() as session:
             rows = (session.query(TipoPedidoConfig)
                     .order_by(TipoPedidoConfig.slug).all())
-            pedidos = [_row_to_dict(r) for r in rows
-                       if (getattr(r, 'categoria', 'pedido') or 'pedido') == 'pedido']
-            flags   = [_row_to_dict(r) for r in rows
-                       if (getattr(r, 'categoria', 'pedido') or 'pedido') == 'flag']
+            dicts = [_row_to_dict(r) for r in rows]
+            pedidos = [d for d in dicts if d['categoria'] == 'pedido']
+            flags   = [d for d in dicts if d['categoria'] == 'flag']
         return render_template('tipos_pedido_list.html', pedidos=pedidos, flags=flags)
 
     @app.route('/config/tipos-pedido/<slug>/edit', methods=['GET', 'POST'])

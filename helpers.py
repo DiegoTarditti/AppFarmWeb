@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 import database
 from database import Producto
 
+_DIAS_PROM_MES = 30.42  # días promedio por mes (365/12); mismo valor que purchase_engine.AVG_DAYS_PER_MONTH
+
 AR_TZ = timezone(timedelta(hours=-3))
 
 def now_ar():
@@ -1351,7 +1353,6 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
     """
     import database
 
-    _DIAS_PROM_MES = 30.42
     dias_rotacion = int(meses_rotacion * _DIAS_PROM_MES)
 
     # 1. Productos del lab (vía ObsProducto.laboratorio_observer).
@@ -1507,7 +1508,7 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
             continue
         avg_diario = u_rot / dias_rotacion
         avg_mensual = avg_diario * _DIAS_PROM_MES
-        precio_unit = (m_rot / u_rot) if u_rot else 0  # PVP estimado
+        precio_unit = (m_rot / u_rot) if u_rot else 0  # precio histórico (monto / unidades sobre ventana de rotación)
         monto_mensual = avg_mensual * precio_unit
         matriz[rfm]['monto_mensual'] += monto_mensual
         cant_fija = cant_fija_map.get(r.observer_id)
@@ -1675,7 +1676,6 @@ def calcular_alertas_repo_fija(session, dias_aviso=7, meses_rotacion=3,
     """
     import database
 
-    _DIAS_PROM_MES = 30.42
     dias_rotacion = int(meses_rotacion * _DIAS_PROM_MES)
 
     # 1. Productos con repo fija seteada + linkeados a Observer.
