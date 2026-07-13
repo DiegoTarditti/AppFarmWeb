@@ -175,6 +175,158 @@ def init_app(app):
                                data=data, meses=meses, mes_sel=mes,
                                tot_imp=tot_imp, tot_u=tot_u)
 
+    # ── Crónicos PAMI: vista panorámica ─────────────────────────────────────
+    # Detecta drogas que un afiliado PAMI recibe con cadencia mensual (20-55d)
+    # en la ventana X → candidatos crónicos. Base: Gestion.Recetas +
+    # RecetasRenglones agrupadas por NombresDrogas (captura cambio de dosis/marca).
+    # Consumido por AppClinica vía /api/publica/pami/afiliado/{n}/cronicos-sugeridos.
+
+    @app.route('/informes/cronicos-pami')
+    @login_required
+    def informe_cronicos_pami():
+        """Informe panorámico de crónicos PAMI. Filtros: ventana, cadencia, OS.
+
+        3 vistas complementarias:
+          1. Top drogas: cuáles son las más recetadas en modo crónico
+          2. Top afiliados: pacientes con más crónicos identificados (los complejos)
+          3. Distribución: cuántos afiliados tienen 1, 2, 3, ...N crónicos
+        """
+        from observer_source import _connect, _test_acceso_gestion
+        try:
+            ventana = min(24, max(1, int(request.args.get('ventana_meses') or 6)))
+            min_disp = max(2, int(request.args.get('min_dispensas') or 3))
+            cad_min = max(1, int(request.args.get('cadencia_min') or 20))
+            cad_max = max(cad_min + 1, int(request.args.get('cadencia_max') or 55))
+        except (TypeError, ValueError):
+            ventana, min_disp, cad_min, cad_max = 6, 3, 20, 55
+        obra_social = (request.args.get('os') or 'PAMI').strip() or 'PAMI'
+        filtros = dict(ventana=ventana, min_disp=min_disp,
+                       cad_min=cad_min, cad_max=cad_max, os=obra_social)
+
+        # Degradación graceful: la data vive en Gestion.Recetas, schema premium.
+        # Farmacias con usuarioDW no lo tienen — mostramos cartel en vez de romper.
+        if not _test_acceso_gestion():
+            return render_template('informes_cronicos_pami.html',
+                                   sin_acceso_premium=True, filtros=filtros)
+
+        conn = _connect(timeout=60)
+        if conn is None:
+            return render_template('informes_cronicos_pami.html',
+                                   error='ObServer no disponible desde este server.',
+                                   filtros=filtros)
+        try:
+            with conn.cursor(as_dict=True) as cur:
+                # CTE base: pares (afiliado, droga) con métricas
+                base_cte = f"""
+                    WITH pares AS (
+                        SELECT
+                            r.NumeroAfiliado,
+                            nd.IdNombresDrogas AS id_droga,
+                            nd.Descripcion     AS droga,
+                            COUNT(DISTINCT r.IdReceta) AS dispensas,
+                            DATEDIFF(day, MIN(r.FechaDeVenta), MAX(r.FechaDeVenta)) AS span_dias
+                        FROM Gestion.Recetas r
+                        JOIN Gestion.RecetasRenglones rr ON rr.IdReceta = r.IdReceta
+                        JOIN DW.Productos pr ON pr.IdProducto = rr.IdProducto
+                        JOIN DW.NombresDrogas nd ON nd.IdNombresDrogas = pr.IdNombresDrogas
+                        LEFT JOIN DW.Planes p ON p.IdPlan = r.IdPlan
+                        LEFT JOIN DW.Convenios cv ON cv.IdConvenio = p.IdConvenio
+                        LEFT JOIN DW.ObrasSociales os ON os.IdObraSocial = cv.IdObraSocial
+                        WHERE r.Anulada = 0 AND rr.Rechazado = 0
+                          AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
+                          AND os.Descripcion = %s
+                          AND r.NumeroAfiliado IS NOT NULL AND LEN(r.NumeroAfiliado) >= 10
+                        GROUP BY r.NumeroAfiliado, nd.IdNombresDrogas, nd.Descripcion
+                        HAVING COUNT(DISTINCT r.IdReceta) >= {min_disp}
+                    ),
+                    filtrados AS (
+                        SELECT *,
+                               CAST(span_dias AS FLOAT) / NULLIF(dispensas - 1, 0) AS cad
+                          FROM pares
+                    )
+                """
+
+                # 1. Top drogas — cuáles se recetan más "en crónico"
+                cur.execute(base_cte + f"""
+                    SELECT TOP 30
+                        id_droga, droga,
+                        COUNT(DISTINCT NumeroAfiliado) AS afiliados,
+                        AVG(dispensas) AS disp_prom,
+                        AVG(cad) AS cad_prom
+                      FROM filtrados
+                     WHERE cad BETWEEN {cad_min} AND {cad_max}
+                     GROUP BY id_droga, droga
+                     ORDER BY afiliados DESC
+                """, (obra_social,))
+                top_drogas = [{
+                    'id_droga': r['id_droga'],
+                    'droga': (r['droga'] or '').strip(),
+                    'afiliados': r['afiliados'],
+                    'disp_prom': round(float(r['disp_prom'] or 0), 1),
+                    'cad_prom': round(float(r['cad_prom'] or 0), 1),
+                } for r in cur.fetchall()]
+
+                # 2. Top afiliados — los más "complejos"
+                cur.execute(base_cte + f"""
+                    SELECT TOP 30
+                        f.NumeroAfiliado,
+                        (SELECT TOP 1 NombreAfiliado FROM Gestion.Recetas r2
+                          WHERE r2.NumeroAfiliado = f.NumeroAfiliado
+                          ORDER BY r2.FechaDeOperacion DESC) AS nombre,
+                        COUNT(DISTINCT id_droga) AS n_cronicos,
+                        SUM(dispensas) AS dispensas_totales
+                      FROM filtrados f
+                     WHERE cad BETWEEN {cad_min} AND {cad_max}
+                     GROUP BY f.NumeroAfiliado
+                     ORDER BY n_cronicos DESC, dispensas_totales DESC
+                """, (obra_social,))
+                top_afiliados = [{
+                    'numero': r['NumeroAfiliado'],
+                    'nombre': (r['nombre'] or '').strip(),
+                    'n_cronicos': r['n_cronicos'],
+                    'dispensas_totales': r['dispensas_totales'],
+                } for r in cur.fetchall()]
+
+                # 3. Distribución cronicos-por-afiliado (histograma)
+                cur.execute(base_cte + f"""
+                    SELECT n_cronicos, COUNT(*) AS afiliados
+                      FROM (
+                          SELECT NumeroAfiliado, COUNT(DISTINCT id_droga) AS n_cronicos
+                            FROM filtrados
+                           WHERE cad BETWEEN {cad_min} AND {cad_max}
+                           GROUP BY NumeroAfiliado
+                      ) t
+                     GROUP BY n_cronicos
+                     ORDER BY n_cronicos
+                """, (obra_social,))
+                histograma = [{'n_cronicos': r['n_cronicos'], 'afiliados': r['afiliados']}
+                              for r in cur.fetchall()]
+
+                # Totales
+                cur.execute(base_cte + f"""
+                    SELECT
+                        COUNT(DISTINCT NumeroAfiliado) AS afiliados_con_cronicos,
+                        COUNT(DISTINCT id_droga)        AS drogas_distintas,
+                        COUNT(*)                        AS pares_totales
+                      FROM filtrados WHERE cad BETWEEN {cad_min} AND {cad_max}
+                """, (obra_social,))
+                tot = cur.fetchone() or {}
+        finally:
+            conn.close()
+
+        return render_template('informes_cronicos_pami.html',
+                               top_drogas=top_drogas,
+                               top_afiliados=top_afiliados,
+                               histograma=histograma,
+                               totales={
+                                   'afiliados': tot.get('afiliados_con_cronicos', 0) or 0,
+                                   'drogas': tot.get('drogas_distintas', 0) or 0,
+                                   'pares': tot.get('pares_totales', 0) or 0,
+                               },
+                               filtros=dict(ventana=ventana, min_disp=min_disp,
+                                            cad_min=cad_min, cad_max=cad_max,
+                                            os=obra_social))
+
     @app.route('/informes/cadencias-lab')
     @login_required
     def informe_cadencias_lab():
@@ -1547,9 +1699,19 @@ def init_app(app):
         producto_id = request.args.get('producto_id', type=int)
         medico_id = request.args.get('medico_id', type=int)
         lab_id = request.args.get('lab_id', type=int)
+        os_id = request.args.get('os_id', type=int)
+        # Rubro: mismo comportamiento que la pantalla — default 12 (Medicamentos),
+        # 0 explícito = "Todos" → None.
+        if 'rubro_id' in request.args:
+            rubro_id = request.args.get('rubro_id', type=int)
+        else:
+            rubro_id = 12
+        if rubro_id == 0:
+            rubro_id = None
+        excluir_sin_droga = request.args.get('excluir_sin_droga') == '1'
         solo_con_receta = request.args.get('solo_con_receta') == '1'
         group_by = (request.args.get('group_by') or 'producto').strip()
-        if group_by not in ('producto', 'droga', 'laboratorio', 'medico', 'mes', 'dia'):
+        if group_by not in ('producto', 'droga', 'laboratorio', 'medico', 'mes', 'dia', 'os'):
             group_by = 'producto'
 
         # Reusar la misma lógica de query (copia del handler de la pantalla).
@@ -1564,8 +1726,10 @@ def init_app(app):
                 from helpers import medicos_observer_ids_compartidos
                 ids_med = medicos_observer_ids_compartidos(session, medico_id)
                 base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
+            if os_id:
+                base = base.filter(ObsVentaDetalle.obra_social_observer == os_id)
             ya_joined_obs = False
-            if droga_id or solo_con_receta or lab_id:
+            if droga_id or solo_con_receta or lab_id or rubro_id or excluir_sin_droga:
                 base = base.join(
                     ObsProducto,
                     ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
@@ -1575,9 +1739,17 @@ def init_app(app):
                 base = base.filter(ObsProducto.nombre_droga_observer == droga_id)
             if lab_id:
                 base = base.filter(ObsProducto.laboratorio_observer == lab_id)
+            if excluir_sin_droga:
+                base = base.filter(ObsProducto.nombre_droga_observer.isnot(None))
             if solo_con_receta:
                 base = base.filter(ObsProducto.id_tipo_venta_control.isnot(None),
                                    ObsProducto.id_tipo_venta_control != 'L')
+            if rubro_id:
+                from database import ObsSubrubro
+                base = base.join(
+                    ObsSubrubro,
+                    ObsSubrubro.observer_id == ObsProducto.subrubro_observer,
+                ).filter(ObsSubrubro.rubro_observer == rubro_id)
 
             rows_data = []
             if group_by == 'producto':
@@ -1590,10 +1762,26 @@ def init_app(app):
                      .order_by(_func.sum(ObsVentaDetalle.cantidad).desc()).limit(2000))
                 base_rows = q.all()
                 pids = [r.key for r in base_rows]
-                desc_por_pid = dict(session.query(ObsProducto.observer_id, ObsProducto.descripcion)
-                                    .filter(ObsProducto.observer_id.in_(pids)).all()) if pids else {}
+                # Traigo descripción + id_laboratorio de cada producto
+                if pids:
+                    prod_info = {p.observer_id: (p.descripcion, p.laboratorio_observer)
+                                 for p in session.query(ObsProducto.observer_id,
+                                                        ObsProducto.descripcion,
+                                                        ObsProducto.laboratorio_observer)
+                                                 .filter(ObsProducto.observer_id.in_(pids)).all()}
+                    # Nombres de laboratorio (join separado para no romper el pivot).
+                    from database import ObsLaboratorio
+                    lab_ids = {info[1] for info in prod_info.values() if info[1]}
+                    lab_por_id = (dict(session.query(ObsLaboratorio.observer_id,
+                                                     ObsLaboratorio.descripcion)
+                                       .filter(ObsLaboratorio.observer_id.in_(lab_ids)).all())
+                                  if lab_ids else {})
+                else:
+                    prod_info, lab_por_id = {}, {}
                 for r in base_rows:
-                    rows_data.append((desc_por_pid.get(r.key, f'#{r.key}'),
+                    desc, lab_id_r = prod_info.get(r.key, (f'#{r.key}', None))
+                    lab_nombre = lab_por_id.get(lab_id_r, '') if lab_id_r else ''
+                    rows_data.append((desc, lab_nombre,
                                       int(r.ops or 0), float(r.cant or 0), float(r.imp or 0)))
             elif group_by == 'droga':
                 base_q = base if ya_joined_obs else base.join(
@@ -1683,28 +1871,49 @@ def init_app(app):
         if droga_id: filtros_txt.append(f'droga_id={droga_id}')
         if producto_id: filtros_txt.append(f'producto_id={producto_id}')
         if medico_id: filtros_txt.append(f'medico_id={medico_id}')
+        if lab_id: filtros_txt.append(f'lab_id={lab_id}')
+        if os_id: filtros_txt.append(f'os_id={os_id}')
+        if rubro_id: filtros_txt.append(f'rubro_id={rubro_id}')
+        if excluir_sin_droga: filtros_txt.append('excluir_sin_droga')
+        if solo_con_receta: filtros_txt.append('solo_con_receta')
         ws.append([f"Filtros: {', '.join(filtros_txt) or '(ninguno)'}"])
         ws.append([f'Agrupado por: {group_by}'])
         ws.append([])
 
-        # Headers de tabla.
+        # Headers de tabla — columna Laboratorio solo cuando group_by='producto'
+        # (una droga tiene N labs, no corresponde; los otros pivots tampoco).
+        con_lab = (group_by == 'producto')
         col_label = {'producto': 'Producto', 'droga': 'Droga',
-                     'medico': 'Médico', 'mes': 'Mes', 'dia': 'Día'}.get(group_by, 'Grupo')
-        headers = [col_label, 'Operaciones', 'Cantidad', 'Importe']
+                     'laboratorio': 'Laboratorio', 'medico': 'Médico',
+                     'mes': 'Mes', 'dia': 'Día', 'os': 'Obra social'}.get(group_by, 'Grupo')
+        if con_lab:
+            headers = [col_label, 'Laboratorio', 'Operaciones', 'Cantidad', 'Importe']
+        else:
+            headers = [col_label, 'Operaciones', 'Cantidad', 'Importe']
         ws.append(headers)
         for cell in ws[ws.max_row]:
             cell.font = Font(bold=True, color='FFFFFF')
             cell.fill = PatternFill('solid', fgColor='6B21A8')
             cell.alignment = Alignment(horizontal='center')
 
-        for grupo, ops, cant, imp in rows_data:
-            ws.append([grupo, ops, cant, imp])
+        if con_lab:
+            for grupo, lab, ops, cant, imp in rows_data:
+                ws.append([grupo, lab, ops, cant, imp])
+        else:
+            for grupo, ops, cant, imp in rows_data:
+                ws.append([grupo, ops, cant, imp])
 
         # Anchos.
         ws.column_dimensions['A'].width = 50
-        ws.column_dimensions['B'].width = 14
-        ws.column_dimensions['C'].width = 14
-        ws.column_dimensions['D'].width = 16
+        if con_lab:
+            ws.column_dimensions['B'].width = 30    # Laboratorio
+            ws.column_dimensions['C'].width = 14
+            ws.column_dimensions['D'].width = 14
+            ws.column_dimensions['E'].width = 16
+        else:
+            ws.column_dimensions['B'].width = 14
+            ws.column_dimensions['C'].width = 14
+            ws.column_dimensions['D'].width = 16
 
         bio = BytesIO()
         wb.save(bio)

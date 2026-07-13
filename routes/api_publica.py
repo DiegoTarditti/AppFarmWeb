@@ -391,3 +391,304 @@ def init_app(app):
                 'duracion_ms': cmd.duracion_ms,
                 'comando': cmd.comando,
             })
+
+    # ── PAMI: buscar Nº de afiliado por DNI ──────────────────────────────────
+    # Fuente: Gestion.Recetas.NumeroAfiliado (schema premium, requiere user sa).
+    # Consumido por AppClinica para backfill de pacientes.afiliado_nro cuando
+    # tenemos DNI pero no el número de afiliado PAMI. Solo devuelve el afiliado
+    # y el nombre — NO datos médicos, NO productos, NO historial.
+
+    def _buscar_afiliado_pami_por_dni_impl(dni_int):
+        """Devuelve dict con datos del afiliado PAMI más recientemente registrado
+        para ese DNI, o None si no hay match. Prioriza plan PAMI (via JOIN a
+        DW.ObrasSociales). Fallback: primera receta con ese DNI si no hay PAMI.
+
+        Requiere acceso al schema Gestion (user sa). Sin acceso → None.
+        """
+        from observer_source import _connect, _test_acceso_gestion
+        if not _test_acceso_gestion():
+            return None
+        conn = _connect(timeout=15)
+        if conn is None:
+            return None
+        try:
+            with conn.cursor(as_dict=True) as cur:
+                # PAMI primero
+                cur.execute("""
+                    SELECT TOP 1
+                        r.NumeroAfiliado,
+                        r.NombreAfiliado,
+                        r.SexoAfiliado,
+                        r.DocumentoAfiliado_Numero,
+                        MAX(r.FechaDeOperacion) OVER () AS ultima_op
+                    FROM Gestion.Recetas r
+                    LEFT JOIN DW.Planes p ON p.IdPlan = r.IdPlan
+                    LEFT JOIN DW.Convenios cv ON cv.IdConvenio = p.IdConvenio
+                    LEFT JOIN DW.ObrasSociales os ON os.IdObraSocial = cv.IdObraSocial
+                    WHERE r.DocumentoAfiliado_Numero = %d
+                      AND r.Anulada = 0
+                      AND os.Descripcion = 'PAMI'
+                    ORDER BY r.FechaDeOperacion DESC
+                """, (int(dni_int),))
+                row = cur.fetchone()
+                if row:
+                    return {
+                        'numero_afiliado': (row['NumeroAfiliado'] or '').strip(),
+                        'nombre_afiliado': (row['NombreAfiliado'] or '').strip(),
+                        'sexo': row['SexoAfiliado'],
+                        'obra_social': 'PAMI',
+                        'documento_numero': row['DocumentoAfiliado_Numero'],
+                    }
+                return None
+        finally:
+            conn.close()
+
+    @app.route('/api/publica/pami/afiliado-por-dni')
+    @requiere_api_key
+    def api_publica_pami_afiliado_por_dni():
+        """Busca NumeroAfiliado PAMI dado un DNI.
+        Params: dni=numérico. Devuelve {found, numero_afiliado, nombre_afiliado, ...}
+        o {found: false} si no hay match.
+        """
+        dni = (request.args.get('dni') or '').strip()
+        if not dni.isdigit():
+            return jsonify({'error': 'dni debe ser numérico'}), 400
+        try:
+            data = _buscar_afiliado_pami_por_dni_impl(int(dni))
+        except Exception as e:
+            return jsonify({'error': f'observer no disponible: {e}'}), 503
+        if data is None:
+            return jsonify({'found': False, 'dni': dni})
+        return jsonify({'found': True, 'dni': dni, **data})
+
+    @app.route('/api/publica/pami/afiliados-por-dnis', methods=['POST'])
+    @requiere_api_key
+    def api_publica_pami_afiliados_por_dnis():
+        """Batch: recibe {dnis: [str, ...]} y devuelve {resultados: {dni: {found, ...}}}.
+        Máx 500 DNIs por llamada para evitar timeouts.
+        Consulta Gestion.Recetas con IN (...) y agrupa por DNI. Prioriza OS=PAMI.
+        """
+        body = request.get_json(silent=True) or {}
+        dnis_in = body.get('dnis') or []
+        if not isinstance(dnis_in, list):
+            return jsonify({'error': 'dnis debe ser lista'}), 400
+        dnis = []
+        for d in dnis_in[:500]:
+            s = str(d).strip()
+            if s.isdigit():
+                dnis.append(int(s))
+        if not dnis:
+            return jsonify({'resultados': {}, 'consultados': 0})
+
+        from observer_source import _connect, _test_acceso_gestion
+        if not _test_acceso_gestion():
+            return jsonify({
+                'error': 'sin_acceso_premium',
+                'mensaje': 'Esta consulta requiere acceso al schema Gestion (user sa).',
+            }), 501
+        conn = _connect(timeout=30)
+        if conn is None:
+            return jsonify({'error': 'observer no disponible'}), 503
+        try:
+            with conn.cursor(as_dict=True) as cur:
+                placeholders = ','.join(['%d'] * len(dnis))
+                cur.execute(f"""
+                    WITH ranked AS (
+                        SELECT
+                            r.DocumentoAfiliado_Numero AS dni,
+                            r.NumeroAfiliado, r.NombreAfiliado, r.SexoAfiliado,
+                            r.FechaDeOperacion,
+                            CASE WHEN os.Descripcion = 'PAMI' THEN 0 ELSE 1 END AS es_pami,
+                            os.Descripcion AS obra_social,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY r.DocumentoAfiliado_Numero
+                                ORDER BY
+                                    CASE WHEN os.Descripcion = 'PAMI' THEN 0 ELSE 1 END,
+                                    r.FechaDeOperacion DESC
+                            ) AS rn
+                        FROM Gestion.Recetas r
+                        LEFT JOIN DW.Planes p ON p.IdPlan = r.IdPlan
+                        LEFT JOIN DW.Convenios cv ON cv.IdConvenio = p.IdConvenio
+                        LEFT JOIN DW.ObrasSociales os ON os.IdObraSocial = cv.IdObraSocial
+                        WHERE r.DocumentoAfiliado_Numero IN ({placeholders})
+                          AND r.Anulada = 0
+                    )
+                    SELECT dni, NumeroAfiliado, NombreAfiliado, SexoAfiliado, obra_social
+                      FROM ranked WHERE rn = 1
+                """, tuple(dnis))
+                found_rows = cur.fetchall()
+        finally:
+            conn.close()
+
+        found_map = {}
+        for r in found_rows:
+            found_map[str(r['dni'])] = {
+                'found': True,
+                'numero_afiliado': (r['NumeroAfiliado'] or '').strip(),
+                'nombre_afiliado': (r['NombreAfiliado'] or '').strip(),
+                'sexo': r['SexoAfiliado'],
+                'obra_social': r['obra_social'],
+            }
+        resultados = {}
+        for d in dnis:
+            resultados[str(d)] = found_map.get(str(d), {'found': False})
+        return jsonify({'resultados': resultados, 'consultados': len(dnis),
+                         'encontrados': len(found_map)})
+
+    # ── PAMI: crónicos sugeridos por afiliado ────────────────────────────────
+    # Detector de crónicos: agrupa recetas por DROGA (no producto puntual, para
+    # captar cambios de marca/dosis). Sugiere las drogas con >= N dispensas en
+    # la ventana y cadencia entre X e Y días.
+    #
+    # Consumido por AppClinica: pantalla "sugeridos por consumo" en la ficha del
+    # paciente. Devuelve las presentaciones concretas dispensadas para que la
+    # UI pueda linkear al catálogo Praxis (observer_id de producto).
+    #
+    # Umbrales default acordados 2026-07-13: 3 dispensas, cadencia 20-55d,
+    # ventana 6m, agrupado por IdNombresDrogas.
+
+    @app.route('/api/publica/pami/afiliado/<numero>/cronicos-sugeridos')
+    @requiere_api_key
+    def api_publica_pami_cronicos_sugeridos(numero):
+        """Devuelve crónicos sugeridos para un afiliado PAMI.
+
+        Path: numero = NumeroAfiliado (13-16 dígitos).
+        Query params (todos opcionales):
+          ventana_meses  (default 6, max 24)
+          min_dispensas  (default 3, min 2)
+          cadencia_min   (default 20 días)
+          cadencia_max   (default 55 días)
+        """
+        numero = (numero or '').strip()
+        if not numero.isdigit() or len(numero) < 10:
+            return jsonify({'error': 'numero de afiliado inválido'}), 400
+        try:
+            ventana = min(24, max(1, int(request.args.get('ventana_meses') or 6)))
+            min_disp = max(2, int(request.args.get('min_dispensas') or 3))
+            cad_min = max(1, int(request.args.get('cadencia_min') or 20))
+            cad_max = max(cad_min + 1, int(request.args.get('cadencia_max') or 55))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'parámetros inválidos'}), 400
+
+        from observer_source import _connect, _test_acceso_gestion
+        if not _test_acceso_gestion():
+            return jsonify({
+                'error': 'sin_acceso_premium',
+                'mensaje': ('Esta consulta requiere acceso al schema Gestion de Observer '
+                            '(user sa). Esta farmacia usa credenciales limitadas (usuarioDW).'),
+            }), 501
+        conn = _connect(timeout=30)
+        if conn is None:
+            return jsonify({'error': 'observer no disponible'}), 503
+        try:
+            with conn.cursor(as_dict=True) as cur:
+                # Cabecera: nombre del afiliado + total recetas en la ventana
+                cur.execute("""
+                    SELECT TOP 1 NombreAfiliado, SexoAfiliado
+                      FROM Gestion.Recetas
+                     WHERE NumeroAfiliado = %s
+                     ORDER BY FechaDeOperacion DESC
+                """, (numero,))
+                cab = cur.fetchone()
+                if not cab:
+                    return jsonify({'found': False, 'numero_afiliado': numero,
+                                    'mensaje': 'sin recetas en Observer'})
+
+                # Query por droga con cadencia y todas las presentaciones concretas
+                cur.execute(f"""
+                    SELECT
+                        nd.IdNombresDrogas AS id_droga,
+                        nd.Descripcion     AS droga,
+                        COUNT(DISTINCT r.IdReceta)             AS dispensas,
+                        COUNT(DISTINCT rr.IdProducto)          AS n_presentaciones,
+                        AVG(CAST(rr.Cantidad AS FLOAT))        AS cant_prom,
+                        MAX(rr.DiasTratamiento)                AS dias_tto,
+                        MIN(r.FechaDeVenta)                    AS primera,
+                        MAX(r.FechaDeVenta)                    AS ultima,
+                        DATEDIFF(day, MIN(r.FechaDeVenta), MAX(r.FechaDeVenta)) AS span_dias
+                    FROM Gestion.Recetas r
+                    JOIN Gestion.RecetasRenglones rr ON rr.IdReceta = r.IdReceta
+                    JOIN DW.Productos pr             ON pr.IdProducto = rr.IdProducto
+                    JOIN DW.NombresDrogas nd         ON nd.IdNombresDrogas = pr.IdNombresDrogas
+                    WHERE r.NumeroAfiliado = %s
+                      AND r.Anulada = 0 AND rr.Rechazado = 0
+                      AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
+                    GROUP BY nd.IdNombresDrogas, nd.Descripcion
+                    HAVING COUNT(DISTINCT r.IdReceta) >= {min_disp}
+                    ORDER BY COUNT(DISTINCT r.IdReceta) DESC
+                """, (numero,))
+                drogas = cur.fetchall()
+                if not drogas:
+                    return jsonify({
+                        'found': True, 'numero_afiliado': numero,
+                        'nombre_afiliado': (cab['NombreAfiliado'] or '').strip(),
+                        'sexo': cab['SexoAfiliado'],
+                        'ventana_meses': ventana,
+                        'criterios': {'min_dispensas': min_disp,
+                                       'cadencia_min': cad_min,
+                                       'cadencia_max': cad_max},
+                        'sugeridos': [], 'descartados': [],
+                    })
+
+                # Cargar todas las presentaciones (id_producto + nombre) por droga en 1 query
+                id_drogas = [d['id_droga'] for d in drogas]
+                placeholders = ','.join(['%d'] * len(id_drogas))
+                cur.execute(f"""
+                    SELECT DISTINCT
+                        pr.IdNombresDrogas AS id_droga,
+                        pr.IdProducto      AS id_producto,
+                        pr.Producto        AS producto
+                      FROM Gestion.RecetasRenglones rr
+                      JOIN Gestion.Recetas r ON r.IdReceta = rr.IdReceta
+                      JOIN DW.Productos pr ON pr.IdProducto = rr.IdProducto
+                     WHERE r.NumeroAfiliado = %s
+                       AND r.Anulada = 0 AND rr.Rechazado = 0
+                       AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
+                       AND pr.IdNombresDrogas IN ({placeholders})
+                     ORDER BY pr.IdNombresDrogas, pr.Producto
+                """, tuple([numero] + id_drogas))
+                pres_por_droga = {}
+                for r in cur.fetchall():
+                    pres_por_droga.setdefault(r['id_droga'], []).append({
+                        'id_producto': r['id_producto'],
+                        'producto': (r['producto'] or '').strip(),
+                    })
+        finally:
+            conn.close()
+
+        sugeridos, descartados = [], []
+        for d in drogas:
+            disp = d['dispensas']
+            span = d['span_dias'] or 0
+            cad = round(span / max(1, disp - 1), 1) if disp > 1 else None
+            item = {
+                'id_droga': d['id_droga'],
+                'droga': (d['droga'] or '').strip(),
+                'dispensas': disp,
+                'n_presentaciones': d['n_presentaciones'],
+                'cantidad_prom': round(float(d['cant_prom'] or 0), 2),
+                'dias_tratamiento_max': d['dias_tto'],
+                'cadencia_dias': cad,
+                'primera_dispensa': d['primera'].isoformat() if d['primera'] else None,
+                'ultima_dispensa': d['ultima'].isoformat() if d['ultima'] else None,
+                'presentaciones': pres_por_droga.get(d['id_droga'], []),
+            }
+            if cad is not None and cad_min <= cad <= cad_max:
+                sugeridos.append(item)
+            else:
+                razon = ('cadencia_muy_rapida' if cad is not None and cad < cad_min
+                         else 'cadencia_muy_lenta' if cad is not None else 'una_sola_fecha')
+                item['razon_descarte'] = razon
+                descartados.append(item)
+
+        return jsonify({
+            'found': True,
+            'numero_afiliado': numero,
+            'nombre_afiliado': (cab['NombreAfiliado'] or '').strip(),
+            'sexo': cab['SexoAfiliado'],
+            'ventana_meses': ventana,
+            'criterios': {'min_dispensas': min_disp,
+                           'cadencia_min': cad_min, 'cadencia_max': cad_max},
+            'sugeridos': sugeridos,
+            'descartados': descartados,
+        })
