@@ -583,7 +583,7 @@ def init_app(app):
         try:
             with conn.cursor(as_dict=True) as cur:
                 # Cabecera: nombre del afiliado + total recetas en la ventana
-                cur.execute(f"""
+                cur.execute("""
                     SELECT TOP 1 NombreAfiliado, SexoAfiliado
                       FROM Gestion.Recetas
                      WHERE NumeroAfiliado = %s
