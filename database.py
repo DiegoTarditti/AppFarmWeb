@@ -930,7 +930,8 @@ class ObsSyncLog(Base):
     entidad = Column(String(40), nullable=False, index=True)   # 'laboratorios', 'productos', etc.
     filas_upsert = Column(Integer, nullable=False, default=0)
     duracion_ms = Column(Integer, nullable=True)
-    error = Column(Text, nullable=True)
+    error = Column(Text, nullable=True)         # Solo errores reales (traceback / mensaje de error)
+    info = Column(Text, nullable=True)          # Nota descriptiva del sync (rango de meses, contadores, etc.)
     ejecutado_en = Column(DateTime, default=now_ar)
     __table_args__ = (
         Index('idx_obs_sync_entidad', 'entidad', text('ejecutado_en DESC')),
@@ -4224,9 +4225,11 @@ def _pg_add_columns(conn):
             filas_upsert INTEGER NOT NULL DEFAULT 0,
             duracion_ms INTEGER,
             error TEXT,
+            info TEXT,
             ejecutado_en TIMESTAMP DEFAULT NOW()
         )
     """))
+    conn.execute(text("ALTER TABLE obs_sync_log ADD COLUMN IF NOT EXISTS info TEXT"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_sync_entidad ON obs_sync_log(entidad, ejecutado_en DESC)"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS obs_ventas_mensuales (
@@ -5476,9 +5479,15 @@ def _sqlite_add_columns(conn):
             filas_upsert INTEGER NOT NULL DEFAULT 0,
             duracion_ms INTEGER,
             error TEXT,
+            info TEXT,
             ejecutado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """))
+    # SQLite: agregar columna info si la tabla ya existía sin ella
+    try:
+        conn.execute(text("ALTER TABLE obs_sync_log ADD COLUMN info TEXT"))
+    except Exception:
+        pass  # ya existe
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS obs_ventas_mensuales (
             id_farmacia INTEGER NOT NULL,
