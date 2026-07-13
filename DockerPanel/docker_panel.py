@@ -2370,6 +2370,14 @@ class DockerPanel(tk.Tk):
                 out_lines.append(f'[exit={proc.returncode}]')
                 if proc.returncode != 0:
                     return 'error', '\n'.join(out_lines)
+                # Falso positivo: endpoints como /api/auto-sync devuelven HTTP 200
+                # con {"ok": false, ...} cuando el proceso interno falló (ej.
+                # ObServer no disponible). curl da exit 0 igual → detectamos el
+                # ok:false del cuerpo y lo reportamos como error real.
+                err_body = self._error_en_respuesta_json(proc.stdout)
+                if err_body:
+                    out_lines.append(f'[respuesta ok:false → {err_body}]')
+                    return 'error', '\n'.join(out_lines)
             except subprocess.TimeoutExpired:
                 out_lines.append(f'[TIMEOUT >300s en paso "{desc}"]')
                 return 'error', '\n'.join(out_lines)
@@ -2377,6 +2385,28 @@ class DockerPanel(tk.Tk):
                 out_lines.append(f'[EXCEPCIÓN en paso "{desc}": {e}]')
                 return 'error', '\n'.join(out_lines)
         return 'ok', '\n'.join(out_lines)
+
+    @staticmethod
+    def _error_en_respuesta_json(stdout):
+        """Si `stdout` es un JSON con 'ok': false, devuelve un string de error
+        (con el detalle del primer paso fallido si viene en 'pasos'). Sino None.
+        Para no marcar error en salidas que no son JSON (git pull, etc.)."""
+        salida = (stdout or '').strip()
+        if not salida.startswith('{'):
+            return None
+        try:
+            j = json.loads(salida)
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(j, dict) or j.get('ok') is not False:
+            return None
+        err = j.get('error')
+        if not err and isinstance(j.get('pasos'), list):
+            for p in j['pasos']:
+                if isinstance(p, dict) and p.get('ok') is False:
+                    err = f"{p.get('paso')}: {p.get('error')}"
+                    break
+        return err or 'la respuesta trajo ok:false'
 
     def _ejecutar_stock_query(self, cmd_name):
         """Handler para comandos 'stock:<observer_id>'.
