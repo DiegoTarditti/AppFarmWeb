@@ -327,6 +327,162 @@ def init_app(app):
                                             cad_min=cad_min, cad_max=cad_max,
                                             os=obra_social))
 
+    # Drill-down por afiliado: reusa el endpoint API pública (mismo cálculo
+    # que consume AppClinica) y renderiza pantalla dedicada. Acepta numero o dni.
+    @app.route('/informes/cronicos-pami/afiliado')
+    @login_required
+    def informe_cronicos_pami_afiliado():
+        """Detalle de crónicos sugeridos para un afiliado PAMI puntual.
+        Query params: numero (afiliado) o dni. Filtros: ventana_meses, cadencia_*."""
+        from observer_source import _connect, _test_acceso_gestion
+        try:
+            ventana = min(24, max(1, int(request.args.get('ventana_meses') or 6)))
+            min_disp = max(2, int(request.args.get('min_dispensas') or 3))
+            cad_min = max(1, int(request.args.get('cadencia_min') or 20))
+            cad_max = max(cad_min + 1, int(request.args.get('cadencia_max') or 55))
+        except (TypeError, ValueError):
+            ventana, min_disp, cad_min, cad_max = 6, 3, 20, 55
+        numero = (request.args.get('numero') or '').strip()
+        dni = (request.args.get('dni') or '').strip()
+        filtros = dict(ventana=ventana, min_disp=min_disp,
+                       cad_min=cad_min, cad_max=cad_max,
+                       numero=numero, dni=dni)
+
+        if not _test_acceso_gestion():
+            return render_template('informes_cronicos_pami_afiliado.html',
+                                   sin_acceso_premium=True, filtros=filtros)
+
+        conn = _connect(timeout=60)
+        if conn is None:
+            return render_template('informes_cronicos_pami_afiliado.html',
+                                   error='ObServer no disponible', filtros=filtros)
+
+        try:
+            with conn.cursor(as_dict=True) as cur:
+                # Resolver DNI → afiliado si vino sólo DNI
+                if not numero and dni.isdigit():
+                    cur.execute("""
+                        SELECT TOP 1 NumeroAfiliado
+                          FROM Gestion.Recetas
+                         WHERE DocumentoAfiliado_Numero = %d
+                         ORDER BY FechaDeOperacion DESC
+                    """, (int(dni),))
+                    row = cur.fetchone()
+                    numero = (row['NumeroAfiliado'] or '').strip() if row else ''
+
+                if not numero or not numero.isdigit():
+                    return render_template('informes_cronicos_pami_afiliado.html',
+                                           afiliado=None,
+                                           error='Ingresá un número de afiliado o DNI válido.',
+                                           filtros=filtros)
+
+                # Cabecera del afiliado
+                cur.execute("""
+                    SELECT TOP 1 NumeroAfiliado, NombreAfiliado, SexoAfiliado,
+                           DocumentoAfiliado_Numero AS dni
+                      FROM Gestion.Recetas
+                     WHERE NumeroAfiliado = %s
+                     ORDER BY FechaDeOperacion DESC
+                """, (numero,))
+                cab = cur.fetchone()
+                if not cab:
+                    return render_template('informes_cronicos_pami_afiliado.html',
+                                           afiliado=None,
+                                           error=f'Sin recetas en Observer para el afiliado {numero}.',
+                                           filtros=filtros)
+
+                # Drogas del afiliado con métricas
+                cur.execute(f"""
+                    SELECT
+                        nd.IdNombresDrogas AS id_droga,
+                        nd.Descripcion     AS droga,
+                        COUNT(DISTINCT r.IdReceta)             AS dispensas,
+                        COUNT(DISTINCT rr.IdProducto)          AS n_presentaciones,
+                        AVG(CAST(rr.Cantidad AS FLOAT))        AS cant_prom,
+                        MIN(r.FechaDeVenta)                    AS primera,
+                        MAX(r.FechaDeVenta)                    AS ultima,
+                        DATEDIFF(day, MIN(r.FechaDeVenta), MAX(r.FechaDeVenta)) AS span_dias,
+                        SUM(rr.ImporteRenglon)                 AS importe_total,
+                        SUM(rr.ImporteACargoOS)                AS cargo_os_total
+                    FROM Gestion.Recetas r
+                    JOIN Gestion.RecetasRenglones rr ON rr.IdReceta = r.IdReceta
+                    JOIN DW.Productos pr             ON pr.IdProducto = rr.IdProducto
+                    JOIN DW.NombresDrogas nd         ON nd.IdNombresDrogas = pr.IdNombresDrogas
+                    WHERE r.NumeroAfiliado = %s
+                      AND r.Anulada = 0 AND rr.Rechazado = 0
+                      AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
+                    GROUP BY nd.IdNombresDrogas, nd.Descripcion
+                    HAVING COUNT(DISTINCT r.IdReceta) >= {min_disp}
+                    ORDER BY COUNT(DISTINCT r.IdReceta) DESC
+                """, (numero,))
+                drogas = cur.fetchall()
+
+                # Presentaciones por droga
+                pres_por_droga = {}
+                if drogas:
+                    ids = [d['id_droga'] for d in drogas]
+                    placeholders = ','.join(['%d'] * len(ids))
+                    cur.execute(f"""
+                        SELECT DISTINCT pr.IdNombresDrogas AS id_droga,
+                               pr.IdProducto AS id_producto,
+                               pr.Producto   AS producto,
+                               (SELECT COUNT(*) FROM Gestion.RecetasRenglones rr2
+                                  JOIN Gestion.Recetas r2 ON r2.IdReceta = rr2.IdReceta
+                                 WHERE r2.NumeroAfiliado = %s
+                                   AND rr2.IdProducto = pr.IdProducto
+                                   AND r2.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
+                                   AND r2.Anulada = 0 AND rr2.Rechazado = 0) AS n_veces
+                          FROM Gestion.RecetasRenglones rr
+                          JOIN Gestion.Recetas r ON r.IdReceta = rr.IdReceta
+                          JOIN DW.Productos pr ON pr.IdProducto = rr.IdProducto
+                         WHERE r.NumeroAfiliado = %s
+                           AND r.Anulada = 0 AND rr.Rechazado = 0
+                           AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
+                           AND pr.IdNombresDrogas IN ({placeholders})
+                         ORDER BY pr.IdNombresDrogas, n_veces DESC
+                    """, tuple([numero, numero] + ids))
+                    for r in cur.fetchall():
+                        pres_por_droga.setdefault(r['id_droga'], []).append({
+                            'id_producto': r['id_producto'],
+                            'producto': (r['producto'] or '').strip(),
+                            'n_veces': r['n_veces'],
+                        })
+        finally:
+            conn.close()
+
+        sugeridos, descartados = [], []
+        for d in drogas:
+            disp = d['dispensas']; span = d['span_dias'] or 0
+            cad = round(span / max(1, disp - 1), 1) if disp > 1 else None
+            item = {
+                'droga': (d['droga'] or '').strip(),
+                'dispensas': disp,
+                'n_presentaciones': d['n_presentaciones'],
+                'cantidad_prom': round(float(d['cant_prom'] or 0), 2),
+                'cadencia_dias': cad,
+                'primera': d['primera'],
+                'ultima': d['ultima'],
+                'importe_total': float(d['importe_total'] or 0),
+                'cargo_os_total': float(d['cargo_os_total'] or 0),
+                'presentaciones': pres_por_droga.get(d['id_droga'], []),
+            }
+            if cad is not None and cad_min <= cad <= cad_max:
+                sugeridos.append(item)
+            else:
+                razon = ('muy_rapida' if cad is not None and cad < cad_min
+                         else 'muy_lenta' if cad is not None else 'una_sola_fecha')
+                item['razon_descarte'] = razon
+                descartados.append(item)
+
+        return render_template('informes_cronicos_pami_afiliado.html',
+                               afiliado={'numero': (cab['NumeroAfiliado'] or '').strip(),
+                                         'nombre': (cab['NombreAfiliado'] or '').strip(),
+                                         'sexo': cab['SexoAfiliado'],
+                                         'dni': cab.get('dni')},
+                               sugeridos=sugeridos,
+                               descartados=descartados,
+                               filtros=filtros)
+
     @app.route('/informes/cadencias-lab')
     @login_required
     def informe_cadencias_lab():
