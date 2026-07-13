@@ -330,10 +330,15 @@ def ejecutar_sql_readonly(query, max_rows=200, timeout=30):
 # local como parámetro para el upsert. Devuelve dict con stats.
 # ──────────────────────────────────────────────────────────────────────────
 
-def _log_sync(session, entidad, upsert, duracion_ms, error=None):
+def _log_sync(session, entidad, upsert, duracion_ms, error=None, info=None):
+    """Registra el resultado de un sync.
+
+    - error: solo para errores REALES (excepción, mensaje de falla). Se pinta rojo.
+    - info: nota descriptiva del sync exitoso (rango de meses, contadores, etc.). Se pinta gris.
+    """
     from database import ObsSyncLog
     session.add(ObsSyncLog(entidad=entidad, filas_upsert=upsert,
-                            duracion_ms=duracion_ms, error=error))
+                            duracion_ms=duracion_ms, error=error, info=info))
 
 
 def _upsert_obs(session, Model, pk_col, pk_value, **fields):
@@ -775,8 +780,8 @@ def sync_fraccionado_master(session):
     """)).rowcount or 0
     duracion = int((time.time() - t0) * 1000)
     _log_sync(session, 'fraccionado_master', flag, duracion,
-              f'master: {mat_nuevos} materializados; '
-              f'envase: {env_nuevos} nuevos, {env_completados} completados')
+              info=(f'master: {mat_nuevos} materializados; '
+                    f'envase: {env_nuevos} nuevos, {env_completados} completados'))
     return {'upsert': flag, 'duracion_ms': duracion, 'flag_updates': flag,
             'mat_nuevos': mat_nuevos,
             'env_nuevos': env_nuevos, 'env_completados': env_completados}
@@ -1450,7 +1455,7 @@ def sync_ventas_mensuales(session, meses=None, id_farmacia=None):
     extra = f'{meses} meses · {desde_key}-{hasta_key}'
     if skipped:
         extra += f' · {skipped} huerfanos'
-    _log_sync(session, 'ventas_mensuales', n, duracion, extra)
+    _log_sync(session, 'ventas_mensuales', n, duracion, info=extra)
     return {'upsert': n, 'duracion_ms': duracion, 'meses': meses, 'skipped': skipped}
 
 
@@ -1562,12 +1567,16 @@ def estado_ventas_mensuales(session, dias_fresco=7):
     sub_v = _sub('ventas_mensuales')
     sub_s = _sub('stock')
 
-    # Si ninguno tiene log (datos importados por pull desde otra máquina):
-    # consideramos frescos pero sin medir días.
+    # Si ninguno tiene log (datos importados por pull/push desde otra máquina —
+    # típico en Render donde push_obs_to_render copia stock+ventas pero no
+    # obs_sync_log): consideramos frescos pero sin medir días. Los sub-estados
+    # también van a 'fresco' — si no, el template muestra "⛔ Stock: sin sync"
+    # aunque el estado global sea 'fresco'.
     if sub_v['estado'] == 'nunca' and sub_s['estado'] == 'nunca':
+        externo = {'estado': 'fresco', 'ultimo_sync': None, 'dias': None}
         return {'estado': 'fresco', 'ultimo_sync': None, 'dias': 0, 'filas': filas,
                 'mensaje': f'{filas} filas de ventas disponibles (origen externo).',
-                'stock': sub_s, 'ventas': sub_v}
+                'stock': externo, 'ventas': externo}
 
     # Global = peor de los dos (ignorando 'nunca' si el otro tiene dato).
     ranking = {'fresco': 0, 'viejo': 1, 'nunca': 2}
@@ -2245,3 +2254,153 @@ def get_pedido_items(id_pedido):
             return out
     finally:
         conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Consulta de recetas por afiliado — Gestion.Recetas (schema premium)
+#
+# A diferencia de `buscar_recetas*` (arriba) que agregan desde `DW.ProductosVendidos`
+# (1 fila por producto vendido), esta función lee `Gestion.Recetas` que tiene
+# 1 fila por RECETA con campos únicos: OPF, NumeroReceta, NumeroAfiliado,
+# MatriculaMedico, TotalReceta, TotalACargoOS, estado de Trazabilidad, etc.
+#
+# Es la fuente correcta para reproducir la vista "recetas por afiliado" del PDV
+# (screenshot Diego 2026-07-11).
+#
+# Requiere acceso al schema Gestion (user sa). Ver docs/observer_gestion_recetas.md.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TRAZ_MAP = {'N': 'No requerido', 'P': 'Trazabilidad pendiente',
+             'A': 'Asociada', 'X': 'Excluida'}
+
+
+def buscar_recetas_por_afiliado(numero_afiliado, desde=None, hasta=None,
+                                 id_farmacia=None, incluir_anuladas=False,
+                                 incluir_productos=True, limit=500):
+    """Devuelve las recetas de un afiliado desde `Gestion.Recetas`, opcionalmente
+    con el detalle de productos (renglones).
+
+    Args:
+        numero_afiliado: str o int — NumeroAfiliado exacto (ej. '14004503970600').
+        desde, hasta: date/datetime opcionales — filtra por FechaDeOperacion.
+        id_farmacia: int opcional (default OBSERVER_ID_FARMACIA).
+        incluir_anuladas: bool — si False (default), excluye Anulada=1.
+        incluir_productos: bool — si True (default), incluye el detalle de
+            productos (una query extra por lote a `Gestion.RecetasRenglones`).
+        limit: int — tope de recetas (default 500).
+
+    Returns:
+        list[dict] ordenado por FechaDeOperacion DESC:
+            id_receta, opf, numero_receta, numero_afiliado, nombre_afiliado,
+            matricula_medico, plan_descripcion, plan_id,
+            fecha_operacion, fecha_autorizacion, fecha_venta,
+            total_receta, total_a_cargo_os, total_afiliado,
+            trazabilidad_estado (código), trazabilidad_desc (texto),
+            anulada, autorizada, rendida,
+            productos: list[{id_producto, producto, cantidad, precio_pvp,
+                             importe_renglon, importe_a_cargo_os, rechazado}]
+                (vacío si incluir_productos=False).
+
+    Requiere user con acceso a schema `Gestion` (sa en Badia).
+    """
+    from datetime import datetime, time, timedelta
+    cfg = _config()
+    if not cfg:
+        raise RuntimeError('ObServer no configurado')
+    if id_farmacia is None:
+        id_farmacia = cfg['id_farmacia']
+
+    filtro_fecha = ''
+    params = [str(numero_afiliado), int(id_farmacia)]
+    if desde is not None:
+        desde_dt = desde if hasattr(desde, 'hour') else datetime.combine(desde, time(0, 0))
+        filtro_fecha += ' AND r.FechaDeOperacion >= %s'
+        params.append(desde_dt)
+    if hasta is not None:
+        if hasattr(hasta, 'hour'):
+            hasta_dt = hasta
+        else:
+            hasta_dt = datetime.combine(hasta, time(0, 0)) + timedelta(days=1)
+        filtro_fecha += ' AND r.FechaDeOperacion < %s'
+        params.append(hasta_dt)
+    filtro_anul = '' if incluir_anuladas else ' AND r.Anulada = 0'
+
+    conn = _connect(timeout=60)
+    if conn is None:
+        raise RuntimeError('ObServer no disponible')
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            sql = f"""
+                SELECT TOP {int(limit)}
+                    r.IdReceta, r.OPF, r.NumeroReceta, r.NumeroAfiliado,
+                    r.NombreAfiliado, r.MatriculaMedico,
+                    r.IdPlan, p.Descripcion AS PlanDescripcion,
+                    r.FechaDeOperacion, r.FechaAutorizacionOnLine, r.FechaDeVenta,
+                    r.TotalReceta, r.TotalACargoOS, r.TotalAfiliado,
+                    r.IdEstadoAsociacionTrazabilidad AS TrazEstado,
+                    r.Anulada, r.Autorizada, r.Rendida
+                  FROM Gestion.Recetas r
+                  LEFT JOIN DW.Planes p ON p.IdPlan = r.IdPlan
+                 WHERE r.NumeroAfiliado = %s
+                   AND r.IdFarmacia = %d
+                   {filtro_fecha}
+                   {filtro_anul}
+                 ORDER BY r.FechaDeOperacion DESC
+            """
+            cur.execute(sql, tuple(params))
+            recetas = cur.fetchall()
+
+            productos_por_receta = {}
+            if incluir_productos and recetas:
+                ids = [r['IdReceta'] for r in recetas]
+                # pymssql no soporta expansión de lista → armo placeholders.
+                placeholders = ','.join(['%d'] * len(ids))
+                cur.execute(f"""
+                    SELECT rr.IdReceta, rr.IdProducto, rr.Cantidad,
+                           rr.PrecioPVP, rr.ImporteRenglon,
+                           rr.ImporteACargoOS, rr.Rechazado,
+                           pr.Producto
+                      FROM Gestion.RecetasRenglones rr
+                      LEFT JOIN DW.Productos pr ON pr.IdProducto = rr.IdProducto
+                     WHERE rr.IdReceta IN ({placeholders})
+                     ORDER BY rr.IdReceta, rr.NumeroRenglon
+                """, tuple(ids))
+                for rr in cur.fetchall():
+                    productos_por_receta.setdefault(rr['IdReceta'], []).append({
+                        'id_producto':        rr['IdProducto'],
+                        'producto':           (rr['Producto'] or '').strip() or f"prod#{rr['IdProducto']}",
+                        'cantidad':           int(rr['Cantidad'] or 0),
+                        'precio_pvp':         float(rr['PrecioPVP'] or 0),
+                        'importe_renglon':    float(rr['ImporteRenglon'] or 0),
+                        'importe_a_cargo_os': float(rr['ImporteACargoOS'] or 0),
+                        'rechazado':          bool(rr['Rechazado']),
+                    })
+    finally:
+        conn.close()
+
+    out = []
+    for r in recetas:
+        traz = (r['TrazEstado'] or '').strip()
+        out.append({
+            'id_receta':            r['IdReceta'],
+            'opf':                  r['OPF'],
+            'numero_receta':        r['NumeroReceta'],
+            'numero_afiliado':      r['NumeroAfiliado'],
+            'nombre_afiliado':      (r['NombreAfiliado'] or '').strip(),
+            'matricula_medico':     r['MatriculaMedico'],
+            'plan_id':              r['IdPlan'],
+            'plan_descripcion':     (r['PlanDescripcion'] or '').strip(),
+            'fecha_operacion':      r['FechaDeOperacion'],
+            'fecha_autorizacion':   r['FechaAutorizacionOnLine'],
+            'fecha_venta':          r['FechaDeVenta'],
+            'total_receta':         float(r['TotalReceta'] or 0),
+            'total_a_cargo_os':     float(r['TotalACargoOS'] or 0),
+            'total_afiliado':       float(r['TotalAfiliado'] or 0),
+            'trazabilidad_estado':  traz or None,
+            'trazabilidad_desc':    _TRAZ_MAP.get(traz, traz) if traz else None,
+            'anulada':              bool(r['Anulada']),
+            'autorizada':           bool(r['Autorizada']),
+            'rendida':              bool(r['Rendida']),
+            'productos':            productos_por_receta.get(r['IdReceta'], []),
+        })
+    return out

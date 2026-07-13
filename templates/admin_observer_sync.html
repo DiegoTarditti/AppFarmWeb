@@ -197,6 +197,9 @@
                             {% if ultimos[ent].error %}
                                 <div class="text-red-600 mt-1">{{ ultimos[ent].error[:120] }}</div>
                             {% endif %}
+                            {% if ultimos[ent].info %}
+                                <div class="text-[#888] mt-1">{{ ultimos[ent].info[:120] }}</div>
+                            {% endif %}
                         {% else %}
                             <span class="text-[#999]">nunca</span>
                         {% endif %}
