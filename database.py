@@ -3475,15 +3475,22 @@ def init_db(database_url=None):
                         "ALTER TABLE estacionalidad_escenarios "
                         "DROP COLUMN IF EXISTS producto_id"
                     ))
-                    # Asegurar el UNIQUE original.
-                    try:
-                        conn.execute(text(
-                            "ALTER TABLE estacionalidad_escenarios "
-                            "ADD CONSTRAINT uq_estac_droga_nombre "
-                            "UNIQUE (droga_id, nombre)"
-                        ))
-                    except Exception:
-                        pass  # Ya existe.
+                    # Asegurar el UNIQUE original — check previo para no dejar
+                    # ERROR en el log de Postgres si ya existe.
+                    ya_uq = conn.execute(text("""
+                        SELECT 1 FROM information_schema.table_constraints
+                         WHERE table_name = 'estacionalidad_escenarios'
+                           AND constraint_name = 'uq_estac_droga_nombre'
+                    """)).fetchone()
+                    if not ya_uq:
+                        try:
+                            conn.execute(text(
+                                "ALTER TABLE estacionalidad_escenarios "
+                                "ADD CONSTRAINT uq_estac_droga_nombre "
+                                "UNIQUE (droga_id, nombre)"
+                            ))
+                        except Exception:
+                            pass  # race con otro worker
                 except Exception as _e_estac2:
                     print(f'Cleanup estacionalidad_escenarios producto_id: {_e_estac2}')
             except Exception:
@@ -3995,15 +4002,25 @@ def _pg_add_columns(conn):
             pass
 
     # Paso 4: FK constraints. Ya hay Farmacia id=1 y los datos preexistentes
-    # apuntan a 1, así que la validación pasa. Si el constraint ya existe,
-    # PostgreSQL tira error y lo silenciamos.
-    for ddl in (
-        "ALTER TABLE pedidos          ADD CONSTRAINT fk_pedidos_farmacia        FOREIGN KEY (farmacia_id) REFERENCES farmacias(id)",
-        "ALTER TABLE pedido_items     ADD CONSTRAINT fk_pedido_items_farmacia   FOREIGN KEY (farmacia_id) REFERENCES farmacias(id)",
-        "ALTER TABLE procesos_compra  ADD CONSTRAINT fk_procesos_compra_farmacia FOREIGN KEY (farmacia_id) REFERENCES farmacias(id)",
+    # apuntan a 1, así que la validación pasa. Consultamos information_schema
+    # antes del ALTER — Postgres no tiene ADD CONSTRAINT IF NOT EXISTS y el
+    # try/except silencia en Python pero deja ERROR en el log del server.
+    for tabla, cname in (
+        ('pedidos',          'fk_pedidos_farmacia'),
+        ('pedido_items',     'fk_pedido_items_farmacia'),
+        ('procesos_compra',  'fk_procesos_compra_farmacia'),
     ):
+        ya_existe = conn.execute(text("""
+            SELECT 1 FROM information_schema.table_constraints
+             WHERE table_name = :t AND constraint_name = :c
+        """), {'t': tabla, 'c': cname}).fetchone()
+        if ya_existe:
+            continue
         try:
-            conn.execute(text(ddl))
+            conn.execute(text(
+                f"ALTER TABLE {tabla} ADD CONSTRAINT {cname} "
+                f"FOREIGN KEY (farmacia_id) REFERENCES farmacias(id)"
+            ))
         except Exception:
             pass
     # Operadores de pedidos y tracking de quién hizo cada etapa.
@@ -5341,20 +5358,24 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_informe_conv ON informe_enviado(conversacion_id)"))
 
-    # Domicilios estructurados (migración SQLite)
-    try:
-        existing_dc = {row[1] for row in conn.execute(text("PRAGMA table_info(domicilios_cliente)"))}
-        for col, sql_type in [
-            ('piso', 'VARCHAR(20)'),
-            ('depto', 'VARCHAR(20)'),
-            ('referencia', 'VARCHAR(200)'),
-            ('geo_actualizado_en', 'TIMESTAMP'),
-            ('cliente_id', 'INTEGER'),
-        ]:
-            if col not in existing_dc:
-                conn.execute(text(f"ALTER TABLE domicilios_cliente ADD COLUMN {col} {sql_type}"))
-    except Exception:
-        pass
+    # Domicilios estructurados (migración SQLite). PRAGMA table_info es sintaxis
+    # sólo de SQLite — en Postgres tira syntax error y ensucia el log. En
+    # Postgres estas columnas viven en el modelo y ya se crean con create_all;
+    # el bloque solo aplica al arrancar contra una DB SQLite vieja.
+    if conn.dialect.name == 'sqlite':
+        try:
+            existing_dc = {row[1] for row in conn.execute(text("PRAGMA table_info(domicilios_cliente)"))}
+            for col, sql_type in [
+                ('piso', 'VARCHAR(20)'),
+                ('depto', 'VARCHAR(20)'),
+                ('referencia', 'VARCHAR(200)'),
+                ('geo_actualizado_en', 'TIMESTAMP'),
+                ('cliente_id', 'INTEGER'),
+            ]:
+                if col not in existing_dc:
+                    conn.execute(text(f"ALTER TABLE domicilios_cliente ADD COLUMN {col} {sql_type}"))
+        except Exception:
+            pass
 
     # Índices para queries frecuentes
     for stmt in [
