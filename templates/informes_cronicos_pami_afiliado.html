@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Crónicos PAMI · Afiliado{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+  .ca-page { padding: 18px 24px 28px; max-width: 1100px; }
+  .ca-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+  .ca-head h1 { font-family:'Space Grotesk',sans-serif; font-size: 22px; font-weight: 700; color: var(--ds-text); margin: 0; }
+  .ca-filtros { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+  .ca-filtros label { display: flex; flex-direction: column; gap: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); }
+  .ca-filtros input { min-width: 90px; }
+  .ca-filtros input.wide { min-width: 190px; }
+  .ca-warn { background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.3); border-radius: 12px; padding: 16px 20px; color: var(--ds-warn); font-size: 13px; margin-bottom: 16px; }
+  .ca-warn strong { color: var(--ds-text); }
+  .ca-error { background: rgba(252,165,165,.08); border: 1px solid rgba(252,165,165,.3); border-radius: 12px; padding: 14px 20px; color: var(--ds-danger); font-size: 13px; margin-bottom: 16px; }
+
+  .ca-afil { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 14px 18px; margin-bottom: 16px; display: flex; gap: 18px; flex-wrap: wrap; align-items: baseline; }
+  .ca-afil .nombre { font-size: 18px; font-weight: 700; color: var(--ds-text); }
+  .ca-afil .campo { display: inline-flex; align-items: baseline; gap: 6px; }
+  .ca-afil .campo .l { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); }
+  .ca-afil .campo .v { font-size: 13px; color: var(--ds-text); font-variant-numeric: tabular-nums; font-family: 'SF Mono','Menlo','Consolas',monospace; }
+
+  .ca-kpis { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  .ca-kpi { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 12px 18px; min-width: 140px; }
+  .ca-kpi .n { font-size: 22px; font-weight: 800; color: var(--ds-mint); font-variant-numeric: tabular-nums; }
+  .ca-kpi .l { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); }
+
+  .ca-panel { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 14px 18px; margin-bottom: 16px; }
+  .ca-panel h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text); margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px; }
+  .ca-panel h3 .badge { background: var(--ds-mint); color: #0b1a12; font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 700; letter-spacing: 0; }
+  .ca-panel.desc h3 .badge { background: rgba(252,165,165,.55); color: #0b1a12; }
+
+  .ca-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .ca-table thead th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); padding: 6px 8px; border-bottom: 1px solid var(--ds-line); }
+  .ca-table thead th.r { text-align: right; }
+  .ca-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); }
+  .ca-table tbody tr:hover { background: rgba(95,230,188,.05); }
+  .ca-table td { padding: 6px 8px; color: var(--ds-text); vertical-align: top; }
+  .ca-table td.r { text-align: right; font-variant-numeric: tabular-nums; }
+  .ca-table td.mono { font-family: 'SF Mono','Menlo','Consolas',monospace; font-size: 11px; color: var(--ds-text-mute); }
+  .ca-pres { font-size: 11px; color: var(--ds-text-mute); margin-top: 3px; line-height: 1.4; }
+  .ca-pres .pill { display: inline-block; padding: 1px 6px; margin: 1px 4px 1px 0; background: rgba(95,230,188,.08); color: var(--ds-mint); border-radius: 8px; font-family: 'SF Mono',monospace; font-size: 10px; }
+  .ca-pres .pill .n { color: var(--ds-text-mute); margin-left: 4px; }
+  .ca-empty { padding: 28px 16px; text-align: center; color: var(--ds-text-mute); font-size: 12px; }
+
+  .ca-razon { display: inline-block; font-size: 9px; padding: 2px 6px; border-radius: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .ca-razon.rapida { background: rgba(251,191,36,.14); color: var(--ds-warn); }
+  .ca-razon.lenta { background: rgba(196,181,253,.14); color: var(--ds-violet); }
+  .ca-razon.unica { background: rgba(200,200,200,.14); color: var(--ds-text-mute); }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="ca-page">
+  <a href="{{ url_for('informe_cronicos_pami') }}" class="text-xs" style="color:var(--ds-text-mute);">← Crónicos PAMI (panorámica)</a>
+  <div class="ca-head" style="margin-top:6px;">
+    <span style="font-size:24px;">🩺</span>
+    <h1>Crónicos por afiliado</h1>
+    <span class="text-xs" style="color:var(--ds-text-mute)">Detalle de un paciente PAMI puntual</span>
+  </div>
+
+  {# Filtros: buscar por número o DNI + ajustar umbrales #}
+  <form method="get" class="ca-filtros">
+    <label>Nº afiliado
+      <input name="numero" value="{{ filtros.numero }}" class="ds-input text-sm wide" placeholder="15051325980100">
+    </label>
+    <label>o DNI
+      <input name="dni" value="{{ filtros.dni }}" class="ds-input text-sm" placeholder="10988188">
+    </label>
+    <label>Ventana (meses)
+      <input name="ventana_meses" type="number" min="1" max="24" value="{{ filtros.ventana }}" class="ds-input text-xs">
+    </label>
+    <label>Min. disp.
+      <input name="min_dispensas" type="number" min="2" max="20" value="{{ filtros.min_disp }}" class="ds-input text-xs">
+    </label>
+    <label>Cadencia mín.
+      <input name="cadencia_min" type="number" min="1" max="365" value="{{ filtros.cad_min }}" class="ds-input text-xs">
+    </label>
+    <label>Cadencia máx.
+      <input name="cadencia_max" type="number" min="2" max="365" value="{{ filtros.cad_max }}" class="ds-input text-xs">
+    </label>
+    <button type="submit" class="ds-btn text-xs" style="height:32px;">Buscar</button>
+  </form>
+
+  {% if sin_acceso_premium %}
+  <div class="ca-warn">
+    <strong>⚠ Requiere Observer premium (user <code>sa</code>).</strong><br>
+    Este informe lee de <code>Gestion.Recetas</code> — schema no accesible con
+    <code>usuarioDW</code>.
+  </div>
+  {% elif error %}
+  <div class="ca-error">{{ error }}</div>
+  {% elif afiliado %}
+
+  {# Cabecera del afiliado #}
+  <div class="ca-afil">
+    <span class="nombre">{{ afiliado.nombre or '(sin nombre)' }}</span>
+    <span class="campo"><span class="l">Afiliado</span><span class="v">{{ afiliado.numero }}</span></span>
+    {% if afiliado.dni %}
+    <span class="campo"><span class="l">DNI</span><span class="v">{{ afiliado.dni }}</span></span>
+    {% endif %}
+    {% if afiliado.sexo %}
+    <span class="campo"><span class="l">Sexo</span><span class="v">{{ afiliado.sexo }}</span></span>
+    {% endif %}
+    <span class="campo" style="margin-left:auto;">
+      <span class="l">Última {{ filtros.ventana }} meses · cadencia {{ filtros.cad_min }}-{{ filtros.cad_max }}d</span>
+    </span>
+  </div>
+
+  {# KPIs #}
+  <div class="ca-kpis">
+    <div class="ca-kpi">
+      <div class="n">{{ sugeridos|length }}</div>
+      <div class="l">Crónicos sugeridos</div>
+    </div>
+    <div class="ca-kpi">
+      <div class="n">{{ descartados|length }}</div>
+      <div class="l">Descartados</div>
+    </div>
+    {% set tot_imp = sugeridos|sum(attribute='importe_total') %}
+    {% set tot_os = sugeridos|sum(attribute='cargo_os_total') %}
+    <div class="ca-kpi">
+      <div class="n" style="font-size:16px;">${{ '{:,.0f}'.format(tot_imp).replace(',', '.') }}</div>
+      <div class="l">Importe total (crónicos)</div>
+    </div>
+    <div class="ca-kpi">
+      <div class="n" style="font-size:16px;">${{ '{:,.0f}'.format(tot_os).replace(',', '.') }}</div>
+      <div class="l">A cargo OS</div>
+    </div>
+  </div>
+
+  {# Sugeridos como crónicos #}
+  <div class="ca-panel">
+    <h3>💊 Sugeridos como crónicos <span class="badge">{{ sugeridos|length }}</span></h3>
+    {% if sugeridos %}
+    <table class="ca-table">
+      <thead>
+        <tr>
+          <th>Droga</th>
+          <th class="r">Disp.</th>
+          <th class="r">Cadencia</th>
+          <th class="r">Cant/rec</th>
+          <th class="r">Importe</th>
+          <th class="r">A cargo OS</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sugeridos %}
+        <tr>
+          <td>
+            <div><b>{{ s.droga }}</b></div>
+            <div class="ca-pres">
+              {% for p in s.presentaciones %}
+              <span class="pill">{{ p.producto }}<span class="n">×{{ p.n_veces }}</span></span>
+              {% endfor %}
+            </div>
+          </td>
+          <td class="r">{{ s.dispensas }}</td>
+          <td class="r">{{ s.cadencia_dias }}d</td>
+          <td class="r">{{ s.cantidad_prom }}</td>
+          <td class="r">${{ '{:,.0f}'.format(s.importe_total).replace(',', '.') }}</td>
+          <td class="r">${{ '{:,.0f}'.format(s.cargo_os_total).replace(',', '.') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="ca-empty">Sin crónicos con los criterios (≥{{ filtros.min_disp }} disp, {{ filtros.cad_min }}-{{ filtros.cad_max }}d).</div>
+    {% endif %}
+  </div>
+
+  {# Descartados #}
+  {% if descartados %}
+  <div class="ca-panel desc">
+    <h3>⚠ Descartados por cadencia fuera de rango <span class="badge">{{ descartados|length }}</span></h3>
+    <table class="ca-table">
+      <thead>
+        <tr>
+          <th>Droga</th>
+          <th class="r">Disp.</th>
+          <th class="r">Cadencia</th>
+          <th>Razón</th>
+          <th class="r">Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in descartados %}
+        <tr>
+          <td>
+            <div>{{ d.droga }}</div>
+            <div class="ca-pres">
+              {% for p in d.presentaciones %}
+              <span class="pill">{{ p.producto }}</span>
+              {% endfor %}
+            </div>
+          </td>
+          <td class="r">{{ d.dispensas }}</td>
+          <td class="r">{{ d.cadencia_dias if d.cadencia_dias is not none else '—' }}d</td>
+          <td>
+            {% if d.razon_descarte == 'muy_rapida' %}
+              <span class="ca-razon rapida">Cadencia &lt; {{ filtros.cad_min }}d</span>
+              <span class="text-xs" style="color:var(--ds-text-mute); margin-left:4px;">(posible reposición doble)</span>
+            {% elif d.razon_descarte == 'muy_lenta' %}
+              <span class="ca-razon lenta">Cadencia &gt; {{ filtros.cad_max }}d</span>
+              <span class="text-xs" style="color:var(--ds-text-mute); margin-left:4px;">(evento aislado / puntual)</span>
+            {% else %}
+              <span class="ca-razon unica">Sin cadencia</span>
+            {% endif %}
+          </td>
+          <td class="r">${{ '{:,.0f}'.format(d.importe_total).replace(',', '.') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="ca-empty">
+    Ingresá un <b>número de afiliado</b> (13-16 dígitos) o un <b>DNI</b> arriba para buscar.
+  </div>
+  {% endif %}
+
+</div>
+</div>
+{% endblock %}

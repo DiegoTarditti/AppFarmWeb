@@ -163,7 +163,13 @@
         <tbody>
           {% for a in top_afiliados %}
           <tr>
-            <td>{{ a.nombre or '(sin nombre)' }}</td>
+            <td>
+              <a href="{{ url_for('informe_cronicos_pami_afiliado', numero=a.numero,
+                                   ventana_meses=filtros.ventana, min_dispensas=filtros.min_disp,
+                                   cadencia_min=filtros.cad_min, cadencia_max=filtros.cad_max) }}"
+                 style="color: var(--ds-mint); text-decoration: none;"
+                 title="Ver detalle del afiliado">{{ a.nombre or '(sin nombre)' }} →</a>
+            </td>
             <td class="mono">{{ a.numero }}</td>
             <td class="r">{{ a.n_cronicos }}</td>
             <td class="r">{{ a.dispensas_totales }}</td>
