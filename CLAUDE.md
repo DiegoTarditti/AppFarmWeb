@@ -10,9 +10,72 @@
 8. **El usuario manda** — Las instrucciones del usuario siempre ganan sobre cualquier otra regla.
 9. **Precisión > velocidad** — Preferir siempre configuraciones/técnicas que maximicen exactitud aunque tarden más. El tiempo ahorrado procesando rápido se pierde 10x más corrigiendo errores después. Aplica a OCR (DPI alto + preprocessing), regex (anclado y específico, no greedy), parseo numérico (aceptar todos los formatos), auto-detect (preferir falso negativo a falso positivo), validación (bloquear al siguiente paso si faltan campos críticos).
 10. **Revisar backlog al iniciar sesión** — Antes de responder al primer mensaje de una sesión nueva, leer `docs/mejoras_pendientes.md`. Si hay items relacionados con lo que el usuario pide, mencionarlos brevemente al inicio de la respuesta ("hay X anotado en backlog que aplica acá"). No re-leer en mensajes siguientes de la misma sesión salvo que el archivo haya cambiado.
+11. **Antes de decir "X no existe": verificá la rama** — el working copy puede estar
+    parado en un feature branch viejo. Correr `git status` y buscar también en
+    `origin/main` (`git grep <cosa> origin/main`). Pasó dos veces en una sesión:
+    afirmé que `routes/api_publica.py` y el badge premium ⭐ no existían, y estaban
+    los dos en `main` (el working copy estaba 23 commits atrás).
+12. **Para ubicarse: `docs/MAPA.generado.md`** — índice de las 765 rutas, 122 modelos,
+    21 syncs y 26 services, con archivo:línea. Sale del código (`python scripts/mapa.py`),
+    así que no miente. Mirarlo ANTES de grepear a ciegas. Si tocás rutas o modelos,
+    regeneralo.
+13. **Si un dato se puede derivar del código, NO lo escribas a mano acá** — este archivo
+    es para lo que el código NO dice: decisiones, trampas, el "por qué". Los inventarios
+    van al mapa generado. La doc escrita a mano se pudre y termina mintiendo (ver la
+    trampa del `observer_id` abajo, que estuvo mal documentada y costó rediseñar).
 
 
 # Farmacia - Control de Stock y Reclamos
+
+## ⚠️ Trampas de ObServer (leer antes de tocar syncs o catálogo)
+
+Lo que el código no dice y cuesta caro descubrir. Todo verificado el 2026-07-16
+contra el catálogo real (122.774 productos).
+
+### `observer_id` es el ID de la tabla de CADA farmacia — NO es universal
+
+**No es una clave común como el EAN**: son los IDs internos de cada instalación de
+ObServer. El "catálogo central" que sirve `/api/publica` es **el catálogo de Badia,
+con los IDs de Badia**. Para otra farmacia esos números no significan nada.
+
+Consecuencia: cruzar el catálogo del central contra el `obs_stock` de otra farmacia
+**no matchea nunca**. Y no se detecta en dev, porque ahí catálogo y stock salen los
+dos de Badia y coinciden por casualidad.
+
+**Regla**: catálogo, stock, clientes y precios se sincronizan **desde el ObServer de
+cada farmacia**. Del central solo pueden venir datos con clave universal.
+
+### La capa `DW.*` NO es parte de ObServer
+
+Las vistas `DW.*` se las armó **Praxis** a Badia y Pieristei. Una farmacia nueva puede
+tener **solo las tablas vivas**. **No asumir que `DW.Clientes` / `DW.Productos` existen**
+en un cliente nuevo — hay que ir a `INFORMATION_SCHEMA` y mirar
+(`observer_source.explorar_schema`).
+
+### El schema `Gestion` requiere usuario SA — es lo "premium" (⭐)
+
+`usuarioDW` lee `DW.*` pero **no** `Gestion.*`. De ahí salen las 2 features premium:
+`sync_precios_vigentes` y `sync_condiciones_comerciales`. Sin SA se **skipean limpio**
+y la app funciona degradada (`_test_acceso_gestion` cachea el chequeo).
+`diagnostico_acceso()` responde con `IS_SRVROLEMEMBER('sysadmin')` si el usuario es SA.
+
+### El precio uniforme es SOLO el de medicamentos
+
+`Gestion.ProductosPreciosVigentes` es la fuente **exacta** de todos los precios, y es
+**por farmacia**. Los de medicamentos los actualiza Praxis dentro de cada ObServer
+(esos sí son parejos); **el resto de los rubros los pone cada farmacia** (los de Badia
+≠ los de Rivarola). Y no es un caso de borde: **perfumería es el rubro más grande**
+(~58k productos vs ~40k de medicamentos).
+
+### Claves universales: alfabeta sí, EAN no tanto
+
+| Clave | Cobertura | Colisiones |
+|---|---|---|
+| `codigo_alfabeta` | **96,1%** de medicamentos (98,6% de los que tienen stock) | **0,01%** |
+| EAN (`obs_codigos_barras`) | 93,1% general | **9,48%** ← el mismo EAN en varios productos |
+
+Para cruzar **medicamentos** entre farmacias: **alfabeta**. Para perfumería no sirve
+(solo 8,5% lo tiene). El EAN parece tentador pero colisiona 1 de cada 10.
 
 ## Stack
 
