@@ -31,6 +31,22 @@ jobs:
       - name: Run ruff
         run: ruff check .
 
+  mapa:
+    name: Mapa al día + trampas documentadas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # docs/MAPA.generado.md sale del código: si alguien agrega una ruta, un
+      # modelo o un sync y no lo regenera, esto falla. Es lo que evita que el
+      # índice se pudra (que es lo que le pasó a la doc escrita a mano).
+      # Y test_mapa.py verifica que las afirmaciones del CLAUDE.md sigan siendo
+      # ciertas: la doc miente, el test no.
+      - name: Chequear mapa + afirmaciones del CLAUDE.md
+        run: python scripts/test_mapa.py
+
   tests:
     name: Pytest
     runs-on: ubuntu-latest

@@ -5,6 +5,10 @@ _Creado: 2026-05-21. Lista corta y priorizada de lo que duele pronto. Lo demás
 
 Orden: P0 = afecta producción AHORA · P1 = riesgo/correctitud · P2 = deuda que acumula.
 
+> 🗺️ **Para ubicarte en el repo**: [`docs/MAPA.generado.md`](MAPA.generado.md) (765 rutas,
+> 122 modelos, 21 syncs, con archivo:línea — generado del código, el CI lo verifica).
+> **Trampas del dominio** (ObServer, catálogo, precios): [`CLAUDE.md`](../CLAUDE.md).
+
 ---
 
 ## ✅ Búsqueda de clientes por DNI (Diego 2026-06-22 → 2026-06-23)

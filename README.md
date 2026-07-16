@@ -2,6 +2,19 @@
 
 [![CI](https://github.com/DiegoTarditti/AppFarmWeb/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DiegoTarditti/AppFarmWeb/actions/workflows/ci.yml)
 
+## 🗺️ Empezá por acá
+
+| Buscás… | Andá a |
+|---|---|
+| **Dónde está algo** (una ruta, un modelo, un sync) | [`docs/MAPA.generado.md`](docs/MAPA.generado.md) — índice de 765 rutas, 122 modelos, 21 syncs, 26 services y 11 parsers, con archivo:línea |
+| **Por qué las cosas son así** + trampas del dominio | [`CLAUDE.md`](CLAUDE.md) — en especial *"Trampas de ObServer"* |
+| **Qué falta hacer** | [`docs/backlog_urgente.md`](docs/backlog_urgente.md) (P0/P1/P2) y [`docs/mejoras_pendientes.md`](docs/mejoras_pendientes.md) |
+
+El mapa **se genera del código** (`python scripts/mapa.py`) y el CI falla si queda
+desactualizado — no puede pudrirse en silencio. Si tocás rutas, modelos o syncs,
+regeneralo. Lo que el código NO dice (decisiones, trampas) va en el `CLAUDE.md`,
+nunca en el mapa.
+
 ## Pre-push hooks (recomendado)
 
 Para que el sistema corra `compileall` y `ruff` automáticamente antes de cada `git push` y bloquee el push si hay problemas:
