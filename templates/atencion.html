@@ -2801,7 +2801,9 @@ function renderDespachos(items){
   }).join('');
 }
 
-function _esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// (_esc ya está definida más arriba en este script — no redefinir: una segunda
+// declaración pisa a la primera en todo el scope y cambiaría el escapado del
+// resto del panel.)
 
 async function seleccionarDespacho(despachoId){
   const d = window.despachosCache.find(x => x.despacho_id === despachoId);
