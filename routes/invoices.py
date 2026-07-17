@@ -8,14 +8,17 @@ from werkzeug.utils import secure_filename
 import database
 from data_extract import (
     compare_invoice_vs_erp,
+    erp_pertenece_a_factura,
     get_erp_items_with_issues,
     get_saved_differences,
     parse_erp_excel,
     parse_invoice_pdf,
+    recalcular_diferencias,
     save_barcode_mapping,
     save_differences,
     save_erp_to_db,
     save_invoice_to_db,
+    sugerir_cruce_manual,
 )
 from helpers import (
     UPLOAD_FOLDER,
@@ -29,6 +32,7 @@ from helpers import (
     allowed_file,
     get_config,
     get_providers,
+    pdf_de_carpeta_proveedor,
 )
 
 
@@ -76,11 +80,12 @@ def process_upload(app):
             ruta_base = (provider.ruta_facturas or '').strip()
             if not ruta_base or not os.path.isdir(ruta_base):
                 return {'error': 'La carpeta de facturas del proveedor no está configurada o no existe.'}, 400
-            safe_name = secure_filename(pdf_from_folder)
-            src = os.path.join(ruta_base, safe_name)
-            if not os.path.isfile(src) or not src.lower().endswith('.pdf'):
+            src = pdf_de_carpeta_proveedor(ruta_base, pdf_from_folder)
+            if not src:
                 return {'error': 'El PDF elegido no existe en la carpeta del proveedor.'}, 400
-            invoice_path = os.path.join(app.config['UPLOAD_FOLDER'], safe_name)
+            # secure_filename sí va acá: el destino en uploads lo elegimos nosotros.
+            invoice_path = os.path.join(app.config['UPLOAD_FOLDER'],
+                                        secure_filename(pdf_from_folder) or 'factura.pdf')
             import shutil
             shutil.copy2(src, invoice_path)
         else:
@@ -123,7 +128,8 @@ def process_upload(app):
                 _inv.erp_filename = erp_filename
                 _session.commit()
                 if not skip_erp and erp_data:
-                    save_erp_to_db(_session, erp_data)
+                    _inv.erp_carga_id = save_erp_to_db(_session, erp_data)
+                    _session.commit()
                 _invoice_id = _inv.id
         except Exception as e:
             return {'error': f'Error al guardar encabezado: {e}'}, 400
@@ -141,7 +147,10 @@ def process_upload(app):
             session.commit()
             saved_differences = []
             if not skip_erp and erp_data:
-                save_erp_to_db(session, erp_data)
+                # El carga_id tiene que estar commiteado ANTES de comparar: es lo que
+                # habilita el cruce (ver data_extract.erp_pertenece_a_factura).
+                invoice.erp_carga_id = save_erp_to_db(session, erp_data)
+                session.commit()
                 differences = compare_invoice_vs_erp(session, invoice.id)
                 save_differences(session, invoice.id, differences)
                 saved_differences = get_saved_differences(session, invoice.id)
@@ -411,8 +420,7 @@ def init_app(app):
                 if saved > 0:
                     invoice.total_articulos = saved
                     session.commit()
-                    differences = compare_invoice_vs_erp(session, invoice_id)
-                    save_differences(session, invoice_id, differences)
+                    recalcular_diferencias(session, invoice_id)
                     flash(f'{saved} artículos guardados desde el mapeo de columnas.')
                     return redirect(url_for('compare_view', invoice_id=invoice_id))
                 flash('No se pudieron extraer artículos con esa configuración.')
@@ -600,8 +608,7 @@ def init_app(app):
                     invoice.total_articulos = saved
                 session.commit()
                 if saved > 0:
-                    differences = compare_invoice_vs_erp(session, invoice_id)
-                    save_differences(session, invoice_id, differences)
+                    recalcular_diferencias(session, invoice_id)
             except Exception as e:
                 session.rollback()
                 import traceback as _tb
@@ -656,8 +663,7 @@ def init_app(app):
                 if saved > 0:
                     invoice.total_articulos = saved
                     session.commit()
-                    differences = compare_invoice_vs_erp(session, invoice_id)
-                    save_differences(session, invoice_id, differences)
+                    recalcular_diferencias(session, invoice_id)
                     flash(f'{saved} artículos guardados manualmente.')
                     return redirect(url_for('compare_view', invoice_id=invoice_id))
                 flash('No se ingresaron artículos.')
@@ -935,19 +941,70 @@ def init_app(app):
                              .filter_by(factura_id=invoice_id)
                              .order_by(database.StockDifference.descripcion).all())
             erp_items = get_erp_items_with_issues(session, invoice_id)
+            # erp_stock es global y guarda una sola carga: puede ser de otro chequeo.
+            # Si no es el de esta factura, el template avisa en vez de mostrar datos
+            # ajenos (ver data_extract.erp_pertenece_a_factura).
+            erp_de_esta_factura = erp_pertenece_a_factura(session, invoice)
+            # Pista de cruce por parecido de descripción (no auto-matchea: el
+            # operador confirma con un click). invoice_diffs va en el mismo orden
+            # con el que se numera la tabla, que es el nro que espera apply_mapping.
+            sugerencias = sugerir_cruce_manual(invoice_diffs, erp_items)
             inv_items = session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).all()
             inv_prices = {
                 item.codigo_barra: float(item.precio_unitario or 0)
                 for item in inv_items if item.codigo_barra
             }
-            # Flag para mostrar botón de ObServer (solo usuarios habilitados + observer online)
+            # Flag para mostrar botón de ObServer (solo usuarios habilitados + observer online).
+            # hasattr: get_recepciones_factura no existe todavía y el botón daba 500
+            # (ver routes/observer.py::_recepciones_implementadas).
             observer_disponible = False
             if current_user.is_authenticated and current_user.rol in ('farmacia', 'dev', 'admin'):
-                observer_disponible = observer_source.observer_disponible()
+                observer_disponible = (observer_source.observer_disponible()
+                                       and hasattr(observer_source, 'get_recepciones_factura'))
             return render_template('compare.html', invoice=invoice,
                                    invoice_diffs=invoice_diffs, erp_items=erp_items,
                                    inv_prices=inv_prices,
+                                   erp_de_esta_factura=erp_de_esta_factura,
+                                   sugerencias=sugerencias,
                                    observer_disponible=observer_disponible)
+
+    @app.route('/invoice/<int:invoice_id>/erp-upload', methods=['POST'])
+    def invoice_erp_upload(invoice_id):
+        """Carga el Excel del ERP para una factura que se subió sin él.
+
+        En /ingresos el Excel es opcional, pero hasta acá no había forma de cruzarla
+        después: el único camino ofrecido era ObServer, que no está implementado.
+        """
+        erp_file = request.files.get('erp_excel')
+        if not erp_file or not erp_file.filename:
+            flash('Elegí el Excel del ERP.', 'error')
+            return redirect(url_for('compare_view', invoice_id=invoice_id))
+        if not allowed_file(erp_file.filename):
+            flash('El archivo ERP no es un Excel válido.', 'error')
+            return redirect(url_for('compare_view', invoice_id=invoice_id))
+
+        erp_filename = secure_filename(erp_file.filename)
+        erp_path = os.path.join(app.config['UPLOAD_FOLDER'], erp_filename)
+        erp_file.save(erp_path)
+        try:
+            erp_data = parse_erp_excel(erp_path)
+        except Exception as e:
+            flash(f'Error al leer el Excel ERP: {e}', 'error')
+            return redirect(url_for('compare_view', invoice_id=invoice_id))
+
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
+            if not invoice:
+                flash('Factura no encontrada.', 'error')
+                return redirect(url_for('index'))
+            invoice.erp_filename = erp_filename
+            invoice.erp_carga_id = save_erp_to_db(session, erp_data)
+            session.commit()   # habilita el cruce antes de comparar
+            differences = compare_invoice_vs_erp(session, invoice_id)
+            save_differences(session, invoice_id, differences)
+            session.commit()
+        flash(f'ERP cargado ({len(erp_data)} ítems): factura cruzada.', 'success')
+        return redirect(url_for('compare_view', invoice_id=invoice_id))
 
     @app.route('/invoice/<int:invoice_id>/apply-mapping', methods=['POST'])
     def apply_mapping(invoice_id):

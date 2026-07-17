@@ -17,6 +17,9 @@ from data_extract import (
     save_differences,
     save_barcode_mapping,
     get_erp_items_with_issues,
+    carga_erp_actual,
+    recalcular_diferencias,
+    sugerir_cruce_manual,
     create_claim,
 )
 
@@ -58,17 +61,19 @@ def _make_invoice(session, items, proveedor_cuit='30-111-1', match_strategy='bar
     return inv
 
 
-def _make_erp(session, items):
-    """Helper: carga ítems ERP en DB."""
-    session.query(ErpStock).delete()
-    for it in items:
-        session.add(ErpStock(
-            codigo_barra=it.get('codigo_barra'),
-            descripcion=it.get('descripcion'),
-            cantidad=it.get('cantidad', 1),
-            precio_unitario=it.get('precio_unitario'),
-        ))
-    session.flush()
+def _make_erp(session, items, invoice=None):
+    """Helper: carga ítems ERP por el mismo camino que producción.
+
+    Vincula la carga a la factura (Invoice.erp_carga_id). Sin ese vínculo el cruce
+    trata a la factura como "sin ERP propio" y no compara nada — que es justamente lo
+    que evita cruzarla contra el ingreso de otro chequeo. Pasar invoice=None simula
+    ese caso a propósito.
+    """
+    carga_id = save_erp_to_db(session, items)
+    if invoice is not None:
+        invoice.erp_carga_id = carga_id
+        session.flush()
+    return carga_id
 
 
 # ── _normalize ────────────────────────────────────────────────────────────────
@@ -159,13 +164,13 @@ class TestCompareInvoiceVsErp:
 
     def test_exact_barcode_match_no_difference(self, session):
         inv = _make_invoice(session, [{'codigo_barra': 'BC001', 'descripcion': 'PROD A', 'cantidad': 5}])
-        _make_erp(session, [{'codigo_barra': 'BC001', 'descripcion': 'PROD A', 'cantidad': 5}])
+        _make_erp(session, [{'codigo_barra': 'BC001', 'descripcion': 'PROD A', 'cantidad': 5}], inv)
         diffs = compare_invoice_vs_erp(session, inv.id)
         assert diffs == []
 
     def test_exact_barcode_match_with_difference(self, session):
         inv = _make_invoice(session, [{'codigo_barra': 'BC002', 'descripcion': 'PROD B', 'cantidad': 10}])
-        _make_erp(session, [{'codigo_barra': 'BC002', 'descripcion': 'PROD B', 'cantidad': 7}])
+        _make_erp(session, [{'codigo_barra': 'BC002', 'descripcion': 'PROD B', 'cantidad': 7}], inv)
         diffs = compare_invoice_vs_erp(session, inv.id)
         assert len(diffs) == 1
         assert diffs[0]['diferencia'] == 3
@@ -173,7 +178,7 @@ class TestCompareInvoiceVsErp:
 
     def test_no_match_reports_not_found(self, session):
         inv = _make_invoice(session, [{'codigo_barra': 'BC999', 'descripcion': 'INEXISTENTE', 'cantidad': 2}])
-        _make_erp(session, [{'codigo_barra': 'OTHER', 'descripcion': 'OTRO', 'cantidad': 2}])
+        _make_erp(session, [{'codigo_barra': 'OTHER', 'descripcion': 'OTRO', 'cantidad': 2}], inv)
         diffs = compare_invoice_vs_erp(session, inv.id)
         assert len(diffs) == 1
         assert 'no encontrado' in diffs[0]['observaciones'].lower()
@@ -182,14 +187,14 @@ class TestCompareInvoiceVsErp:
     def test_description_match_step2(self, session):
         """Barcode diferente pero descripción igual → coincide por descripción."""
         inv = _make_invoice(session, [{'codigo_barra': 'FACBC', 'descripcion': 'Ibuprofeno 400mg', 'cantidad': 4}])
-        _make_erp(session, [{'codigo_barra': 'ERPBC', 'descripcion': 'IBUPROFENO 400MG', 'cantidad': 4}])
+        _make_erp(session, [{'codigo_barra': 'ERPBC', 'descripcion': 'IBUPROFENO 400MG', 'cantidad': 4}], inv)
         diffs = compare_invoice_vs_erp(session, inv.id)
         assert diffs == []
 
     def test_description_match_registers_in_observaciones(self, session):
         """Coincidencia por descripción con diferencia registra el tipo."""
         inv = _make_invoice(session, [{'codigo_barra': 'FAC01', 'descripcion': 'Amoxicilina 500mg', 'cantidad': 3}])
-        _make_erp(session, [{'codigo_barra': 'ERP01', 'descripcion': 'AMOXICILINA 500MG', 'cantidad': 1}])
+        _make_erp(session, [{'codigo_barra': 'ERP01', 'descripcion': 'AMOXICILINA 500MG', 'cantidad': 1}], inv)
         diffs = compare_invoice_vs_erp(session, inv.id)
         assert len(diffs) == 1
         assert 'descripción' in diffs[0]['observaciones'].lower()
@@ -210,7 +215,7 @@ class TestCompareInvoiceVsErp:
         session.add(InvoiceItem(factura_id=inv.id, codigo_barra='FAC_BC', descripcion='PROD X', cantidad=5))
         session.flush()
 
-        _make_erp(session, [{'codigo_barra': 'ERP_BC', 'descripcion': 'PROD DISTINTO', 'cantidad': 5}])
+        _make_erp(session, [{'codigo_barra': 'ERP_BC', 'descripcion': 'PROD DISTINTO', 'cantidad': 5}], inv)
 
         session.add(BarcodeMapping(
             proveedor_id=prov.id,
@@ -230,7 +235,7 @@ class TestCompareInvoiceVsErp:
             match_strategy='descripcion',
         )
         # ERP tiene barcode diferente pero descripción igual
-        _make_erp(session, [{'codigo_barra': 'COD_ERP', 'descripcion': 'LOSARTAN 50MG', 'cantidad': 2}])
+        _make_erp(session, [{'codigo_barra': 'COD_ERP', 'descripcion': 'LOSARTAN 50MG', 'cantidad': 2}], inv)
         diffs = compare_invoice_vs_erp(session, inv.id)
         assert diffs == []
 
@@ -240,7 +245,7 @@ class TestCompareInvoiceVsErp:
             {'codigo_barra': 'MATCH', 'descripcion': 'PROD M', 'cantidad': 3},
             {'codigo_barra': 'NOMATCH', 'descripcion': 'PROD N', 'cantidad': 1},
         ])
-        _make_erp(session, [{'codigo_barra': 'MATCH', 'descripcion': 'PROD M', 'cantidad': 3}])
+        _make_erp(session, [{'codigo_barra': 'MATCH', 'descripcion': 'PROD M', 'cantidad': 3}], inv)
         diffs = compare_invoice_vs_erp(session, inv.id)
         assert len(diffs) == 1
         assert diffs[0]['codigo_barra'] == 'NOMATCH'
@@ -270,25 +275,213 @@ class TestSaveBarcodeMapping:
 
 # ── get_erp_items_with_issues ─────────────────────────────────────────────────
 
+class TestNormalizacionDelCruce:
+    """El cruce por descripción usa el matcher central (producto_matcher).
+
+    Antes era lower()+espacios: cualquier acento o decimal escrito distinto entre la
+    factura y el ERP tiraba el match y el ítem caía a "no encontrado".
+    """
+
+    def test_matchea_con_acentos_distintos(self, session):
+        inv = _make_invoice(session, [{'codigo_barra': 'F1', 'descripcion': 'AMOXICILINA 500MG CÁPSULAS', 'cantidad': 5}])
+        _make_erp(session, [{'codigo_barra': 'E1', 'descripcion': 'AMOXICILINA 500MG CAPSULAS', 'cantidad': 5}], inv)
+        assert compare_invoice_vs_erp(session, inv.id) == []
+
+    def test_matchea_decimales_equivalentes(self, session):
+        inv = _make_invoice(session, [{'codigo_barra': 'F2', 'descripcion': 'PARACETAMOL 0.5G', 'cantidad': 3}])
+        _make_erp(session, [{'codigo_barra': 'E2', 'descripcion': 'PARACETAMOL 0.50G', 'cantidad': 3}], inv)
+        assert compare_invoice_vs_erp(session, inv.id) == []
+
+    def test_matchea_vitaminas_espaciadas(self, session):
+        inv = _make_invoice(session, [{'codigo_barra': 'F3', 'descripcion': 'XEDENOL B 12', 'cantidad': 2}])
+        _make_erp(session, [{'codigo_barra': 'E3', 'descripcion': 'XEDENOL B12', 'cantidad': 2}], inv)
+        assert compare_invoice_vs_erp(session, inv.id) == []
+
+    def test_no_matchea_productos_distintos(self, session):
+        """La normalización no puede volverse tan laxa que junte productos distintos."""
+        inv = _make_invoice(session, [{'codigo_barra': 'F4', 'descripcion': 'IBUPROFENO 400MG', 'cantidad': 1}])
+        _make_erp(session, [{'codigo_barra': 'E4', 'descripcion': 'IBUPROFENO 600MG', 'cantidad': 1}], inv)
+        diffs = compare_invoice_vs_erp(session, inv.id)
+        assert len(diffs) == 1
+        assert diffs[0]['cantidad_erp'] == 0
+
+    def test_descripcion_ambigua_no_matchea_a_ninguno(self, session):
+        """Dos ítems del ERP que normalizan igual: sin match, va al cruce manual.
+
+        Antes ganaba uno arbitrario (el último del dict) y podía cruzar contra el
+        producto equivocado en silencio.
+        """
+        inv = _make_invoice(session, [{'codigo_barra': 'F5', 'descripcion': 'GASA ESTERIL', 'cantidad': 4}])
+        _make_erp(session, [
+            {'codigo_barra': 'E5A', 'descripcion': 'GASA ESTERIL', 'cantidad': 4},
+            {'codigo_barra': 'E5B', 'descripcion': 'GASA ESTÉRIL', 'cantidad': 9},
+        ], inv)
+        diffs = compare_invoice_vs_erp(session, inv.id)
+        assert len(diffs) == 1
+        assert diffs[0]['cantidad_erp'] == 0   # no adivina: cae al cruce manual
+
+
+class TestSugerirCruceManual:
+    """La sugerencia es una pista para el operador, nunca un auto-match."""
+
+    class _Fila:
+        def __init__(self, id, descripcion):
+            self.id = id
+            self.descripcion = descripcion
+
+    def test_sugiere_el_renglon_parecido(self):
+        diffs = [self._Fila(1, 'AMOXIDAL 500 COMP X 16'), self._Fila(2, 'IBUPIRAC 600 X 10')]
+        erp = [self._Fila(77, 'Amoxidal 500 comprimidos x16')]
+        sug = sugerir_cruce_manual(diffs, erp)
+        assert sug[77]['nro'] == 1          # el primero de la lista
+        assert sug[77]['score'] >= 0.55
+
+    def test_no_sugiere_si_no_se_parece_a_nada(self):
+        diffs = [self._Fila(1, 'AMOXIDAL 500 COMP X 16')]
+        erp = [self._Fila(88, 'ALCOHOL EN GEL 250ML')]
+        assert sugerir_cruce_manual(diffs, erp) == {}
+
+    def test_no_sugiere_ante_empate(self):
+        """Dos renglones igual de parecidos: no mandar al operador a jugar a la moneda."""
+        diffs = [self._Fila(1, 'GASA ESTERIL'), self._Fila(2, 'GASA ESTERIL')]
+        erp = [self._Fila(99, 'GASA ESTERIL')]
+        assert sugerir_cruce_manual(diffs, erp) == {}
+
+    def test_sin_datos_no_explota(self):
+        assert sugerir_cruce_manual([], []) == {}
+        assert sugerir_cruce_manual([self._Fila(1, None)], [self._Fila(2, None)]) == {}
+
+    # ── Falsos positivos: lo que NO se puede sugerir ──────────────────────────
+    # En farmacia los números son la presentación. "AMOXIDAL 500 COMP X 16" y
+    # "AMOXIDAL 600 COMP X 16" comparten marca, forma y envase: puntúan 64% de
+    # parecido y se sugerían. Un click distraído del operador = reclamo a la
+    # droguería por el producto equivocado.
+
+    @pytest.mark.parametrize('factura,erp,motivo', [
+        ('AMOXIDAL 500 COMP X 16', 'AMOXIDAL 600 COMP X 16', 'distinta dosis'),
+        ('AMOXIDAL 500 COMP X 16', 'AMOXIDAL 500 COMP X 30', 'distinto envase'),
+        ('DEXALERGIN CREMA 30G',   'DEXALERGIN GOTAS 30ML',  'distinta forma'),
+        ('IBUPIRAC 400 X 10',      'IBUPIRAC 400 X 20',      'distinta cantidad'),
+    ])
+    def test_no_sugiere_presentaciones_distintas(self, factura, erp, motivo):
+        sug = sugerir_cruce_manual([self._Fila(1, factura)], [self._Fila(99, erp)])
+        assert sug == {}, f'sugirió pese a {motivo}: {factura!r} vs {erp!r}'
+
+    @pytest.mark.parametrize('factura,erp,motivo', [
+        ('AMOXIDAL 500 COMP X 16',     'Amoxidal 500 comprimidos x16', 'mismo producto escrito distinto'),
+        ('GASA ESTERIL X 10',          'Gasa Estéril x10',             'acento'),
+        ('IBUPROFENO 400MG X 10 COMP', 'Ibuprofeno 400 mg x10 comp.',  'unidad pegada al número'),
+        ('PARACETAMOL 0.5G X 20',      'Paracetamol 0.50 g x20',       'decimal equivalente'),
+    ])
+    def test_si_sugiere_el_mismo_producto(self, factura, erp, motivo):
+        sug = sugerir_cruce_manual([self._Fila(1, factura)], [self._Fila(99, erp)])
+        assert sug.get(99, {}).get('nro') == 1, f'no sugirió pese a ser el mismo ({motivo})'
+
+
+
+class TestErpDeOtroChequeo:
+    """erp_stock es global y guarda UNA carga a la vez.
+
+    Bug real: como el Excel del ERP es opcional al subir la factura, la tabla se
+    quedaba con el ingreso del chequeo anterior y el cruce mostraba esas diferencias
+    como si fueran de la factura nueva.
+    """
+
+    def test_factura_sin_erp_no_se_cruza_contra_la_carga_anterior(self, session):
+        # Chequeo 1: factura con su Excel.
+        inv_a = _make_invoice(session, [{'codigo_barra': 'BC_A', 'descripcion': 'PROD A', 'cantidad': 10}])
+        _make_erp(session, [{'codigo_barra': 'BC_A', 'descripcion': 'PROD A', 'cantidad': 7}], inv_a)
+        assert len(compare_invoice_vs_erp(session, inv_a.id)) == 1
+
+        # Chequeo 2: factura subida SIN Excel. erp_stock sigue teniendo el ingreso de A.
+        inv_b = _make_invoice(session, [{'codigo_barra': 'BC_B', 'descripcion': 'PROD B', 'cantidad': 3}],
+                              proveedor_cuit='30-222-2')
+        assert compare_invoice_vs_erp(session, inv_b.id) == []
+        assert get_erp_items_with_issues(session, inv_b.id) == []
+
+    def test_una_carga_nueva_desvincula_la_factura_anterior(self, session):
+        inv_a = _make_invoice(session, [{'codigo_barra': 'BC_A', 'descripcion': 'PROD A', 'cantidad': 10}])
+        _make_erp(session, [{'codigo_barra': 'BC_A', 'descripcion': 'PROD A', 'cantidad': 7}], inv_a)
+        assert len(compare_invoice_vs_erp(session, inv_a.id)) == 1
+
+        # Otra factura carga su Excel y pisa erp_stock: A se queda sin su ingreso.
+        inv_b = _make_invoice(session, [{'codigo_barra': 'BC_B', 'descripcion': 'PROD B', 'cantidad': 3}],
+                              proveedor_cuit='30-222-2')
+        _make_erp(session, [{'codigo_barra': 'BC_B', 'descripcion': 'PROD B', 'cantidad': 3}], inv_b)
+        assert compare_invoice_vs_erp(session, inv_a.id) == []
+        assert get_erp_items_with_issues(session, inv_a.id) == []
+
+    def test_cada_carga_recibe_un_id_estrictamente_mayor(self, session):
+        """Dos cargas en el mismo milisegundo no pueden compartir id."""
+        inv = _make_invoice(session, [{'codigo_barra': 'X', 'descripcion': 'PROD X', 'cantidad': 1}])
+        ids = [_make_erp(session, [{'codigo_barra': 'X', 'descripcion': 'PROD X', 'cantidad': 1}], inv)
+               for _ in range(5)]
+        assert ids == sorted(set(ids)), ids
+        assert carga_erp_actual(session) == ids[-1]
+
+    def test_batch_comparte_carga_entre_facturas(self, session):
+        """Un Excel para N facturas: todas cruzan contra la misma carga."""
+        inv_a = _make_invoice(session, [{'codigo_barra': 'BC_A', 'descripcion': 'PROD A', 'cantidad': 5}])
+        inv_b = _make_invoice(session, [{'codigo_barra': 'BC_B', 'descripcion': 'PROD B', 'cantidad': 9}],
+                              proveedor_cuit='30-222-2')
+        carga_id = _make_erp(session, [
+            {'codigo_barra': 'BC_A', 'descripcion': 'PROD A', 'cantidad': 5},
+            {'codigo_barra': 'BC_B', 'descripcion': 'PROD B', 'cantidad': 4},
+        ], inv_a)
+        inv_b.erp_carga_id = carga_id
+        session.flush()
+
+        assert compare_invoice_vs_erp(session, inv_a.id) == []      # coincide
+        assert len(compare_invoice_vs_erp(session, inv_b.id)) == 1  # 9 vs 4
+
+
+class TestRecalcularDiferencias:
+    """save_differences borra y reinserta: recalcular sin ERP propio borraría las buenas."""
+
+    def test_no_borra_las_diferencias_si_el_erp_ya_no_es_de_la_factura(self, session):
+        inv = _make_invoice(session, [{'codigo_barra': 'BC_R', 'descripcion': 'PROD R', 'cantidad': 10}])
+        _make_erp(session, [{'codigo_barra': 'BC_R', 'descripcion': 'PROD R', 'cantidad': 6}], inv)
+        assert recalcular_diferencias(session, inv.id) is True
+        guardadas = session.query(StockDifference).filter_by(factura_id=inv.id).all()
+        assert len(guardadas) == 1 and guardadas[0].diferencia == 4
+
+        # Otra carga pisa erp_stock. Recalcular ahora no debe tocar nada.
+        _make_erp(session, [{'codigo_barra': 'OTRA', 'descripcion': 'OTRA COSA', 'cantidad': 1}])
+        assert recalcular_diferencias(session, inv.id) is False
+        siguen = session.query(StockDifference).filter_by(factura_id=inv.id).all()
+        assert len(siguen) == 1 and siguen[0].diferencia == 4
+
+    def test_recalcula_cuando_el_erp_es_el_de_la_factura(self, session):
+        inv = _make_invoice(session, [{'codigo_barra': 'BC_S', 'descripcion': 'PROD S', 'cantidad': 10}])
+        _make_erp(session, [{'codigo_barra': 'BC_S', 'descripcion': 'PROD S', 'cantidad': 2}], inv)
+        assert recalcular_diferencias(session, inv.id) is True
+        assert session.query(StockDifference).filter_by(factura_id=inv.id).one().diferencia == 8
+
+        # Llega el ingreso completo: la diferencia se va.
+        _make_erp(session, [{'codigo_barra': 'BC_S', 'descripcion': 'PROD S', 'cantidad': 10}], inv)
+        assert recalcular_diferencias(session, inv.id) is True
+        assert session.query(StockDifference).filter_by(factura_id=inv.id).all() == []
+
+
 class TestGetErpItemsWithIssues:
     def test_returns_erp_not_in_invoice(self, session):
         inv = _make_invoice(session, [{'codigo_barra': 'A', 'descripcion': 'PROD A', 'cantidad': 1}])
         _make_erp(session, [
             {'codigo_barra': 'A', 'descripcion': 'PROD A', 'cantidad': 1},
             {'codigo_barra': 'B', 'descripcion': 'PROD B', 'cantidad': 1},
-        ])
+        ], inv)
         issues = get_erp_items_with_issues(session, inv.id)
         assert len(issues) == 1
         assert issues[0].codigo_barra == 'B'
 
     def test_empty_when_all_match(self, session):
         inv = _make_invoice(session, [{'codigo_barra': 'C', 'descripcion': 'PROD C', 'cantidad': 2}])
-        _make_erp(session, [{'codigo_barra': 'C', 'descripcion': 'PROD C', 'cantidad': 2}])
+        _make_erp(session, [{'codigo_barra': 'C', 'descripcion': 'PROD C', 'cantidad': 2}], inv)
         assert get_erp_items_with_issues(session, inv.id) == []
 
     def test_empty_erp(self, session):
         inv = _make_invoice(session, [{'codigo_barra': 'D', 'descripcion': 'PROD D', 'cantidad': 1}])
-        _make_erp(session, [])
+        _make_erp(session, [], inv)
         assert get_erp_items_with_issues(session, inv.id) == []
 
 
@@ -297,7 +490,7 @@ class TestGetErpItemsWithIssues:
 class TestCreateClaim:
     def test_creates_claim_with_items(self, session):
         inv = _make_invoice(session, [{'codigo_barra': 'BC_CLM', 'descripcion': 'PROD CLM', 'cantidad': 5}])
-        _make_erp(session, [{'codigo_barra': 'OTHER_CLM', 'descripcion': 'OTRO', 'cantidad': 3}])
+        _make_erp(session, [{'codigo_barra': 'OTHER_CLM', 'descripcion': 'OTRO', 'cantidad': 3}], inv)
         diffs_data = compare_invoice_vs_erp(session, inv.id)
         save_differences(session, inv.id, diffs_data)
 

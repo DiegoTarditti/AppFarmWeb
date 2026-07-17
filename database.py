@@ -1663,6 +1663,9 @@ class Invoice(Base):
     total_unidades = Column(Integer)
     pdf_filename = Column(String(200))
     erp_filename = Column(String(200))
+    # Carga de erp_stock contra la que se cruzó esta factura (ver ErpStock.carga_id).
+    # NULL = nunca se cruzó contra un ERP.
+    erp_carga_id = Column(BigInteger)
     batch_id = Column(Integer, ForeignKey('invoice_batches.id'), nullable=True)
     conciliado = Column(Boolean, nullable=False, default=False)
     # Identificación ARCA/AFIP ("Mis Comprobantes")
@@ -1748,6 +1751,15 @@ class ErpStock(Base):
     descripcion = Column(String(150))
     cantidad = Column(Integer)
     precio_unitario = Column(DECIMAL(14, 2))
+    # erp_stock es GLOBAL y de reemplazo total: cada carga borra todo y vuelve a
+    # insertar (data_extract.save_erp_to_db). No hay una fila por factura. carga_id
+    # identifica de qué carga vinieron estas filas, y Invoice.erp_carga_id guarda
+    # contra qué carga se cruzó cada factura. Si no coinciden, el ERP que está en la
+    # tabla NO es el de esa factura y no se puede comparar (ver
+    # data_extract.erp_pertenece_a_factura). Sin esto, una factura subida sin Excel
+    # se cruzaba contra el stock del chequeo anterior.
+    # No alcanza con el nombre del Excel: la farmacia reexporta siempre el mismo.
+    carga_id = Column(BigInteger)
     __table_args__ = (
         Index('idx_erp_stock_codigo', 'codigo_barra'),
     )
@@ -4435,6 +4447,12 @@ def _pg_add_columns(conn):
         "ALTER TABLE facturas ADD COLUMN IF NOT EXISTS erp_filename VARCHAR(200)"
     ))
     conn.execute(text(
+        "ALTER TABLE facturas ADD COLUMN IF NOT EXISTS erp_carga_id BIGINT"
+    ))
+    conn.execute(text(
+        "ALTER TABLE erp_stock ADD COLUMN IF NOT EXISTS carga_id BIGINT"
+    ))
+    conn.execute(text(
         "ALTER TABLE factura_items ADD COLUMN IF NOT EXISTS dto DECIMAL(6,2)"
     ))
     conn.execute(text(
@@ -5425,6 +5443,13 @@ def _sqlite_add_columns(conn):
             creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """))
+    # Cruce factura ↔ carga de ERP (ver ErpStock.carga_id).
+    existing_erp = {row[1] for row in conn.execute(text("PRAGMA table_info(erp_stock)"))}
+    if existing_erp and 'carga_id' not in existing_erp:
+        conn.execute(text("ALTER TABLE erp_stock ADD COLUMN carga_id BIGINT"))
+    existing_fac = {row[1] for row in conn.execute(text("PRAGMA table_info(facturas)"))}
+    if existing_fac and 'erp_carga_id' not in existing_fac:
+        conn.execute(text("ALTER TABLE facturas ADD COLUMN erp_carga_id BIGINT"))
     existing_prov = {row[1] for row in conn.execute(text("PRAGMA table_info(proveedores)"))}
     if 'grabar_productos' not in existing_prov:
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN grabar_productos INTEGER NOT NULL DEFAULT 1"))

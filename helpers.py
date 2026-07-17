@@ -266,6 +266,27 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def pdf_de_carpeta_proveedor(ruta_base, nombre):
+    """Path real de un PDF elegido del listado de la carpeta del proveedor, o None.
+
+    Valida por igualdad exacta contra el listado real en vez de sanitizar el nombre.
+    El nombre lo emitió el server (/api/provider/<id>/folder-files), no el usuario, y
+    secure_filename() mangla los nombres válidos ("FC A 1234.pdf" → "FC_A_1234.pdf"),
+    con lo cual el archivo no se encontraba nunca. La igualdad exacta contra os.listdir
+    también corta path traversal: ".." o "/etc/passwd" no están en el listado.
+    """
+    if not ruta_base or not nombre or not os.path.isdir(ruta_base):
+        return None
+    try:
+        reales = {n for n in os.listdir(ruta_base) if n.lower().endswith('.pdf')}
+    except OSError:
+        return None
+    if nombre not in reales:
+        return None
+    path = os.path.join(ruta_base, nombre)
+    return path if os.path.isfile(path) else None
+
+
 def get_providers(solo_drog_activas=False):
     """Proveedores para los dropdowns. Con solo_drog_activas=True filtra a las
     droguerías activas para pedido (tipo='drogueria' + activo + activa_ped),
