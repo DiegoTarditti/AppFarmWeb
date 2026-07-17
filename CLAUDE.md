@@ -198,9 +198,34 @@ Se hacen inline en `init_db()` con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (P
 
 > **Kellerhoff ya no usa parser regex.** Se importa por el flujo JSON con IA (`/converter/<token>/extraer-json` → `services/factura_ia.py`, Claude lee el PDF). Los 3 parsers regex (`droguer_a_kellerhoff_s_a.py`, `kellerhoff.py`, `drogueria_kelleroff.py`) se retiraron el 2026-05-26. El path regex (`data_extract.parse_invoice_pdf` vía `Provider.parser_file`, usado por `routes/batch.py` y el modo aprendizaje del conversor) sigue vivo para otros proveedores; si un Provider Kellerhoff viejo todavía tiene `parser_file` seteado, los callers degradan con error limpio (no crashean).
 
-### ⚠ OBLIGATORIO: normalización de texto PDF
+### ⚠ OBLIGATORIO: una sola línea para leer el PDF
 
-**Todos los parsers (nuevos y existentes) deben usar `_normalize_quadrupled` de `helpers.py`** al extraer texto con pdfplumber. A pesar del nombre, hace **3 limpiezas** de artefactos comunes:
+**Ningún parser lee con `pdfplumber.open()` directo.** La línea es esta, y es la misma
+que emite el template auto-generado de `/converter` (`_generar_codigo_parser`):
+
+```python
+from helpers import _normalize_quadrupled, extract_text_with_ocr_fallback
+
+def parse_invoice_pdf(pdf_path):
+    full_text = _normalize_quadrupled(extract_text_with_ocr_fallback(pdf_path))
+```
+
+Da dos cosas: **OCR fallback** (sin él, un PDF escaneado devuelve texto vacío → 0 ítems
+y la factura no se puede importar por ningún lado; Tesseract está en el `Dockerfile`) y
+la **limpieza de artefactos** de abajo. `tests/test_parsers_pdf.py` lo verifica sobre
+cada parser — si alguien vuelve a `pdfplumber.open()`, falla.
+
+> Hasta el 2026-07-17 esto era mentira: acá decía "todos los parsers deben usarlo" y
+> **ninguno** de los activos lo hacía (sólo los auto-generados por `/converter`).
+> `20_de_junio.py` tenía su propia lógica inline que rearmaba el texto cuadruplicado
+> tomando cada 4º carácter a mano, y sólo cubría ese artefacto.
+>
+> Excepción real: `laboratorios_bernabo_s_a.py` usa `extract_words()` porque sus ítems
+> salen de coordenadas (layout multi-columna). Lleva `_normalize_quadrupled` pero no
+> OCR: el OCR devuelve texto plano, no coordenadas. `sales_history.py` igual, y además
+> no es un parser de factura (va por `/purchase`).
+
+A pesar del nombre, `_normalize_quadrupled` hace **3 limpiezas** de artefactos comunes:
 
 1. **Caracteres cuadruplicados** (fuentes en negrita en 20 de Junio, etc.) — `"TTTTOOOOTTTTAAAALLLL"` → `"TOTAL"`
 2. **Letter-spacing** (cada carácter separado por un espacio) — `"G r a v a d o I V A"` → `"GravadoIVA"`. Dispara cuando hay ≥10 tokens cortos en secuencia.
@@ -208,23 +233,8 @@ Se hacen inline en `init_db()` con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (P
 
 Las 3 son idempotentes en líneas normales (no afectan decimales como `1.234,56`).
 
-Pattern en **todos los parsers**:
-
-```python
-from helpers import _normalize_quadrupled
-
-def parse_invoice_pdf(pdf_path):
-    pages_text = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            pages_text.append(_normalize_quadrupled(page.extract_text() or ''))
-    full_text = '\n'.join(pages_text)
-    # ... regex sobre full_text
-```
-
-- El template del parser auto-generado (`_generar_codigo_parser` en `routes/converter.py`) ya lo incluye → cualquier parser nuevo lo hereda
-- Si escribís un parser manual, **no te olvides de agregar el import y llamarlo por cada página**
-- Si migrás un parser viejo que no lo tenía, agregalo — es seguro por default
+Las 3 se aplican solas con la línea de arriba. Para un parser nuevo, copiá
+`parsers/_template.py`, que ya la trae.
 
 **Si descubrís otro artefacto recurrente de pdfplumber** (ej. rotaciones de caracteres, comillas raras, etc.), agregarlo como paso nuevo en `_normalize_quadrupled` en `helpers.py` — así automáticamente se propaga a todos los parsers que ya llaman a esta función.
 

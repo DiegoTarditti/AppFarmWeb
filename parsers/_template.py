@@ -11,7 +11,7 @@ Cada ítem debe devolver un dict con:
 import re
 from datetime import datetime
 
-import pdfplumber
+from helpers import _normalize_quadrupled, extract_text_with_ocr_fallback
 
 
 def parse_invoice_pdf(pdf_path):
@@ -19,11 +19,15 @@ def parse_invoice_pdf(pdf_path):
         """Convierte formato argentino '1.234,56' a float 1234.56"""
         return float(s.replace('.', '').replace(',', '.'))
 
-    pages_text = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            pages_text.append(page.extract_text() or '')
-    full_text = '\n'.join(pages_text)
+    # NO leer con pdfplumber directo. Esta línea da dos cosas gratis, y es la misma
+    # que usan los parsers que genera /converter (routes/converter.py):
+    #   - OCR fallback: sin esto un PDF escaneado devuelve texto vacío → 0 ítems y
+    #     la factura no se puede importar por ningún lado.
+    #   - Limpieza de artefactos de pdfplumber: caracteres repetidos de las fuentes
+    #     bold, letter-spacing ("G r a v a d o" → "Gravado") y rellenos de puntos.
+    # Si aparece un artefacto nuevo, agregalo dentro de _normalize_quadrupled en
+    # helpers.py y lo heredan todos los parsers.
+    full_text = _normalize_quadrupled(extract_text_with_ocr_fallback(pdf_path))
 
     # TODO: Adaptar estas expresiones al encabezado del PDF del proveedor
     numero_m = re.search(r'(?:FACTURA|REMITO|N[º°])\s*[:\s]*(\S+)', full_text)

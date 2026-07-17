@@ -10,18 +10,18 @@ Formato de línea de ítem:
 import re
 from datetime import datetime
 
-import pdfplumber
+from helpers import _normalize_quadrupled, extract_text_with_ocr_fallback
 
 
 def parse_invoice_pdf(pdf_path):
     def to_float(s):
         return float(s.replace('.', '').replace(',', '.'))
 
-    pages_text = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            pages_text.append(page.extract_text() or '')
-    full_text = '\n'.join(pages_text)
+    # Mismo pipeline que los parsers que genera /converter: OCR fallback si el PDF
+    # viene escaneado (pdfplumber devuelve vacío y la factura no se podía importar
+    # de ninguna forma) + limpieza de los artefactos de pdfplumber. Acá el artefacto
+    # es la fuente bold, que sale con cada carácter x4.
+    full_text = _normalize_quadrupled(extract_text_with_ocr_fallback(pdf_path))
 
     # Número de factura: "0011-19376868 / 01"
     numero_m = re.search(r'(\d{4}-\d{8})\s*/', full_text)
@@ -36,18 +36,18 @@ def parse_invoice_pdf(pdf_path):
     cuit_m = re.search(r'Res\.Insc\.\d+\s+([\d-]+)', full_text)
     cuit = cuit_m.group(1) if cuit_m else '23-17460511-4'
 
-    # Total: la línea "TOTAL NETO" usa caracteres cuadruplicados (ej: TTTTOOOO)
-    # El importe también: "1111....000066663333....333344443333,,,,55551111" → "1.063.343,51"
+    # Total: "TOTAL NETO $ 1.063.343,51".
+    # Esta línea sale cuadruplicada del PDF ("TTTTOOOOTTTTAAAALLLL ... $$$$
+    # 1111....000066663333..."). Antes se leía del texto crudo y se rearmaba a mano
+    # tomando cada 4º carácter, lo que además exigía que el largo fuera múltiplo de 4
+    # (si no, total = 0 en silencio). _normalize_quadrupled ya deja la línea legible.
     total = 0
-    total_m = re.search(r'TTTT.*?\$\$\$\$\s*([\d.,]+)', full_text)
+    total_m = re.search(r'TOTAL\s*NETO.*?\$\s*([\d.,]+)', full_text)
     if total_m:
-        raw = total_m.group(1).replace(' ', '')
-        if len(raw) % 4 == 0 and raw:
-            total_str = ''.join(raw[i] for i in range(0, len(raw), 4))
-            try:
-                total = to_float(total_str)
-            except ValueError:
-                total = 0
+        try:
+            total = to_float(total_m.group(1))
+        except ValueError:
+            total = 0
 
     # Regex de ítems: ancla en el código de barras (7-14 dígitos)
     # Antes: cantidad + descripción + labo + obs opcional
