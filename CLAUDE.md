@@ -246,6 +246,35 @@ Sin barcodes reales. Usa códigos internos tipo `79-65` como codigo_barra. Regex
 - `match_strategy='descripcion'`: descripción normalizada → barcode exacto → barcode_mappings
 - El Ratio en compare.html: `(unitErp - pUnit) / unitErp * 100` — positivo verde (ERP mayor), negativo rojo
 
+### El cruce automático es EXACTO. El fuzzy sólo sugiere (2026-07-17)
+
+`_normalize()` delega en `producto_matcher.normalizar_texto` (el mismo motor que
+`/ofertas/import`) — era `lower()` + colapsar espacios, y un acento o un decimal
+escrito distinto entre factura y ERP tiraba el match. **El cruce automático sigue
+siendo por igualdad**, no fuzzy.
+
+El fuzzy vive sólo en `sugerir_cruce_manual()`: pinta un chip "≈ 12 · 95%" en
+`/compare` que el operador aplica **con un click**. No se auto-aplica a propósito: un
+falso positivo termina en un reclamo a la droguería por el producto equivocado, y eso
+cuesta más que un falso negativo (que sólo manda al operador a cruzar a mano).
+
+**Al tocar el fuzzy, respetá estas dos reglas o vuelven los falsos positivos:**
+
+1. **Los números tienen que coincidir.** En farmacia el número ES la presentación:
+   `AMOXIDAL 500 COMP X 16` vs `AMOXIDAL 600 COMP X 16` comparten marca, forma y
+   envase → puntúan 64% y se sugerían. Igual `x16` vs `x30`. Hay tests que lo fijan.
+2. **Descripciones ambiguas no matchean.** Si dos ítems del ERP normalizan igual, la
+   clave se descarta del índice en vez de quedarse con el último (antes ganaba uno
+   arbitrario, según el orden de la tabla, y cruzaba mal en silencio).
+
+`refinar_candidatos` corre un Levenshtein en Python por candidato — era el 85% del
+costo. Se le pasa **top-3** y nada más; pasarle todos hacía tardar 1,5 s en abrir el
+cruce de una factura grande.
+
+No se usa `match_producto()` porque orquesta contra el catálogo (`Producto` /
+`ObsProducto`) y acá el universo son las filas de `erp_stock`, que no son un target del
+matcher. Se reusan sus primitivas, que son duck-typed sobre `.descripcion`.
+
 ## Notas importantes
 
 - `app.config['TEMPLATES_AUTO_RELOAD'] = True` activo → los templates se recargan sin restart al cambiar archivos.

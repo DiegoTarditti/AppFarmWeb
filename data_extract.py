@@ -1,4 +1,5 @@
 import importlib
+import re as _re_mod
 from datetime import datetime
 
 import pandas as pd
@@ -332,9 +333,21 @@ def erp_pertenece_a_factura(session, invoice):
     return actual is not None and actual == invoice.erp_carga_id
 
 
+_re_num = _re_mod.compile(r'\d+')
+
+
 def _normalize(s):
-    """Normaliza descripción para comparación: minúsculas, sin espacios dobles."""
-    return ' '.join((s or '').lower().split())
+    """Normaliza descripción para comparar factura vs ERP. Delega en el matcher central.
+
+    Era `lower()` + colapsar espacios y nada más, así que un acento, un decimal o un
+    "B 12" escritos distinto entre la factura y el ERP tiraban el match y el ítem caía
+    a "no encontrado" (trabajo manual para el operador). `normalizar_texto` además saca
+    acentos y puntuación, normaliza decimales (0.50 == 0.5) y mergea vitaminas
+    ("B 12" → "b12"). Se mantiene esta función como el punto único de normalización del
+    cruce; el resto de la app ya usaba el matcher (ver producto_matcher.py).
+    """
+    from producto_matcher import normalizar_texto
+    return normalizar_texto(s)
 
 
 def compare_invoice_vs_erp(session, factura_id):
@@ -346,7 +359,27 @@ def compare_invoice_vs_erp(session, factura_id):
     invoice_items = session.query(InvoiceItem).filter_by(factura_id=factura_id).all()
     all_erp = session.query(ErpStock).all()
     erp_by_barcode = {item.codigo_barra: item for item in all_erp}
-    erp_by_desc = {_normalize(item.descripcion): item for item in all_erp if item.descripcion}
+
+    # Índice por descripción. Las claves AMBIGUAS (dos ítems distintos del ERP que
+    # normalizan igual) se descartan en vez de quedarse con el último: con un dict
+    # comprehension ganaba uno arbitrario (el orden de la tabla) y la factura podía
+    # cruzarse contra el producto equivocado, en silencio. Sin match el ítem cae al
+    # cruce manual — el error barato (regla: falso negativo > falso positivo).
+    erp_by_desc = {}
+    _desc_ambiguas = set()
+    for item in all_erp:
+        if not item.descripcion:
+            continue
+        k = _normalize(item.descripcion)
+        if not k:
+            continue
+        anterior = erp_by_desc.get(k)
+        if anterior is not None and anterior is not item:
+            _desc_ambiguas.add(k)
+        else:
+            erp_by_desc[k] = item
+    for k in _desc_ambiguas:
+        erp_by_desc.pop(k, None)
 
     # Expandir erp_by_barcode con códigos alternativos de la tabla productos.
     # Busca productos que tengan CUALQUIER barcode del ERP (legacy alt1/2/3,
@@ -493,6 +526,105 @@ def save_differences(session, factura_id, differences):
             observaciones=diff['observaciones']
         ))
     session.commit()
+
+
+def sugerir_cruce_manual(diffs, erp_items, umbral=0.55, top_por_item=1):
+    """Para cada ítem del ERP sin coincidencia, cuál renglón de la factura se le parece.
+
+    NO auto-matchea: devuelve una sugerencia para que el operador la confirme de un
+    click en /compare. Un falso positivo acá termina en un reclamo a la droguería por
+    el producto equivocado, así que el fuzzy sugiere y decide una persona (regla:
+    falso negativo > falso positivo). El cruce automático sigue siendo exacto.
+
+    Reusa las primitivas de producto_matcher (mismo motor que /ofertas/import). No usa
+    match_producto porque ese orquesta contra el catálogo (Producto/ObsProducto) y acá
+    el universo son las filas de erp_stock, que no son un target del matcher.
+
+    Args:
+        diffs: diferencias YA ordenadas como se numeran en pantalla (nro = índice + 1).
+        erp_items: ítems del ERP sin match (los que muestran input de cruce).
+        umbral: score mínimo para sugerir. Bajo a propósito: es una pista, no un match.
+
+    Devuelve {erp_id: {'nro', 'score', 'descripcion'}}.
+    """
+    from producto_matcher import jaccard, refinar_candidatos, tokens_significativos
+
+    if not diffs or not erp_items:
+        return {}
+
+    def _numeros(desc):
+        """Números de una descripción, ya normalizada (dosis y unidades por envase).
+
+        En farmacia los números SON la presentación: "AMOXIDAL 500 COMP X 16" y
+        "AMOXIDAL 600 COMP X 16" son productos distintos, pero comparten marca, forma
+        y envase, así que puntúan 64% de parecido y el fuzzy los sugería. Igual pasaba
+        con x16 vs x30. Exigir que los números coincidan corta esos falsos positivos
+        sin perder los matches reales, que difieren en palabras y no en números
+        ("COMP" vs "comprimidos", acentos, "400MG" vs "400 mg").
+        """
+        return set(_re_num.findall(_normalize(desc)))
+
+    # Pre-tokenizar los renglones de la factura una sola vez (no por cada ítem del ERP).
+    lineas = []
+    for nro, d in enumerate(diffs, start=1):
+        if not d.descripcion:
+            continue
+        lineas.append({'nro': nro, 'descripcion': d.descripcion,
+                       '_toks': tokens_significativos(d.descripcion),
+                       '_nums': _numeros(d.descripcion)})
+    if not lineas:
+        return {}
+
+    # Índice invertido token → renglones. Sin esto son len(erp) × len(factura) jaccards
+    # (una factura de 400 contra un ERP de 400 = 160k) y el cruce tarda segundos en
+    # abrir. Con el índice sólo se comparan los renglones que comparten algún token.
+    # Es el mismo truco que usa producto_matcher para su pool (_candidatos_via_inv).
+    inv = {}
+    for idx, l in enumerate(lineas):
+        for t in l['_toks']:
+            inv.setdefault(t, []).append(idx)
+
+    sugerencias = {}
+    for erp in erp_items:
+        if not erp.descripcion:
+            continue
+        toks_erp = tokens_significativos(erp.descripcion)
+        if not toks_erp:
+            continue
+        idxs = set()
+        for t in toks_erp:
+            idxs.update(inv.get(t, ()))
+        if not idxs:
+            continue
+        nums_erp = _numeros(erp.descripcion)
+        candidatos = []
+        for i in idxs:
+            l = lineas[i]
+            # Distinta dosis o distinto envase = otro producto, por más que el texto
+            # se parezca. Se descarta antes de puntuar.
+            if l['_nums'] != nums_erp:
+                continue
+            sc = jaccard(toks_erp, l['_toks'])
+            if sc > 0:
+                candidatos.append({'nro': l['nro'], 'descripcion': l['descripcion'], 'score': sc})
+        if not candidatos:
+            continue
+        # refinar_candidatos corre un Levenshtein en Python por candidato: es el 85%
+        # del costo de esta función (medido con cProfile). Como sólo se usa el mejor y
+        # el segundo (para el chequeo de empate), se le pasa el top-3 por Jaccard y no
+        # más. Desempata con Levenshtein + prefijos ("cr" → "crema").
+        candidatos.sort(key=lambda c: -c['score'])
+        mejores = refinar_candidatos(erp.descripcion, candidatos[:3], top_keep=top_por_item + 1)
+        mejor = mejores[0]
+        if mejor['score'] < umbral:
+            continue
+        # Si el segundo está pegado, la sugerencia no distingue: mejor no sugerir nada
+        # que mandar al operador hacia una de dos opciones equivalentes.
+        if len(mejores) > 1 and (mejor['score'] - mejores[1]['score']) < 0.05:
+            continue
+        sugerencias[erp.id] = {'nro': mejor['nro'], 'score': round(mejor['score'], 2),
+                               'descripcion': mejor['descripcion']}
+    return sugerencias
 
 
 def recalcular_diferencias(session, factura_id):

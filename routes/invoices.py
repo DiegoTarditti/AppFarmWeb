@@ -18,6 +18,7 @@ from data_extract import (
     save_differences,
     save_erp_to_db,
     save_invoice_to_db,
+    sugerir_cruce_manual,
 )
 from helpers import (
     UPLOAD_FOLDER,
@@ -944,6 +945,10 @@ def init_app(app):
             # Si no es el de esta factura, el template avisa en vez de mostrar datos
             # ajenos (ver data_extract.erp_pertenece_a_factura).
             erp_de_esta_factura = erp_pertenece_a_factura(session, invoice)
+            # Pista de cruce por parecido de descripción (no auto-matchea: el
+            # operador confirma con un click). invoice_diffs va en el mismo orden
+            # con el que se numera la tabla, que es el nro que espera apply_mapping.
+            sugerencias = sugerir_cruce_manual(invoice_diffs, erp_items)
             inv_items = session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).all()
             inv_prices = {
                 item.codigo_barra: float(item.precio_unitario or 0)
@@ -960,6 +965,7 @@ def init_app(app):
                                    invoice_diffs=invoice_diffs, erp_items=erp_items,
                                    inv_prices=inv_prices,
                                    erp_de_esta_factura=erp_de_esta_factura,
+                                   sugerencias=sugerencias,
                                    observer_disponible=observer_disponible)
 
     @app.route('/invoice/<int:invoice_id>/erp-upload', methods=['POST'])

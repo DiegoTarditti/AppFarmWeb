@@ -19,6 +19,7 @@ from data_extract import (
     get_erp_items_with_issues,
     carga_erp_actual,
     recalcular_diferencias,
+    sugerir_cruce_manual,
     create_claim,
 )
 
@@ -273,6 +274,110 @@ class TestSaveBarcodeMapping:
 
 
 # ── get_erp_items_with_issues ─────────────────────────────────────────────────
+
+class TestNormalizacionDelCruce:
+    """El cruce por descripción usa el matcher central (producto_matcher).
+
+    Antes era lower()+espacios: cualquier acento o decimal escrito distinto entre la
+    factura y el ERP tiraba el match y el ítem caía a "no encontrado".
+    """
+
+    def test_matchea_con_acentos_distintos(self, session):
+        inv = _make_invoice(session, [{'codigo_barra': 'F1', 'descripcion': 'AMOXICILINA 500MG CÁPSULAS', 'cantidad': 5}])
+        _make_erp(session, [{'codigo_barra': 'E1', 'descripcion': 'AMOXICILINA 500MG CAPSULAS', 'cantidad': 5}], inv)
+        assert compare_invoice_vs_erp(session, inv.id) == []
+
+    def test_matchea_decimales_equivalentes(self, session):
+        inv = _make_invoice(session, [{'codigo_barra': 'F2', 'descripcion': 'PARACETAMOL 0.5G', 'cantidad': 3}])
+        _make_erp(session, [{'codigo_barra': 'E2', 'descripcion': 'PARACETAMOL 0.50G', 'cantidad': 3}], inv)
+        assert compare_invoice_vs_erp(session, inv.id) == []
+
+    def test_matchea_vitaminas_espaciadas(self, session):
+        inv = _make_invoice(session, [{'codigo_barra': 'F3', 'descripcion': 'XEDENOL B 12', 'cantidad': 2}])
+        _make_erp(session, [{'codigo_barra': 'E3', 'descripcion': 'XEDENOL B12', 'cantidad': 2}], inv)
+        assert compare_invoice_vs_erp(session, inv.id) == []
+
+    def test_no_matchea_productos_distintos(self, session):
+        """La normalización no puede volverse tan laxa que junte productos distintos."""
+        inv = _make_invoice(session, [{'codigo_barra': 'F4', 'descripcion': 'IBUPROFENO 400MG', 'cantidad': 1}])
+        _make_erp(session, [{'codigo_barra': 'E4', 'descripcion': 'IBUPROFENO 600MG', 'cantidad': 1}], inv)
+        diffs = compare_invoice_vs_erp(session, inv.id)
+        assert len(diffs) == 1
+        assert diffs[0]['cantidad_erp'] == 0
+
+    def test_descripcion_ambigua_no_matchea_a_ninguno(self, session):
+        """Dos ítems del ERP que normalizan igual: sin match, va al cruce manual.
+
+        Antes ganaba uno arbitrario (el último del dict) y podía cruzar contra el
+        producto equivocado en silencio.
+        """
+        inv = _make_invoice(session, [{'codigo_barra': 'F5', 'descripcion': 'GASA ESTERIL', 'cantidad': 4}])
+        _make_erp(session, [
+            {'codigo_barra': 'E5A', 'descripcion': 'GASA ESTERIL', 'cantidad': 4},
+            {'codigo_barra': 'E5B', 'descripcion': 'GASA ESTÉRIL', 'cantidad': 9},
+        ], inv)
+        diffs = compare_invoice_vs_erp(session, inv.id)
+        assert len(diffs) == 1
+        assert diffs[0]['cantidad_erp'] == 0   # no adivina: cae al cruce manual
+
+
+class TestSugerirCruceManual:
+    """La sugerencia es una pista para el operador, nunca un auto-match."""
+
+    class _Fila:
+        def __init__(self, id, descripcion):
+            self.id = id
+            self.descripcion = descripcion
+
+    def test_sugiere_el_renglon_parecido(self):
+        diffs = [self._Fila(1, 'AMOXIDAL 500 COMP X 16'), self._Fila(2, 'IBUPIRAC 600 X 10')]
+        erp = [self._Fila(77, 'Amoxidal 500 comprimidos x16')]
+        sug = sugerir_cruce_manual(diffs, erp)
+        assert sug[77]['nro'] == 1          # el primero de la lista
+        assert sug[77]['score'] >= 0.55
+
+    def test_no_sugiere_si_no_se_parece_a_nada(self):
+        diffs = [self._Fila(1, 'AMOXIDAL 500 COMP X 16')]
+        erp = [self._Fila(88, 'ALCOHOL EN GEL 250ML')]
+        assert sugerir_cruce_manual(diffs, erp) == {}
+
+    def test_no_sugiere_ante_empate(self):
+        """Dos renglones igual de parecidos: no mandar al operador a jugar a la moneda."""
+        diffs = [self._Fila(1, 'GASA ESTERIL'), self._Fila(2, 'GASA ESTERIL')]
+        erp = [self._Fila(99, 'GASA ESTERIL')]
+        assert sugerir_cruce_manual(diffs, erp) == {}
+
+    def test_sin_datos_no_explota(self):
+        assert sugerir_cruce_manual([], []) == {}
+        assert sugerir_cruce_manual([self._Fila(1, None)], [self._Fila(2, None)]) == {}
+
+    # ── Falsos positivos: lo que NO se puede sugerir ──────────────────────────
+    # En farmacia los números son la presentación. "AMOXIDAL 500 COMP X 16" y
+    # "AMOXIDAL 600 COMP X 16" comparten marca, forma y envase: puntúan 64% de
+    # parecido y se sugerían. Un click distraído del operador = reclamo a la
+    # droguería por el producto equivocado.
+
+    @pytest.mark.parametrize('factura,erp,motivo', [
+        ('AMOXIDAL 500 COMP X 16', 'AMOXIDAL 600 COMP X 16', 'distinta dosis'),
+        ('AMOXIDAL 500 COMP X 16', 'AMOXIDAL 500 COMP X 30', 'distinto envase'),
+        ('DEXALERGIN CREMA 30G',   'DEXALERGIN GOTAS 30ML',  'distinta forma'),
+        ('IBUPIRAC 400 X 10',      'IBUPIRAC 400 X 20',      'distinta cantidad'),
+    ])
+    def test_no_sugiere_presentaciones_distintas(self, factura, erp, motivo):
+        sug = sugerir_cruce_manual([self._Fila(1, factura)], [self._Fila(99, erp)])
+        assert sug == {}, f'sugirió pese a {motivo}: {factura!r} vs {erp!r}'
+
+    @pytest.mark.parametrize('factura,erp,motivo', [
+        ('AMOXIDAL 500 COMP X 16',     'Amoxidal 500 comprimidos x16', 'mismo producto escrito distinto'),
+        ('GASA ESTERIL X 10',          'Gasa Estéril x10',             'acento'),
+        ('IBUPROFENO 400MG X 10 COMP', 'Ibuprofeno 400 mg x10 comp.',  'unidad pegada al número'),
+        ('PARACETAMOL 0.5G X 20',      'Paracetamol 0.50 g x20',       'decimal equivalente'),
+    ])
+    def test_si_sugiere_el_mismo_producto(self, factura, erp, motivo):
+        sug = sugerir_cruce_manual([self._Fila(1, factura)], [self._Fila(99, erp)])
+        assert sug.get(99, {}).get('nro') == 1, f'no sugirió pese a ser el mismo ({motivo})'
+
+
 
 class TestErpDeOtroChequeo:
     """erp_stock es global y guarda UNA carga a la vez.

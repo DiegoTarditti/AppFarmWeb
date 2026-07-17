@@ -271,3 +271,27 @@ class TestCompareViewErpDeOtroChequeo:
         body = resp.data.decode('utf-8')
         assert 'no está cruzada contra un ingreso de ERP' not in body
         assert 'PROD SOLO ERP' in body
+
+
+class TestCompareViewSugerencias:
+    """El cruce manual sugiere el renglón parecido, sin aplicarlo solo."""
+
+    def test_muestra_el_chip_de_sugerencia(self, client, db_session):
+        prov = _make_provider(db_session, razon='SUG LAB', cuit='30-SUG-1')
+        inv = _make_invoice(db_session, prov, numero='FSG01')
+        db_session.add(InvoiceItem(factura_id=inv.id, codigo_barra='FAC_SG',
+                                   descripcion='AMOXIDAL 500 COMP X 16', cantidad=5))
+        # Item del ERP sin match exacto pero parecido -> debe sugerirse.
+        db_session.add(ErpStock(codigo_barra='ERP_SG', descripcion='Amoxidal 500 comprimidos x16',
+                                cantidad=5, carga_id=333))
+        inv.erp_carga_id = 333
+        _make_diff(db_session, inv, cb='FAC_SG', desc='AMOXIDAL 500 COMP X 16',
+                   cant_fac=5, cant_erp=0)
+        db_session.commit()
+
+        resp = client.get(f'/invoice/{inv.id}/compare')
+        assert resp.status_code == 200
+        body = resp.data.decode('utf-8')
+        assert 'usarSugerencia(' in body, 'no se renderizó el chip de sugerencia'
+        # La sugerencia NO se aplica sola: el input queda vacío.
+        assert 'name="mapping_' in body
