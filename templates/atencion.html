@@ -2842,7 +2842,9 @@ function renderDespachos(items){
   actualizarBarraMulti();
 }
 
-function _esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// (_esc ya está definida más arriba en este script — no redefinir: una segunda
+// declaración pisa a la primera en TODO el scope por hoisting, y cambiaría el
+// escapado del resto del panel.)
 
 // Auto-crea una conv walk-in si no hay ninguna abierta. Se llama antes de
 // seleccionar/procesar despachos en modo manual, para que el operador no
