@@ -59,6 +59,16 @@
         background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
         color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.3);
     }
+    .erp-aviso {
+        margin: 12px; padding: 12px 14px;
+        background: rgba(234,179,8,.10); border: 1px solid rgba(234,179,8,.45);
+        border-radius: var(--ds-r-sm);
+    }
+    .erp-aviso__t { color: var(--ds-text); font-size: 13px; font-weight: 600; }
+    .erp-aviso__d { color: var(--ds-text-mute); font-size: 12px; line-height: 1.5; margin-top: 4px; }
+    .erp-aviso__d code { color: var(--ds-text); font-family: ui-monospace, monospace; }
+    .erp-aviso__f { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .erp-aviso__f input[type=file] { color: var(--ds-text-mute); font-size: 12px; max-width: 100%; }
     .btn-violet:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(124,58,237,.4); }
     /* Hint box */
     .hint-box {
@@ -200,6 +210,25 @@
                         {% endif %}
                     </div>
                     <div class="compare-card__body">
+                        {% if not erp_de_esta_factura %}
+                        <div class="erp-aviso">
+                            <p class="erp-aviso__t">Esta factura no está cruzada contra un ingreso de ERP.</p>
+                            <p class="erp-aviso__d">
+                                El stock del ERP se guarda de a una carga por vez, así que lo que hay
+                                cargado ahora es de otro chequeo y no se muestra acá para no mezclarlo
+                                con esta factura.
+                                {% if invoice.erp_filename %}
+                                Esta se cruzó con <code>{{ invoice.erp_filename }}</code>, que ya no está cargado.
+                                {% endif %}
+                            </p>
+                            <form method="post" enctype="multipart/form-data" class="erp-aviso__f"
+                                  action="{{ url_for('invoice_erp_upload', invoice_id=invoice.id) }}">
+                                <input type="file" name="erp_excel" accept=".xlsx,.xls" required
+                                       title="Excel del ERP correspondiente a esta factura">
+                                <button type="submit" class="btn btn-sm">Cargar ERP y cruzar</button>
+                            </form>
+                        </div>
+                        {% endif %}
                         <table>
                             <thead>
                                 <tr>

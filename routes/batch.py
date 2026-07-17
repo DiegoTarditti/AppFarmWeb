@@ -115,11 +115,15 @@ def init_app(app):
             batch.estado = 'PROCESADO'
             session.commit()
 
-            save_erp_to_db(session, erp_data)
+            # Un solo Excel para todas las facturas del batch: todas comparten carga_id.
+            carga_id = save_erp_to_db(session, erp_data)
 
             invoices = session.query(database.Invoice).filter_by(batch_id=batch.id).all()
             for invoice in invoices:
                 invoice.erp_filename = erp_filename
+                invoice.erp_carga_id = carga_id
+            session.commit()   # habilita el cruce antes de comparar
+            for invoice in invoices:
                 differences = compare_invoice_vs_erp(session, invoice.id)
                 save_differences(session, invoice.id, differences)
             session.commit()

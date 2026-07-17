@@ -5,7 +5,7 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 > ⚠️ **Lo URGENTE vive en [`docs/backlog_urgente.md`](backlog_urgente.md)** — lista corta priorizada (P0/P1/P2). Este doc es el backlog general (features + mejoras no urgentes).
 
 > 🗺️ **¿Buscás dónde está algo? Mirá [`docs/MAPA.generado.md`](MAPA.generado.md) antes de grepear.**
-> Índice de las **765 rutas, 122 modelos, 21 syncs, 26 services y 11 parsers**, con
+> Índice de las **767 rutas, 122 modelos, 21 syncs, 26 services y 11 parsers**, con
 > archivo:línea. Sale del código (`python scripts/mapa.py`), así que no miente — el CI
 > falla si queda desactualizado. La tabla de syncs muestra de qué vista de ObServer lee
 > cada uno y marca las 2 premium (⭐ = schema `Gestion` = requiere SA).

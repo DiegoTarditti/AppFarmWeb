@@ -6,7 +6,7 @@
 
 | Buscás… | Andá a |
 |---|---|
-| **Dónde está algo** (una ruta, un modelo, un sync) | [`docs/MAPA.generado.md`](docs/MAPA.generado.md) — índice de 765 rutas, 122 modelos, 21 syncs, 26 services y 11 parsers, con archivo:línea |
+| **Dónde está algo** (una ruta, un modelo, un sync) | [`docs/MAPA.generado.md`](docs/MAPA.generado.md) — índice de 767 rutas, 122 modelos, 21 syncs, 26 services y 11 parsers, con archivo:línea |
 | **Por qué las cosas son así** + trampas del dominio | [`CLAUDE.md`](CLAUDE.md) — en especial *"Trampas de ObServer"* |
 | **Qué falta hacer** | [`docs/backlog_urgente.md`](docs/backlog_urgente.md) (P0/P1/P2) y [`docs/mejoras_pendientes.md`](docs/mejoras_pendientes.md) |
 

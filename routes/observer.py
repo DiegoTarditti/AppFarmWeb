@@ -27,6 +27,21 @@ def _user_tiene_observer(user):
     return user.rol in ('farmacia', 'dev', 'admin')
 
 
+_RECEPCIONES_PENDIENTE = ('Traer recepciones desde ObServer todavía no está implementado. '
+                          'Cruzá subiendo el Excel del ERP.')
+
+
+def _recepciones_implementadas():
+    """observer_source.get_recepciones_factura no existe todavía.
+
+    Las dos rutas que la llaman se escribieron contra una función que nunca se
+    implementó: tocar el botón "ObServer" en el cruce daba AttributeError → 500.
+    Se chequea en runtime (y no con un flag) para que el día que se agregue la
+    función se prenda solo, sin tener que acordarse de tocar esto.
+    """
+    return hasattr(observer_source, 'get_recepciones_factura')
+
+
 def init_app(app):
 
     @app.route('/obs/producto/<int:observer_id>/descripcion', methods=['POST'])
@@ -1228,6 +1243,8 @@ def init_app(app):
             return jsonify({'ok': False, 'error': 'Sin acceso a ObServer'}), 403
         if not observer_source.observer_disponible():
             return jsonify({'ok': False, 'error': 'ObServer no disponible'}), 503
+        if not _recepciones_implementadas():
+            return jsonify({'ok': False, 'error': _RECEPCIONES_PENDIENTE}), 501
         with database.get_db() as session:
             inv = session.get(database.Invoice, invoice_id)
             if not inv:
@@ -1253,6 +1270,10 @@ def init_app(app):
             flash('ObServer no está disponible en este momento.', 'error')
             return redirect(url_for('compare_view', invoice_id=invoice_id))
 
+        if not _recepciones_implementadas():
+            flash(_RECEPCIONES_PENDIENTE, 'error')
+            return redirect(url_for('compare_view', invoice_id=invoice_id))
+
         comprobante = (request.form.get('comprobante') or '').strip()
         if not comprobante:
             flash('Ingresá el número de comprobante de recepción de ObServer.', 'error')
@@ -1271,16 +1292,21 @@ def init_app(app):
                       f'(proveedor {inv.proveedor_cuit or "—"}).', 'warning')
                 return redirect(url_for('compare_view', invoice_id=invoice_id))
 
-            # Convertir recepciones de ObServer al formato erp_items
+            # Convertir recepciones de ObServer al formato erp_items.
+            # precio_unitario es POR UNIDAD: no multiplicar por cantidad (eso da el
+            # importe). El Ratio% de compare.html compara Unit.ERP contra el unitario
+            # de la factura, así que multiplicarlo lo distorsiona en todo ítem con
+            # cantidad > 1.
             erp_items = [{
                 'codigo_barra': r['codigo_barra'],
                 'descripcion': r['descripcion'],
                 'cantidad': r['cantidad'],
-                'precio_unitario': r['precio_unitario'] * r['cantidad']
-                                    if r.get('precio_unitario') and r.get('cantidad') else 0,
+                'precio_unitario': r.get('precio_unitario') or 0,
             } for r in recepciones]
 
-            save_erp_to_db(session, erp_items)
+            inv.erp_filename = f'ObServer {comprobante}'
+            inv.erp_carga_id = save_erp_to_db(session, erp_items)
+            session.commit()   # habilita el cruce antes de comparar
             differences = compare_invoice_vs_erp(session, invoice_id)
             save_differences(session, invoice_id, differences)
 

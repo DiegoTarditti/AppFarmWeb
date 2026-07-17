@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-07-16 12:43 · rama `main` · commit `10aa810`
+Generado: 2026-07-17 09:07 · rama `fix/erp-cruce-chequeo-anterior` · commit `e3549fa`
 
-**765 rutas** en 74 archivos · **122 modelos** · **21 syncs** · **26 services** · **11 parsers**
+**767 rutas** en 74 archivos · **122 modelos** · **21 syncs** · **26 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -42,16 +42,16 @@ Generado: 2026-07-16 12:43 · rama `main` · commit `10aa810`
 | Tabla | Clase | Línea |
 |---|---|---|
 | `alarmas_notificadas` | `AlarmaNotificada` | [959](../database.py#L959) |
-| `analisis_ia_cache` | `AnalisisIaCache` | [2230](../database.py#L2230) |
-| `analisis_sesiones` | `AnalisisSesion` | [2357](../database.py#L2357) |
-| `api_keys` | `ApiKey` | [3016](../database.py#L3016) |
+| `analisis_ia_cache` | `AnalisisIaCache` | [2242](../database.py#L2242) |
+| `analisis_sesiones` | `AnalisisSesion` | [2369](../database.py#L2369) |
+| `api_keys` | `ApiKey` | [3028](../database.py#L3028) |
 | `archivos_compartidos` | `ArchivoCompartido` | [1241](../database.py#L1241) |
 | `backup_log` | `BackupLog` | [1141](../database.py#L1141) |
-| `barcode_mappings` | `BarcodeMapping` | [1864](../database.py#L1864) |
-| `bot_conversaciones` | `BotConversacion` | [2823](../database.py#L2823) |
-| `bot_interacciones` | `BotInteraccion` | [2991](../database.py#L2991) |
-| `bot_mensajes` | `BotMensaje` | [2885](../database.py#L2885) |
-| `cadencia_lab_snapshot` | `CadenciaLabSnapshot` | [2186](../database.py#L2186) |
+| `barcode_mappings` | `BarcodeMapping` | [1876](../database.py#L1876) |
+| `bot_conversaciones` | `BotConversacion` | [2835](../database.py#L2835) |
+| `bot_interacciones` | `BotInteraccion` | [3003](../database.py#L3003) |
+| `bot_mensajes` | `BotMensaje` | [2897](../database.py#L2897) |
+| `cadencia_lab_snapshot` | `CadenciaLabSnapshot` | [2198](../database.py#L2198) |
 | `cadetes` | `Cadete` | [771](../database.py#L771) |
 | `ciudades` | `Ciudad` | [581](../database.py#L581) |
 | `cliente_os_confirmada` | `ClienteOsConfirmada` | [439](../database.py#L439) |
@@ -63,33 +63,33 @@ Generado: 2026-07-16 12:43 · rama `main` · commit `10aa810`
 | `cron_log` | `CronLog` | [941](../database.py#L941) |
 | `cuentas_pago` | `CuentaPago` | [636](../database.py#L636) |
 | `descuentos_base` | `DescuentoBase` | [1333](../database.py#L1333) |
-| `devolucion_receta` | `DevolucionReceta` | [2573](../database.py#L2573) |
-| `documentos_pendientes` | `DocumentoPendiente` | [2150](../database.py#L2150) |
+| `devolucion_receta` | `DevolucionReceta` | [2585](../database.py#L2585) |
+| `documentos_pendientes` | `DocumentoPendiente` | [2162](../database.py#L2162) |
 | `domicilios_cliente` | `DomicilioCliente` | [704](../database.py#L704) |
 | `envio_config` | `EnvioConfig` | [733](../database.py#L733) |
 | `envio_tramos` | `EnvioTramo` | [677](../database.py#L677) |
 | `envio_zonas` | `EnvioZona` | [688](../database.py#L688) |
-| `equivalencias_proveedor` | `EquivalenciaProveedor` | [1811](../database.py#L1811) |
-| `erp_stock` | `ErpStock` | [1743](../database.py#L1743) |
-| `estacionalidad_escenarios` | `EstacionalidadEscenario` | [2642](../database.py#L2642) |
-| `estacionalidad_productos` | `EstacionalidadProducto` | [2674](../database.py#L2674) |
-| `eventos_sla` | `EventoSLA` | [2948](../database.py#L2948) |
+| `equivalencias_proveedor` | `EquivalenciaProveedor` | [1823](../database.py#L1823) |
+| `erp_stock` | `ErpStock` | [1746](../database.py#L1746) |
+| `estacionalidad_escenarios` | `EstacionalidadEscenario` | [2654](../database.py#L2654) |
+| `estacionalidad_productos` | `EstacionalidadProducto` | [2686](../database.py#L2686) |
+| `eventos_sla` | `EventoSLA` | [2960](../database.py#L2960) |
 | `export_templates` | `ExportTemplate` | [1162](../database.py#L1162) |
-| `factura_faltante` | `FacturaFaltante` | [1722](../database.py#L1722) |
-| `factura_items` | `InvoiceItem` | [1701](../database.py#L1701) |
+| `factura_faltante` | `FacturaFaltante` | [1725](../database.py#L1725) |
+| `factura_items` | `InvoiceItem` | [1704](../database.py#L1704) |
 | `facturas` | `Invoice` | [1650](../database.py#L1650) |
 | `farmacias` | `Farmacia` | [1085](../database.py#L1085) |
 | `formas_pago` | `FormaPago` | [627](../database.py#L627) |
-| `home_card_clicks` | `HomeCardClick` | [2280](../database.py#L2280) |
-| `informe_enviado` | `InformeEnviado` | [2934](../database.py#L2934) |
+| `home_card_clicks` | `HomeCardClick` | [2292](../database.py#L2292) |
+| `informe_enviado` | `InformeEnviado` | [2946](../database.py#L2946) |
 | `invoice_batches` | `InvoiceBatch` | [1640](../database.py#L1640) |
 | `kellerhoff_catalogo` | `KellerhoffCatalogo` | [1569](../database.py#L1569) |
 | `kellerhoff_equivalencia` | `KellerhoffEquivalencia` | [1593](../database.py#L1593) |
 | `laboratorio_drogueria` | `LaboratorioDrogueria` | [1433](../database.py#L1433) |
 | `laboratorios` | `Laboratorio` | [91](../database.py#L91) |
-| `modulo_packs` | `ModuloPack` | [2019](../database.py#L2019) |
-| `modulos` | `Modulo` | [2006](../database.py#L2006) |
-| `motivo_devolucion` | `MotivoDevolucion` | [2421](../database.py#L2421) |
+| `modulo_packs` | `ModuloPack` | [2031](../database.py#L2031) |
+| `modulos` | `Modulo` | [2018](../database.py#L2018) |
+| `motivo_devolucion` | `MotivoDevolucion` | [2433](../database.py#L2433) |
 | `mv_refresh_log` | `MvRefreshLog` | [1127](../database.py#L1127) |
 | `obs_categorias_clientes` | `ObsCategoriaCliente` | [341](../database.py#L341) |
 | `obs_clientes` | `ObsCliente` | [470](../database.py#L470) |
@@ -112,57 +112,57 @@ Generado: 2026-07-16 12:43 · rama `main` · commit `10aa810`
 | `obs_sync_log` | `ObsSyncLog` | [926](../database.py#L926) |
 | `obs_ventas_detalle` | `ObsVentaDetalle` | [258](../database.py#L258) |
 | `obs_ventas_mensuales` | `ObsVentaMensual` | [193](../database.py#L193) |
-| `ofertas_bot` | `OfertaBot` | [2898](../database.py#L2898) |
+| `ofertas_bot` | `OfertaBot` | [2910](../database.py#L2910) |
 | `ofertas_minimo` | `OfertaMinimo` | [1169](../database.py#L1169) |
-| `ofertas_registro` | `OfertaRegistro` | [2910](../database.py#L2910) |
-| `pack_equivalencias` | `PackEquivalencia` | [2294](../database.py#L2294) |
+| `ofertas_registro` | `OfertaRegistro` | [2922](../database.py#L2922) |
+| `pack_equivalencias` | `PackEquivalencia` | [2306](../database.py#L2306) |
 | `pago_aplicaciones` | `PagoAplicacion` | [667](../database.py#L667) |
 | `pagos` | `Pago` | [650](../database.py#L650) |
-| `pagos_ajustes_cc` | `PagoAjusteCC` | [2135](../database.py#L2135) |
+| `pagos_ajustes_cc` | `PagoAjusteCC` | [2147](../database.py#L2147) |
 | `panel_comandos` | `PanelComando` | [994](../database.py#L994) |
 | `panel_heartbeat` | `PanelHeartbeat` | [1017](../database.py#L1017) |
 | `parser_ofertas_lab` | `ParserOfertasLab` | [1218](../database.py#L1218) |
 | `pedido_borrador` | `PedidoBorrador` | [1609](../database.py#L1609) |
 | `pedido_emitido` | `PedidoEmitido` | [1371](../database.py#L1371) |
 | `pedido_emitido_item` | `PedidoEmitidoItem` | [1402](../database.py#L1402) |
-| `pedido_items` | `PedidoItem` | [2080](../database.py#L2080) |
+| `pedido_items` | `PedidoItem` | [2092](../database.py#L2092) |
 | `pedido_obs_presets` | `PedidoObsPreset` | [759](../database.py#L759) |
-| `pedidos` | `Pedido` | [2034](../database.py#L2034) |
+| `pedidos` | `Pedido` | [2046](../database.py#L2046) |
 | `pedidos_reparto` | `PedidoReparto` | [813](../database.py#L813) |
-| `plantilla_campos` | `PlantillaCampo` | [2386](../database.py#L2386) |
-| `plantillas` | `Plantilla` | [2401](../database.py#L2401) |
-| `plantillas_exportacion` | `PlantillaExportacion` | [2372](../database.py#L2372) |
-| `procesos_compra` | `ProcesoCompra` | [2103](../database.py#L2103) |
-| `product_analytics` | `ProductAnalytics` | [2165](../database.py#L2165) |
-| `producto_atributos` | `ProductoAtributo` | [1959](../database.py#L1959) |
-| `producto_codigos_barra` | `ProductoCodigoBarra` | [1933](../database.py#L1933) |
+| `plantilla_campos` | `PlantillaCampo` | [2398](../database.py#L2398) |
+| `plantillas` | `Plantilla` | [2413](../database.py#L2413) |
+| `plantillas_exportacion` | `PlantillaExportacion` | [2384](../database.py#L2384) |
+| `procesos_compra` | `ProcesoCompra` | [2115](../database.py#L2115) |
+| `product_analytics` | `ProductAnalytics` | [2177](../database.py#L2177) |
+| `producto_atributos` | `ProductoAtributo` | [1971](../database.py#L1971) |
+| `producto_codigos_barra` | `ProductoCodigoBarra` | [1945](../database.py#L1945) |
 | `producto_flags` | `ProductoFlag` | [1548](../database.py#L1548) |
-| `producto_precios_hist` | `ProductoPrecioHist` | [2332](../database.py#L2332) |
-| `productos` | `Producto` | [1875](../database.py#L1875) |
+| `producto_precios_hist` | `ProductoPrecioHist` | [2344](../database.py#L2344) |
+| `productos` | `Producto` | [1887](../database.py#L1887) |
 | `productos_pendientes_revision` | `ProductoPendienteRevision` | [1029](../database.py#L1029) |
 | `proveedor_cronograma` | `ProveedorCronograma` | [1478](../database.py#L1478) |
 | `proveedor_horarios_reparto` | `ProveedorHorarioReparto` | [1454](../database.py#L1454) |
 | `proveedores` | `Provider` | [1300](../database.py#L1300) |
-| `reclamo_items` | `ClaimItem` | [1791](../database.py#L1791) |
-| `reclamos` | `Claim` | [1773](../database.py#L1773) |
-| `rendicion_grupo` | `RendicionGrupo` | [2515](../database.py#L2515) |
-| `rendicion_grupo_os` | `RendicionGrupoOS` | [2536](../database.py#L2536) |
-| `rendicion_lote` | `RendicionLote` | [2439](../database.py#L2439) |
-| `respuestas_rapidas` | `RespuestaRapida` | [2923](../database.py#L2923) |
-| `rol_filtro_obra_social` | `RolFiltroObraSocial` | [2551](../database.py#L2551) |
+| `reclamo_items` | `ClaimItem` | [1803](../database.py#L1803) |
+| `reclamos` | `Claim` | [1785](../database.py#L1785) |
+| `rendicion_grupo` | `RendicionGrupo` | [2527](../database.py#L2527) |
+| `rendicion_grupo_os` | `RendicionGrupoOS` | [2548](../database.py#L2548) |
+| `rendicion_lote` | `RendicionLote` | [2451](../database.py#L2451) |
+| `respuestas_rapidas` | `RespuestaRapida` | [2935](../database.py#L2935) |
+| `rol_filtro_obra_social` | `RolFiltroObraSocial` | [2563](../database.py#L2563) |
 | `rutas_reparto` | `RutaReparto` | [795](../database.py#L795) |
-| `stock_differences` | `StockDifference` | [1756](../database.py#L1756) |
+| `stock_differences` | `StockDifference` | [1768](../database.py#L1768) |
 | `sucursales` | `Sucursal` | [1281](../database.py#L1281) |
 | `sync_lock` | `SyncLock` | [975](../database.py#L975) |
 | `ticket_items` | `TicketItem` | [615](../database.py#L615) |
 | `tickets_caja` | `TicketCaja` | [591](../database.py#L591) |
 | `tipo_pedido_config` | `TipoPedidoConfig` | [1524](../database.py#L1524) |
 | `usuario_farmacias` | `UsuarioFarmacia` | [1109](../database.py#L1109) |
-| `usuarios` | `Usuario` | [2243](../database.py#L2243) |
+| `usuarios` | `Usuario` | [2255](../database.py#L2255) |
 | `usuarios_pedidos` | `UsuarioPedido` | [1363](../database.py#L1363) |
-| `vendedor_bookmark` | `VendedorBookmark` | [2497](../database.py#L2497) |
-| `web_producto_imagen` | `WebProductoImagen` | [3070](../database.py#L3070) |
-| `web_rubros_publicados` | `WebRubroPublicado` | [3048](../database.py#L3048) |
+| `vendedor_bookmark` | `VendedorBookmark` | [2509](../database.py#L2509) |
+| `web_producto_imagen` | `WebProductoImagen` | [3082](../database.py#L3082) |
+| `web_rubros_publicados` | `WebRubroPublicado` | [3060](../database.py#L3060) |
 
 ## Rutas
 
@@ -295,7 +295,7 @@ Generado: 2026-07-16 12:43 · rama `main` · commit `10aa810`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/batch/<int:batch_id>/results` | GET | [`batch_results`](../routes/batch.py#L131) |
+| `/batch/<int:batch_id>/results` | GET | [`batch_results`](../routes/batch.py#L135) |
 | `/batch/add-pdf` | POST | [`batch_add_pdf`](../routes/batch.py#L28) |
 | `/batch/new` | GET | [`batch_new`](../routes/batch.py#L24) |
 | `/batch/process` | POST | [`batch_process`](../routes/batch.py#L87) |
@@ -771,27 +771,28 @@ Generado: 2026-07-16 12:43 · rama `main` · commit `10aa810`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/api/invoice/<int:invoice_id>/differences` | GET | [`invoice_differences`](../routes/invoices.py#L676) |
-| `/api/upload` | POST | [`upload_files_api`](../routes/invoices.py#L269) |
-| `/invoice/<int:invoice_id>/apply-mapping` | POST | [`apply_mapping`](../routes/invoices.py#L953) |
-| `/invoice/<int:invoice_id>/auto-table` | POST | [`auto_table`](../routes/invoices.py#L302) |
-| `/invoice/<int:invoice_id>/compare` | GET | [`compare_view`](../routes/invoices.py#L925) |
-| `/invoice/<int:invoice_id>/differences/export` | GET | [`invoice_differences_export`](../routes/invoices.py#L893) |
-| `/invoice/<int:invoice_id>/header` | POST | [`update_invoice_header`](../routes/invoices.py#L692) |
-| `/invoice/<int:invoice_id>/items` | GET | [`invoice_items`](../routes/invoices.py#L769) |
-| `/invoice/<int:invoice_id>/items/export` | GET | [`invoice_items_export`](../routes/invoices.py#L859) |
-| `/invoice/<int:invoice_id>/manual-items` | GET/POST | [`manual_items`](../routes/invoices.py#L612) |
-| `/invoice/<int:invoice_id>/map-columns` | GET/POST | [`map_columns`](../routes/invoices.py#L343) |
-| `/invoice/<int:invoice_id>/parse-helper` | GET | [`parse_helper`](../routes/invoices.py#L286) |
-| `/invoice/<int:invoice_id>/pick-fields` | GET | [`pick_fields`](../routes/invoices.py#L736) |
-| `/invoice/<int:invoice_id>/pick-fields` | POST | [`pick_fields_save`](../routes/invoices.py#L754) |
-| `/invoice/<int:invoice_id>/pick-items` | GET | [`pick_items`](../routes/invoices.py#L459) |
-| `/invoice/<int:invoice_id>/pick-items/infer` | POST | [`pick_items_infer`](../routes/invoices.py#L475) |
-| `/invoice/<int:invoice_id>/pick-items/save` | POST | [`pick_items_save`](../routes/invoices.py#L515) |
-| `/invoice/<int:invoice_id>/refresh-numero` | POST | [`invoice_refresh_numero`](../routes/invoices.py#L825) |
-| `/results/<int:invoice_id>` | GET | [`show_results`](../routes/invoices.py#L714) |
-| `/upload` | POST | [`upload_files`](../routes/invoices.py#L194) |
-| `/uploads/pdf/<path:filename>` | GET | [`serve_invoice_pdf`](../routes/invoices.py#L190) |
+| `/api/invoice/<int:invoice_id>/differences` | GET | [`invoice_differences`](../routes/invoices.py#L681) |
+| `/api/upload` | POST | [`upload_files_api`](../routes/invoices.py#L277) |
+| `/invoice/<int:invoice_id>/apply-mapping` | POST | [`apply_mapping`](../routes/invoices.py#L1004) |
+| `/invoice/<int:invoice_id>/auto-table` | POST | [`auto_table`](../routes/invoices.py#L310) |
+| `/invoice/<int:invoice_id>/compare` | GET | [`compare_view`](../routes/invoices.py#L930) |
+| `/invoice/<int:invoice_id>/differences/export` | GET | [`invoice_differences_export`](../routes/invoices.py#L898) |
+| `/invoice/<int:invoice_id>/erp-upload` | POST | [`invoice_erp_upload`](../routes/invoices.py#L966) |
+| `/invoice/<int:invoice_id>/header` | POST | [`update_invoice_header`](../routes/invoices.py#L697) |
+| `/invoice/<int:invoice_id>/items` | GET | [`invoice_items`](../routes/invoices.py#L774) |
+| `/invoice/<int:invoice_id>/items/export` | GET | [`invoice_items_export`](../routes/invoices.py#L864) |
+| `/invoice/<int:invoice_id>/manual-items` | GET/POST | [`manual_items`](../routes/invoices.py#L618) |
+| `/invoice/<int:invoice_id>/map-columns` | GET/POST | [`map_columns`](../routes/invoices.py#L351) |
+| `/invoice/<int:invoice_id>/parse-helper` | GET | [`parse_helper`](../routes/invoices.py#L294) |
+| `/invoice/<int:invoice_id>/pick-fields` | GET | [`pick_fields`](../routes/invoices.py#L741) |
+| `/invoice/<int:invoice_id>/pick-fields` | POST | [`pick_fields_save`](../routes/invoices.py#L759) |
+| `/invoice/<int:invoice_id>/pick-items` | GET | [`pick_items`](../routes/invoices.py#L466) |
+| `/invoice/<int:invoice_id>/pick-items/infer` | POST | [`pick_items_infer`](../routes/invoices.py#L482) |
+| `/invoice/<int:invoice_id>/pick-items/save` | POST | [`pick_items_save`](../routes/invoices.py#L522) |
+| `/invoice/<int:invoice_id>/refresh-numero` | POST | [`invoice_refresh_numero`](../routes/invoices.py#L830) |
+| `/results/<int:invoice_id>` | GET | [`show_results`](../routes/invoices.py#L719) |
+| `/upload` | POST | [`upload_files`](../routes/invoices.py#L202) |
+| `/uploads/pdf/<path:filename>` | GET | [`serve_invoice_pdf`](../routes/invoices.py#L198) |
 
 ### `routes/kellerhoff.py`
 
@@ -919,23 +920,23 @@ Generado: 2026-07-16 12:43 · rama `main` · commit `10aa810`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/api/diagnose-eans` | GET | [`api_diagnose_eans`](../routes/observer.py#L797) |
-| `/api/droga/<int:droga_id>/comparar-labs` | GET | [`api_droga_comparar_labs`](../routes/observer.py#L555) |
-| `/api/droga/<int:droga_id>/productos` | GET | [`api_droga_productos`](../routes/observer.py#L454) |
-| `/api/droga/<int:droga_id>/ventas-mensuales` | GET | [`api_droga_ventas_mensuales`](../routes/observer.py#L404) |
-| `/api/mv/refresh/<view_name>` | POST | [`api_mv_refresh`](../routes/observer.py#L741) |
-| `/api/mv/status` | GET | [`api_mv_status`](../routes/observer.py#L763) |
-| `/api/sync-status` | GET | [`api_sync_status`](../routes/observer.py#L771) |
-| `/estadisticas/drogas` | GET | [`estadisticas_drogas`](../routes/observer.py#L250) |
-| `/obs/producto/<int:observer_id>/descripcion` | POST | [`obs_producto_descripcion`](../routes/observer.py#L34) |
-| `/obs/productos` | GET | [`obs_productos`](../routes/observer.py#L58) |
-| `/observer/analizar` | GET/POST | [`observer_analizar`](../routes/observer.py#L953) |
-| `/observer/factura/<int:invoice_id>/recepciones` | GET | [`observer_recepciones_factura`](../routes/observer.py#L1225) |
-| `/observer/factura/<int:invoice_id>/sync` | POST | [`observer_sync_factura`](../routes/observer.py#L1242) |
-| `/observer/pedido-rapido` | GET/POST | [`observer_pedido_rapido`](../routes/observer.py#L1057) |
-| `/observer/schema` | GET | [`observer_schema`](../routes/observer.py#L879) |
-| `/observer/sql` | GET/POST | [`observer_sql`](../routes/observer.py#L912) |
-| `/observer/status` | GET | [`observer_status`](../routes/observer.py#L943) |
+| `/api/diagnose-eans` | GET | [`api_diagnose_eans`](../routes/observer.py#L812) |
+| `/api/droga/<int:droga_id>/comparar-labs` | GET | [`api_droga_comparar_labs`](../routes/observer.py#L570) |
+| `/api/droga/<int:droga_id>/productos` | GET | [`api_droga_productos`](../routes/observer.py#L469) |
+| `/api/droga/<int:droga_id>/ventas-mensuales` | GET | [`api_droga_ventas_mensuales`](../routes/observer.py#L419) |
+| `/api/mv/refresh/<view_name>` | POST | [`api_mv_refresh`](../routes/observer.py#L756) |
+| `/api/mv/status` | GET | [`api_mv_status`](../routes/observer.py#L778) |
+| `/api/sync-status` | GET | [`api_sync_status`](../routes/observer.py#L786) |
+| `/estadisticas/drogas` | GET | [`estadisticas_drogas`](../routes/observer.py#L265) |
+| `/obs/producto/<int:observer_id>/descripcion` | POST | [`obs_producto_descripcion`](../routes/observer.py#L49) |
+| `/obs/productos` | GET | [`obs_productos`](../routes/observer.py#L73) |
+| `/observer/analizar` | GET/POST | [`observer_analizar`](../routes/observer.py#L968) |
+| `/observer/factura/<int:invoice_id>/recepciones` | GET | [`observer_recepciones_factura`](../routes/observer.py#L1240) |
+| `/observer/factura/<int:invoice_id>/sync` | POST | [`observer_sync_factura`](../routes/observer.py#L1259) |
+| `/observer/pedido-rapido` | GET/POST | [`observer_pedido_rapido`](../routes/observer.py#L1072) |
+| `/observer/schema` | GET | [`observer_schema`](../routes/observer.py#L894) |
+| `/observer/sql` | GET/POST | [`observer_sql`](../routes/observer.py#L927) |
+| `/observer/status` | GET | [`observer_status`](../routes/observer.py#L958) |
 
 ### `routes/observer_sync.py`
 
@@ -1130,30 +1131,31 @@ Generado: 2026-07-16 12:43 · rama `main` · commit `10aa810`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/api/invoice/probe-create` | POST | [`invoice_probe_create`](../routes/providers.py#L126) |
-| `/api/proveedor/<int:provider_id>/proximo-cierre` | GET | [`api_proximo_cierre`](../routes/providers.py#L730) |
-| `/api/proveedores/drog-activas` | GET | [`api_drog_activas`](../routes/providers.py#L26) |
-| `/api/provider/<int:provider_id>/activa-ped` | PATCH | [`api_provider_activa_ped`](../routes/providers.py#L41) |
-| `/api/provider/<int:provider_id>/descuento-sin-transfer` | PATCH | [`api_provider_descuento_sin_transfer`](../routes/providers.py#L55) |
-| `/api/provider/<int:provider_id>/folder-files` | GET | [`provider_folder_files`](../routes/providers.py#L557) |
-| `/api/provider/<int:provider_id>/invoices` | GET | [`api_provider_invoices`](../routes/providers.py#L76) |
-| `/invoice/<int:invoice_id>/delete` | POST | [`delete_invoice`](../routes/providers.py#L464) |
-| `/provider/<int:provider_id>/delete` | POST | [`provider_delete`](../routes/providers.py#L427) |
-| `/provider/<int:provider_id>/edit` | POST | [`provider_edit`](../routes/providers.py#L395) |
-| `/provider/<int:provider_id>/horarios` | GET/POST | [`provider_horarios`](../routes/providers.py#L682) |
-| `/provider/<int:provider_id>/invoices` | GET | [`provider_invoices`](../routes/providers.py#L451) |
-| `/provider/<int:provider_id>/mappings` | GET | [`provider_mappings`](../routes/providers.py#L499) |
-| `/provider/<int:provider_id>/mappings/<int:mapping_id>/delete` | POST | [`delete_mapping`](../routes/providers.py#L511) |
-| `/provider/<int:provider_id>/mappings/delete-all` | POST | [`delete_all_mappings`](../routes/providers.py#L547) |
-| `/provider/<int:provider_id>/parser-preview` | POST | [`provider_parser_preview`](../routes/providers.py#L317) |
-| `/provider/<int:provider_id>/parser-preview-saved` | POST | [`provider_parser_preview_saved`](../routes/providers.py#L232) |
-| `/provider/<int:provider_id>/parser-preview/export` | POST | [`provider_parser_preview_export`](../routes/providers.py#L205) |
-| `/provider/<int:provider_id>/plantilla` | GET/POST | [`provider_plantilla`](../routes/providers.py#L585) |
-| `/provider/create` | POST | [`provider_create_manual`](../routes/providers.py#L362) |
-| `/provider/create-from-peek` | POST | [`provider_create_from_peek`](../routes/providers.py#L173) |
-| `/provider/peek` | POST | [`provider_peek`](../routes/providers.py#L101) |
-| `/providers` | GET | [`providers_list`](../routes/providers.py#L270) |
-| `/providers/activos` | GET/POST | [`providers_activos`](../routes/providers.py#L520) |
+| `/api/invoice/probe-create` | POST | [`invoice_probe_create`](../routes/providers.py#L127) |
+| `/api/proveedor/<int:provider_id>/proximo-cierre` | GET | [`api_proximo_cierre`](../routes/providers.py#L757) |
+| `/api/proveedores/drog-activas` | GET | [`api_drog_activas`](../routes/providers.py#L27) |
+| `/api/provider/<int:provider_id>/activa-ped` | PATCH | [`api_provider_activa_ped`](../routes/providers.py#L42) |
+| `/api/provider/<int:provider_id>/descuento-sin-transfer` | PATCH | [`api_provider_descuento_sin_transfer`](../routes/providers.py#L56) |
+| `/api/provider/<int:provider_id>/folder-file/stage` | POST | [`provider_folder_file_stage`](../routes/providers.py#L233) |
+| `/api/provider/<int:provider_id>/folder-files` | GET | [`provider_folder_files`](../routes/providers.py#L584) |
+| `/api/provider/<int:provider_id>/invoices` | GET | [`api_provider_invoices`](../routes/providers.py#L77) |
+| `/invoice/<int:invoice_id>/delete` | POST | [`delete_invoice`](../routes/providers.py#L491) |
+| `/provider/<int:provider_id>/delete` | POST | [`provider_delete`](../routes/providers.py#L454) |
+| `/provider/<int:provider_id>/edit` | POST | [`provider_edit`](../routes/providers.py#L422) |
+| `/provider/<int:provider_id>/horarios` | GET/POST | [`provider_horarios`](../routes/providers.py#L709) |
+| `/provider/<int:provider_id>/invoices` | GET | [`provider_invoices`](../routes/providers.py#L478) |
+| `/provider/<int:provider_id>/mappings` | GET | [`provider_mappings`](../routes/providers.py#L526) |
+| `/provider/<int:provider_id>/mappings/<int:mapping_id>/delete` | POST | [`delete_mapping`](../routes/providers.py#L538) |
+| `/provider/<int:provider_id>/mappings/delete-all` | POST | [`delete_all_mappings`](../routes/providers.py#L574) |
+| `/provider/<int:provider_id>/parser-preview` | POST | [`provider_parser_preview`](../routes/providers.py#L344) |
+| `/provider/<int:provider_id>/parser-preview-saved` | POST | [`provider_parser_preview_saved`](../routes/providers.py#L259) |
+| `/provider/<int:provider_id>/parser-preview/export` | POST | [`provider_parser_preview_export`](../routes/providers.py#L206) |
+| `/provider/<int:provider_id>/plantilla` | GET/POST | [`provider_plantilla`](../routes/providers.py#L612) |
+| `/provider/create` | POST | [`provider_create_manual`](../routes/providers.py#L389) |
+| `/provider/create-from-peek` | POST | [`provider_create_from_peek`](../routes/providers.py#L174) |
+| `/provider/peek` | POST | [`provider_peek`](../routes/providers.py#L102) |
+| `/providers` | GET | [`providers_list`](../routes/providers.py#L297) |
+| `/providers/activos` | GET/POST | [`providers_activos`](../routes/providers.py#L547) |
 
 ### `routes/purchase.py`
 

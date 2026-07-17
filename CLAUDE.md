@@ -15,7 +15,7 @@
     `origin/main` (`git grep <cosa> origin/main`). Pasó dos veces en una sesión:
     afirmé que `routes/api_publica.py` y el badge premium ⭐ no existían, y estaban
     los dos en `main` (el working copy estaba 23 commits atrás).
-12. **Para ubicarse: `docs/MAPA.generado.md`** — índice de las 765 rutas, 122 modelos,
+12. **Para ubicarse: `docs/MAPA.generado.md`** — índice de las 767 rutas, 122 modelos,
     21 syncs y 26 services, con archivo:línea. Sale del código (`python scripts/mapa.py`),
     así que no miente. Mirarlo ANTES de grepear a ciegas. Si tocás rutas o modelos,
     regeneralo.
@@ -102,7 +102,7 @@ Para cruzar **medicamentos** entre farmacias: **alfabeta**. Para perfumería no 
 | `proveedores` | Provider | razon_social, cuit, domicilio, parser_file, **match_strategy** ('barcode'/'descripcion') |
 | `facturas` | Invoice | numero_factura, fecha, proveedor_razon, proveedor_cuit, total, total_articulos, total_unidades, pdf_filename, **tipo_comprobante** ('FAC'/'NCR') |
 | `factura_items` | InvoiceItem | codigo_barra, cantidad, descripcion, precio_unitario, **dto**, importe, lote, vencimiento |
-| `erp_stock` | ErpStock | codigo_barra, descripcion, cantidad, **precio_unitario** (se reemplaza en cada carga) |
+| `erp_stock` | ErpStock | codigo_barra, descripcion, cantidad, **precio_unitario**, **carga_id**. Tabla GLOBAL: se reemplaza entera en cada carga, no es por factura (ver Gotchas) |
 | `stock_differences` | StockDifference | diferencias por factura: codigo_barra, descripcion, cantidad_factura, cantidad_erp, diferencia, observaciones |
 | `reclamos` | Claim | proveedor_id, factura_id, numero_factura, fecha, estado (ABIERTO/COMPLETADO) |
 | `reclamo_items` | ClaimItem | detalle del reclamo, referencia a StockDifference |
@@ -274,6 +274,31 @@ Sin barcodes reales. Usa códigos internos tipo `79-65` como codigo_barra. Regex
 
 - En Jinja, `dict.items` resuelve al método `items()` del dict, no a la key `'items'`. Renombrar la key a `'productos'` u otra.
 - `order_save_module_matches` recibe `{matches: [...]}` como JSON, no array directo: usar `body.get('matches', [])`.
+
+### ⚠ `erp_stock` es GLOBAL y guarda UNA sola carga (2026-07-17)
+
+No hay una fila por factura: **cada carga borra la tabla entera y reinserta**
+(`save_erp_to_db`). Y como el Excel del ERP es **opcional** al subir la factura, la
+tabla se quedaba con el ingreso del **chequeo anterior** y `/compare` lo mostraba como
+si fuera el de la factura nueva → diferencias fantasma. Lo reportó Diego ("me pareció
+ver diferencias de un chequeo anterior").
+
+Cada carga lleva `erp_stock.carga_id` y la factura guarda `facturas.erp_carga_id`. Si
+no coinciden **no se compara** (`data_extract.erp_pertenece_a_factura`), y `/compare`
+avisa y ofrece subir el Excel (`POST /invoice/<id>/erp-upload`). Falla cerrado: las
+filas legacy (`carga_id` NULL) cuentan como "no es de esta factura".
+
+**Si escribís un cargador de `erp_stock`**: guardá el `carga_id` que devuelve
+`save_erp_to_db()` en `Invoice.erp_carga_id` y commiteá **antes** de comparar; si no,
+la factura queda "sin ERP" y el cruce devuelve vacío. No taggear por nombre de Excel:
+la farmacia reexporta siempre el mismo nombre y matchearía una carga vieja por
+casualidad.
+
+> `observer_source.get_recepciones_factura` **no existe** — las 2 rutas que la llaman
+> (`/observer/factura/<id>/recepciones` y el botón ObServer del cruce) daban 500.
+> Quedan gateadas por `_recepciones_implementadas()` (chequeo con `hasattr`, se
+> prende solo el día que se implemente). Por eso el cruce desde ObServer que promete
+> `ingresos.html` nunca funcionó.
 
 ## Estado de features — order_detail.html (Abril 2026)
 

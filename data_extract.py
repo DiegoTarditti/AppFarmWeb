@@ -14,6 +14,7 @@ from database import (
     ProductoPrecioHist,
     Provider,
     StockDifference,
+    now_ar,
 )
 
 
@@ -279,15 +280,56 @@ def save_invoice_to_db(session, invoice_data, pdf_filename=None, tipo_comprobant
 
 
 def save_erp_to_db(session, erp_items):
+    """Reemplaza TODO erp_stock con esta carga. Devuelve el carga_id.
+
+    El caller DEBE guardar el carga_id devuelto en Invoice.erp_carga_id de cada
+    factura que cruce contra esta carga. Si no lo hace, la factura queda como "sin
+    ERP" y no se compara — a propósito: es preferible no mostrar nada a mostrar el
+    stock de otro chequeo (ver erp_pertenece_a_factura).
+    """
+    from sqlalchemy import func
+    # Estrictamente mayor a cualquier carga_id ya usado: si dos cargas cayeran en el
+    # mismo milisegundo compartirían id y una factura vieja matchearía contra la carga
+    # nueva, que es justo lo que esto evita. El piso sale de las dos puntas porque el
+    # DELETE de abajo borra la evidencia del lado de erp_stock.
+    piso = max(v for v in (
+        session.query(func.max(ErpStock.carga_id)).scalar(),
+        session.query(func.max(Invoice.erp_carga_id)).scalar(),
+        0,
+    ) if v is not None)
+    carga_id = max(int(now_ar().timestamp() * 1000), piso + 1)
     session.query(ErpStock).delete()
     for item in erp_items:
         session.add(ErpStock(
             codigo_barra=item.get('codigo_barra'),
             descripcion=item.get('descripcion'),
             cantidad=item.get('cantidad'),
-            precio_unitario=item.get('precio_unitario')
+            precio_unitario=item.get('precio_unitario'),
+            carga_id=carga_id,
         ))
     session.commit()
+    return carga_id
+
+
+def carga_erp_actual(session):
+    """carga_id de lo que hay hoy en erp_stock. None si está vacía o es legacy."""
+    row = session.query(ErpStock.carga_id).first()
+    return row[0] if row else None
+
+
+def erp_pertenece_a_factura(session, invoice):
+    """True si el erp_stock cargado es justo el que se cruzó contra esta factura.
+
+    erp_stock es una tabla global que guarda UNA carga a la vez: cada Excel (o sync
+    de ObServer) borra la anterior. Entonces el stock que está cargado puede no tener
+    nada que ver con la factura que se está mirando — pasa siempre que se sube una
+    factura sin Excel (es opcional) o cuando otra carga pisó la tabla después.
+    Compararlas da diferencias fantasma del chequeo anterior.
+    """
+    if invoice is None or not invoice.erp_carga_id:
+        return False
+    actual = carga_erp_actual(session)
+    return actual is not None and actual == invoice.erp_carga_id
 
 
 def _normalize(s):
@@ -297,6 +339,10 @@ def _normalize(s):
 
 def compare_invoice_vs_erp(session, factura_id):
     invoice = session.get(Invoice, factura_id)
+    # Sin ERP propio no hay nada que comparar: el que está cargado es de otro
+    # chequeo y compararlo inventa diferencias (ver erp_pertenece_a_factura).
+    if not erp_pertenece_a_factura(session, invoice):
+        return []
     invoice_items = session.query(InvoiceItem).filter_by(factura_id=factura_id).all()
     all_erp = session.query(ErpStock).all()
     erp_by_barcode = {item.codigo_barra: item for item in all_erp}
@@ -449,6 +495,21 @@ def save_differences(session, factura_id, differences):
     session.commit()
 
 
+def recalcular_diferencias(session, factura_id):
+    """Recalcula y guarda las diferencias de una factura. Devuelve True si recalculó.
+
+    No hace nada si el erp_stock cargado no es el de esta factura: save_differences
+    borra y reinserta, así que recalcular en ese caso le borraría a la factura las
+    diferencias buenas (las que sí se calcularon contra su propio ingreso) para
+    reemplazarlas por nada — o peor, por las de otro chequeo.
+    """
+    invoice = session.get(Invoice, factura_id)
+    if not erp_pertenece_a_factura(session, invoice):
+        return False
+    save_differences(session, factura_id, compare_invoice_vs_erp(session, factura_id))
+    return True
+
+
 def get_saved_differences(session, factura_id):
     return session.query(StockDifference).filter_by(factura_id=factura_id).all()
 
@@ -479,8 +540,13 @@ def get_erp_items_with_issues(session, invoice_id):
     """
     Devuelve ítems del ERP cuyo código de barra no aparece en ningún ítem de la factura,
     buscando también por códigos alternativos en la tabla productos.
+
+    Vacío si el erp_stock cargado no es el de esta factura: mostrar el ingreso de otro
+    chequeo al lado de la factura es peor que no mostrar nada.
     """
     from sqlalchemy import or_
+    if not erp_pertenece_a_factura(session, session.get(Invoice, invoice_id)):
+        return []
     invoice_items = session.query(InvoiceItem).filter_by(factura_id=invoice_id).all()
     invoice_barcodes = {item.codigo_barra for item in invoice_items if item.codigo_barra}
 

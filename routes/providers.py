@@ -16,6 +16,7 @@ from helpers import (
     allowed_file,
     drogueria_defaults,
     get_providers,
+    pdf_de_carpeta_proveedor,
 )
 
 
@@ -227,6 +228,32 @@ def init_app(app):
         resp.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         resp.headers['Content-Disposition'] = f'attachment; filename="parser_preview_{provider_id}.xlsx"'
         return resp
+
+    @app.route('/api/provider/<int:provider_id>/folder-file/stage', methods=['POST'])
+    def provider_folder_file_stage(provider_id):
+        """Copia a uploads un PDF elegido de la carpeta del proveedor y devuelve su nombre.
+
+        Es lo que le faltaba a "Probar parser" cuando el PDF se elige de la carpeta:
+        el preview (parser-preview-saved) sólo mira uploads, así que el botón quedaba
+        habilitado y no hacía nada.
+        """
+        import shutil
+        data = request.get_json(silent=True) or {}
+        nombre = (data.get('name') or '').strip()
+        with database.get_db() as session:
+            prov = session.get(database.Provider, provider_id)
+            if not prov:
+                return jsonify({'error': 'Proveedor no encontrado.'}), 404
+            ruta = (prov.ruta_facturas or '').strip()
+        src = pdf_de_carpeta_proveedor(ruta, nombre)
+        if not src:
+            return jsonify({'error': 'El PDF elegido no existe en la carpeta del proveedor.'}), 400
+        dest_name = secure_filename(nombre) or 'factura.pdf'
+        try:
+            shutil.copy2(src, os.path.join(UPLOAD_FOLDER, dest_name))
+        except OSError as e:
+            return jsonify({'error': f'No se pudo copiar el PDF: {e}'}), 400
+        return jsonify({'pdf_filename': dest_name})
 
     @app.route('/provider/<int:provider_id>/parser-preview-saved', methods=['POST'])
     def provider_parser_preview_saved(provider_id):
