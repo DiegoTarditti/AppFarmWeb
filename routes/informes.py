@@ -4,12 +4,17 @@ Cada informe vive en su propia ruta + template. La pantalla `/informes` es
 el índice con tarjetas para cada informe. Pensado para crecer agregando
 más cruces sin romper la organización.
 
-Informes implementados:
-1. Labs por droga — "¿Qué labs fabrican esta droga y cuál vendo más?"
+La lista viva de rutas está en docs/MAPA.generado.md (sección routes/informes.py)
+— no se enumera acá para que no se pudra. Grandes familias:
+  · Catálogo/ventas por droga (labs por droga, presentaciones, sin alternativa)
+  · Cadencias por lab (rotación, snapshot cross-lab, análisis IA)
+  · Posicionamiento de mercado (gap de marcas, ranking nacional — con IA)
+  · Clínica/PAMI (crónicos por afiliado — requiere Observer premium, user sa)
+  · Ventas (por vendedor, comparación anual YoY)
 
-Pendientes (próximas iteraciones):
-2. Drogas con un solo proveedor — alerta de dependencia.
-4. Presentaciones por droga — qué tamaños venden más.
+Ojo: los informes que leen de ObServer tienen dos trampas documentadas en
+docs/observer_ventas_reconciliacion.md (el sync que congelaba días + el
+"Cant. Oper." de ObServer que en realidad son renglones, no operaciones).
 """
 import json
 from datetime import date
@@ -174,6 +179,35 @@ def init_app(app):
         return render_template('informes_ventas_vendedor.html',
                                data=data, meses=meses, mes_sel=mes,
                                tot_imp=tot_imp, tot_u=tot_u)
+
+    @app.route('/informes/ventas-comparativa')
+    @login_required
+    def informe_ventas_comparativa():
+        """Comparación año contra año de tickets e importe, agregada por mes.
+        Barras 12 meses (año actual vs anterior), toggle tickets/importe.
+        Fuente: ObServer DW.ProductosVendidos (obs_ventas_detalle)."""
+        from datetime import date as _date
+
+        from services.ventas_comparativa import anios_disponibles, comparativa_anual
+        hoy = _date.today()
+        with database.get_db() as session:
+            anios = anios_disponibles(session)
+            try:
+                anio = int(request.args.get('anio') or (anios[0] if anios else hoy.year))
+            except (TypeError, ValueError):
+                anio = anios[0] if anios else hoy.year
+            # Si el año elegido es el actual, el mes en curso es parcial: se marca
+            # en la serie y se excluye del total YTD (comparo solo meses cerrados).
+            if anio == hoy.year:
+                mes_parcial = hoy.month
+                mes_tope = hoy.month - 1 or None   # enero en curso → sin mes cerrado
+            else:
+                mes_parcial, mes_tope = None, None
+            data = comparativa_anual(session, anio, anio - 1,
+                                     mes_tope=mes_tope, mes_parcial=mes_parcial)
+        return render_template('informes_ventas_comparativa.html',
+                               data=data, anio=anio, anio_prev=anio - 1,
+                               anios=anios)
 
     # ── Crónicos PAMI: vista panorámica ─────────────────────────────────────
     # Detecta drogas que un afiliado PAMI recibe con cadencia mensual (20-55d)
