@@ -142,3 +142,73 @@ def comparativa_anual(session, anio, anio_prev=None, id_farmacia=None,
 
     return {'meses': meses, 'totales': totales,
             'meta': {'anio': anio, 'anio_prev': anio_prev}}
+
+
+def comparativa_producto_anual(session, anio, anio_prev=None, id_farmacia=None,
+                               mes_tope=None):
+    """Comparación año vs año agregada por PRODUCTO (para top movers + tabla).
+
+    Mismo criterio que comparativa_anual: importe/unidades NETOS de devoluciones
+    (V+D), acumulado YTD hasta mes_tope (meses cerrados) en ambos años. Devuelve
+    la lista completa de productos con ventas en cualquiera de los dos años; la
+    categorización (crecieron/cayeron/nuevos/perdidos) y el orden se hacen en el
+    front según la métrica elegida (importe o unidades).
+
+    Estructura:
+      productos: [ {id, desc, lab, ci, pi, cu, pu} ]   # c=cur, p=prev; i=importe, u=unid
+      meta: {anio, anio_prev, hasta_mes, n}
+    """
+    from database import ObsLaboratorio, ObsProducto
+    if anio_prev is None:
+        anio_prev = anio - 1
+    if id_farmacia is None:
+        id_farmacia = farmacia_operativa()
+    tope = max(1, min(12, mes_tope or 12))
+
+    rows = (session.query(
+                ObsVentaDetalle.producto_observer.label('pid'),
+                ObsVentaDetalle.anio.label('anio'),
+                func.sum(ObsVentaDetalle.importe).label('imp'),
+                func.sum(ObsVentaDetalle.cantidad).label('uni'))
+            .filter(ObsVentaDetalle.id_farmacia == id_farmacia,
+                    ObsVentaDetalle.tipo_operacion.in_(['V', 'D']),
+                    ObsVentaDetalle.anio.in_([anio, anio_prev]),
+                    ObsVentaDetalle.mes <= tope)
+            .group_by(ObsVentaDetalle.producto_observer, ObsVentaDetalle.anio)
+            .all())
+
+    prods = {}
+    for r in rows:
+        p = prods.setdefault(r.pid, {'ci': 0, 'pi': 0, 'cu': 0, 'pu': 0})
+        if r.anio == anio:
+            p['ci'] = round(float(r.imp or 0)); p['cu'] = round(float(r.uni or 0), 1)
+        else:
+            p['pi'] = round(float(r.imp or 0)); p['pu'] = round(float(r.uni or 0), 1)
+
+    # Descripción + lab por producto (solo los que tuvieron ventas).
+    metas = {}
+    ids = list(prods.keys())
+    if ids:
+        q = (session.query(ObsProducto.observer_id,
+                           ObsProducto.descripcion,
+                           ObsLaboratorio.descripcion)
+             .outerjoin(ObsLaboratorio,
+                        ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+             .filter(ObsProducto.observer_id.in_(ids)))
+        for oid, desc, lab in q.all():
+            metas[oid] = (desc, lab)
+
+    productos = []
+    for pid, m in prods.items():
+        desc, lab = metas.get(pid, (None, None))
+        productos.append({
+            'id': pid,
+            'desc': (desc or str(pid)).strip(),
+            'lab': (lab or '—'),
+            'ci': m['ci'], 'pi': m['pi'],
+            'cu': m['cu'], 'pu': m['pu'],
+        })
+
+    return {'productos': productos,
+            'meta': {'anio': anio, 'anio_prev': anio_prev,
+                     'hasta_mes': _MESES[tope], 'n': len(productos)}}

@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Ventas por producto — anual{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+  .pp-page { padding: 18px 24px 28px; max-width: 1240px; }
+  .pp-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+  .pp-head h1 { font-family:'Space Grotesk',sans-serif; font-size: 22px; font-weight: 700; color: var(--ds-text); margin: 0; }
+  .pp-controls { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; display: flex; gap: 14px; flex-wrap: wrap; align-items: end; }
+  .pp-controls label { display: flex; flex-direction: column; gap: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); }
+
+  .pp-toggle { display: inline-flex; border: 1px solid var(--ds-line); border-radius: 8px; overflow: hidden; }
+  .pp-toggle button { background: transparent; border: none; color: var(--ds-text-mute); font-size: 11px; font-weight: 600; padding: 7px 16px; cursor: pointer; }
+  .pp-toggle button.active { background: var(--ds-mint); color: #0b1a12; }
+
+  .pp-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+  @media (max-width: 820px) { .pp-kpis { grid-template-columns: 1fr 1fr; } }
+  .pp-kpi { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 12px 16px; }
+  .pp-kpi .l { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); margin-bottom: 4px; }
+  .pp-kpi .n { font-size: 20px; font-weight: 800; color: var(--ds-mint); font-variant-numeric: tabular-nums; }
+  .pp-kpi .sub { font-size: 11px; color: var(--ds-text-mute); margin-top: 3px; }
+
+  .pp-up { color: #34d399; font-weight: 700; }
+  .pp-down { color: #f87171; font-weight: 700; }
+  .pp-flat { color: var(--ds-text-mute); }
+
+  .pp-movers { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+  @media (max-width: 820px) { .pp-movers { grid-template-columns: 1fr; } }
+  .pp-panel { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 14px; }
+  .pp-panel h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text); margin: 0 0 10px; display: flex; align-items: center; gap: 7px; }
+  .pp-panel h3 .badge { background: rgba(95,230,188,.14); color: var(--ds-mint); font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 700; }
+
+  .pp-mtable { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .pp-mtable td { padding: 4px 6px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: middle; }
+  .pp-mtable td.desc { color: var(--ds-text); max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pp-mtable td.lab { color: var(--ds-text-mute); font-size: 10px; }
+  .pp-mtable td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .pp-empty { padding: 20px; text-align: center; color: var(--ds-text-mute); font-size: 12px; }
+
+  .pp-tablewrap { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 14px; }
+  .pp-tablewrap .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .pp-search { background: rgba(255,255,255,.04); border: 1px solid var(--ds-line); border-radius: 8px; padding: 7px 12px; color: var(--ds-text); font-size: 12px; min-width: 260px; }
+  .pp-count { font-size: 11px; color: var(--ds-text-mute); }
+  .pp-scroll { overflow-x: auto; }
+  .pp-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .pp-table thead th { text-align: right; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); padding: 6px 8px; border-bottom: 1px solid var(--ds-line); cursor: pointer; white-space: nowrap; user-select: none; }
+  .pp-table thead th:first-child, .pp-table thead th.l { text-align: left; }
+  .pp-table thead th.sorted { color: var(--ds-mint); }
+  .pp-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); }
+  .pp-table tbody tr:hover { background: rgba(95,230,188,.05); }
+  .pp-table td { padding: 6px 8px; color: var(--ds-text); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pp-table td.desc { text-align: left; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+  .pp-table td.lab { text-align: left; color: var(--ds-text-mute); font-size: 11px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="pp-page">
+  <a href="{{ url_for('informes_index') }}" class="text-xs" style="color:var(--ds-text-mute);">← Informes</a>
+  <div class="pp-head" style="margin-top:6px;">
+    <span style="font-size:24px;">🔬</span>
+    <h1>Ventas por producto — {{ anio }} vs {{ anio_prev }}</h1>
+    <span class="text-xs" style="color:var(--ds-text-mute)">
+      Qué productos crecieron, cuáles cayeron, cuáles son nuevos o se dejaron de vender
+    </span>
+  </div>
+
+  <div class="pp-controls">
+    <form method="get" style="display:flex; gap:14px; align-items:end; margin:0;">
+      <label>Año
+        <select name="anio" class="ds-input text-xs" style="min-width:110px;" onchange="this.form.submit()">
+          {% for a in anios %}<option value="{{ a }}" {% if a == anio %}selected{% endif %}>{{ a }} vs {{ a - 1 }}</option>{% endfor %}
+        </select>
+      </label>
+    </form>
+    <label>Laboratorio
+      <select id="pp-lab" class="ds-input text-xs" style="min-width:180px;" onchange="ppRender()"></select>
+    </label>
+    <label>Métrica
+      <div class="pp-toggle">
+        <button type="button" id="btn-importe" class="active" onclick="ppMetric('importe')">Importe $</button>
+        <button type="button" id="btn-unidades" onclick="ppMetric('unidades')">Unidades</button>
+      </div>
+    </label>
+    <span class="text-xs" style="color:var(--ds-text-mute); margin-left:auto;">
+      Acumulado Ene–{{ data.meta.hasta_mes }} · neto de devoluciones
+    </span>
+  </div>
+
+  {% if data.meta.n == 0 %}
+  <div class="pp-empty">Sin ventas para {{ anio }} ni {{ anio_prev }}.</div>
+  {% else %}
+
+  <div class="pp-kpis">
+    <div class="pp-kpi">
+      <div class="l">Productos con ventas</div>
+      <div class="n">{{ '{:,.0f}'.format(data.meta.n).replace(',', '.') }}</div>
+      <div class="sub">en {{ anio }} o {{ anio_prev }}</div>
+    </div>
+    <div class="pp-kpi">
+      <div class="l">Total <span id="k-metric-lbl">importe</span> · Ene–{{ data.meta.hasta_mes }}</div>
+      <div class="n" id="k-total">—</div>
+      <div class="sub" id="k-total-sub">—</div>
+    </div>
+    <div class="pp-kpi">
+      <div class="l">🆕 Nuevos {{ anio }}</div>
+      <div class="n" id="k-nuevos">—</div>
+      <div class="sub">no vendían en {{ anio_prev }}</div>
+    </div>
+    <div class="pp-kpi">
+      <div class="l">❌ Perdidos</div>
+      <div class="n" id="k-perdidos">—</div>
+      <div class="sub">vendían en {{ anio_prev }}, ya no</div>
+    </div>
+  </div>
+
+  <div class="pp-movers">
+    <div class="pp-panel">
+      <h3>📈 Más crecieron <span class="badge" id="b-gain">0</span></h3>
+      <table class="pp-mtable"><tbody id="t-gainers"></tbody></table>
+    </div>
+    <div class="pp-panel">
+      <h3>📉 Más cayeron <span class="badge" id="b-lose">0</span></h3>
+      <table class="pp-mtable"><tbody id="t-losers"></tbody></table>
+    </div>
+    <div class="pp-panel">
+      <h3>🆕 Nuevos en {{ anio }} <span class="badge" id="b-new">0</span></h3>
+      <table class="pp-mtable"><tbody id="t-nuevos"></tbody></table>
+    </div>
+    <div class="pp-panel">
+      <h3>❌ Dejados de vender <span class="badge" id="b-lost">0</span></h3>
+      <table class="pp-mtable"><tbody id="t-perdidos"></tbody></table>
+    </div>
+  </div>
+
+  <div class="pp-tablewrap">
+    <div class="head">
+      <h3 style="font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--ds-text); margin:0;">Todos los productos</h3>
+      <input type="text" id="pp-q" class="pp-search" placeholder="🔎 Buscar producto o laboratorio…" oninput="ppRender()">
+      <span class="pp-count" id="pp-count"></span>
+    </div>
+    <div class="pp-scroll">
+      <table class="pp-table">
+        <thead>
+          <tr>
+            <th class="l" data-sort="desc">Producto</th>
+            <th class="l" data-sort="lab">Laboratorio</th>
+            <th data-sort="cur"><span class="mlbl">Importe</span> {{ anio }}</th>
+            <th data-sort="prev"><span class="mlbl">Importe</span> {{ anio_prev }}</th>
+            <th data-sort="gain">Δ abs.</th>
+            <th data-sort="var">Var. %</th>
+          </tr>
+        </thead>
+        <tbody id="pp-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  {% endif %}
+</div>
+</div>
+
+<script>
+const PP = {{ data|tojson }};
+const nf = new Intl.NumberFormat('es-AR');
+let METRIC = 'importe';
+let SORT = { key: 'gain', dir: -1 };   // -1 desc, 1 asc
+
+const cur  = p => METRIC === 'importe' ? p.ci : p.cu;
+const prev = p => METRIC === 'importe' ? p.pi : p.pu;
+const gain = p => cur(p) - prev(p);
+const vpct = p => { const pv = prev(p); return pv > 0 ? (cur(p) - pv) / pv * 100 : null; };
+const fmt  = v => METRIC === 'importe' ? '$' + nf.format(Math.round(v)) : nf.format(Math.round(v * 10) / 10);
+const fmtDelta = v => { const s = v < 0 ? '-' : '+'; const a = Math.abs(v); return METRIC === 'importe' ? s + '$' + nf.format(Math.round(a)) : s + nf.format(Math.round(a * 10) / 10); };
+const pctHtml = v => v === null ? '<span class="pp-flat">nuevo</span>'
+  : v >= 0 ? `<span class="pp-up">▲ ${nf.format(Math.round(v))}%</span>`
+           : `<span class="pp-down">▼ ${nf.format(Math.round(-v))}%</span>`;
+const esc = s => (s || '').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+const yrsTip = p => `${PP.meta.anio_prev}: ${fmt(prev(p))}  →  ${PP.meta.anio}: ${fmt(cur(p))}`;
+
+function moverRow(p, kind) {
+  const c = cur(p), pv = prev(p);
+  let right;
+  if (kind === 'nuevos') right = `<td class="num pp-up">${fmt(c)}</td>`;
+  else if (kind === 'perdidos') right = `<td class="num pp-down">${fmt(pv)}</td>`;
+  else {
+    const g = gain(p);
+    const dh = g >= 0 ? `<span class="pp-up">${fmtDelta(g)}</span>` : `<span class="pp-down">${fmtDelta(g)}</span>`;
+    right = `<td class="num" title="${yrsTip(p)}">${dh}</td><td class="num">${pctHtml(vpct(p))}</td>`;
+  }
+  return `<tr><td class="desc" title="${esc(p.desc)}">${esc(p.desc)}</td>`
+       + `<td class="lab">${esc(p.lab)}</td>${right}</tr>`;
+}
+
+function ppRender() {
+  // Movers (siempre sobre TODO el universo, ignoran búsqueda/lab)
+  const both = PP.productos.filter(p => prev(p) > 0 && cur(p) > 0);
+  const gainers = [...both].sort((a, b) => gain(b) - gain(a)).slice(0, 15);
+  const losers  = [...both].sort((a, b) => gain(a) - gain(b)).slice(0, 15);
+  const nuevos  = PP.productos.filter(p => prev(p) <= 0 && cur(p) > 0).sort((a, b) => cur(b) - cur(a));
+  const perdidos = PP.productos.filter(p => cur(p) <= 0 && prev(p) > 0).sort((a, b) => prev(b) - prev(a));
+
+  document.getElementById('t-gainers').innerHTML = gainers.map(p => moverRow(p, 'gain')).join('') || '<tr><td class="pp-empty">—</td></tr>';
+  document.getElementById('t-losers').innerHTML  = losers.map(p => moverRow(p, 'lose')).join('') || '<tr><td class="pp-empty">—</td></tr>';
+  document.getElementById('t-nuevos').innerHTML  = nuevos.slice(0, 15).map(p => moverRow(p, 'nuevos')).join('') || '<tr><td class="pp-empty">—</td></tr>';
+  document.getElementById('t-perdidos').innerHTML = perdidos.slice(0, 15).map(p => moverRow(p, 'perdidos')).join('') || '<tr><td class="pp-empty">—</td></tr>';
+  document.getElementById('b-gain').textContent = gainers.length;
+  document.getElementById('b-lose').textContent = losers.length;
+  document.getElementById('b-new').textContent = nuevos.length;
+  document.getElementById('b-lost').textContent = perdidos.length;
+
+  // KPIs
+  const totC = PP.productos.reduce((s, p) => s + cur(p), 0);
+  const totP = PP.productos.reduce((s, p) => s + prev(p), 0);
+  const totV = totP > 0 ? (totC - totP) / totP * 100 : null;
+  document.getElementById('k-metric-lbl').textContent = METRIC === 'importe' ? 'importe' : 'unidades';
+  document.getElementById('k-total').innerHTML = `${fmt(totC)} ${pctHtml(totV)}`;
+  document.getElementById('k-total-sub').textContent = `vs ${fmt(totP)} en ${PP.meta.anio_prev}`;
+  document.getElementById('k-nuevos').textContent = nf.format(nuevos.length);
+  document.getElementById('k-perdidos').textContent = nf.format(perdidos.length);
+
+  // Filtro de lab
+  const labSel = document.getElementById('pp-lab').value;
+  const q = (document.getElementById('pp-q').value || '').toLowerCase().trim();
+  let rows = PP.productos;
+  if (labSel) rows = rows.filter(p => p.lab === labSel);
+  if (q) rows = rows.filter(p => (p.desc + ' ' + p.lab).toLowerCase().includes(q));
+
+  const dir = SORT.dir;
+  const keyfn = {
+    desc: p => p.desc.toLowerCase(), lab: p => p.lab.toLowerCase(),
+    cur: cur, prev: prev, gain: gain,
+    var: p => { const v = vpct(p); return v === null ? -Infinity : v; },
+  }[SORT.key];
+  rows = [...rows].sort((a, b) => {
+    const ka = keyfn(a), kb = keyfn(b);
+    if (ka < kb) return -1 * dir; if (ka > kb) return 1 * dir; return 0;
+  });
+
+  const CAP = 300;
+  const shown = rows.slice(0, CAP);
+  document.getElementById('pp-tbody').innerHTML = shown.map(p =>
+    `<tr>
+      <td class="desc" title="${esc(p.desc)}">${esc(p.desc)}</td>
+      <td class="lab">${esc(p.lab)}</td>
+      <td>${fmt(cur(p))}</td>
+      <td style="color:var(--ds-text-mute)">${fmt(prev(p))}</td>
+      <td>${gain(p) >= 0 ? '<span class="pp-up">' + fmtDelta(gain(p)) + '</span>' : '<span class="pp-down">' + fmtDelta(gain(p)) + '</span>'}</td>
+      <td>${pctHtml(vpct(p))}</td>
+    </tr>`).join('') || '<tr><td class="pp-empty" colspan="6">Sin resultados.</td></tr>';
+  document.getElementById('pp-count').textContent =
+    rows.length > CAP ? `mostrando ${CAP} de ${nf.format(rows.length)}` : `${nf.format(rows.length)} productos`;
+
+  // header labels de métrica
+  document.querySelectorAll('.pp-table thead .mlbl').forEach(el => el.textContent = METRIC === 'importe' ? 'Importe' : 'Unid.');
+  document.querySelectorAll('.pp-table thead th').forEach(th => th.classList.toggle('sorted', th.dataset.sort === SORT.key));
+}
+
+function ppMetric(m) {
+  METRIC = m;
+  document.getElementById('btn-importe').classList.toggle('active', m === 'importe');
+  document.getElementById('btn-unidades').classList.toggle('active', m === 'unidades');
+  ppRender();
+}
+
+function ppInitLabs() {
+  const labs = [...new Set(PP.productos.map(p => p.lab))].filter(Boolean).sort((a, b) => a.localeCompare(b, 'es'));
+  const sel = document.getElementById('pp-lab');
+  sel.innerHTML = '<option value="">Todos</option>' + labs.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (!PP.meta.n) return;
+  ppInitLabs();
+  document.querySelectorAll('.pp-table thead th').forEach(th => th.addEventListener('click', () => {
+    const k = th.dataset.sort;
+    if (SORT.key === k) SORT.dir *= -1;
+    else SORT = { key: k, dir: (k === 'desc' || k === 'lab') ? 1 : -1 };
+    ppRender();
+  }));
+  ppRender();
+});
+</script>
+{% endblock %}
