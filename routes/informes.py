@@ -231,6 +231,27 @@ def init_app(app):
         return render_template('informes_ventas_producto_anual.html',
                                data=data, anio=anio, anio_prev=anio - 1, anios=anios)
 
+    @app.route('/informes/ventas-droga-anual')
+    @login_required
+    def informe_ventas_droga_anual():
+        """Comparación año vs año POR DROGA (monodroga) con drill-down a productos.
+        Tabla de drogas desplegable + top movers. Toggle importe/unidades.
+        Acumulado YTD sobre meses cerrados. Fuente: obs_ventas_detalle."""
+        from datetime import date as _date
+
+        from services.ventas_comparativa import anios_disponibles, comparativa_droga_anual
+        hoy = _date.today()
+        with database.get_db() as session:
+            anios = anios_disponibles(session)
+            try:
+                anio = int(request.args.get('anio') or (anios[0] if anios else hoy.year))
+            except (TypeError, ValueError):
+                anio = anios[0] if anios else hoy.year
+            mes_tope = (hoy.month - 1 or 1) if anio == hoy.year else 12
+            data = comparativa_droga_anual(session, anio, anio - 1, mes_tope=mes_tope)
+        return render_template('informes_ventas_droga_anual.html',
+                               data=data, anio=anio, anio_prev=anio - 1, anios=anios)
+
     # ── Crónicos PAMI: vista panorámica ─────────────────────────────────────
     # Detecta drogas que un afiliado PAMI recibe con cadencia mensual (20-55d)
     # en la ventana X → candidatos crónicos. Base: Gestion.Recetas +

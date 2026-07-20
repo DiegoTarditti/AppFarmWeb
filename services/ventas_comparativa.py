@@ -212,3 +212,85 @@ def comparativa_producto_anual(session, anio, anio_prev=None, id_farmacia=None,
     return {'productos': productos,
             'meta': {'anio': anio, 'anio_prev': anio_prev,
                      'hasta_mes': _MESES[tope], 'n': len(productos)}}
+
+
+def comparativa_droga_anual(session, anio, anio_prev=None, id_farmacia=None,
+                            mes_tope=None):
+    """Comparación año vs año jerárquica: por DROGA (monodroga) con drill-down
+    a sus productos. Mismo criterio que comparativa_anual (importe/unidades
+    netos de devoluciones, YTD hasta mes_tope).
+
+    Los productos sin monodroga (perfumería, leche, OTC) caen en el bucket
+    droga_id=0 → "Sin droga asignada". El front agrupa y despliega client-side.
+
+    Estructura:
+      drogas:    [ {id, droga, n, ci, pi, cu, pu} ]            # n = nº productos
+      productos: [ {did, desc, lab, ci, pi, cu, pu} ]          # did = droga_id
+      meta: {anio, anio_prev, hasta_mes, n_drogas, n_prod}
+    """
+    from database import ObsLaboratorio, ObsNombreDroga, ObsProducto
+    if anio_prev is None:
+        anio_prev = anio - 1
+    if id_farmacia is None:
+        id_farmacia = farmacia_operativa()
+    tope = max(1, min(12, mes_tope or 12))
+
+    rows = (session.query(
+                ObsVentaDetalle.producto_observer.label('pid'),
+                ObsVentaDetalle.anio.label('anio'),
+                func.sum(ObsVentaDetalle.importe).label('imp'),
+                func.sum(ObsVentaDetalle.cantidad).label('uni'))
+            .filter(ObsVentaDetalle.id_farmacia == id_farmacia,
+                    ObsVentaDetalle.tipo_operacion.in_(['V', 'D']),
+                    ObsVentaDetalle.anio.in_([anio, anio_prev]),
+                    ObsVentaDetalle.mes <= tope)
+            .group_by(ObsVentaDetalle.producto_observer, ObsVentaDetalle.anio)
+            .all())
+
+    prods = {}
+    for r in rows:
+        p = prods.setdefault(r.pid, {'ci': 0, 'pi': 0, 'cu': 0, 'pu': 0})
+        if r.anio == anio:
+            p['ci'] = round(float(r.imp or 0)); p['cu'] = round(float(r.uni or 0), 1)
+        else:
+            p['pi'] = round(float(r.imp or 0)); p['pu'] = round(float(r.uni or 0), 1)
+
+    # Meta por producto: descripción, lab, droga (id + nombre).
+    metas = {}
+    ids = list(prods.keys())
+    if ids:
+        q = (session.query(ObsProducto.observer_id,
+                           ObsProducto.descripcion,
+                           ObsLaboratorio.descripcion,
+                           ObsProducto.nombre_droga_observer,
+                           ObsNombreDroga.descripcion)
+             .outerjoin(ObsLaboratorio,
+                        ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+             .outerjoin(ObsNombreDroga,
+                        ObsNombreDroga.observer_id == ObsProducto.nombre_droga_observer)
+             .filter(ObsProducto.observer_id.in_(ids)))
+        for oid, desc, lab, did, dname in q.all():
+            metas[oid] = (desc, lab, did, dname)
+
+    productos = []
+    drogas = {}
+    for pid, m in prods.items():
+        desc, lab, did, dname = metas.get(pid, (None, None, None, None))
+        did = did or 0
+        dname = dname or 'Sin droga asignada'
+        productos.append({
+            'did': did,
+            'desc': (desc or str(pid)).strip(),
+            'lab': (lab or '—'),
+            'ci': m['ci'], 'pi': m['pi'], 'cu': m['cu'], 'pu': m['pu'],
+        })
+        dg = drogas.setdefault(did, {'id': did, 'droga': dname, 'n': 0,
+                                     'ci': 0, 'pi': 0, 'cu': 0, 'pu': 0})
+        dg['n'] += 1
+        dg['ci'] += m['ci']; dg['pi'] += m['pi']
+        dg['cu'] = round(dg['cu'] + m['cu'], 1); dg['pu'] = round(dg['pu'] + m['pu'], 1)
+
+    return {'drogas': list(drogas.values()),
+            'productos': productos,
+            'meta': {'anio': anio, 'anio_prev': anio_prev, 'hasta_mes': _MESES[tope],
+                     'n_drogas': len(drogas), 'n_prod': len(productos)}}
