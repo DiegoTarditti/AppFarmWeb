@@ -2656,6 +2656,73 @@ def init_app(app):
                 'hasta': hoy.isoformat(),
             })
 
+    @app.route('/api/stock/snapshot-diario', methods=['POST'])
+    @login_required
+    def api_stock_snapshot_diario():
+        """Crea snapshot diario de obs_stock — local-only (gated por env var).
+
+        Idempotente: si la fecha de hoy ya existe en la tabla, no inserta nada.
+        Trigger esperado: DockerPanel al iniciar, después del backup diario.
+        En Render queda 404 porque la env var no está seteada.
+        """
+        import os
+        if os.environ.get('STOCK_SNAPSHOT_ENABLED') != '1':
+            return jsonify({'ok': False, 'error': 'feature disabled'}), 404
+        from datetime import date as _date
+
+        from sqlalchemy import text
+        hoy = _date.today()
+        with database.get_db() as session:
+            existe = session.execute(
+                text("SELECT 1 FROM obs_stock_snapshot_diario "
+                     "WHERE fecha = :f LIMIT 1"),
+                {'f': hoy}).first()
+            if existe:
+                return jsonify({'ok': True, 'skipped': True, 'fecha': hoy.isoformat()})
+            # Single INSERT ... SELECT — copia obs_stock entero como snapshot del día.
+            # ON CONFLICT por si hay race (otro proceso ya empezó).
+            result = session.execute(text("""
+                INSERT INTO obs_stock_snapshot_diario
+                    (fecha, id_farmacia, producto_observer, stock_actual)
+                SELECT :f, id_farmacia, producto_observer, stock_actual FROM obs_stock
+                ON CONFLICT (fecha, id_farmacia, producto_observer) DO NOTHING
+            """), {'f': hoy})
+            session.commit()
+            return jsonify({
+                'ok': True, 'inserted': result.rowcount, 'fecha': hoy.isoformat(),
+            })
+
+    @app.route('/api/observer-product/<int:observer_id>/stock-snapshot')
+    @login_required
+    def api_observer_product_stock_snapshot(observer_id):
+        """Snapshots diarios del stock de un producto, últimos N días.
+
+        Devuelve `{ok, snapshots: [{fecha, stock_actual}, ...]}`. Si no hay
+        datos (ej. Render sin gate seteado), `snapshots: []` y el chart de la
+        Ficha sigue mostrando solo el stock implícito.
+        """
+        from datetime import date as _date
+        from datetime import timedelta
+
+        from sqlalchemy import text
+        dias = max(1, min(180, request.args.get('dias', 30, type=int)))
+        hoy = _date.today()
+        desde = hoy - timedelta(days=dias - 1)
+        with database.get_db() as session:
+            rows = session.execute(text("""
+                SELECT fecha, SUM(stock_actual) AS stock_total
+                FROM obs_stock_snapshot_diario
+                WHERE producto_observer = :pid AND fecha >= :d AND fecha <= :h
+                GROUP BY fecha ORDER BY fecha
+            """), {'pid': observer_id, 'd': desde, 'h': hoy}).fetchall()
+            snapshots = [{'fecha': r[0].isoformat(), 'stock_actual': int(r[1] or 0)}
+                         for r in rows]
+            return jsonify({
+                'ok': True, 'observer_id': observer_id,
+                'snapshots': snapshots,
+                'desde': desde.isoformat(), 'hasta': hoy.isoformat(),
+            })
+
     @app.route('/api/informes/buscar-droga')
     @login_required
     def api_buscar_droga():

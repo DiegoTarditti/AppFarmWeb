@@ -18,6 +18,23 @@ from flask import jsonify, request
 
 import database
 
+# ── Cargos administrativos ────────────────────────────────────────────────
+# No son productos reales: ensucian el histórico clínico que consume AppClinica
+# (Diego 2026-07-07). Match case-insensitive por substring, para cubrir variantes
+# ("Costo Cupón", "Costo Receta/Cupón", …). Los patrones son de DOS palabras a
+# propósito: con 'RECETA' solo, se llevaría puesto "RECETARIO MAGISTRAL".
+# Los datos siguen en la DB por si Badia los necesita para audit/facturación;
+# solo se descartan en la respuesta de la API.
+CARGOS_ADMINISTRATIVOS = ('SELLADO DE RECETAS', 'SELLADO RECETAS',
+                          'RETIRA EN FARMACIA', 'COSTO RECETA', 'COSTO CUPON')
+
+
+def es_cargo_administrativo(desc):
+    """True si la descripción es un cargo administrativo y no un producto."""
+    d = (desc or '').upper()
+    return any(pat in d for pat in CARGOS_ADMINISTRATIVOS)
+
+
 # ── Auth por API key ──────────────────────────────────────────────────────
 
 def _hash_key(clave):
@@ -322,7 +339,7 @@ def init_app(app):
                 'importe': float(r.importe) if r.importe is not None else None,
                 'importe_a_cargo_os': float(r.importe_a_cargo_os) if r.importe_a_cargo_os is not None else None,
                 'importe_efectivo': float(r.importe_efectivo) if r.importe_efectivo is not None else None,
-            } for r in rows]
+            } for r in rows if not es_cargo_administrativo(prod_ix.get(r.producto_observer))]
         return jsonify({'compras': out, 'total': len(out)})
 
     @app.route('/api/publica/stock/<int:observer_id>')
