@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-07-20 11:04 · rama `rescate/fase2-snapshot` · commit `b0cd46b`
+Generado: 2026-07-20 18:48 · rama `rescate/api-publica-cargos-admin` · commit `be8ee54`
 
 **769 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **26 services** · **11 parsers**
 
@@ -211,20 +211,20 @@ Generado: 2026-07-20 11:04 · rama `rescate/fase2-snapshot` · commit `b0cd46b`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/api/publica/obras-sociales` | GET | [`api_publica_obras_sociales`](../routes/api_publica.py#L161) |
-| `/api/publica/obras-sociales/<int:observer_id>/planes` | GET | [`api_publica_planes`](../routes/api_publica.py#L176) |
-| `/api/publica/paciente/<int:observer_id>` | GET | [`api_publica_paciente`](../routes/api_publica.py#L210) |
-| `/api/publica/paciente/<int:observer_id>/compras` | GET | [`api_publica_paciente_compras`](../routes/api_publica.py#L271) |
-| `/api/publica/paciente/buscar` | GET | [`api_publica_paciente_buscar`](../routes/api_publica.py#L233) |
-| `/api/publica/pami/afiliado-por-dni` | GET | [`api_publica_pami_afiliado_por_dni`](../routes/api_publica.py#L448) |
-| `/api/publica/pami/afiliado/<numero>/cronicos-sugeridos` | GET | [`api_publica_pami_cronicos_sugeridos`](../routes/api_publica.py#L552) |
-| `/api/publica/pami/afiliados-por-dnis` | POST | [`api_publica_pami_afiliados_por_dnis`](../routes/api_publica.py#L466) |
-| `/api/publica/panel/comandos/<int:cmd_id>` | GET | [`api_publica_panel_comando_estado`](../routes/api_publica.py#L379) |
-| `/api/publica/panel/stock` | POST | [`api_publica_panel_stock_encolar`](../routes/api_publica.py#L358) |
-| `/api/publica/ping` | GET | [`api_publica_ping`](../routes/api_publica.py#L74) |
-| `/api/publica/producto/<int:observer_id>` | GET | [`api_publica_producto`](../routes/api_publica.py#L80) |
-| `/api/publica/producto/buscar` | GET | [`api_publica_producto_buscar`](../routes/api_publica.py#L105) |
-| `/api/publica/stock/<int:observer_id>` | GET | [`api_publica_stock_snapshot`](../routes/api_publica.py#L330) |
+| `/api/publica/obras-sociales` | GET | [`api_publica_obras_sociales`](../routes/api_publica.py#L178) |
+| `/api/publica/obras-sociales/<int:observer_id>/planes` | GET | [`api_publica_planes`](../routes/api_publica.py#L193) |
+| `/api/publica/paciente/<int:observer_id>` | GET | [`api_publica_paciente`](../routes/api_publica.py#L227) |
+| `/api/publica/paciente/<int:observer_id>/compras` | GET | [`api_publica_paciente_compras`](../routes/api_publica.py#L288) |
+| `/api/publica/paciente/buscar` | GET | [`api_publica_paciente_buscar`](../routes/api_publica.py#L250) |
+| `/api/publica/pami/afiliado-por-dni` | GET | [`api_publica_pami_afiliado_por_dni`](../routes/api_publica.py#L465) |
+| `/api/publica/pami/afiliado/<numero>/cronicos-sugeridos` | GET | [`api_publica_pami_cronicos_sugeridos`](../routes/api_publica.py#L569) |
+| `/api/publica/pami/afiliados-por-dnis` | POST | [`api_publica_pami_afiliados_por_dnis`](../routes/api_publica.py#L483) |
+| `/api/publica/panel/comandos/<int:cmd_id>` | GET | [`api_publica_panel_comando_estado`](../routes/api_publica.py#L396) |
+| `/api/publica/panel/stock` | POST | [`api_publica_panel_stock_encolar`](../routes/api_publica.py#L375) |
+| `/api/publica/ping` | GET | [`api_publica_ping`](../routes/api_publica.py#L91) |
+| `/api/publica/producto/<int:observer_id>` | GET | [`api_publica_producto`](../routes/api_publica.py#L97) |
+| `/api/publica/producto/buscar` | GET | [`api_publica_producto_buscar`](../routes/api_publica.py#L122) |
+| `/api/publica/stock/<int:observer_id>` | GET | [`api_publica_stock_snapshot`](../routes/api_publica.py#L347) |
 
 ### `routes/atencion.py`
 
