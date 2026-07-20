@@ -884,15 +884,24 @@ def sync_medicos_matriculas(session):
     return {'upsert': n, 'duracion_ms': duracion, 'skipped_fk': skipped}
 
 
-def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia=None):
+def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia=None,
+                        resync_window_dias=20):
     """Sync incremental de DW.ProductosVendidos (detalle por venta).
 
     Args:
         desde_fecha: si está, trae ventas con FechaEstadistica >= desde_fecha.
-                     Si None: usa MAX(fecha_estadistica) local + 1 día. Si no
-                     hay datos locales, arranca desde hoy - meses_default.
+                     Si None: usa MAX(fecha_estadistica) local - resync_window_dias
+                     (ventana de solape, ver abajo). Si no hay datos locales,
+                     arranca desde hoy - meses_default.
         meses_default: cuántos meses traer en el primer sync (default 24).
         id_farmacia: filtrar por farmacia (default OBSERVER_ID_FARMACIA).
+        resync_window_dias: días hacia atrás desde el MAX local que se vuelven a
+                     sincronizar en cada corrida. ObServer backfillea
+                     FechaEstadistica con retraso: si el watermark arranca en
+                     MAX(fecha)+1, los días que reciben registros DESPUÉS de que
+                     el sync ya pasó quedan congelados incompletos. Re-traer una
+                     ventana los completa; el upsert (ON CONFLICT) lo hace
+                     idempotente (no duplica). 0 = comportamiento viejo (MAX+1).
 
     Devuelve: {'upsert': n, 'duracion_ms': X, 'desde': fecha_iso, 'skipped_fk': N}.
     """
@@ -913,7 +922,9 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
                       .filter(ObsVentaDetalle.id_farmacia == id_farmacia)\
                       .order_by(ObsVentaDetalle.fecha_estadistica.desc()).limit(1).first()
         if last and last[0]:
-            desde_fecha = last[0] + timedelta(days=1)
+            # Ventana de solape en vez de MAX+1: re-sincroniza los últimos N días
+            # para captar registros backfilleados con FechaEstadistica retrasada.
+            desde_fecha = last[0] - timedelta(days=max(0, resync_window_dias))
         else:
             desde_fecha = (date.today().replace(day=1)
                            - timedelta(days=meses_default * 31))

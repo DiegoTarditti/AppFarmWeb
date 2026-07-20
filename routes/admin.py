@@ -202,6 +202,54 @@ def init_app(app):
         info['python_version'] = sys.version.split()[0]
         info['worker_pid'] = os.getpid()
 
+        # ── Espacio en disco — para dimensionar la VM y planear la migración
+        # de volúmenes al server nuevo. ──
+        disco = {}
+        try:
+            import shutil
+            total, usado, libre = shutil.disk_usage('/')
+            disco = {'total_gb': round(total / 1e9, 1), 'usado_gb': round(usado / 1e9, 1),
+                     'libre_gb': round(libre / 1e9, 1),
+                     'pct': round(usado * 100 / total) if total else 0}
+        except Exception as e:
+            disco = {'error': str(e)[:120]}
+        info['disco'] = disco
+
+        # Tamaño de la DB + top tablas por peso (no por filas: por bytes en disco).
+        info['db_size'] = None
+        info['tablas_peso'] = []
+        if db_ok:
+            try:
+                with database.get_db() as s:
+                    row = s.execute(_text(
+                        "SELECT pg_size_pretty(pg_database_size(current_database()))")).fetchone()
+                    info['db_size'] = row[0] if row else None
+                    rows = s.execute(_text("""
+                        SELECT relname, pg_size_pretty(pg_total_relation_size(c.oid)) AS pretty
+                          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                         WHERE n.nspname = 'public' AND c.relkind = 'r'
+                         ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 8
+                    """)).fetchall()
+                    info['tablas_peso'] = [{'tabla': r[0], 'pretty': r[1]} for r in rows]
+            except Exception as e:
+                info['db_size_error'] = str(e)[:120]
+
+        # Directorios que crecen (media/cache) — hay que migrarlos aparte de la DB.
+        dirs = []
+        raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for nombre in ('uploads', '.whisper_cache'):
+            ruta = os.path.join(raiz, nombre)
+            if os.path.isdir(ruta):
+                tot = 0
+                for r_, _dirs, fs in os.walk(ruta):
+                    for x in fs:
+                        try:
+                            tot += os.path.getsize(os.path.join(r_, x))
+                        except OSError:
+                            pass
+                dirs.append({'nombre': nombre, 'mb': round(tot / 1e6, 1)})
+        info['dirs_peso'] = dirs
+
         return render_template('admin_health.html', info=info)
 
     @app.route('/admin/alarmas')

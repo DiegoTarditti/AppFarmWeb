@@ -1503,6 +1503,73 @@ Quality auditor pasado al cierre del día sobre `feat/condiciones-comerciales` (
 
 ---
 
+## 🖥️ Migración a server local `192.168.1.220` (2026-07-20)
+
+Server nuevo `debian13-IA` (Debian 13, 4 vCPU, 18 GB RAM, 93 GB disco, LAN
+`192.168.1.220`). App corriendo con Docker Compose. Reemplaza el hosting
+de la PC de oficina (que hoy corre el DockerPanel tkinter).
+
+### ✅ Hecho
+- App web + gunicorn arriba en `http://192.168.1.220:5000`
+- DB `farmacia` migrada desde local (691 MB, 122 tablas, PG 17→18, en 28 s)
+- Sync inicial ObServer completo (23 pasos, 7m30s)
+- Portainer CE en `https://192.168.1.220:9443` (reemplaza DockerPanel para
+  admin visual de containers)
+- Cron `/etc/cron.d/appfarmweb`:
+  - Auto-sync ObServer→Render 14x/día (00, 06-18 en punto) — mismo schedule
+    que `DockerPanel/agente_config.txt` tenía en la PC local
+  - Backup diario 03:00 → `/root/backups/farmacia_<fecha>.dump` (rotación
+    14 días). Primer dump = 39 MB comprimido
+- SSH key ed25519 instalada para admin remoto sin password
+
+### ⏳ Pendiente
+
+- [ ] **Portar HTTP helper local** (`docker_panel.py` bloque
+  `# === BEGIN HELPER HTTP ===`) al server como servicio systemd o
+  container. Expone `/ping`, `/folder-files`, `/read-pdf` para que Render
+  lea PDFs de la farmacia. **Bloqueado**: definir dónde viven los PDFs
+  cuando el server no tenga acceso al `C:/DocumentosApp/` de la PC de
+  oficina. Opciones:
+  - Compartir la carpeta de PDFs por SMB desde Windows → mount CIFS en el
+    server
+  - Migrar los PDFs a `/root/pdfs/` del server y cambiar el flujo que los
+    genera para escribir directo ahí
+  - Mantener helper en la PC de oficina solo para esto (rompe el objetivo
+    "no depender de otra PC")
+
+- [ ] **Decidir qué hace con el DockerPanel local** una vez que el server
+  cubra todo. Opciones:
+  - Retirarlo (Portainer + los cronjobs del server hacen lo mismo sin
+    depender de tu PC)
+  - Dejarlo como respaldo manual para operar el Docker local si algún día
+    querés levantar la app en tu PC
+
+- [ ] **Bot Telegram — resolver el conflict**. Hoy corre en tu PC y en el
+  server con el mismo token → Telegram devuelve `Conflict: terminated by
+  other getUpdates`. Cuando el server sea el único, apagar el bot de local.
+
+- [ ] **Backup diario a share externo** (opcional). Hoy el dump queda solo
+  en `/root/backups/` del server. Si el server se rompe, se pierde. Agregar
+  `rsync` a share Windows o cloud (S3, Backblaze, Drive) en el mismo cron.
+
+- [ ] **Keepalive Render** — hoy `keepalive=false` en `agente_config.txt`
+  (Diego lo tenía apagado). Si mantenés Render como respaldo público y no
+  querés que se duerma en el free plan, agregar 1 línea al cron:
+  `*/10 * * * * root curl -s -o /dev/null $RENDER_URL/health_web`.
+
+- [ ] **Bind de puertos**: hoy `5000` (web) y `9443` (Portainer) están
+  abiertos en `0.0.0.0` — accesibles desde toda la LAN. Si querés endurecer,
+  meter un `ufw` que solo permita LAN + rechace desde afuera, o bindear
+  a IP LAN específica.
+
+- [ ] **Verificar/mover panel remoto** (`docker_panel.py:_panel_remoto_loop`).
+  Hoy tu PC polea un buzón de comandos en Render. En el server LAN no hace
+  falta (tenés SSH + Portainer directo), pero si querés poder ejecutar
+  comandos desde Render (ej. desde el navegador móvil sin VPN), hay que
+  portar el loop como systemd al server.
+
+---
+
 **Cómo mantener este doc:**
 - Cuando agregues una idea, ponela en la sección que corresponda.
 - Cuando completes algo, movelo a "Hechos recientes" con la fecha.

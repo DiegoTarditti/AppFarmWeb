@@ -26,6 +26,7 @@
   .cp-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .cp-table thead th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); padding: 6px 8px; border-bottom: 1px solid var(--ds-line); }
   .cp-table thead th.r { text-align: right; }
+  .cp-table thead th[title] { cursor: help; text-decoration: underline dotted rgba(255,255,255,.28); text-underline-offset: 3px; }
   .cp-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); }
   .cp-table tbody tr:hover { background: rgba(95,230,188,.05); }
   .cp-table td { padding: 6px 8px; color: var(--ds-text); vertical-align: middle; }
@@ -101,9 +102,9 @@
       <div class="n">{{ '{:,.0f}'.format(totales.drogas).replace(',', '.') }}</div>
       <div class="l">Drogas distintas</div>
     </div>
-    <div class="cp-kpi">
+    <div class="cp-kpi" title="Combinaciones únicas afiliado + droga detectadas como crónicas. Un afiliado con 3 crónicos suma 3 pares.">
       <div class="n">{{ '{:,.0f}'.format(totales.pares).replace(',', '.') }}</div>
-      <div class="l">Pares (afiliado, droga)</div>
+      <div class="l">Pares (afiliado + droga)</div>
     </div>
     <div class="cp-kpi">
       <div class="n" style="font-size:16px;">
@@ -125,10 +126,10 @@
       <table class="cp-table">
         <thead>
           <tr>
-            <th>Droga</th>
-            <th class="r">Afiliados</th>
-            <th class="r">Disp. prom.</th>
-            <th class="r">Cad. prom.</th>
+            <th title="Monodroga (principio activo), agrupando todas sus marcas y presentaciones">Droga</th>
+            <th class="r" title="Cantidad de afiliados distintos que la reciben en modo crónico">Afiliados</th>
+            <th class="r" title="Promedio de retiros (recetas dispensadas) por afiliado dentro de la ventana">Dispensas/afiliado</th>
+            <th class="r" title="Días promedio entre un retiro y el siguiente (cada cuánto se repone)">Cadencia (días)</th>
           </tr>
         </thead>
         <tbody>
@@ -154,10 +155,10 @@
       <table class="cp-table">
         <thead>
           <tr>
-            <th>Nombre</th>
-            <th class="mono">Nº afiliado</th>
-            <th class="r"># crónicos</th>
-            <th class="r">Disp. tot.</th>
+            <th title="Nombre del afiliado. Click para ver el detalle de sus crónicos">Nombre</th>
+            <th class="mono" title="Número de afiliado PAMI">Nº afiliado</th>
+            <th class="r" title="Cantidad de drogas distintas que recibe en modo crónico">Drogas crónicas</th>
+            <th class="r" title="Total de retiros (recetas dispensadas) sumando todas sus drogas crónicas">Dispensas totales</th>
           </tr>
         </thead>
         <tbody>
