@@ -330,11 +330,15 @@ cargarPrecios();
 // ─── Movimientos 30 días ─────────────────────────────────────────────────
 async function cargarMovimientos() {
     if (!OBSERVER_ID) return;  // sin observer_id no hay datos del POS
-    let ventasR, ingresosR;
+    let ventasR, ingresosR, snapR;
     try {
-        [ventasR, ingresosR] = await Promise.all([
+        [ventasR, ingresosR, snapR] = await Promise.all([
             fetch(`/api/observer-product/${OBSERVER_ID}/chart-mes`).then(r => r.json()),
             fetch(`/api/observer-product/${OBSERVER_ID}/ingresos-mes`).then(r => r.json()),
+            // Snapshots reales — endpoint Fase 2, devuelve [] si no hay datos
+            // (ej. Render sin STOCK_SNAPSHOT_ENABLED, o farmacia sin DockerPanel corriendo).
+            fetch(`/api/observer-product/${OBSERVER_ID}/stock-snapshot?dias=30`)
+                .then(r => r.json()).catch(() => ({ok: false, snapshots: []})),
         ]);
     } catch (e) {
         document.getElementById('mov-loading').classList.add('hidden');
@@ -395,16 +399,32 @@ async function cargarMovimientos() {
     if (stockSerie) {
         datasets.push({
             type: 'line', label: 'Stock implícito', data: stockSerie,
-            borderColor: '#475569', backgroundColor: '#47556922',
-            borderWidth: 2, pointRadius: 2,
-            pointBackgroundColor: ctx => (stockSerie[ctx.dataIndex] < 0) ? '#dc2626' : '#475569',
+            borderColor: '#94a3b8', backgroundColor: '#94a3b822',
+            borderWidth: 1.5, pointRadius: 1.5, borderDash: [4, 3],
+            pointBackgroundColor: ctx => (stockSerie[ctx.dataIndex] < 0) ? '#dc2626' : '#94a3b8',
             segment: {
                 borderColor: ctx =>
-                    (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? '#dc2626' : '#475569',
-                borderDash: ctx =>
-                    (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? [4, 3] : undefined,
+                    (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? '#dc2626' : '#94a3b8',
             },
             tension: 0.2, yAxisID: 'y1',
+            datalabels: { display: false },
+        });
+    }
+    // Stock real desde snapshots (Fase 2). Si hay datos, se superpone como
+    // línea sólida — la diferencia con la línea de implícito = movimientos
+    // no documentados (compras al contado, ajustes, mermas, etc.).
+    if (snapR && snapR.ok && snapR.snapshots && snapR.snapshots.length > 0) {
+        const snapMap = new Map();
+        for (const s of snapR.snapshots) {
+            const [, mm, dd] = s.fecha.split('-');
+            snapMap.set(`${dd}/${mm}`, s.stock_actual);
+        }
+        const stockReal = labels.map(l => snapMap.has(l) ? snapMap.get(l) : null);
+        datasets.push({
+            type: 'line', label: 'Stock real', data: stockReal,
+            borderColor: '#0d9488', backgroundColor: '#0d948822',
+            borderWidth: 2.5, pointRadius: 3, pointBackgroundColor: '#0d9488',
+            tension: 0.2, spanGaps: true, yAxisID: 'y1',
             datalabels: { display: false },
         });
     }
@@ -428,7 +448,15 @@ async function cargarMovimientos() {
             plugins: {
                 legend: { position: 'bottom', labels: { font: { size: 11 } } },
                 tooltip: { callbacks: {
-                    label: ctx => `${ctx.dataset.label}: ${Math.abs(ctx.raw).toLocaleString('es-AR')}`,
+                    label: ctx => {
+                        const v = ctx.raw;
+                        if (v === null || v === undefined) return null;
+                        // Las líneas de stock (eje y1) mantienen su signo real;
+                        // las barras de ventas (que guardé negativas) se muestran positivas.
+                        const shown = (ctx.dataset.yAxisID === 'y1')
+                            ? v : Math.abs(v);
+                        return `${ctx.dataset.label}: ${shown.toLocaleString('es-AR')}`;
+                    },
                 }},
                 datalabels: {
                     display: ctx => ctx.dataset.data[ctx.dataIndex] !== 0,
