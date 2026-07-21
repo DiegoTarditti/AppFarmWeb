@@ -1562,10 +1562,12 @@ de la PC de oficina (que hoy corre el DockerPanel tkinter).
   querés que se duerma en el free plan, agregar 1 línea al cron:
   `*/10 * * * * root curl -s -o /dev/null $RENDER_URL/health_web`.
 
-- [ ] **Bind de puertos**: hoy `5000` (web) y `9443` (Portainer) están
-  abiertos en `0.0.0.0` — accesibles desde toda la LAN. Si querés endurecer,
-  meter un `ufw` que solo permita LAN + rechace desde afuera, o bindear
-  a IP LAN específica.
+- [x] ~~**Bind de puertos**~~ **HECHO 2026-07-21.** UFW activo con reglas:
+  SSH/web/Portainer permitidos desde toda la LAN `192.168.1.0/24` (cubre
+  OpenVPN site-to-site que asigna IPs `192.168.1.x`). Postgres (5433/5435)
+  solo desde `192.168.1.161` (PC de Lisandro para queries con
+  DBeaver/pgAdmin). Docker NO bypassea UFW en este server (verificado: el
+  puerto 8000 que Docker publica pero UFW no allowlisteó queda bloqueado).
 
 - [ ] **Verificar/mover panel remoto** (`docker_panel.py:_panel_remoto_loop`).
   Hoy tu PC polea un buzón de comandos en Render. En el server LAN no hace
