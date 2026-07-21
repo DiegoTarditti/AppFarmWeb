@@ -564,28 +564,35 @@ def init_app(app):
                     rows = cur.fetchall()
 
                     # Resolver matrícula → nombre (una entrada por matrícula).
-                    matriculas = {r['MatriculaMedico'] for r in rows if r['MatriculaMedico']}
+                    # OJO: MatriculaMedico es varchar(10) en ambas tablas y
+                    # llega con tabs/espacios de padding ('\t657      '). Con
+                    # placeholder %d, SQL Server intenta cast a int y falla.
+                    # → usar %s y normalizar con .strip() en ambos lados.
+                    matriculas = {(r['MatriculaMedico'] or '').strip()
+                                  for r in rows if r['MatriculaMedico']}
+                    matriculas.discard('')
                     medico_por_mat = {}
                     if matriculas:
-                        mat_placeholders = ','.join(['%d'] * len(matriculas))
+                        mat_placeholders = ','.join(['%s'] * len(matriculas))
                         cur.execute(f"""
-                            SELECT mm.Matricula, MIN(m.Medico) AS Medico
+                            SELECT LTRIM(RTRIM(mm.Matricula)) AS Matricula,
+                                   MIN(m.Medico) AS Medico
                               FROM DW.MedicosMatriculas mm
                               JOIN DW.Medicos m ON m.IdMedico = mm.IdMedico
-                             WHERE mm.Matricula IN ({mat_placeholders})
-                             GROUP BY mm.Matricula
+                             WHERE LTRIM(RTRIM(mm.Matricula)) IN ({mat_placeholders})
+                             GROUP BY LTRIM(RTRIM(mm.Matricula))
                         """, tuple(matriculas))
                         medico_por_mat = {r['Matricula']: (r['Medico'] or '').strip() or None
                                           for r in cur.fetchall()}
 
                     for r in rows:
-                        mat = r['MatriculaMedico']
+                        mat = (r['MatriculaMedico'] or '').strip() or None
                         dispensas_por_droga.setdefault(r['id_droga'], []).append({
                             'id_receta':          r['IdReceta'],
                             'numero_receta':      r['NumeroReceta'],
                             'fecha_venta':        r['FechaDeVenta'],
                             'medico_matricula':   mat,
-                            'medico_nombre':      medico_por_mat.get(mat),
+                            'medico_nombre':      medico_por_mat.get(mat) if mat else None,
                             'producto':           (r['Producto'] or '').strip(),
                             'cantidad':           int(r['Cantidad'] or 0),
                             'importe':            float(r['ImporteRenglon'] or 0),
@@ -598,18 +605,21 @@ def init_app(app):
         for d in drogas:
             disp = d['dispensas']; span = d['span_dias'] or 0
             cad = round(span / max(1, disp - 1), 1) if disp > 1 else None
+            detalle = dispensas_por_droga.get(d['id_droga'], [])
+            unidades_total = sum(x['cantidad'] for x in detalle)
             item = {
                 'droga': (d['droga'] or '').strip(),
                 'dispensas': disp,
                 'n_presentaciones': d['n_presentaciones'],
                 'cantidad_prom': round(float(d['cant_prom'] or 0), 2),
+                'unidades_total': unidades_total,
                 'cadencia_dias': cad,
                 'primera': d['primera'],
                 'ultima': d['ultima'],
                 'importe_total': float(d['importe_total'] or 0),
                 'cargo_os_total': float(d['cargo_os_total'] or 0),
                 'presentaciones': pres_por_droga.get(d['id_droga'], []),
-                'dispensas_detalle': dispensas_por_droga.get(d['id_droga'], []),
+                'dispensas_detalle': detalle,
             }
             if cad is not None and cad_min <= cad <= cad_max:
                 sugeridos.append(item)

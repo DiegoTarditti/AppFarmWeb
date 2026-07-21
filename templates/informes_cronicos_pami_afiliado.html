@@ -162,6 +162,7 @@
           <th class="r">Disp.</th>
           <th class="r">Cadencia</th>
           <th class="r">Cant/rec</th>
+          <th class="r">Total u.</th>
           <th class="r">Importe</th>
           <th class="r">A cargo OS</th>
         </tr>
@@ -222,6 +223,7 @@
           <td class="r">{{ s.dispensas }}</td>
           <td class="r">{{ s.cadencia_dias }}d</td>
           <td class="r">{{ s.cantidad_prom }}</td>
+          <td class="r"><b>{{ s.unidades_total }}</b></td>
           <td class="r">${{ '{:,.0f}'.format(s.importe_total).replace(',', '.') }}</td>
           <td class="r">${{ '{:,.0f}'.format(s.cargo_os_total).replace(',', '.') }}</td>
         </tr>
