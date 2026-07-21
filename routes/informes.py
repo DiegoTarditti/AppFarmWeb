@@ -487,6 +487,7 @@ def init_app(app):
                     JOIN DW.NombresDrogas nd         ON nd.IdNombresDrogas = pr.IdNombresDrogas
                     WHERE r.NumeroAfiliado = %s
                       AND r.Anulada = 0 AND rr.Rechazado = 0
+                      AND rr.Cantidad > 0
                       AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
                     GROUP BY nd.IdNombresDrogas, nd.Descripcion
                     HAVING COUNT(DISTINCT r.IdReceta) >= {min_disp}
@@ -508,12 +509,14 @@ def init_app(app):
                                  WHERE r2.NumeroAfiliado = %s
                                    AND rr2.IdProducto = pr.IdProducto
                                    AND r2.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
-                                   AND r2.Anulada = 0 AND rr2.Rechazado = 0) AS n_veces
+                                   AND r2.Anulada = 0 AND rr2.Rechazado = 0
+                                   AND rr2.Cantidad > 0) AS n_veces
                           FROM Gestion.RecetasRenglones rr
                           JOIN Gestion.Recetas r ON r.IdReceta = rr.IdReceta
                           JOIN DW.Productos pr ON pr.IdProducto = rr.IdProducto
                          WHERE r.NumeroAfiliado = %s
                            AND r.Anulada = 0 AND rr.Rechazado = 0
+                           AND rr.Cantidad > 0
                            AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
                            AND pr.IdNombresDrogas IN ({placeholders})
                          ORDER BY pr.IdNombresDrogas, n_veces DESC
@@ -527,9 +530,15 @@ def init_app(app):
 
                 # Detalle de dispensas por droga: fecha + médico + producto +
                 # cantidad + importes. Cada renglón de receta es una fila.
-                # LEFT JOIN a DW.MedicosMatriculas (matrícula → id_medico) +
-                # DW.Medicos (id_medico → nombre). El nombre en Praxis se llama
-                # `Medico`, no `Nombre`.
+                #
+                # 2 queries separadas para NO duplicar renglones:
+                #   1) renglones sin JOIN a médicos (una fila por renglón real)
+                #   2) DW.MedicosMatriculas → DW.Medicos con MIN(Medico) GROUP
+                #      BY Matricula (elige 1 solo médico por matrícula). Si el
+                #      JOIN va en la query principal, cuando una matrícula tiene
+                #      varias filas en MedicosMatriculas (misma matrícula ↔
+                #      distintos IdMedico, pasa en Praxis) el resultado se
+                #      multiplica.
                 dispensas_por_droga = {}
                 if drogas:
                     cur.execute(f"""
@@ -538,7 +547,6 @@ def init_app(app):
                                r.NumeroReceta,
                                r.FechaDeVenta,
                                r.MatriculaMedico,
-                               m.Medico AS medico_nombre,
                                rr.Cantidad,
                                rr.ImporteRenglon,
                                rr.ImporteACargoOS,
@@ -546,21 +554,38 @@ def init_app(app):
                           FROM Gestion.Recetas r
                           JOIN Gestion.RecetasRenglones rr ON rr.IdReceta = r.IdReceta
                           JOIN DW.Productos pr             ON pr.IdProducto = rr.IdProducto
-                          LEFT JOIN DW.MedicosMatriculas mm ON mm.Matricula = r.MatriculaMedico
-                          LEFT JOIN DW.Medicos m           ON m.IdMedico = mm.IdMedico
                          WHERE r.NumeroAfiliado = %s
                            AND r.Anulada = 0 AND rr.Rechazado = 0
+                           AND rr.Cantidad > 0
                            AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
                            AND pr.IdNombresDrogas IN ({placeholders})
                          ORDER BY pr.IdNombresDrogas, r.FechaDeVenta DESC
                     """, tuple([numero] + ids))
-                    for r in cur.fetchall():
+                    rows = cur.fetchall()
+
+                    # Resolver matrícula → nombre (una entrada por matrícula).
+                    matriculas = {r['MatriculaMedico'] for r in rows if r['MatriculaMedico']}
+                    medico_por_mat = {}
+                    if matriculas:
+                        mat_placeholders = ','.join(['%d'] * len(matriculas))
+                        cur.execute(f"""
+                            SELECT mm.Matricula, MIN(m.Medico) AS Medico
+                              FROM DW.MedicosMatriculas mm
+                              JOIN DW.Medicos m ON m.IdMedico = mm.IdMedico
+                             WHERE mm.Matricula IN ({mat_placeholders})
+                             GROUP BY mm.Matricula
+                        """, tuple(matriculas))
+                        medico_por_mat = {r['Matricula']: (r['Medico'] or '').strip() or None
+                                          for r in cur.fetchall()}
+
+                    for r in rows:
+                        mat = r['MatriculaMedico']
                         dispensas_por_droga.setdefault(r['id_droga'], []).append({
                             'id_receta':          r['IdReceta'],
                             'numero_receta':      r['NumeroReceta'],
                             'fecha_venta':        r['FechaDeVenta'],
-                            'medico_matricula':   r['MatriculaMedico'],
-                            'medico_nombre':      (r['medico_nombre'] or '').strip() or None,
+                            'medico_matricula':   mat,
+                            'medico_nombre':      medico_por_mat.get(mat),
                             'producto':           (r['Producto'] or '').strip(),
                             'cantidad':           int(r['Cantidad'] or 0),
                             'importe':            float(r['ImporteRenglon'] or 0),

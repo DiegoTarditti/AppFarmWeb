@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-07-21 17:40 · rama `feat/cronicos-detalle-dispensas` · commit `afd4d30`
+Generado: 2026-07-21 17:55 · rama `feat/cronicos-detalle-dispensas` · commit `faa3183`
 
 **772 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **28 services** · **11 parsers**
 
@@ -722,54 +722,54 @@ Generado: 2026-07-21 17:40 · rama `feat/cronicos-detalle-dispensas` · commit `
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/api/informes/buscar-droga` | GET | [`api_buscar_droga`](../routes/informes.py#L2771) |
-| `/api/informes/buscar-lab` | GET | [`api_informes_buscar_lab`](../routes/informes.py#L2484) |
-| `/api/informes/buscar-os` | GET | [`api_informes_buscar_os`](../routes/informes.py#L2467) |
-| `/api/informes/buscar-producto-obs` | GET | [`api_informes_buscar_producto_obs`](../routes/informes.py#L2500) |
-| `/api/informes/ventas-multi/detalle` | GET | [`api_ventas_multi_detalle`](../routes/informes.py#L2208) |
-| `/api/informes/ventas-multi/historico-droga-medico` | GET | [`api_ventas_multi_hist_droga_medico`](../routes/informes.py#L2368) |
-| `/api/observer-product/<int:observer_id>/chart` | GET | [`api_observer_product_chart`](../routes/informes.py#L2517) |
-| `/api/observer-product/<int:observer_id>/chart-mes` | GET | [`api_observer_product_chart_mes`](../routes/informes.py#L2554) |
-| `/api/observer-product/<int:observer_id>/ingresos-mes` | GET | [`api_observer_product_ingresos_mes`](../routes/informes.py#L2603) |
-| `/api/observer-product/<int:observer_id>/stock-snapshot` | GET | [`api_observer_product_stock_snapshot`](../routes/informes.py#L2740) |
-| `/api/stock/snapshot-diario` | POST | [`api_stock_snapshot_diario`](../routes/informes.py#L2704) |
+| `/api/informes/buscar-droga` | GET | [`api_buscar_droga`](../routes/informes.py#L2796) |
+| `/api/informes/buscar-lab` | GET | [`api_informes_buscar_lab`](../routes/informes.py#L2509) |
+| `/api/informes/buscar-os` | GET | [`api_informes_buscar_os`](../routes/informes.py#L2492) |
+| `/api/informes/buscar-producto-obs` | GET | [`api_informes_buscar_producto_obs`](../routes/informes.py#L2525) |
+| `/api/informes/ventas-multi/detalle` | GET | [`api_ventas_multi_detalle`](../routes/informes.py#L2233) |
+| `/api/informes/ventas-multi/historico-droga-medico` | GET | [`api_ventas_multi_hist_droga_medico`](../routes/informes.py#L2393) |
+| `/api/observer-product/<int:observer_id>/chart` | GET | [`api_observer_product_chart`](../routes/informes.py#L2542) |
+| `/api/observer-product/<int:observer_id>/chart-mes` | GET | [`api_observer_product_chart_mes`](../routes/informes.py#L2579) |
+| `/api/observer-product/<int:observer_id>/ingresos-mes` | GET | [`api_observer_product_ingresos_mes`](../routes/informes.py#L2628) |
+| `/api/observer-product/<int:observer_id>/stock-snapshot` | GET | [`api_observer_product_stock_snapshot`](../routes/informes.py#L2765) |
+| `/api/stock/snapshot-diario` | POST | [`api_stock_snapshot_diario`](../routes/informes.py#L2729) |
 | `/informes` | GET | [`informes_index`](../routes/informes.py#L125) |
-| `/informes/analisis-ia/ultimo` | GET | [`informe_analisis_ia_ultimo`](../routes/informes.py#L717) |
-| `/informes/bajo-minimo` | GET | [`informe_bajo_minimo`](../routes/informes.py#L1469) |
-| `/informes/cadencias-lab` | GET | [`informe_cadencias_lab`](../routes/informes.py#L608) |
-| `/informes/cadencias-resumen` | GET | [`informe_cadencias_resumen`](../routes/informes.py#L646) |
-| `/informes/cadencias-resumen/analizar` | POST | [`informe_cadencias_resumen_analizar`](../routes/informes.py#L674) |
-| `/informes/cadencias-resumen/recalcular` | POST | [`informe_cadencias_resumen_recalcular`](../routes/informes.py#L657) |
-| `/informes/comparativa-drogas` | GET | [`informe_comparativa_drogas`](../routes/informes.py#L876) |
-| `/informes/correcciones-minimos` | GET | [`informe_correcciones_minimos`](../routes/informes.py#L1297) |
+| `/informes/analisis-ia/ultimo` | GET | [`informe_analisis_ia_ultimo`](../routes/informes.py#L742) |
+| `/informes/bajo-minimo` | GET | [`informe_bajo_minimo`](../routes/informes.py#L1494) |
+| `/informes/cadencias-lab` | GET | [`informe_cadencias_lab`](../routes/informes.py#L633) |
+| `/informes/cadencias-resumen` | GET | [`informe_cadencias_resumen`](../routes/informes.py#L671) |
+| `/informes/cadencias-resumen/analizar` | POST | [`informe_cadencias_resumen_analizar`](../routes/informes.py#L699) |
+| `/informes/cadencias-resumen/recalcular` | POST | [`informe_cadencias_resumen_recalcular`](../routes/informes.py#L682) |
+| `/informes/comparativa-drogas` | GET | [`informe_comparativa_drogas`](../routes/informes.py#L901) |
+| `/informes/correcciones-minimos` | GET | [`informe_correcciones_minimos`](../routes/informes.py#L1322) |
 | `/informes/cronicos-pami` | GET | [`informe_cronicos_pami`](../routes/informes.py#L263) |
 | `/informes/cronicos-pami/afiliado` | GET | [`informe_cronicos_pami_afiliado`](../routes/informes.py#L411) |
-| `/informes/drogas-sin-alternativa` | GET | [`informe_drogas_sin_alternativa`](../routes/informes.py#L1199) |
+| `/informes/drogas-sin-alternativa` | GET | [`informe_drogas_sin_alternativa`](../routes/informes.py#L1224) |
 | `/informes/eventos-sla` | GET | [`informes_eventos_sla`](../routes/informes.py#L131) |
-| `/informes/lab-cobertura-moleculas` | GET | [`informe_lab_cobertura_moleculas`](../routes/informes.py#L941) |
-| `/informes/lab-cobertura-moleculas/analizar` | POST | [`informe_lab_cobertura_moleculas_analizar`](../routes/informes.py#L948) |
-| `/informes/lab-gap-marcas` | GET | [`informe_lab_gap_marcas`](../routes/informes.py#L763) |
-| `/informes/lab-gap-marcas/analizar` | POST | [`informe_lab_gap_marcas_analizar`](../routes/informes.py#L830) |
-| `/informes/lab-gap-marcas/recopilar` | POST | [`informe_lab_gap_marcas_recopilar`](../routes/informes.py#L776) |
-| `/informes/lab-ranking-nacional` | GET | [`informe_lab_ranking_nacional`](../routes/informes.py#L891) |
-| `/informes/lab-ranking-nacional/analizar` | POST | [`informe_lab_ranking_nacional_analizar`](../routes/informes.py#L898) |
-| `/informes/labs-por-droga` | GET | [`informe_labs_por_droga`](../routes/informes.py#L991) |
-| `/informes/ofertas-activas` | GET | [`informe_ofertas_activas`](../routes/informes.py#L2799) |
-| `/informes/ofertas-activas/borrar-grupo` | POST | [`informe_grupo_borrar`](../routes/informes.py#L3238) |
-| `/informes/ofertas-activas/borrar-grupos-bulk` | POST | [`informe_grupos_borrar_bulk`](../routes/informes.py#L3268) |
-| `/informes/ofertas-activas/borrar-modulo/<int:modulo_id>` | POST | [`informe_modulo_borrar`](../routes/informes.py#L3303) |
-| `/informes/ofertas-activas/grupo/toggle-activa` | POST | [`informes_ofertas_grupo_toggle_activa`](../routes/informes.py#L2884) |
-| `/informes/ofertas-activas/pull-render-bulk` | POST | [`informe_pull_render_bulk`](../routes/informes.py#L3093) |
-| `/informes/ofertas-activas/queue/borrar` | POST | [`informes_ofertas_queue_borrar`](../routes/informes.py#L3000) |
-| `/informes/ofertas-activas/queue/preview` | GET | [`informes_ofertas_queue_preview`](../routes/informes.py#L2980) |
-| `/informes/ofertas-activas/sospechosas/borrar` | POST | [`informes_ofertas_sospechosas_borrar`](../routes/informes.py#L2960) |
-| `/informes/ofertas-activas/sospechosas/preview` | GET | [`informes_ofertas_sospechosas_preview`](../routes/informes.py#L2935) |
-| `/informes/ofertas-activas/sync-render-bulk` | POST | [`informe_sync_render_bulk`](../routes/informes.py#L3012) |
-| `/informes/presentaciones-por-droga` | GET | [`informe_presentaciones_por_droga`](../routes/informes.py#L1099) |
+| `/informes/lab-cobertura-moleculas` | GET | [`informe_lab_cobertura_moleculas`](../routes/informes.py#L966) |
+| `/informes/lab-cobertura-moleculas/analizar` | POST | [`informe_lab_cobertura_moleculas_analizar`](../routes/informes.py#L973) |
+| `/informes/lab-gap-marcas` | GET | [`informe_lab_gap_marcas`](../routes/informes.py#L788) |
+| `/informes/lab-gap-marcas/analizar` | POST | [`informe_lab_gap_marcas_analizar`](../routes/informes.py#L855) |
+| `/informes/lab-gap-marcas/recopilar` | POST | [`informe_lab_gap_marcas_recopilar`](../routes/informes.py#L801) |
+| `/informes/lab-ranking-nacional` | GET | [`informe_lab_ranking_nacional`](../routes/informes.py#L916) |
+| `/informes/lab-ranking-nacional/analizar` | POST | [`informe_lab_ranking_nacional_analizar`](../routes/informes.py#L923) |
+| `/informes/labs-por-droga` | GET | [`informe_labs_por_droga`](../routes/informes.py#L1016) |
+| `/informes/ofertas-activas` | GET | [`informe_ofertas_activas`](../routes/informes.py#L2824) |
+| `/informes/ofertas-activas/borrar-grupo` | POST | [`informe_grupo_borrar`](../routes/informes.py#L3263) |
+| `/informes/ofertas-activas/borrar-grupos-bulk` | POST | [`informe_grupos_borrar_bulk`](../routes/informes.py#L3293) |
+| `/informes/ofertas-activas/borrar-modulo/<int:modulo_id>` | POST | [`informe_modulo_borrar`](../routes/informes.py#L3328) |
+| `/informes/ofertas-activas/grupo/toggle-activa` | POST | [`informes_ofertas_grupo_toggle_activa`](../routes/informes.py#L2909) |
+| `/informes/ofertas-activas/pull-render-bulk` | POST | [`informe_pull_render_bulk`](../routes/informes.py#L3118) |
+| `/informes/ofertas-activas/queue/borrar` | POST | [`informes_ofertas_queue_borrar`](../routes/informes.py#L3025) |
+| `/informes/ofertas-activas/queue/preview` | GET | [`informes_ofertas_queue_preview`](../routes/informes.py#L3005) |
+| `/informes/ofertas-activas/sospechosas/borrar` | POST | [`informes_ofertas_sospechosas_borrar`](../routes/informes.py#L2985) |
+| `/informes/ofertas-activas/sospechosas/preview` | GET | [`informes_ofertas_sospechosas_preview`](../routes/informes.py#L2960) |
+| `/informes/ofertas-activas/sync-render-bulk` | POST | [`informe_sync_render_bulk`](../routes/informes.py#L3037) |
+| `/informes/presentaciones-por-droga` | GET | [`informe_presentaciones_por_droga`](../routes/informes.py#L1124) |
 | `/informes/ventas-comparativa` | GET | [`informe_ventas_comparativa`](../routes/informes.py#L185) |
 | `/informes/ventas-droga-anual` | GET | [`informe_ventas_droga_anual`](../routes/informes.py#L236) |
-| `/informes/ventas-multi` | GET | [`informe_ventas_multi`](../routes/informes.py#L1586) |
-| `/informes/ventas-multi/export.xlsx` | GET | [`informe_ventas_multi_export`](../routes/informes.py#L1948) |
+| `/informes/ventas-multi` | GET | [`informe_ventas_multi`](../routes/informes.py#L1611) |
+| `/informes/ventas-multi/export.xlsx` | GET | [`informe_ventas_multi_export`](../routes/informes.py#L1973) |
 | `/informes/ventas-producto-anual` | GET | [`informe_ventas_producto_anual`](../routes/informes.py#L214) |
 | `/informes/ventas-vendedor` | GET | [`informes_ventas_vendedor`](../routes/informes.py#L161) |
 
