@@ -81,7 +81,10 @@ WHITELIST: dict[str, list[tuple[str, str]]] = {
                          ('df -h /', 'disco'),
                          ('free -h', 'memoria')],
     # ── AppCajasBadia (systemd service en el server, distinto stack) ─────
-    'actualizar-cajas': [('git -C /root/appcajasbadia pull', 'pull'),
+    # Ojo: `git pull` sin especificar rama requiere upstream tracking configurado.
+    # El repo del server se creó con `git init + reset --hard origin/master` (no clone),
+    # así que la primera vez no tiene upstream. Explicito rama para evitar el error.
+    'actualizar-cajas': [('git -C /root/appcajasbadia pull origin master', 'pull'),
                          ('/root/appcajasbadia/.venv/bin/pip install -q -r /root/appcajasbadia/requirements.txt', 'pip'),
                          ('systemctl restart appcajasbadia', 'restart')],
     'restart-cajas':    [('systemctl restart appcajasbadia', 'restart')],
