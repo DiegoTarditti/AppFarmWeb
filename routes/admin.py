@@ -792,6 +792,7 @@ def init_app(app):
     # vía polling outbound. Permite deployar / ejecutar comandos desde
     # cualquier device sin necesidad de exponer la red de la farmacia.
     PANEL_COMANDOS_WHITELIST = {
+        # AppFarmWeb (docker compose)
         'pull_restart': 'Pull código + Restart Web',
         'restart': 'Restart Web',
         'restart_full': 'Down + Up (recreate)',
@@ -799,11 +800,18 @@ def init_app(app):
         'status': 'Estado contenedores',
         'version': 'Versión deployada (git rev)',
         'sync_now': 'Sync ObServer ahora',
+        'sync_inteligente': 'Sync ObServer inteligente (solo vencidos)',
         'push_cadencias': 'Generar + subir cadencias a Render',
         'dedupe_labs_dry': 'Dedupe labs/proveedores (DRY-RUN)',
         'dedupe_labs_apply': 'Dedupe labs/proveedores (APLICAR)',
         'purgar_cron_log': 'Purgar cron_log >7 días',
+        'backup': 'Backup ad-hoc (pg_dump)',
         'health': 'Health check completo',
+        # AppCajasBadia (systemd service, distinto stack en el mismo server)
+        'actualizar-cajas': '💳 AppCajas — Actualizar (git pull + restart)',
+        'restart-cajas': '💳 AppCajas — Restart',
+        'logs-cajas': '💳 AppCajas — Logs (50 líneas)',
+        'status-cajas': '💳 AppCajas — Estado del service',
     }
 
     @app.route('/admin/panel')
