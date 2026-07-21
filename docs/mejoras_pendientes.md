@@ -1537,12 +1537,17 @@ de la PC de oficina (que hoy corre el DockerPanel tkinter).
   - Mantener helper en la PC de oficina solo para esto (rompe el objetivo
     "no depender de otra PC")
 
-- [ ] **Decidir qué hace con el DockerPanel local** una vez que el server
-  cubra todo. Opciones:
-  - Retirarlo (Portainer + los cronjobs del server hacen lo mismo sin
-    depender de tu PC)
-  - Dejarlo como respaldo manual para operar el Docker local si algún día
-    querés levantar la app en tu PC
+- [x] ~~**Decidir qué hace con el DockerPanel local**~~ **RETIRADO 2026-07-21.**
+  Diego ya no ejecuta el DockerPanel local. Los 5 containers de `c:/AppFarmWeb`
+  quedan apagados y con `restart: no` (no arrancan solos cuando Docker Desktop
+  se prende). Volúmenes intactos (data no se pierde). El `docker-compose.yml`
+  sigue con `restart: unless-stopped` — si algún día se hace `docker compose up`,
+  Docker sobreescribe el `restart: no` que se seteó a mano; recordar volver a
+  bajarlos.
+- [x] **Backup pull a esta PC (2026-07-21).** Task Windows "AppFarmWeb - Bajar
+  backup diario" corre 12:00 diarios `scp` del dump del server a
+  `C:\backups\appfarmweb\`. Retención local 30d. Log en `pull.log`. Corre
+  como usuario Lisandro en modo interactivo (requiere sesión loggeada).
 
 - [ ] **Bot Telegram — resolver el conflict**. Hoy corre en tu PC y en el
   server con el mismo token → Telegram devuelve `Conflict: terminated by
