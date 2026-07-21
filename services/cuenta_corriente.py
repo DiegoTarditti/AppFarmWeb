@@ -29,8 +29,10 @@ TIPOS_HABER = ('NCR',)
 
 # PREFAC = "documento no válido como factura". La mercadería entró pero todavía
 # no hay comprobante fiscal, así que NO suma al saldo: se muestra en el extracto
-# marcada y se totaliza aparte (`total_prefac`). Si la farmacia empieza a usar
-# la prefactura como comprobante definitivo, mover 'PREFAC' a TIPOS_DEBE.
+# marcada y se totaliza aparte (`total_prefac`). Confirmado por Diego el
+# 2026-07-21: la prefactura no suma. No moverla a TIPOS_DEBE sin volver a
+# preguntar — antes de esto el extracto la restaba y el listado la sumaba, y
+# el mismo proveedor daba dos saldos distintos.
 TIPOS_INFORMATIVOS = ('PREFAC',)
 
 # Separadores que puede traer un CUIT escrito a mano o por un parser. Se

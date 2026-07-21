@@ -1620,12 +1620,12 @@ duplicación real era el *cálculo* y el *alta de proveedor*.
      redirige al extracto (así sigue andando el link del sidebar en
      `base.html:955` y los favoritos viejos).
 
-### ❓ Pregunta abierta para Diego
+### ✅ Decidido: la PREFAC no suma al saldo (Diego, 2026-07-21)
 
-**¿La PREFAC suma al saldo?** Se implementó la opción conservadora (no suma).
-Si en la farmacia la prefactura funciona como factura definitiva, es mover
-`'PREFAC'` de `TIPOS_INFORMATIVOS` a `TIPOS_DEBE` en
-`services/cuenta_corriente.py` — una línea, y los tests marcan el cambio.
+La prefactura es "documento no válido como factura": la mercadería entró pero
+no hay comprobante fiscal. Queda en `TIPOS_INFORMATIVOS` — se muestra en el
+extracto marcada y se totaliza aparte, **fuera del saldo**. No moverla a
+`TIPOS_DEBE` sin volver a preguntar.
 
 ### 📋 Fases B/C/D — lo que falta en la tabla (auditado 2026-07-21)
 
