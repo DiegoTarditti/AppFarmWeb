@@ -67,9 +67,16 @@ def match_productos(session, threshold=0.80, commit_each=500):
     pendientes = (session.query(Producto)
                   .filter(Producto.observer_id.is_(None)).all())
 
+    # observer_id ya usados por otro Producto (UNIQUE ix_productos_observer_id).
+    # Un obs_id puede matchear a >1 producto local (por descripción/alfabeta);
+    # sin esto, asignar uno ya tomado revienta el commit y revierte todo el batch.
+    tomados = {oid for (oid,) in
+               session.query(Producto.observer_id)
+               .filter(Producto.observer_id.isnot(None)).all()}
+
     stats = dict(procesados=0, linked_alfabeta=0, linked_exact=0,
                  linked_superset=0, linked_fuzzy=0,
-                 sin_match=0, ambiguos=0, sin_lab=0)
+                 sin_match=0, ambiguos=0, sin_lab=0, colision=0)
 
     for p in pendientes:
         stats['procesados'] += 1
@@ -78,7 +85,11 @@ def match_productos(session, threshold=0.80, commit_each=500):
         if p.codigo_alfabeta:
             obs_id_alfa = index_alfabeta.get(p.codigo_alfabeta.strip())
             if obs_id_alfa:
+                if obs_id_alfa in tomados:
+                    stats['colision'] += 1
+                    continue
                 p.observer_id = obs_id_alfa
+                tomados.add(obs_id_alfa)
                 stats['linked_alfabeta'] += 1
                 if stats['procesados'] % commit_each == 0:
                     session.flush()
@@ -104,7 +115,11 @@ def match_productos(session, threshold=0.80, commit_each=500):
                 stats['sin_lab'] += 1
 
         if len(exact_hits) == 1:
+            if exact_hits[0] in tomados:
+                stats['colision'] += 1
+                continue
             p.observer_id = exact_hits[0]
+            tomados.add(exact_hits[0])
             stats['linked_exact'] += 1
             if stats['procesados'] % commit_each == 0:
                 session.flush()
@@ -126,7 +141,11 @@ def match_productos(session, threshold=0.80, commit_each=500):
             supersets = [obs_id for obs_id, _desc, _norm, toks_o in candidatos
                          if toks_o and toks_p.issubset(toks_o)]
             if len(supersets) == 1:
+                if supersets[0] in tomados:
+                    stats['colision'] += 1
+                    continue
                 p.observer_id = supersets[0]
+                tomados.add(supersets[0])
                 stats['linked_superset'] += 1
                 if stats['procesados'] % commit_each == 0:
                     session.flush()
@@ -146,8 +165,12 @@ def match_productos(session, threshold=0.80, commit_each=500):
                 empate = True
 
         if mejor and mejor_score >= threshold and not empate:
-            p.observer_id = mejor
-            stats['linked_fuzzy'] += 1
+            if mejor in tomados:
+                stats['colision'] += 1
+            else:
+                p.observer_id = mejor
+                tomados.add(mejor)
+                stats['linked_fuzzy'] += 1
         elif empate:
             stats['ambiguos'] += 1
         else:

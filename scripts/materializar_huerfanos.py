@@ -20,7 +20,8 @@ import argparse
 import sys
 
 import database
-from database import Laboratorio, ObsCodigoBarras, ObsLaboratorio, ObsProducto, Producto
+from database import ObsCodigoBarras, ObsProducto, Producto
+from helpers import resolver_laboratorio
 
 
 def materializar_huerfanos(dry_run=False):
@@ -89,18 +90,8 @@ def materializar_huerfanos(dry_run=False):
                 if not prod.codigo_alfabeta and obs_prod.codigo_alfabeta:
                     prod.codigo_alfabeta = obs_prod.codigo_alfabeta
                 if not prod.laboratorio_id and obs_prod.laboratorio_observer:
-                    lab = (session.query(Laboratorio)
-                           .filter_by(observer_id=obs_prod.laboratorio_observer)
-                           .first())
-                    if not lab:
-                        obs_lab = session.get(ObsLaboratorio,
-                                              obs_prod.laboratorio_observer)
-                        if obs_lab:
-                            lab = Laboratorio(nombre=obs_lab.descripcion,
-                                              observer_id=obs_prod.laboratorio_observer,
-                                              activo=True)
-                            session.add(lab)
-                            session.flush()
+                    lab = resolver_laboratorio(session,
+                                               obs_prod.laboratorio_observer)
                     if lab:
                         prod.laboratorio_id = lab.id
                 tomados.add(obs_id)
