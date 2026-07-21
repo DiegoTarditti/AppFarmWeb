@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-07-21 19:31 · rama `chore/panel-remoto-worker-versionado` · commit `233a34b`
+Generado: 2026-07-21 19:35 · rama `chore/panel-remoto-worker-versionado` · commit `01b791f`
 
 **772 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **28 services** · **11 parsers**
 
@@ -176,9 +176,9 @@ Generado: 2026-07-21 19:31 · rama `chore/panel-remoto-worker-versionado` · com
 | `/admin/cleanup-inactivos` | GET/POST | [`admin_cleanup_inactivos`](../routes/admin.py#L737) |
 | `/admin/cron-log` | GET | [`admin_cron_log`](../routes/admin.py#L403) |
 | `/admin/health` | GET | [`admin_health`](../routes/admin.py#L65) |
-| `/admin/panel` | GET | [`admin_panel`](../routes/admin.py#L811) |
-| `/admin/panel/comandos` | POST | [`admin_panel_encolar`](../routes/admin.py#L823) |
-| `/admin/panel/comandos/recientes` | GET | [`admin_panel_recientes`](../routes/admin.py#L850) |
+| `/admin/panel` | GET | [`admin_panel`](../routes/admin.py#L819) |
+| `/admin/panel/comandos` | POST | [`admin_panel_encolar`](../routes/admin.py#L831) |
+| `/admin/panel/comandos/recientes` | GET | [`admin_panel_recientes`](../routes/admin.py#L858) |
 | `/admin/reset-datos` | GET/POST | [`admin_reset_datos`](../routes/admin.py#L763) |
 | `/admin/seed-proveedores` | GET/POST | [`admin_seed_proveedores`](../routes/admin.py#L555) |
 | `/api/admin/alarmas` | GET | [`api_admin_alarmas`](../routes/admin.py#L389) |
@@ -193,8 +193,8 @@ Generado: 2026-07-21 19:31 · rama `chore/panel-remoto-worker-versionado` · com
 | `/api/cron/recalcular-os-clientes` | POST | [`api_cron_recalcular_os_clientes`](../routes/admin.py#L659) |
 | `/api/dockerpanel-info` | GET | [`api_dockerpanel_info`](../routes/admin.py#L753) |
 | `/api/obs/recalcular-os-clientes` | POST | [`api_recalcular_os_clientes`](../routes/admin.py#L639) |
-| `/api/panel/comandos/<int:cmd_id>/resultado` | POST | [`api_panel_resultado`](../routes/admin.py#L936) |
-| `/api/panel/comandos/proximo` | GET | [`api_panel_proximo`](../routes/admin.py#L882) |
+| `/api/panel/comandos/<int:cmd_id>/resultado` | POST | [`api_panel_resultado`](../routes/admin.py#L944) |
+| `/api/panel/comandos/proximo` | GET | [`api_panel_proximo`](../routes/admin.py#L890) |
 | `/api/pedidos-nuevo/scope` | GET | [`api_pedidos_nuevo_scope`](../routes/admin.py#L290) |
 | `/pedidos-nuevo` | GET | [`pedidos_nuevo`](../routes/admin.py#L272) |
 
