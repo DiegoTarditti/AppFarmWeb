@@ -97,6 +97,10 @@ services:
       OBSERVER_DB:   ${OBSERVER_DB:-ObServerGestion}
       OBSERVER_TDSVER: ${OBSERVER_TDSVER:-7.0}
       OBSERVER_ID_FARMACIA: ${OBSERVER_ID_FARMACIA:-10525}
+      # CUIT de esta farmacia (11 dígitos). Lo usa el import de "Mis Comprobantes"
+      # de ARCA para rechazar un CSV bajado con el CUIT de otra farmacia. Sin la
+      # var, ese import queda bloqueado a propósito (ver routes/cuentas.py).
+      FARMACIA_CUIT: ${FARMACIA_CUIT:-}
       # External URL del Postgres de Render. Usada por el job que replica obs_*.
       RENDER_DATABASE_URL: ${RENDER_DATABASE_URL:-}
       # Sync/pull ofertas local ↔ Render. PANEL_REMOTO_TOKEN es el mismo
