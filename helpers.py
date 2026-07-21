@@ -1953,6 +1953,40 @@ def normalizar_unidades_minima(valor):
     return max(1, v)
 
 
+def resolver_laboratorio(session, laboratorio_observer):
+    """Devuelve el Laboratorio master para un observer_id de ObServer, creándolo
+    si hace falta. NO commitea (flush cuando crea).
+
+    Resuelve por ``observer_id``; si no existe, reusa el lab con el mismo
+    ``nombre`` (backfilleando su ``observer_id`` si estaba NULL) antes de crear.
+    Esto evita violar ``laboratorios_nombre_key`` cuando el lab ya está cargado
+    por otra fuente (ej. import manual) con observer_id distinto/NULL.
+    """
+    from database import Laboratorio, ObsLaboratorio
+    if not laboratorio_observer:
+        return None
+    lab = (session.query(Laboratorio)
+           .filter_by(observer_id=laboratorio_observer).first())
+    if lab:
+        return lab
+    obs_lab = session.get(ObsLaboratorio, laboratorio_observer)
+    if not obs_lab:
+        return None
+    nombre = (obs_lab.descripcion or '').strip()
+    if not nombre:
+        return None
+    # Reusar por nombre si ya existe (evita violar nombre UNIQUE).
+    lab = session.query(Laboratorio).filter_by(nombre=nombre).first()
+    if lab:
+        if lab.observer_id is None:
+            lab.observer_id = laboratorio_observer
+        return lab
+    lab = Laboratorio(nombre=nombre, observer_id=laboratorio_observer, activo=True)
+    session.add(lab)
+    session.flush()
+    return lab
+
+
 def materializar_producto(session, observer_id):
     """Crea (o devuelve) el Producto master local a partir de un ObsProducto.
 
@@ -1960,7 +1994,7 @@ def materializar_producto(session, observer_id):
     flujos bulk (ej. presentación a varios). NO commitea — flush para tener el
     id; el caller decide el commit. Devuelve (Producto|None, error_str|None).
     """
-    from database import Laboratorio, ObsCodigoBarras, ObsLaboratorio, ObsProducto
+    from database import ObsCodigoBarras, ObsProducto
     obs = session.get(ObsProducto, observer_id)
     if not obs:
         return None, f'observer_id {observer_id} no existe'
@@ -1976,19 +2010,8 @@ def materializar_producto(session, observer_id):
     colision = session.query(Producto).filter_by(codigo_barra=ean).first()
     if colision:
         return None, f'EAN {ean} ya está en el producto #{colision.id}'
-    lab_id_local = None
-    if obs.laboratorio_observer:
-        lab = (session.query(Laboratorio)
-               .filter_by(observer_id=obs.laboratorio_observer).first())
-        if not lab:
-            obs_lab = session.get(ObsLaboratorio, obs.laboratorio_observer)
-            if obs_lab:
-                lab = Laboratorio(nombre=obs_lab.descripcion,
-                                  observer_id=obs.laboratorio_observer, activo=True)
-                session.add(lab)
-                session.flush()
-        if lab:
-            lab_id_local = lab.id
+    lab = resolver_laboratorio(session, obs.laboratorio_observer)
+    lab_id_local = lab.id if lab else None
     prod = Producto(codigo_barra=ean, descripcion=obs.descripcion,
                     observer_id=observer_id, laboratorio_id=lab_id_local,
                     codigo_alfabeta=obs.codigo_alfabeta,
