@@ -1574,3 +1574,85 @@ de la PC de oficina (que hoy corre el DockerPanel tkinter).
 - Cuando agregues una idea, ponela en la sección que corresponda.
 - Cuando completes algo, movelo a "Hechos recientes" con la fecha.
 - Si una idea cambia de prioridad, actualizá el trigger.
+
+---
+
+## 🔄 Unificación Cuentas corrientes ↔ Contabilidad (2026-07-21, EN CURSO)
+
+**Decisión de Diego**: unificar los dos módulos bajo el nombre **"Cuentas
+corrientes"**, quedándose con lo que hace Contabilidad (más completo) sin perder
+el import ARCA de Cuentas corrientes.
+
+Ojo con el punto de partida, que confunde: **no eran dos módulos rivales**.
+`/contabilidad` ya contenía a `/cuentas-corrientes` en su menú
+(`base_contab.html`), y la pantalla de extracto ya era compartida. La
+duplicación real era el *cálculo* y el *alta de proveedor*.
+
+### ✅ Hecho — rama `feat/cc-unificacion-saldo` (commit a2d550e)
+
+- **`services/cuenta_corriente.py`**: cálculo único de movimientos y saldo.
+  Entran por ahí el extracto y el listado. Toda pantalla nueva que muestre
+  saldo de proveedor tiene que usarlo.
+- **Bug PREFAC**: el extracto la metía en el haber y el listado en el debe →
+  dos saldos distintos para el mismo proveedor. Ahora no suma (no es
+  comprobante fiscal), se muestra marcada y se totaliza aparte.
+- **Bug CUIT**: extracto por igualdad de string, listado por dígitos. Una
+  factura podía verse en una pantalla y no en la otra. Ahora ambos normalizan.
+- **`PagoAjusteCC` restringido a ajustes**: el alta ya no acepta PAGO ni NCR
+  (entraban dos veces al saldo, junto al pago estructurado). Las filas viejas
+  se siguen leyendo.
+- 19 tests nuevos en `tests/test_cuenta_corriente.py`, incluidos los de
+  **paridad extracto ↔ listado**. Suite completa verde (980).
+
+### ⏳ Pendiente de la Fase A
+
+- **Formulario de proveedor unificado**: hoy hay dos altas del mismo `Provider`
+  — `/providers` (operativa: parser, match_strategy) y
+  `/contabilidad/proveedores` (contable: condición IVA). Diego eligió **una
+  sola pantalla con todos los campos**.
+- **Rename del módulo a "Cuentas corrientes"**: URLs `/cuentas-corrientes/*`
+  con **redirect 301** desde `/contabilidad/*`. Ojo con dos cosas:
+  1. los **prefijos del perfil** en `auth.py` (~línea 134) hay que actualizarlos
+     o el gating deja afuera a los operadores de contabilidad;
+  2. el landing del módulo y el extracto se pelean por `/cuentas-corrientes`.
+     Plan: la raíz es el landing, el extracto pasa a
+     `/cuentas-corrientes/extracto`, y si llega `?proveedor=N` a la raíz se
+     redirige al extracto (así sigue andando el link del sidebar en
+     `base.html:955` y los favoritos viejos).
+
+### ✅ Decidido: la PREFAC no suma al saldo (Diego, 2026-07-21)
+
+La prefactura es "documento no válido como factura": la mercadería entró pero
+no hay comprobante fiscal. Queda en `TIPOS_INFORMATIVOS` — se muestra en el
+extracto marcada y se totaliza aparte, **fuera del saldo**. No moverla a
+`TIPOS_DEBE` sin volver a preguntar.
+
+### 📋 Fases B/C/D — lo que falta en la tabla (auditado 2026-07-21)
+
+De 8 temas de un circuito de CC argentino, **6 no existen y 2 están a medias**:
+
+| # | Tema | Estado | Nota |
+|---|---|---|---|
+| 1 | **Retenciones** (Gan. RG830, IVA RG2854, SUSS, IIBB) | no existe | Pedido explícito de Diego. Ver diseño abajo |
+| 2 | **Vencimiento / aging** | no existe | `Invoice` no tiene `fecha_vencimiento`; el único `vencimiento` del schema es el del **lote** en `InvoiceItem`. Sin esto no se sabe a quién pagar |
+| 3 | **NC imputada a factura puntual** | no existe | `_facturas_pendientes` filtra `== 'FAC'`: la NC ni aparece en la pantalla de pago |
+| 4 | **Saldo inicial de apertura** | workaround | Se carga como AJUSTE_POS, indistinguible de un ajuste real |
+| 5 | **Orden de pago** | no existe | `nro_comprobante` es texto libre, sin numeración ni PDF |
+| 6 | **Libro IVA compras** | placeholder | Los datos ya están (desglose por alícuota); falta la vista |
+| 7 | **Percepciones desde ARCA** | parcial | Columna existe y la llenan converter/IA, pero el import ARCA no. Ganancia chica: el CSV las mete dentro de *Otros Tributos* |
+| 8 | **Moneda extranjera** | columnas muertas | `moneda`/`tipo_cambio` se escriben y **nunca se leen**: una factura en USD suma su nominal como si fueran pesos |
+
+**Diseño de retenciones** (Fase B). La regla: *la retención cancela deuda pero
+no sale plata*. Si le debés 100.000 y retenés 6.000 de Ganancias, transferís
+94.000 pero la factura queda cancelada por 100.000 y le das el certificado.
+Eso choca con la validación de `routes/contabilidad.py` (~línea 296):
+
+```python
+if suma_apps - monto_total > 0.005:
+    flash('La suma aplicada a facturas supera el monto del pago.')
+```
+
+Con retenciones esa suma **tiene que poder superar** el monto pagado. Pasa a
+ser `suma_apps <= monto_pagado + retenciones`. Modelo nuevo `PagoRetencion`
+(pago_id, régimen, jurisdicción para IIBB, base imponible, alícuota, importe,
+nro. certificado).

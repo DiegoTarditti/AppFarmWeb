@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-07-20 18:52 · rama `?` · commit `?`
+Generado: 2026-07-21 14:09 · rama `main` · commit `782b888`
 
-**772 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **27 services** · **11 parsers**
+**772 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **28 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -489,15 +489,15 @@ Generado: 2026-07-20 18:52 · rama `?` · commit `?`
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/contabilidad` | GET | [`contabilidad_index`](../routes/contabilidad.py#L32) |
-| `/contabilidad/formas-pago` | GET | [`contabilidad_formas_pago`](../routes/contabilidad.py#L146) |
-| `/contabilidad/formas-pago/<int:cuenta_id>/movimientos` | GET | [`contabilidad_forma_pago_movimientos`](../routes/contabilidad.py#L191) |
-| `/contabilidad/formas-pago/guardar` | POST | [`contabilidad_forma_pago_guardar`](../routes/contabilidad.py#L161) |
-| `/contabilidad/pagos` | GET | [`contabilidad_pagos`](../routes/contabilidad.py#L231) |
-| `/contabilidad/pagos/<int:pago_id>/delete` | POST | [`contabilidad_pago_delete`](../routes/contabilidad.py#L334) |
-| `/contabilidad/pagos/guardar` | POST | [`contabilidad_pago_guardar`](../routes/contabilidad.py#L265) |
-| `/contabilidad/pagos/nuevo` | GET | [`contabilidad_pago_nuevo`](../routes/contabilidad.py#L247) |
+| `/contabilidad/formas-pago` | GET | [`contabilidad_formas_pago`](../routes/contabilidad.py#L105) |
+| `/contabilidad/formas-pago/<int:cuenta_id>/movimientos` | GET | [`contabilidad_forma_pago_movimientos`](../routes/contabilidad.py#L150) |
+| `/contabilidad/formas-pago/guardar` | POST | [`contabilidad_forma_pago_guardar`](../routes/contabilidad.py#L120) |
+| `/contabilidad/pagos` | GET | [`contabilidad_pagos`](../routes/contabilidad.py#L190) |
+| `/contabilidad/pagos/<int:pago_id>/delete` | POST | [`contabilidad_pago_delete`](../routes/contabilidad.py#L293) |
+| `/contabilidad/pagos/guardar` | POST | [`contabilidad_pago_guardar`](../routes/contabilidad.py#L224) |
+| `/contabilidad/pagos/nuevo` | GET | [`contabilidad_pago_nuevo`](../routes/contabilidad.py#L206) |
 | `/contabilidad/proveedores` | GET | [`contabilidad_proveedores`](../routes/contabilidad.py#L37) |
-| `/contabilidad/proveedores/guardar` | POST | [`contabilidad_proveedor_guardar`](../routes/contabilidad.py#L116) |
+| `/contabilidad/proveedores/guardar` | POST | [`contabilidad_proveedor_guardar`](../routes/contabilidad.py#L75) |
 
 ### `routes/converter.py`
 
@@ -555,12 +555,12 @@ Generado: 2026-07-20 18:52 · rama `?` · commit `?`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/comprobantes/importar` | GET/POST | [`comprobantes_importar`](../routes/cuentas.py#L215) |
-| `/cuentas-corrientes` | GET | [`cuentas_corrientes`](../routes/cuentas.py#L106) |
-| `/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/delete` | POST | [`cuenta_corriente_delete`](../routes/cuentas.py#L342) |
-| `/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/edit-obs` | POST | [`cuenta_corriente_edit_obs`](../routes/cuentas.py#L376) |
-| `/provider/<int:provider_id>/cuenta-corriente/add` | POST | [`cuenta_corriente_add`](../routes/cuentas.py#L311) |
-| `/provider/<int:provider_id>/cuenta-corriente/conciliar` | POST | [`cuenta_corriente_conciliar`](../routes/cuentas.py#L356) |
+| `/comprobantes/importar` | GET/POST | [`comprobantes_importar`](../routes/cuentas.py#L131) |
+| `/cuentas-corrientes` | GET | [`cuentas_corrientes`](../routes/cuentas.py#L107) |
+| `/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/delete` | POST | [`cuenta_corriente_delete`](../routes/cuentas.py#L263) |
+| `/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/edit-obs` | POST | [`cuenta_corriente_edit_obs`](../routes/cuentas.py#L297) |
+| `/provider/<int:provider_id>/cuenta-corriente/add` | POST | [`cuenta_corriente_add`](../routes/cuentas.py#L227) |
+| `/provider/<int:provider_id>/cuenta-corriente/conciliar` | POST | [`cuenta_corriente_conciliar`](../routes/cuentas.py#L277) |
 
 ### `routes/dashboard.py`
 
@@ -1317,6 +1317,7 @@ Generado: 2026-07-20 18:52 · rama `?` · commit `?`
 | [`calculo_pedido.py`](../services/calculo_pedido.py) | Motor unificado de cálculo de cantidad a pedir por tipo de pedido. |
 | [`comparativa_ventas.py`](../services/comparativa_ventas.py) | Comparativa de ventas semanales entre sucursales (Pieri vs Badia). |
 | [`compartido_sync.py`](../services/compartido_sync.py) | Sync peer-to-peer de archivos compartidos (sin hub). |
+| [`cuenta_corriente.py`](../services/cuenta_corriente.py) | Cálculo único de movimientos y saldo de la cuenta corriente de proveedores. |
 | [`dashboard_snapshot.py`](../services/dashboard_snapshot.py) | Refresco del snapshot product_analytics para el dashboard. |
 | [`descuentos.py`](../services/descuentos.py) | Lógica de descuentos para el flujo de compra rápida. |
 | [`eventos_sla.py`](../services/eventos_sla.py) | Helper para registrar eventos SLA (Diego 2026-06-22). |
