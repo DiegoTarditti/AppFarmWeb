@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-07-21 14:09 · rama `main` · commit `782b888`
+Generado: 2026-07-21 16:58 · rama `fix/import-arca-guard-cuit` · commit `eca51d4`
 
 **772 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **28 services** · **11 parsers**
 
@@ -555,12 +555,12 @@ Generado: 2026-07-21 14:09 · rama `main` · commit `782b888`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/comprobantes/importar` | GET/POST | [`comprobantes_importar`](../routes/cuentas.py#L131) |
-| `/cuentas-corrientes` | GET | [`cuentas_corrientes`](../routes/cuentas.py#L107) |
-| `/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/delete` | POST | [`cuenta_corriente_delete`](../routes/cuentas.py#L263) |
-| `/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/edit-obs` | POST | [`cuenta_corriente_edit_obs`](../routes/cuentas.py#L297) |
-| `/provider/<int:provider_id>/cuenta-corriente/add` | POST | [`cuenta_corriente_add`](../routes/cuentas.py#L227) |
-| `/provider/<int:provider_id>/cuenta-corriente/conciliar` | POST | [`cuenta_corriente_conciliar`](../routes/cuentas.py#L277) |
+| `/comprobantes/importar` | GET/POST | [`comprobantes_importar`](../routes/cuentas.py#L158) |
+| `/cuentas-corrientes` | GET | [`cuentas_corrientes`](../routes/cuentas.py#L134) |
+| `/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/delete` | POST | [`cuenta_corriente_delete`](../routes/cuentas.py#L313) |
+| `/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/edit-obs` | POST | [`cuenta_corriente_edit_obs`](../routes/cuentas.py#L347) |
+| `/provider/<int:provider_id>/cuenta-corriente/add` | POST | [`cuenta_corriente_add`](../routes/cuentas.py#L277) |
+| `/provider/<int:provider_id>/cuenta-corriente/conciliar` | POST | [`cuenta_corriente_conciliar`](../routes/cuentas.py#L327) |
 
 ### `routes/dashboard.py`
 

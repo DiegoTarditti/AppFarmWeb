@@ -2,6 +2,7 @@
 
 import csv
 import io
+import os
 import unicodedata
 from datetime import datetime as _dt
 
@@ -52,6 +53,24 @@ def _parse_fecha(s):
     return None
 
 
+def _col_cuit_receptor(hdr):
+    """Índice de la columna con el CUIT del RECEPTOR (nosotros). None si no está.
+
+    Es el dato que dice de qué farmacia son los comprobantes: el emisor es la
+    droguería y es el mismo para Badía que para Pieristei. ARCA no usa un
+    nombre estable entre exports ('Nro. Doc. Receptor', 'CUIT Receptor'…), así
+    que se matchea por forma en vez de por literal. Se descartan
+    'Denominación Receptor' (el nombre, no el número) y 'Tipo Doc. Receptor'
+    (el tipo de documento: 80 = CUIT).
+    """
+    for h, i in hdr.items():
+        if 'receptor' not in h or 'denominacion' in h or 'tipo' in h:
+            continue
+        if any(k in h for k in ('cuit', 'doc', 'nro', 'numero')):
+            return i
+    return None
+
+
 def _leer_comprobantes_arca(raw_bytes):
     """Parsea el CSV 'Mis Comprobantes' de ARCA. Devuelve (filas, error|None)."""
     try:
@@ -68,6 +87,12 @@ def _leer_comprobantes_arca(raw_bytes):
         return [], ('No parece un export de "Mis Comprobantes" de ARCA '
                     '(falta la columna Fecha de Emisión).')
 
+    i_receptor = _col_cuit_receptor(hdr)
+    if i_receptor is None:
+        return [], ('El CSV no trae la columna con el CUIT del receptor, así que no se '
+                    'puede verificar de qué farmacia son los comprobantes. Bajá de ARCA '
+                    'el export completo de "Mis Comprobantes → Recibidos".')
+
     def g(row, key):
         i = hdr.get(key)
         return row[i].strip() if (i is not None and i < len(row)) else ''
@@ -83,6 +108,8 @@ def _leer_comprobantes_arca(raw_bytes):
             'numero': _solo_digitos(g(row, 'numero desde')),
             'cae': g(row, 'cod. autorizacion'),
             'cuit_emisor': g(row, 'nro. doc. emisor'),
+            'cuit_receptor': _solo_digitos(
+                row[i_receptor] if i_receptor < len(row) else ''),
             'denom_emisor': g(row, 'denominacion emisor'),
             'moneda': g(row, 'moneda') or 'PES',
             'tipo_cambio': _num_ar(g(row, 'tipo cambio')),
@@ -140,6 +167,29 @@ def init_app(app):
         filas, err = _leer_comprobantes_arca(archivo.read())
         if err:
             flash(err)
+            return render_template('comprobantes_importar.html', resumen=None)
+
+        # Guard de farmacia: el CSV tiene que ser de NUESTRO CUIT. `facturas` no
+        # guarda a qué farmacia pertenece cada comprobante, así que un CSV ajeno
+        # entra sin dejar rastro y se mezcla con el propio — pasó el 2026-07-21
+        # con el export de Pieristei (9.724 comprobantes). Falla cerrado: si no
+        # se puede verificar, no se importa nada.
+        cuit_propio = _solo_digitos(os.environ.get('FARMACIA_CUIT', ''))
+        if len(cuit_propio) != 11:
+            flash('Falta configurar FARMACIA_CUIT (CUIT de esta farmacia, 11 dígitos) '
+                  'en el entorno. Sin eso no se puede verificar de quién son los '
+                  'comprobantes y el import queda bloqueado.')
+            return render_template('comprobantes_importar.html', resumen=None)
+
+        ajenos = sorted({f['cuit_receptor'] for f in filas
+                         if f['cuit_receptor'] and f['cuit_receptor'] != cuit_propio})
+        sin_receptor = sum(1 for f in filas if not f['cuit_receptor'])
+        if ajenos or sin_receptor:
+            detalle = (f"figuran a nombre de {', '.join(_fmt_cuit(c) for c in ajenos[:5])}"
+                       if ajenos else f'{sin_receptor} filas no traen el CUIT del receptor')
+            flash(f'No se importó nada: el CSV no es de esta farmacia '
+                  f'({_fmt_cuit(cuit_propio)}) — {detalle}. Verificá con qué CUIT '
+                  f'entraste a ARCA antes de bajar "Mis Comprobantes".')
             return render_template('comprobantes_importar.html', resumen=None)
 
         n_imp = n_dup = n_skip = 0
