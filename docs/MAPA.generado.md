@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-07-21 18:21 · rama `feat/ventas-droga-anual-filtro-lab` · commit `6b36c64`
+Generado: 2026-07-21 18:59 · rama `fix/sync-lock-timeout` · commit `e476153`
 
 **772 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **28 services** · **11 parsers**
 
@@ -948,21 +948,21 @@ Generado: 2026-07-21 18:21 · rama `feat/ventas-droga-anual-filtro-lab` · commi
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/admin/fraccionado-master/run` | POST | [`fraccionado_master_run`](../routes/observer_sync.py#L537) |
-| `/admin/observer-config` | POST | [`observer_config_save`](../routes/observer_sync.py#L612) |
-| `/admin/observer-match-productos` | POST | [`observer_match_productos`](../routes/observer_sync.py#L518) |
-| `/admin/observer-push-render` | POST | [`observer_push_render`](../routes/observer_sync.py#L695) |
-| `/admin/observer-sync` | GET | [`observer_sync_panel`](../routes/observer_sync.py#L382) |
-| `/admin/observer-sync/<entidad>` | POST | [`observer_sync_run`](../routes/observer_sync.py#L439) |
-| `/admin/observer/diagnostico` | GET | [`observer_diagnostico`](../routes/observer_sync.py#L603) |
-| `/admin/push-cadencias` | POST | [`push_cadencias`](../routes/observer_sync.py#L663) |
-| `/admin/push-productos-master` | POST | [`push_productos_master`](../routes/observer_sync.py#L629) |
-| `/admin/sync-audit` | GET | [`sync_audit_panel`](../routes/observer_sync.py#L305) |
-| `/api/auto-sync` | POST | [`api_auto_sync`](../routes/observer_sync.py#L732) |
-| `/api/auto-sync/status` | GET | [`api_auto_sync_status`](../routes/observer_sync.py#L775) |
-| `/producto/<int:producto_id>/desvincular` | POST | [`producto_desvincular`](../routes/observer_sync.py#L721) |
-| `/producto/<int:producto_id>/vincular/<int:observer_id>` | POST | [`producto_vincular`](../routes/observer_sync.py#L589) |
-| `/productos/sin-vincular` | GET | [`productos_sin_vincular`](../routes/observer_sync.py#L561) |
+| `/admin/fraccionado-master/run` | POST | [`fraccionado_master_run`](../routes/observer_sync.py#L543) |
+| `/admin/observer-config` | POST | [`observer_config_save`](../routes/observer_sync.py#L618) |
+| `/admin/observer-match-productos` | POST | [`observer_match_productos`](../routes/observer_sync.py#L524) |
+| `/admin/observer-push-render` | POST | [`observer_push_render`](../routes/observer_sync.py#L701) |
+| `/admin/observer-sync` | GET | [`observer_sync_panel`](../routes/observer_sync.py#L388) |
+| `/admin/observer-sync/<entidad>` | POST | [`observer_sync_run`](../routes/observer_sync.py#L445) |
+| `/admin/observer/diagnostico` | GET | [`observer_diagnostico`](../routes/observer_sync.py#L609) |
+| `/admin/push-cadencias` | POST | [`push_cadencias`](../routes/observer_sync.py#L669) |
+| `/admin/push-productos-master` | POST | [`push_productos_master`](../routes/observer_sync.py#L635) |
+| `/admin/sync-audit` | GET | [`sync_audit_panel`](../routes/observer_sync.py#L311) |
+| `/api/auto-sync` | POST | [`api_auto_sync`](../routes/observer_sync.py#L738) |
+| `/api/auto-sync/status` | GET | [`api_auto_sync_status`](../routes/observer_sync.py#L781) |
+| `/producto/<int:producto_id>/desvincular` | POST | [`producto_desvincular`](../routes/observer_sync.py#L727) |
+| `/producto/<int:producto_id>/vincular/<int:observer_id>` | POST | [`producto_vincular`](../routes/observer_sync.py#L595) |
+| `/productos/sin-vincular` | GET | [`productos_sin_vincular`](../routes/observer_sync.py#L567) |
 
 ### `routes/ofertas_bot.py`
 
