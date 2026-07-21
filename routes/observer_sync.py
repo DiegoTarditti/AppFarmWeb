@@ -16,7 +16,13 @@ import observer_source
 # El sync se coordina vía la tabla `sync_lock` (singleton id=1) — un
 # `threading.Lock` en memoria no funciona con `gunicorn --preload --workers 2`
 # porque cada worker forkea su copia y dos workers pueden disparar en paralelo.
-_SYNC_TIMEOUT_MIN = 60  # si pasaron > 60 min sin liberar → lock abandonado
+# Umbral de auto-limpieza del lock zombie: si `iniciado_en` es más viejo que
+# esto, `_sync_lock_acquire` lo toma igual (auto-cleanup). Un sync completo
+# normal tarda ~7-10 min; ponemos 15 para dejar margen y que un restart del
+# web container (que mata al thread sin liberar el lock) no bloquee más de
+# 15 min al próximo sync del cron. Antes era 60 min → zombies tardaban 1h
+# en auto-limpiarse (Diego 2026-07-21).
+_SYNC_TIMEOUT_MIN = 15
 
 
 def _sync_lock_acquire():
