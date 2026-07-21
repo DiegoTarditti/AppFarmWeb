@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-07-21 18:59 · rama `fix/sync-lock-timeout` · commit `e476153`
+Generado: 2026-07-21 19:31 · rama `chore/panel-remoto-worker-versionado` · commit `233a34b`
 
 **772 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **28 services** · **11 parsers**
 
