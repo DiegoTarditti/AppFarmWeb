@@ -524,6 +524,48 @@ def init_app(app):
                             'producto': (r['producto'] or '').strip(),
                             'n_veces': r['n_veces'],
                         })
+
+                # Detalle de dispensas por droga: fecha + médico + producto +
+                # cantidad + importes. Cada renglón de receta es una fila.
+                # LEFT JOIN a DW.MedicosMatriculas (matrícula → id_medico) +
+                # DW.Medicos (id_medico → nombre). El nombre en Praxis se llama
+                # `Medico`, no `Nombre`.
+                dispensas_por_droga = {}
+                if drogas:
+                    cur.execute(f"""
+                        SELECT pr.IdNombresDrogas AS id_droga,
+                               r.IdReceta,
+                               r.NumeroReceta,
+                               r.FechaDeVenta,
+                               r.MatriculaMedico,
+                               m.Medico AS medico_nombre,
+                               rr.Cantidad,
+                               rr.ImporteRenglon,
+                               rr.ImporteACargoOS,
+                               pr.Producto
+                          FROM Gestion.Recetas r
+                          JOIN Gestion.RecetasRenglones rr ON rr.IdReceta = r.IdReceta
+                          JOIN DW.Productos pr             ON pr.IdProducto = rr.IdProducto
+                          LEFT JOIN DW.MedicosMatriculas mm ON mm.Matricula = r.MatriculaMedico
+                          LEFT JOIN DW.Medicos m           ON m.IdMedico = mm.IdMedico
+                         WHERE r.NumeroAfiliado = %s
+                           AND r.Anulada = 0 AND rr.Rechazado = 0
+                           AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
+                           AND pr.IdNombresDrogas IN ({placeholders})
+                         ORDER BY pr.IdNombresDrogas, r.FechaDeVenta DESC
+                    """, tuple([numero] + ids))
+                    for r in cur.fetchall():
+                        dispensas_por_droga.setdefault(r['id_droga'], []).append({
+                            'id_receta':          r['IdReceta'],
+                            'numero_receta':      r['NumeroReceta'],
+                            'fecha_venta':        r['FechaDeVenta'],
+                            'medico_matricula':   r['MatriculaMedico'],
+                            'medico_nombre':      (r['medico_nombre'] or '').strip() or None,
+                            'producto':           (r['Producto'] or '').strip(),
+                            'cantidad':           int(r['Cantidad'] or 0),
+                            'importe':            float(r['ImporteRenglon'] or 0),
+                            'importe_os':         float(r['ImporteACargoOS'] or 0),
+                        })
         finally:
             conn.close()
 
@@ -542,6 +584,7 @@ def init_app(app):
                 'importe_total': float(d['importe_total'] or 0),
                 'cargo_os_total': float(d['cargo_os_total'] or 0),
                 'presentaciones': pres_por_droga.get(d['id_droga'], []),
+                'dispensas_detalle': dispensas_por_droga.get(d['id_droga'], []),
             }
             if cad is not None and cad_min <= cad <= cad_max:
                 sugeridos.append(item)

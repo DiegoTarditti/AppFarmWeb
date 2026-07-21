@@ -49,6 +49,25 @@
   .ca-razon.rapida { background: rgba(251,191,36,.14); color: var(--ds-warn); }
   .ca-razon.lenta { background: rgba(196,181,253,.14); color: var(--ds-violet); }
   .ca-razon.unica { background: rgba(200,200,200,.14); color: var(--ds-text-mute); }
+
+  /* Detalle expandible por droga: fecha + médico + presentación + cantidad + importes */
+  .ca-det { cursor: pointer; }
+  .ca-det > summary { list-style: none; cursor: pointer; }
+  .ca-det > summary::-webkit-details-marker { display: none; }
+  .ca-det[open] > summary .ca-det-hint::before { content: '▾ '; }
+  .ca-det:not([open]) > summary .ca-det-hint::before { content: '▸ '; }
+  .ca-det-hint { font-size: 10px; color: var(--ds-mint); margin-left: 8px; opacity: .8; }
+  .ca-det[open] > summary .ca-det-hint::before { content: ''; }
+  .ca-det[open] > summary .ca-det-hint { display: none; }
+
+  .ca-disp { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 11px; background: rgba(0,0,0,.15); border-radius: 6px; overflow: hidden; }
+  .ca-disp thead th { background: rgba(255,255,255,.03); text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); padding: 5px 8px; border-bottom: 1px solid var(--ds-line); }
+  .ca-disp thead th.r { text-align: right; }
+  .ca-disp td { padding: 4px 8px; color: var(--ds-text); border-bottom: 1px solid rgba(255,255,255,.03); }
+  .ca-disp td.r { text-align: right; font-variant-numeric: tabular-nums; }
+  .ca-disp td.mono { font-family: 'SF Mono','Menlo','Consolas',monospace; font-size: 10.5px; }
+  .ca-disp .ca-mut { color: var(--ds-text-mute); font-size: 10.5px; }
+  .ca-mat { color: var(--ds-text-mute); margin-left: 4px; font-size: 10px; }
 </style>
 {% endblock %}
 
@@ -151,12 +170,54 @@
         {% for s in sugeridos %}
         <tr>
           <td>
-            <div><b>{{ s.droga }}</b></div>
-            <div class="ca-pres">
-              {% for p in s.presentaciones %}
-              <span class="pill">{{ p.producto }}<span class="n">×{{ p.n_veces }}</span></span>
-              {% endfor %}
-            </div>
+            <details class="ca-det">
+              <summary>
+                <b>{{ s.droga }}</b>
+                {% if s.dispensas_detalle %}
+                <span class="ca-det-hint">▸ Ver dispensas ({{ s.dispensas_detalle|length }})</span>
+                {% endif %}
+              </summary>
+              <div class="ca-pres" style="margin-top:6px;">
+                {% for p in s.presentaciones %}
+                <span class="pill">{{ p.producto }}<span class="n">×{{ p.n_veces }}</span></span>
+                {% endfor %}
+              </div>
+              {% if s.dispensas_detalle %}
+              <table class="ca-disp">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Médico</th>
+                    <th>Presentación</th>
+                    <th class="r">Cant</th>
+                    <th class="r">Importe</th>
+                    <th class="r">OS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for d in s.dispensas_detalle %}
+                  <tr>
+                    <td class="mono">{{ d.fecha_venta.strftime('%d/%m/%Y') if d.fecha_venta else '—' }}</td>
+                    <td>
+                      {% if d.medico_nombre %}
+                        {{ d.medico_nombre }}
+                        <span class="mono ca-mat">M {{ d.medico_matricula }}</span>
+                      {% elif d.medico_matricula %}
+                        <span class="mono">M {{ d.medico_matricula }}</span>
+                      {% else %}
+                        <span class="ca-mut">—</span>
+                      {% endif %}
+                    </td>
+                    <td class="ca-mut">{{ d.producto }}</td>
+                    <td class="r">{{ d.cantidad }}</td>
+                    <td class="r">${{ '{:,.0f}'.format(d.importe).replace(',', '.') }}</td>
+                    <td class="r">${{ '{:,.0f}'.format(d.importe_os).replace(',', '.') }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              {% endif %}
+            </details>
           </td>
           <td class="r">{{ s.dispensas }}</td>
           <td class="r">{{ s.cadencia_dias }}d</td>
