@@ -9,6 +9,7 @@ from flask import flash, redirect, render_template, request, url_for
 
 import database
 from helpers import get_providers
+from services.cuenta_corriente import movimientos_proveedor
 
 # Códigos AFIP de Nota de Crédito → restan (haber). El resto (facturas, ND) suma (debe).
 _ARCA_NC = {3, 8, 13, 53, 110, 112, 113, 114, 119, 203, 208, 213}
@@ -108,108 +109,23 @@ def init_app(app):
             prov_list = get_providers()
 
             provider_id = request.args.get('proveedor', type=int)
-            provider = None
+            provider = session.get(database.Provider, provider_id) if provider_id else None
+
             movimientos = []
             saldo_total = 0
-
-            if provider_id:
-                provider = session.get(database.Provider, provider_id)
-
+            total_prefac = 0
             if provider:
-                q_inv = session.query(database.Invoice)
-                if provider.cuit:
-                    q_inv = q_inv.filter(
-                        (database.Invoice.proveedor_cuit == provider.cuit) |
-                        (database.Invoice.proveedor_razon == provider.razon_social)
-                    )
-                else:
-                    q_inv = q_inv.filter(database.Invoice.proveedor_razon == provider.razon_social)
-                invoices = q_inv.order_by(database.Invoice.fecha).all()
-
-                pagos_ajustes = (session.query(database.PagoAjusteCC)
-                                 .filter_by(proveedor_id=provider_id)
-                                 .order_by(database.PagoAjusteCC.fecha).all())
-
-                inv_ids = [inv.id for inv in invoices]
-                reclamos_map = {}
-                if inv_ids:
-                    for c in session.query(database.Claim).filter(database.Claim.factura_id.in_(inv_ids)).all():
-                        reclamos_map[c.factura_id] = c.estado
-                ingresadas = set()
-                if inv_ids:
-                    from sqlalchemy import distinct
-                    ingresadas = {r[0] for r in session.query(distinct(database.StockDifference.factura_id))
-                                  .filter(database.StockDifference.factura_id.in_(inv_ids)).all()}
-
-                for inv in invoices:
-                    signo = 1 if inv.tipo_comprobante == 'FAC' else -1
-                    reclamo_est = reclamos_map.get(inv.id)
-                    obs_parts = []
-                    if reclamo_est:
-                        obs_parts.append(f'Reclamo: {reclamo_est}')
-                    movimientos.append({
-                        'fecha': inv.fecha,
-                        'fecha_proceso': inv.creado_en.strftime('%d/%m/%Y') if inv.creado_en else '',
-                        'tipo': inv.tipo_comprobante,
-                        'comprobante': inv.numero_factura or '',
-                        'debe': float(abs(inv.total or 0)) if signo == 1 else 0,
-                        'haber': float(abs(inv.total or 0)) if signo == -1 else 0,
-                        'obs': ' · '.join(obs_parts),
-                        'ingresada': inv.id in ingresadas,
-                        'reclamo_estado': reclamo_est,
-                        'conciliado': inv.conciliado,
-                        'origen': 'factura',
-                        'id': inv.id,
-                    })
-                for pa in pagos_ajustes:
-                    es_debe = pa.tipo == 'AJUSTE_POS'
-                    movimientos.append({
-                        'fecha': pa.fecha,
-                        'fecha_proceso': '',
-                        'tipo': pa.tipo,
-                        'comprobante': pa.numero_comprobante or '',
-                        'debe': float(pa.monto) if es_debe else 0,
-                        'haber': float(pa.monto) if not es_debe else 0,
-                        'obs': pa.observaciones or '',
-                        'ingresada': None,
-                        'reclamo_estado': None,
-                        'conciliado': pa.conciliado,
-                        'origen': 'manual',
-                        'id': pa.id,
-                    })
-                # Pagos estructurados del módulo Contabilidad → haber.
-                pagos_estr = (session.query(database.Pago)
-                              .filter_by(proveedor_id=provider_id)
-                              .order_by(database.Pago.fecha).all())
-                for pg in pagos_estr:
-                    movimientos.append({
-                        'fecha': pg.fecha,
-                        'fecha_proceso': '',
-                        'tipo': 'PAGO',
-                        'comprobante': pg.nro_comprobante or '',
-                        'debe': 0,
-                        'haber': float(pg.monto or 0),
-                        'obs': pg.observaciones or '',
-                        'ingresada': None,
-                        'reclamo_estado': None,
-                        'conciliado': False,
-                        'origen': 'pago',
-                        'id': pg.id,
-                    })
-
-                movimientos.sort(key=lambda m: (m['fecha'], m['tipo']))
-                saldo = 0
-                for m in movimientos:
-                    saldo += m['debe'] - m['haber']
-                    m['saldo'] = saldo
-                saldo_total = saldo
+                movimientos, resumen = movimientos_proveedor(session, provider)
+                saldo_total = resumen['saldo']
+                total_prefac = resumen['total_prefac']
 
             prov = {'id': provider.id, 'razon_social': provider.razon_social,
                     'cuit': provider.cuit or ''} if provider else None
 
             return render_template('cuenta_corriente.html', provider=prov,
                                    proveedores=prov_list, provider_id=provider_id or 0,
-                                   movimientos=movimientos, saldo_total=saldo_total)
+                                   movimientos=movimientos, saldo_total=saldo_total,
+                                   total_prefac=total_prefac)
 
     @app.route('/comprobantes/importar', methods=['GET', 'POST'])
     def comprobantes_importar():
@@ -313,8 +229,13 @@ def init_app(app):
         with database.get_db() as session:
             try:
                 tipo = request.form.get('tipo', '').strip()
-                if tipo not in ('PAGO', 'NCR', 'AJUSTE_POS', 'AJUSTE_NEG'):
-                    flash('Tipo inválido.')
+                # Solo ajustes: un pago se carga por /cuentas-corrientes/pagos, que
+                # lo imputa a facturas y descuenta de una cuenta. Si se pudiera
+                # cargar también acá, el mismo pago entraba dos veces al saldo.
+                # Las filas PAGO/NCR viejas se siguen leyendo en el extracto.
+                if tipo not in ('AJUSTE_POS', 'AJUSTE_NEG'):
+                    flash('Tipo inválido. Los pagos se registran desde Pagos, '
+                          'que los imputa a facturas.')
                     return redirect(url_for('cuentas_corrientes', proveedor=provider_id))
                 monto = float(request.form.get('monto', 0))
                 if monto <= 0:

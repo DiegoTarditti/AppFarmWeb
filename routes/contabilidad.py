@@ -11,7 +11,7 @@ from flask import flash, redirect, render_template, request, url_for
 from flask_login import login_required
 
 import database
-from routes.cuentas import _solo_digitos
+from services.cuenta_corriente import saldos_por_proveedor
 
 CONDICIONES_IVA = ['Responsable Inscripto', 'Monotributo', 'Exento',
                    'Consumidor Final', 'No Categorizado']
@@ -41,56 +41,14 @@ def init_app(app):
                      .filter(database.Provider.activo == True)  # noqa: E712
                      .order_by(database.Provider.razon_social).all())
 
-            # Facturas/NC indexadas por CUIT (dígitos) y por razón, para cruzar
-            # con cada proveedor (mismo criterio que la cuenta corriente).
-            by_cuit = defaultdict(list)
-            by_razon = defaultdict(list)
-            for iid, cuit, razon, total, fecha in session.query(
-                    database.Invoice.id, database.Invoice.proveedor_cuit,
-                    database.Invoice.proveedor_razon, database.Invoice.total,
-                    database.Invoice.fecha).all():
-                rec = (iid, float(total or 0), fecha)
-                if cuit:
-                    by_cuit[_solo_digitos(cuit)].append(rec)
-                if razon:
-                    by_razon[razon].append(rec)
-
-            # Pagos / ajustes por proveedor_id.
-            pagos = defaultdict(list)
-            for pid, tipo, monto, fecha in session.query(
-                    database.PagoAjusteCC.proveedor_id, database.PagoAjusteCC.tipo,
-                    database.PagoAjusteCC.monto, database.PagoAjusteCC.fecha).all():
-                pagos[pid].append((tipo, float(monto or 0), fecha))
-
-            # Pagos estructurados (módulo Pagos) → haber.
-            pagos_estr = defaultdict(list)
-            for pid, monto, fecha in session.query(
-                    database.Pago.proveedor_id, database.Pago.monto,
-                    database.Pago.fecha).all():
-                pagos_estr[pid].append((float(monto or 0), fecha))
+            # El saldo sale del mismo módulo que el extracto: si se calculara
+            # acá de nuevo, las dos pantallas vuelven a divergir.
+            saldos = saldos_por_proveedor(session)
 
             data = []
             for p in provs:
-                # Cruce de facturas (dedup por id: cuit OR razón).
-                vistos = {}
-                for rec in by_cuit.get(_solo_digitos(p.cuit), []):
-                    vistos[rec[0]] = rec
-                for rec in by_razon.get(p.razon_social, []):
-                    vistos[rec[0]] = rec
-                saldo = sum(r[1] for r in vistos.values())  # total ya viene con signo (NC negativo)
-                n_comp = len(vistos)
-                fechas = [r[2] for r in vistos.values() if r[2]]
-
-                for tipo, monto, fecha in pagos.get(p.id, []):
-                    saldo += monto if tipo == 'AJUSTE_POS' else -monto
-                    if fecha:
-                        fechas.append(fecha)
-                for monto, fecha in pagos_estr.get(p.id, []):
-                    saldo -= monto
-                    if fecha:
-                        fechas.append(fecha)
-
-                ultimo = max(fechas) if fechas else None
+                s = saldos.get(p.id) or {}
+                ultimo = s.get('ultimo_mov')
                 data.append({
                     'id': p.id,
                     'razon_social': p.razon_social,
@@ -98,8 +56,9 @@ def init_app(app):
                     'condicion_iva': p.condicion_iva or '',
                     'tipo': p.tipo or '',
                     'domicilio': p.domicilio or '',
-                    'n_comprobantes': n_comp,
-                    'saldo': saldo,
+                    'n_comprobantes': s.get('n_comprobantes', 0),
+                    'saldo': s.get('saldo', 0.0),
+                    'total_prefac': s.get('total_prefac', 0.0),
                     'ultimo_mov': ultimo.strftime('%d/%m/%Y') if ultimo else '',
                 })
 
