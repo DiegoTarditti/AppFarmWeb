@@ -957,6 +957,15 @@
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
             Ctas. Corrientes
         </a>
+        {# El módulo de Contabilidad esconde este sidebar (base_contab.html setea
+           hide_sidebar) y navega con su menú horizontal. Ese menú ya linkea de
+           vuelta a Ctas. Corrientes, pero sin esta entrada no había ninguna forma
+           de entrar salvo tipear /contabilidad a mano. #}
+        <a href="{{ url_for('contabilidad_index') }}"
+           class="{{ nav_active_cls if nav_active == 'contabilidad' else nav_link }}">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m-6 4h.01M12 11h.01M15 11h.01M9 15h.01M12 15h.01M15 15h.01M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
+            Contabilidad
+        </a>
         <a href="{{ url_for('claims_list') }}"
            class="{{ nav_active_cls if nav_active == 'reclamos' else nav_link }}">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M4.93 19h14.14A2 2 0 0020.93 17l-7.07-12a2 2 0 00-3.72 0L3.07 17A2 2 0 004.93 19z"/></svg>
