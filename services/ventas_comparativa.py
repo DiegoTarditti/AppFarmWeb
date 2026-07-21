@@ -215,13 +215,16 @@ def comparativa_producto_anual(session, anio, anio_prev=None, id_farmacia=None,
 
 
 def comparativa_droga_anual(session, anio, anio_prev=None, id_farmacia=None,
-                            mes_tope=None):
+                            mes_tope=None, lab_id=None):
     """Comparación año vs año jerárquica: por DROGA (monodroga) con drill-down
     a sus productos. Mismo criterio que comparativa_anual (importe/unidades
     netos de devoluciones, YTD hasta mes_tope).
 
     Los productos sin monodroga (perfumería, leche, OTC) caen en el bucket
     droga_id=0 → "Sin droga asignada". El front agrupa y despliega client-side.
+
+    Si `lab_id` viene: JOIN a ObsProducto y filtra solo productos de ese
+    laboratorio (para el filtro "Lab" del informe web).
 
     Estructura:
       drogas:    [ {id, droga, n, ci, pi, cu, pu} ]            # n = nº productos
@@ -235,7 +238,7 @@ def comparativa_droga_anual(session, anio, anio_prev=None, id_farmacia=None,
         id_farmacia = farmacia_operativa()
     tope = max(1, min(12, mes_tope or 12))
 
-    rows = (session.query(
+    q = (session.query(
                 ObsVentaDetalle.producto_observer.label('pid'),
                 ObsVentaDetalle.anio.label('anio'),
                 func.sum(ObsVentaDetalle.importe).label('imp'),
@@ -243,9 +246,12 @@ def comparativa_droga_anual(session, anio, anio_prev=None, id_farmacia=None,
             .filter(ObsVentaDetalle.id_farmacia == id_farmacia,
                     ObsVentaDetalle.tipo_operacion.in_(['V', 'D']),
                     ObsVentaDetalle.anio.in_([anio, anio_prev]),
-                    ObsVentaDetalle.mes <= tope)
-            .group_by(ObsVentaDetalle.producto_observer, ObsVentaDetalle.anio)
-            .all())
+                    ObsVentaDetalle.mes <= tope))
+    if lab_id:
+        q = (q.join(ObsProducto,
+                    ObsProducto.observer_id == ObsVentaDetalle.producto_observer)
+              .filter(ObsProducto.laboratorio_observer == lab_id))
+    rows = q.group_by(ObsVentaDetalle.producto_observer, ObsVentaDetalle.anio).all()
 
     prods = {}
     for r in rows:

@@ -79,6 +79,14 @@
           {% for a in anios %}<option value="{{ a }}" {% if a == anio %}selected{% endif %}>{{ a }} vs {{ a - 1 }}</option>{% endfor %}
         </select>
       </label>
+      <label>Laboratorio
+        <select name="lab_id" class="ds-input text-xs" style="min-width:220px;" onchange="this.form.submit()">
+          <option value="">(todos)</option>
+          {% for lid, lname in labs %}
+          <option value="{{ lid }}" {% if lid == lab_id %}selected{% endif %}>{{ lname }}</option>
+          {% endfor %}
+        </select>
+      </label>
     </form>
     <label>Métrica
       <div class="dd-toggle">

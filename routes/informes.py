@@ -236,7 +236,8 @@ def init_app(app):
     def informe_ventas_droga_anual():
         """Comparación año vs año POR DROGA (monodroga) con drill-down a productos.
         Tabla de drogas desplegable + top movers. Toggle importe/unidades.
-        Acumulado YTD sobre meses cerrados. Fuente: obs_ventas_detalle."""
+        Acumulado YTD sobre meses cerrados. Fuente: obs_ventas_detalle.
+        Filtro opcional por laboratorio (?lab_id=N)."""
         from datetime import date as _date
 
         from services.ventas_comparativa import anios_disponibles, comparativa_droga_anual
@@ -247,10 +248,26 @@ def init_app(app):
                 anio = int(request.args.get('anio') or (anios[0] if anios else hoy.year))
             except (TypeError, ValueError):
                 anio = anios[0] if anios else hoy.year
+            try:
+                lab_id = int(request.args.get('lab_id') or 0) or None
+            except (TypeError, ValueError):
+                lab_id = None
+            # Lista de labs para el dropdown (solo los que tienen productos con
+            # ventas — evitamos labs vacíos).
+            labs = (session.query(ObsLaboratorio.observer_id,
+                                  ObsLaboratorio.descripcion)
+                    .order_by(ObsLaboratorio.descripcion).all())
             mes_tope = (hoy.month - 1 or 1) if anio == hoy.year else 12
-            data = comparativa_droga_anual(session, anio, anio - 1, mes_tope=mes_tope)
+            data = comparativa_droga_anual(session, anio, anio - 1,
+                                           mes_tope=mes_tope, lab_id=lab_id)
+            lab_nombre = None
+            if lab_id:
+                lab = session.get(ObsLaboratorio, lab_id)
+                lab_nombre = lab.descripcion if lab else None
         return render_template('informes_ventas_droga_anual.html',
-                               data=data, anio=anio, anio_prev=anio - 1, anios=anios)
+                               data=data, anio=anio, anio_prev=anio - 1,
+                               anios=anios, labs=labs,
+                               lab_id=lab_id, lab_nombre=lab_nombre)
 
     # ── Crónicos PAMI: vista panorámica ─────────────────────────────────────
     # Detecta drogas que un afiliado PAMI recibe con cadencia mensual (20-55d)
