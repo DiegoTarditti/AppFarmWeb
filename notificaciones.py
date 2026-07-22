@@ -163,6 +163,13 @@ def evaluar_y_notificar(session, severidades=('critica', 'alta'), app_url: str =
 
         # Persistir
         if estado is None:
+            # Puede EXISTIR en DB pero no en `estados` — el snapshot filtra
+            # las 'resueltas' con ultima_notif >30 días. Si una alarma
+            # antigua resucita después de eso, cae acá. Sin este re-fetch,
+            # session.add() dispara UniqueViolation (nombre es PK).
+            estado = (session.query(AlarmaNotificada)
+                      .filter_by(nombre=nombre).first())
+        if estado is None:
             estado = AlarmaNotificada(
                 nombre=nombre,
                 ultima_notif=ahora,

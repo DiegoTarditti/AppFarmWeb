@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-07-21 19:35 · rama `chore/panel-remoto-worker-versionado` · commit `01b791f`
+Generado: 2026-07-22 16:31 · rama `fix/notificar-alarmas-unique-violation` · commit `a9717db`
 
 **772 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **28 services** · **11 parsers**
 
