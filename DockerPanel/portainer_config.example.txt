@@ -1,0 +1,18 @@
+# portainer_config.txt — gitignored, completar por máquina
+# Copiá este archivo a portainer_config.txt y completá los valores.
+
+# URL de Portainer en el servidor de la farmacia (con VPN activa)
+PORTAINER_URL=http://192.168.1.220:9000
+
+# Usuario y contraseña del panel Portainer
+PORTAINER_USER=admin
+PORTAINER_PASS=
+
+# Nombre (o parte del nombre) del container de la app web
+CONTAINER_NAME=appfarmweb-web-1
+
+# ID del entorno en Portainer (1 = "Local" en la mayoría de los casos)
+ENDPOINT_ID=1
+
+# Branch a pullear
+BRANCH=main
