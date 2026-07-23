@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr tesseract-ocr-spa \
     libglib2.0-0 libsm6 libxext6 libxrender-dev \
     ffmpeg \
+    git \
     curl ca-certificates gnupg \
     && install -d /usr/share/postgresql-common/pgdg \
     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
