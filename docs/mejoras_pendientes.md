@@ -1575,6 +1575,33 @@ de la PC de oficina (que hoy corre el DockerPanel tkinter).
   comandos desde Render (ej. desde el navegador móvil sin VPN), hay que
   portar el loop como systemd al server.
 
+### ⚠ Trampas operativas del server (aprendidas la mala)
+
+- **`docker compose restart` NO recarga env vars del `.env`.** Solo se
+  releen cuando el container se **CREA** (o recrea). Si cambiás algo del
+  `.env`, siempre hacer `docker compose up -d <servicio>` (idempotente:
+  Compose detecta el cambio y recrea; si nada cambió, no hace nada).
+  Detectado 2026-07-23 con Diego: cambié `OBSERVER_PORT=54572 → 54200`,
+  hice `restart web`, la app siguió apuntando al puerto viejo y falló
+  todos los syncs. La fix en 5 seg fue `docker compose up -d web`.
+  → Anotado también como comentario en `actualizar.sh`.
+
+- **El script `actualizar.sh` YA usa `docker compose up -d`** (no restart),
+  así que ese flujo está cubierto. La trampa aparece cuando alguien edita
+  `.env` y hace restart a mano.
+
+- **Migración de instancia SQL Server ObServer con puerto nuevo**: si
+  Praxis migra a un server nuevo con instancia nombrada distinta (ej.
+  `SRV-2K22\BADIA`), el puerto TCP suele cambiar. Chequear con PowerShell
+  en el server:
+  ```powershell
+  Get-Process sqlservr | ForEach-Object {
+    Get-NetTCPConnection -OwningProcess $_.Id -State Listen |
+      Select-Object LocalAddress, LocalPort
+  }
+  ```
+  El puerto que aparece en `0.0.0.0:XXXXX` es el que va en `OBSERVER_PORT`.
+
 ---
 
 **Cómo mantener este doc:**
