@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Eventos SLA{% endblock %}
+{% block main %}
+<style>
+  .sla-wrap { padding:16px 22px; max-width:1400px; margin:0 auto; }
+  .sla-resumen { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+  .sla-chip { padding:8px 14px; border-radius:10px; background:#FEF2F2; border:1.5px solid #FCA5A5;
+              font-size:13px; font-weight:600; color:#991B1B; display:inline-flex; align-items:center; gap:8px; }
+  .sla-chip .n { background:#B91C1C; color:#fff; padding:2px 9px; border-radius:999px; font-size:12px; }
+  .sla-filtros { display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+  .sla-filtros select, .sla-filtros button { padding:6px 11px; border-radius:8px; border:1px solid #D4D4D8;
+                                              background:#fff; font-size:13px; cursor:pointer; }
+  .sla-table { width:100%; border-collapse:collapse; background:#fff; border:1px solid #E5E7EB; border-radius:8px; overflow:hidden; font-size:12.5px; }
+  .sla-table th { background:#F3F4F6; color:#1F2937; text-align:left; padding:9px 11px; border-bottom:2px solid #D1D5DB; font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; }
+  .sla-table td { padding:8px 11px; border-bottom:1px solid #F3F4F6; vertical-align:top; color:#1F2937; }
+  .sla-table tbody tr:nth-child(even) td { background:#FAFAFA; }
+  .sla-table tbody tr:hover td { background:#FEF3C7; }
+  .badge-sev-aviso  { background:#FEF3C7; color:#92400E; padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:700; }
+  .badge-sev-critico { background:#FEE2E2; color:#991B1B; padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:700; }
+  .badge-tipo { display:inline-block; padding:2px 9px; border-radius:6px; font-size:11px; font-weight:600;
+                 background:#E0F2FE; color:#075985; border:1px solid #7DD3FC; }
+  .resuelto { color:#15803D; font-weight:600; font-size:11.5px; }
+  .pendiente { color:#92400E; font-weight:600; font-size:11.5px; }
+  .empty { padding:60px; text-align:center; color:#9CA3AF; font-size:13px; }
+  .ref-link { color:#1D4ED8; text-decoration:none; }
+  .ref-link:hover { text-decoration:underline; }
+</style>
+<div class="sla-wrap">
+  <h1 style="font-size:18px; font-weight:700; margin:0 0 12px;">📊 Eventos SLA <span style="font-size:12px; color:#6B7280; font-weight:500;">— log de demoras y desvíos del flujo de reparto</span></h1>
+
+  {# Resumen rápido: pendientes por tipo (sin filtros) #}
+  {% if por_tipo %}
+  <div class="sla-resumen">
+    {% for tipo_n, n in por_tipo %}
+      <a href="?tipo={{ tipo_n }}&estado=pendientes" class="sla-chip" style="text-decoration:none;">
+        {{ tipo_n }} <span class="n">{{ n }}</span>
+      </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# Filtros #}
+  <form method="get" class="sla-filtros">
+    <label>Tipo
+      <select name="tipo">
+        <option value="">— todos —</option>
+        {% for t in ['reaviso_publicacion','retiro_excedido','entrega_excedida','drogueria_excedida','sin_respuesta_cadete','sin_respuesta_cliente'] %}
+          <option value="{{ t }}" {{ 'selected' if tipo == t }}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Severidad
+      <select name="sev">
+        <option value="">— todas —</option>
+        <option value="aviso" {{ 'selected' if sev == 'aviso' }}>aviso</option>
+        <option value="critico" {{ 'selected' if sev == 'critico' }}>crítico</option>
+      </select>
+    </label>
+    <label>Estado
+      <select name="estado">
+        <option value="pendientes" {{ 'selected' if estado == 'pendientes' }}>Pendientes</option>
+        <option value="resueltos" {{ 'selected' if estado == 'resueltos' }}>Resueltos</option>
+        <option value="todos" {{ 'selected' if estado == 'todos' }}>Todos</option>
+      </select>
+    </label>
+    <button type="submit">Filtrar</button>
+    <a href="/informes/eventos-sla" style="font-size:12px; color:#6B7280; text-decoration:none;">limpiar</a>
+    <span style="flex:1"></span>
+    <span style="font-size:11.5px; color:#6B7280;">{{ eventos|length }} resultado{{ 's' if eventos|length != 1 }} (tope 500)</span>
+  </form>
+
+  {% if eventos %}
+  <table class="sla-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Cuándo</th>
+        <th>Tipo</th>
+        <th>Sev</th>
+        <th>Pedido</th>
+        <th>Conv / Cadete</th>
+        <th>Min</th>
+        <th>Detalle</th>
+        <th>Resuelto</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in eventos %}
+      <tr>
+        <td>{{ e.id }}</td>
+        <td style="white-space:nowrap; font-size:11.5px; color:#6B7280;">{{ e.creado_en.strftime('%d/%m %H:%M') if e.creado_en else '' }}</td>
+        <td><span class="badge-tipo">{{ e.tipo }}</span></td>
+        <td><span class="badge-sev-{{ e.severidad }}">{{ e.severidad }}</span></td>
+        <td>
+          {% if e.pedido_id %}<a class="ref-link" href="/reparto/planilla?fecha=&pid={{ e.pedido_id }}">#{{ e.pedido_id }}</a>{% else %}—{% endif %}
+        </td>
+        <td style="font-size:11.5px;">
+          {% if e.conv_id %}conv #{{ e.conv_id }}{% endif %}
+          {% if e.cadete_id %}{% if e.conv_id %} · {% endif %}cad #{{ e.cadete_id }}{% endif %}
+          {% if not e.conv_id and not e.cadete_id %}—{% endif %}
+        </td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums;">{{ e.minutos if e.minutos is not none else '—' }}</td>
+        <td style="max-width:380px; font-size:11.5px;">{{ e.detalle or '—' }}</td>
+        <td>
+          {% if e.resuelto_en %}
+            <span class="resuelto">✓ {{ e.resuelto_en.strftime('%d/%m %H:%M') }}</span>
+          {% else %}
+            <span class="pendiente">— pendiente</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No hay eventos con esos filtros 🎉</div>
+  {% endif %}
+</div>
+{% endblock main %}

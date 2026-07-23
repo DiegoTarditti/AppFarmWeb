@@ -20,6 +20,9 @@
               class="bg-brand hover:bg-brand-hover text-white px-3 py-1.5 rounded text-sm font-semibold">
         + Nueva rendición
       </button>
+      <a href="{{ url_for('rendicion_grupos') }}"
+         class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm"
+         title="Definir grupos de obras sociales (Esencial / Receta Solidario / etc.)">🗂 Grupos OS</a>
       <a href="{{ url_for('devoluciones_list') }}"
          class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">← Recetas</a>
     </div>
@@ -46,6 +49,7 @@
           <th class="px-3 py-2 text-left">Estado</th>
           <th class="px-3 py-2 text-left">Período</th>
           <th class="px-3 py-2 text-left">Etiqueta</th>
+          <th class="px-3 py-2 text-left" title="Tipo de rendición (grupo de OS)">Tipo</th>
           {% if _rol != 'rendicion' %}
           <th class="px-3 py-2 text-left">Vendedor</th>
           {% endif %}
@@ -83,6 +87,15 @@
             {% else %}<span class="text-gray-400">—</span>{% endif %}
           </td>
           <td class="px-3 py-2 text-xs">{{ lote.etiqueta or '—' }}</td>
+          <td class="px-3 py-2 text-xs">
+            {% if it.grupos %}
+            <div class="flex flex-wrap gap-1">
+              {% for g in it.grupos %}
+              <span class="inline-block bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap" title="{{ g }}">{{ g[:8] }}{% if g|length > 8 %}…{% endif %}</span>
+              {% endfor %}
+            </div>
+            {% else %}<span class="text-gray-300 italic">—</span>{% endif %}
+          </td>
           {% if _rol != 'rendicion' %}
           <td class="px-3 py-2 text-xs">{{ lote.vendedor_nombre or '—' }}</td>
           {% endif %}

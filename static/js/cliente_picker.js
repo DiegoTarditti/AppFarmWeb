@@ -1,0 +1,733 @@
+/* Componente reutilizable: buscador de cliente + dirección con autocomplete,
+   manejo de domicilios guardados, geocodificación y modales nuevo/editar.
+
+   API pública (window.ClientePicker):
+     init({onAddressChange, onClienteSelected, onClear})
+       - Hookea callbacks opcionales. onAddressChange dispara al cambiar
+         dirección/coords/ciudad (útil para que el host re-cotice envío).
+         onClienteSelected dispara al pickCli. onClear dispara al limpiar.
+     getValues()           → {cid, oid, clienteNombre, direccion, ciudad,
+                              piso, depto, referencia, domicilioId,
+                              domLat, domLng}
+     clear()               → resetea inputs y state interno
+     populateCiudades(arr) → llena el <select> de ciudades (si ya están en
+                              el doc, pasarlas acá)
+
+   IDs esperados en el DOM (ver _cliente_picker.html):
+     pCliente, pDir, pPiso, pDepto, pRef, pCiudad, pDom, pDomWrap,
+     pDomSingle, pDomCount, pDomCoords, resCli, resGeo, btnEditarCli,
+     modalNuevo, modalEditar, ncNombre, ncApellido, ncDni, ncTel,
+     edNombre, edApellido, edDni, edTel, edDom, edCiudad, edObsRef
+
+   Estado global expuesto en window (legado, para integración con el host):
+     window._cid, window._oid, window._doms, window._domLat, window._domLng,
+     window._domGeoAt, window._editCid
+
+   Endpoints consumidos (movidos a /api/clientes/* el 2026-06-10; los paths
+   viejos /reparto/api/* siguen vivos como redirects 308 en routes/reparto.py):
+     GET  /api/clientes/buscar?q=
+     GET  /api/clientes/ficha?cliente_id= | observer_id=
+     GET  /api/clientes/geocodificar?q=&loc=
+     GET  /api/clientes/observer/<oid>/domicilios
+     POST /api/clientes
+     POST /api/clientes/<id>
+     POST /api/clientes/domicilios/<id>/geo
+     POST /api/clientes/separar-direccion
+*/
+(function(){
+  'use strict';
+
+  const callbacks = {
+    onAddressChange: null,
+    onClienteSelected: null,
+    onClear: null,
+  };
+
+  const $ = id => document.getElementById(id);
+
+  function esc(s){
+    return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  async function jpost(u, b){
+    return (await fetch(u, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(b||{})
+    })).json();
+  }
+
+  function fmtFechaGeo(iso){
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleDateString('es-AR', {day:'2-digit', month:'2-digit', year:'2-digit'});
+  }
+
+  function semaforoGeo(iso){
+    if (!iso) return {bg:'transparent', label:'(sin fecha)'};
+    const ahora = new Date();
+    const ts = new Date(iso);
+    const meses = (ahora - ts) / (1000*60*60*24*30.4);
+    if (meses < 3)  return {bg:'rgba(16,185,129,0.28)', label:'reciente'};
+    if (meses < 12) return {bg:'rgba(180,83,9,0.22)',   label:'>3 meses'};
+    return                  {bg:'rgba(185,28,28,0.22)',  label:'>1 año'};
+  }
+
+  function renderDomCoords(){
+    const el = $('pDomCoords');
+    if (!el) return;
+    if (window._domLat != null && window._domLng != null){
+      // Mostramos 2 decimales (suficiente para reconocer la zona). Para Maps
+      // usamos las coords precisas (sin redondear) así el pin no se desplaza.
+      const latPrec = Number(window._domLat);
+      const lngPrec = Number(window._domLng);
+      // 4 decimales: a 2 decimales pines a pocas cuadras se ven idénticos y
+      // el operador no sabe cuál cargó. 4 dec = ~11 m de precisión, suficiente.
+      const lat = latPrec.toFixed(4);
+      const lng = lngPrec.toFixed(4);
+      const sem = semaforoGeo(window._domGeoAt);
+      // Saco 'reciente' del badge (Diego 2026-06-15): el color del bg ya
+      // indica antigüedad (verde=reciente, naranja=>3m, rojo=>1año). Mantenemos
+      // la fecha si la tenemos para que sirva como referencia rápida.
+      const labelTxt = sem.label === 'reciente' ? '' : sem.label;
+      const tail = [labelTxt, window._domGeoAt ? fmtFechaGeo(window._domGeoAt) : ''].filter(Boolean).join(' · ');
+      el.innerHTML = `
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:nowrap; white-space:nowrap;">
+          <span style="font-size:14px; font-weight:700; color:#064E3B; font-family:monospace;">📍 ${lat}, ${lng}</span>
+          ${tail ? `<span style="font-size:13px; font-weight:600; color:#0A0908;">${tail}</span>` : ''}
+          <a href="https://www.google.com/maps?q=${latPrec},${lngPrec}" target="_blank" rel="noopener"
+             style="font-size:11px; font-weight:700; color:#fff; background:#185FA5;
+                    padding:5px 12px; border-radius:8px; text-decoration:none;"
+             title="Abrir en Google Maps">🗺️ Ver en mapa</a>
+        </div>`;
+      el.style.background = sem.bg;
+      el.style.padding = '4px 10px';
+      el.style.borderRadius = '8px';
+      el.style.marginTop = '4px';
+    } else if (window._geoRefStatus === 'pending'){
+      // Auto-georef no resolvio inequivocamente → CTA visible.
+      // No distinguimos 'no_match' vs 'multiple' porque para el operador es lo
+      // mismo (tiene que confirmar manual). Y los contadores no siempre coinciden
+      // con lo que muestra el dropdown despues por race conditions de loc.
+      el.innerHTML = `
+        <button type="button" onclick="ClientePicker.buscarGeoSugerencias()"
+                style="background:rgba(239,159,39,0.18); color:#EF9F27; border:1px solid rgba(239,159,39,0.45);
+                       border-radius:8px; padding:6px 10px; font-size:11px; font-weight:600; cursor:pointer; width:100%; text-align:center;">
+          🗺️ ⚠ Identificar con Maps
+        </button>`;
+      el.style.background = 'transparent';
+      el.style.padding = '0';
+      el.style.marginTop = '0';
+    } else {
+      el.innerHTML = `<span class="muted2" style="font-size:11px;">sin geolocalización</span>`;
+      el.style.background = 'transparent';
+      el.style.padding = '2px 0';
+      el.style.marginTop = '0';
+    }
+    refreshDomWrapVisibility();
+  }
+
+  function refreshDomWrapVisibility(){
+    const wrap = $('pDomWrap');
+    if (!wrap) return;  // host sin bloque domicilio (ej. /reparto)
+    const n = (window._doms||[]).length;
+    const hayCoords = window._domLat != null && window._domLng != null;
+    wrap.style.display = (n>0 || hayCoords) ? '' : 'none';
+  }
+
+  function actualizarDomDropdown(doms){
+    const sel = $('pDom');
+    const single = $('pDomSingle');
+    const count = $('pDomCount');
+    if (!sel) return;  // host sin bloque domicilio
+    const n = (doms || []).length;
+    if (n >= 2){
+      sel.style.display = '';
+      if (single) single.style.display = 'none';
+      if (count) count.textContent = `(${n} guardados)`;
+    } else if (n === 1){
+      sel.style.display = 'none';
+      const d = doms[0];
+      if (single){
+        const loc = d.localidad ? ` · ${esc(d.localidad)}` : '';
+        single.innerHTML = `<b>${esc(d.etiqueta||'Casa')}</b> — ${esc(d.direccion||'')}${loc}`;
+        single.style.display = '';
+      }
+      if (count) count.textContent = '';
+    } else {
+      sel.style.display = 'none';
+      if (single) single.style.display = 'none';
+      if (count) count.textContent = '';
+    }
+    refreshDomWrapVisibility();
+  }
+
+  let _cliTmr = null;
+  function onClienteInput(){
+    window._oid = null;
+    window._cid = null;
+    $('btnEditarCli').style.display = 'none';
+    clearTimeout(_cliTmr);
+    const q = $('pCliente').value.trim();
+    const box = $('resCli');
+    if (q.length < 2){ box.style.display='none'; return; }
+    _cliTmr = setTimeout(buscarCli, 250);
+  }
+
+  async function buscarCli(){
+    const q = $('pCliente').value.trim(); if(q.length<2) return;
+    const d = await (await fetch('/api/clientes/buscar?q='+encodeURIComponent(q))).json();
+    const box = $('resCli');
+    const cs = d.clientes||[];
+    box.style.display = cs.length?'block':'none';
+    box.innerHTML = cs.map(c=>{
+      const ref = c.cliente_id ? `loc:${c.cliente_id}` : `obs:${c.observer_id}`;
+      const doc = c.documento ? ` <span class="muted2">${esc(String(c.documento))}</span>` : '';
+      const tel = c.telefono ? ` <span class="muted2" style="font-size:10px;">📞${esc(c.telefono)}</span>` : '';
+      const dirCiu = [c.direccion, c.ciudad].filter(Boolean).join(', ');
+      const dom = dirCiu ? `<div class="muted2" style="font-size:10px; margin-top:1px;">🏠 ${esc(dirCiu)}</div>` : '';
+      return `<div class="it" onclick='ClientePicker.pickCli(${JSON.stringify(ref)}, ${JSON.stringify(c.nombre)}, ${c.cliente_id||'null'}, ${c.observer_id||'null'})'>
+        <b>${esc(c.nombre)}</b>${doc}${tel}
+        ${dom}
+      </div>`;
+    }).join('');
+  }
+
+  async function pickCli(ref, nombre, cid, oid){
+    $('pCliente').value = nombre;
+    $('resCli').style.display='none';
+    await loadCliente({cliente_id: cid, observer_id: oid});
+    // Disparamos el callback SOLO en selección manual (este path) — loadCliente
+    // ya no lo dispara para evitar loops cuando los hosts (p.ej. /atencion)
+    // reaccionan al callback re-llamando a loadCliente.
+    if (callbacks.onClienteSelected) callbacks.onClienteSelected({cliente_id: cid, observer_id: oid});
+  }
+
+  // Carga ficha sin pasar por el autocomplete (entrada externa: deep-link
+  // /pedido/nuevo?observer_id=X, transición desde /atencion, etc.).
+  async function loadCliente({cliente_id, observer_id, conv_id} = {}){
+    window._oid = observer_id || null;
+    window._cid = cliente_id || null;
+    _pintarVinculoBadge();
+    let params = cliente_id ? `cliente_id=${cliente_id}`
+                            : `observer_id=${observer_id}`;
+    // Si tenemos conv_id (caso /atencion), el endpoint suma los DomicilioCliente
+    // huérfanos de la conv — pin que el cliente compartió antes del vínculo
+    // al Cliente. Sin esto el operador no ve esos domicilios y queda sin saber
+    // que el cliente ya compartió pin.
+    if (conv_id) params += `&conv_id=${conv_id}`;
+    const ficha = await (await fetch(`/api/clientes/ficha?${params}`)).json();
+    if(ficha && !ficha.error){
+      // La ficha local trae el cliente_id real (si en el load original solo
+      // venía observer_id, ahora podemos completarlo para el badge).
+      if (ficha.cliente_id && !window._cid){
+        window._cid = ficha.cliente_id;
+        _pintarVinculoBadge();
+      }
+      _pintarOsBadge(ficha.obra_social);
+      // Antes solo seteábamos pCliente si el input venía vacío, suponiendo que
+      // pickCli lo hubiera precargado. Bug: al cambiar de chat en /atencion el
+      // input quedaba con el nombre del cliente anterior porque el guard nunca
+      // pisaba. Ahora SIEMPRE actualizamos al nombre canónico de la ficha.
+      const raw = ficha.raw || {};
+      const visible = ficha.nombre || [raw.apellido, raw.nombre].filter(Boolean).join(', ');
+      if (visible) $('pCliente').value = visible;
+      const cid = window._cid;
+      const dir = ficha.direccion || ficha.domicilio || '';
+      const loc = ficha.localidad || ficha.ciudad || '';
+      if (dir) $('pDir').value = dir;
+      if (loc){
+        const selC = $('pCiudad');
+        let found = false;
+        for(let i=0;i<selC.options.length;i++){
+          if(selC.options[i].value===loc){ selC.selectedIndex=i; found=true; break; }
+        }
+        if (!found){
+          const opt = document.createElement('option');
+          opt.value = loc; opt.text = loc; opt.selected = true;
+          selC.appendChild(opt);
+        }
+      }
+      // Si la ficha ya viene con piso/depto/referencia parseados desde el
+      // backend (caso ObServer con campos embebidos en domicilio), los usamos
+      // directo sin pegar otra vez a /api/clientes/separar-direccion.
+      // pPiso/pDepto/pRef solo existen en hosts con bloque domicilio
+      // estructurado (no en /reparto que solo tiene pDir).
+      const _piso = $('pPiso');
+      const _dpto = $('pDepto');
+      const _ref  = $('pRef');
+      if (ficha.piso || ficha.depto || ficha.referencia){
+        if (_piso) _piso.value = ficha.piso || '';
+        if (_dpto) _dpto.value = ficha.depto || '';
+        if (_ref)  _ref.value  = ficha.referencia || '';
+      } else {
+        // Fallback: la ficha no parseó nada (ej. cliente local viejo); seguimos
+        // pegando a /api/clientes/separar-direccion sobre el texto del input.
+        const _dirEl = $('pDir');
+        if (_dirEl.value && (_dirEl.value.match(/(dto|dpto|depto|dep|departamento|dp\b|uf|piso|pb|planta baja|monoblock|torre|entre|°|º)/i) || ficha.direccion != null)){
+          try {
+            const r = await jpost('/api/clientes/separar-direccion', {texto: _dirEl.value});
+            if (r && r.direccion){
+              _dirEl.value = r.direccion;
+              if (_piso) _piso.value = r.piso || '';
+              if (_dpto) _dpto.value = r.depto || '';
+              if (_ref)  _ref.value  = r.referencia || '';
+            }
+          } catch(e) { /* ok, dejamos como está */ }
+        }
+      }
+      const doms = ficha.domicilios||[];
+      window._doms = doms;
+      actualizarDomDropdown(doms);
+      const algunoConGeo = doms.some(x => x.lat != null && x.lng != null);
+      if (!algunoConGeo && dir && callbacks.onAddressChange){
+        setTimeout(callbacks.onAddressChange, 100);
+      }
+      // Auto-georef: si no hay domicilio con coords guardadas, intentar resolver
+      // automaticamente con la direccion + ciudad limpias. Si encuentra UNA sola
+      // sugerencia en zona, la setea sola (badge verde). Si no, muestra CTA
+      // 'Identificar con Maps'. Diego 2026-06-15.
+      if (!algunoConGeo && $('pDir').value.trim()){
+        setTimeout(autoIntentarGeoref, 150);
+      }
+      const sel = $('pDom');
+      // Label del item default: deja claro que NO es un input. El campo
+      // editable es el "Dirección" de arriba (pDir).
+      sel.innerHTML = '<option value="">— ninguno · usar la dirección de arriba —</option>' +
+        doms.map(x=>{
+          const loc = x.localidad ? ` · ${esc(x.localidad)}` : '';
+          const geoBadge = (x.lat!=null && x.lng!=null)
+            ? ` 📍${x.geo_actualizado_en ? ' '+fmtFechaGeo(x.geo_actualizado_en) : ''}`
+            : '';
+          return `<option value="${x.id}" data-lat="${x.lat||''}" data-lng="${x.lng||''}" data-loc="${esc(x.localidad||'')}" data-dir="${esc(x.direccion||'')}" data-piso="${esc(x.piso||'')}" data-depto="${esc(x.depto||'')}" data-ref="${esc(x.referencia||'')}">${esc(x.etiqueta)} — ${esc(x.direccion||'(sin dirección)')}${loc}${geoBadge}</option>`;
+        }).join('');
+      if ($('btnEditarCli')) $('btnEditarCli').style.display = cid ? 'inline-block' : 'none';
+      if (ficha.domicilio && callbacks.onAddressChange) callbacks.onAddressChange();
+      // NO disparamos onClienteSelected acá: este path es 'carga programática'
+      // (pickCli, deep-link, /atencion al abrir conv vinculada). Si el host
+      // reacciona al callback re-llamando a loadCliente, entramos en loop
+      // (titileo de campos visto el 2026-06-14). El disparo manual va en pickCli.
+    }
+  }
+
+  let _geoTmr = null;
+  function onDirInput(){
+    // Si las coords vienen explícitamente de un pin del cliente ("Usar este pin"
+    // → "Es un domicilio nuevo"), NO las limpiamos al tipear la dirección.
+    // Sino el operador completa la calle y las coords desaparecen → backend
+    // cae al primer domicilio guardado y manda al cadete a la dirección vieja.
+    // La bandera _domFromPin se setea en usarPinCliente (atencion.html) y se
+    // limpia al elegir una sugerencia del geocoder o al cargar otro cliente.
+    if (!window._domFromPin){
+      window._domLat = null;
+      window._domLng = null;
+      window._domGeoAt = null;
+    }
+    window._geoRefStatus = null;
+    renderDomCoords();
+    clearTimeout(_geoTmr);
+    const q = $('pDir').value.trim();
+    if (q.length < 3){ $('resGeo').style.display='none'; return; }
+    _geoTmr = setTimeout(buscarGeoSugerencias, 350);
+  }
+
+  function _norm(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim(); }
+
+  async function buscarGeoSugerencias(){
+    const q = $('pDir').value.trim();
+    const loc = $('pCiudad').value;
+    const box = $('resGeo');
+    if (q.length < 3) return;
+    try {
+      const r = await (await fetch(`/api/clientes/geocodificar?q=${encodeURIComponent(q)}&loc=${encodeURIComponent(loc||'')}`)).json();
+      let sug = r.sugerencias || [];
+      if (!sug.length){
+        // Diego 2026-06-22: antes ocultaba el box silencioso → operador no
+        // sabía si había buscado o no. Mensaje claro con sugerencias para
+        // reformular (ej. "coronel olavarria" no la encuentra; sin "coronel"
+        // sí — pasa con calles con prefijo "coronel/teniente/general/etc").
+        box.style.display='block';
+        box.innerHTML = `<div class="muted2" style="padding:8px 10px; font-size:11px; background:rgba(239,159,39,.15); color:#EF9F27;">⚠ No encontramos "<b>${esc(q)}</b>".<br>Probá escribirla de otra forma:<br>· sin prefijos (Olavarría en vez de Coronel Olavarría)<br>· con la altura (Olavarría 1500)<br>· o copiá la dirección desde Google Maps.</div>`;
+        return;
+      }
+      // Whitelist de ciudades que servimos. Configurable por env
+      // ENVIO_CIUDADES_FILTRO (CSV); el template _cliente_picker.html la
+      // inyecta como window.ENVIO_CIUDADES_FILTRO. Fallback hardcoded si no.
+      const CIUDADES_OK = Array.isArray(window.ENVIO_CIUDADES_FILTRO) && window.ENVIO_CIUDADES_FILTRO.length
+        ? window.ENVIO_CIUDADES_FILTRO
+        : ['rosario', 'funes', 'roldan'];
+      // Modo ESTRICTO (Diego 2026-06-14): si ninguna sugerencia matchea la zona
+      // configurada, NO mostrar ninguna. Antes el comportamiento era 'fallback
+      // permisivo con aviso', pero confundia porque parecia que el filtro no
+      // estaba activo. Ahora hay 0 ruido — el operador refraseaa la busqueda.
+      sug = sug.filter(s => CIUDADES_OK.includes(_norm(s.localidad)));
+      if (!sug.length){
+        const zonas = CIUDADES_OK.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(' / ');
+        box.style.display='block';
+        box.innerHTML = `<div class="muted2" style="padding:8px 10px; font-size:11px; background:rgba(239,159,39,.15); color:#EF9F27;">⚠ No encontramos esa dirección en <b>${esc(zonas)}</b>. Probá con una variante (calle + altura + barrio).</div>`;
+        return;
+      }
+      box.style.display='block';
+      box.innerHTML = sug.map(s=>{
+        return `<div class="it" onclick='ClientePicker.pickGeo(${JSON.stringify(s)})'>
+          <b>${esc(s.direccion||s.nomenclatura)}</b>
+          <span class="muted2" style="font-size:10px;"> · ${esc(s.localidad||'')}</span>
+          <span class="muted2" style="float:right; font-size:10px;">📍 ${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}</span>
+        </div>`;
+      }).join('');
+    } catch(e){ box.style.display='none'; }
+  }
+
+  // Auto-georef silenciosa: corre tras cargar cliente para intentar resolver
+  // las coords con la direccion ya limpia. Si encuentra UNA sola sugerencia en
+  // zona, llama pickGeo (badge verde). Si encuentra varias o ninguna, marca
+  // window._geoRefStatus para que renderDomCoords pinte el CTA naranja.
+  async function autoIntentarGeoref(){
+    const dirEl = $('pDir');
+    if (!dirEl) return;
+    const dir = (dirEl.value || '').trim();
+    const loc = ($('pCiudad') || {}).value || '';
+    if (dir.length < 3) return;
+    const _normLoc = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const CIUDADES_OK = Array.isArray(window.ENVIO_CIUDADES_FILTRO) && window.ENVIO_CIUDADES_FILTRO.length
+      ? window.ENVIO_CIUDADES_FILTRO
+      : ['rosario', 'funes', 'roldan'];
+    try {
+      const r = await fetch(`/api/clientes/geocodificar?q=${encodeURIComponent(dir)}&loc=${encodeURIComponent(loc)}`);
+      if (!r.ok) return;
+      const d = await r.json();
+      const enZona = (d.sugerencias || []).filter(s => CIUDADES_OK.includes(_normLoc(s.localidad)));
+      // Si una sugerencia matchea EXACTO el texto del operador (case+espacios
+      // insensible), gana sobre el resto. Útil cuando el geocoder devuelve
+      // 'SOLIS 565' + 'SOLIS BIS 565' para input 'SOLIS 565' (Diego 2026-06-15).
+      const normTxt = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+      const dirNorm = normTxt(dir);
+      const exact = enZona.find(s => normTxt(s.direccion || s.nomenclatura) === dirNorm);
+      if (exact){
+        window._geoRefStatus = null;
+        await pickGeo(exact);
+      } else if (enZona.length === 1){
+        window._geoRefStatus = null;
+        await pickGeo(enZona[0]);
+      } else {
+        // 0 o >1 sin exact match → CTA naranja para que el operador elija.
+        window._geoRefStatus = 'pending';
+        renderDomCoords();
+      }
+    } catch(e) { /* silencioso */ }
+  }
+
+  async function pickGeo(s){
+    // ANTES de pisar pDir con la dir limpia del geocoder, parsear el texto
+    // que tenia el campo para rescatar piso/depto/ref que vinieron embebidos
+    // (Diego 2026-06-15: 'DONADO 976 BIS DP 2' → al elegir 'DONADO BIS 976'
+    // del dropdown se perdia el "DP 2"). Solo aplica si pPiso/pDepto/pRef
+    // están vacios (no sobrescribir si el operador ya cargo algo).
+    const _piso = $('pPiso'), _dpto = $('pDepto'), _ref = $('pRef');
+    const textoOrig = ($('pDir').value || '').trim();
+    if (textoOrig && (_piso || _dpto || _ref)
+        && !(_piso && _piso.value) && !(_dpto && _dpto.value) && !(_ref && _ref.value)){
+      try {
+        const r = await jpost('/api/clientes/separar-direccion', {texto: textoOrig});
+        if (r){
+          if (_piso && r.piso) _piso.value = r.piso;
+          if (_dpto && r.depto) _dpto.value = r.depto;
+          if (_ref && r.referencia) _ref.value = r.referencia;
+        }
+      } catch(e) { /* si falla, igual seguimos con el pick */ }
+    }
+    $('pDir').value = s.direccion || s.nomenclatura;
+    if (s.localidad){
+      const selC = $('pCiudad');
+      let found = false;
+      for(let i=0;i<selC.options.length;i++){
+        if(selC.options[i].value===s.localidad){ selC.selectedIndex=i; found=true; break; }
+      }
+      if (!found){
+        const opt = document.createElement('option');
+        opt.value = s.localidad; opt.text = s.localidad; opt.selected = true;
+        selC.appendChild(opt);
+      }
+    }
+    window._domLat = s.lat;
+    window._domLng = s.lng;
+    window._domGeoAt = new Date().toISOString();
+    window._domFromPin = false;    // el operador eligió otra cosa, ya no es el pin del cliente
+    window._geoRefStatus = null;   // ya hay coords, limpiar el flag del CTA
+    renderDomCoords();
+    $('resGeo').style.display='none';
+    const domSel = $('pDom');
+    if (domSel.value){
+      jpost(`/api/clientes/domicilios/${domSel.value}/geo`, {lat: s.lat, lng: s.lng}).then(r=>{
+        if (r.ok){
+          const opt = domSel.options[domSel.selectedIndex];
+          opt.dataset.lat = s.lat;
+          opt.dataset.lng = s.lng;
+          if (!opt.text.includes('📍')) opt.text = opt.text + ' 📍';
+        }
+      });
+    }
+    if (callbacks.onAddressChange) callbacks.onAddressChange();
+  }
+
+  function onDomChange(){
+    const sel = $('pDom');
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt || !sel.value){
+      window._domLat = null;
+      window._domLng = null;
+      window._domGeoAt = null;
+      renderDomCoords();
+      return;
+    }
+    const domObj = (window._doms||[]).find(x=>String(x.id)===sel.value);
+    window._domGeoAt = (domObj && domObj.geo_actualizado_en) || null;
+    const dir = opt.dataset.dir || '';
+    const loc = opt.dataset.loc || '';
+    if (dir) $('pDir').value = dir;
+    if (loc){
+      const selCiu = $('pCiudad');
+      for(let i=0;i<selCiu.options.length;i++){
+        if(selCiu.options[i].value===loc){ selCiu.selectedIndex=i; break; }
+      }
+    }
+    if (opt.dataset.lat && opt.dataset.lng){
+      window._domLat = parseFloat(opt.dataset.lat);
+      window._domLng = parseFloat(opt.dataset.lng);
+      window._domFromPin = false;   // ya no son las coords del pin del cliente
+      renderDomCoords();
+      if (callbacks.onAddressChange) callbacks.onAddressChange();
+    } else {
+      window._domLat = null;
+      window._domLng = null;
+      renderDomCoords();
+      if (callbacks.onAddressChange) callbacks.onAddressChange();
+    }
+  }
+
+  function abrirNuevoCliente(){
+    $('modalNuevo').style.display='flex';
+    setTimeout(()=>$('ncNombre').focus(), 80);
+  }
+
+  function cerrarModal(id){ $(id).style.display='none'; }
+
+  async function guardarNuevoCliente(){
+    const body = {
+      nombre: $('ncNombre').value.trim(),
+      apellido: $('ncApellido').value.trim(),
+      dni: $('ncDni').value.trim(),
+      telefono: $('ncTel').value.trim(),
+    };
+    // Hosts que tienen domicilio + ciudad en el modal (ej. /reparto) los suman.
+    const _dom = $('ncDom');     if (_dom && _dom.value.trim())     body.domicilio = _dom.value.trim();
+    const _ciu = $('ncCiudad');  if (_ciu && _ciu.value)            body.ciudad    = _ciu.value;
+    if(!body.nombre && !body.apellido && !body.dni){
+      alert('Completá al menos nombre, apellido o DNI.');
+      return;
+    }
+    const d = await jpost('/api/clientes', body);
+    if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
+    window._cid = d.cliente_id;
+    $('pCliente').value = [body.apellido, body.nombre].filter(Boolean).join(', ') || body.dni;
+    if (body.domicilio) $('pDir').value = body.domicilio;
+    if (body.ciudad){
+      const selC = $('pCiudad');
+      for(let i=0;i<selC.options.length;i++){
+        if(selC.options[i].value===body.ciudad){ selC.selectedIndex=i; break; }
+      }
+    }
+    $('btnEditarCli').style.display = 'inline-block';
+    $('pDom').innerHTML = '<option value="">— escribir dirección —</option>';
+    cerrarModal('modalNuevo');
+    setTimeout(()=>$('pDir').focus(), 80);
+  }
+
+  function abrirEditarCliente(cid, oid){
+    window._editCid = cid;
+    $('modalEditar').style.display='flex';
+    const params = cid ? `cliente_id=${cid}` : `observer_id=${oid}`;
+    fetch(`/api/clientes/ficha?${params}`).then(r=>r.json()).then(f=>{
+      $('edObsRef').textContent = f.fuente==='observer' ? `Fuente ObServer (ref: ${f.nombre})` : 'Cliente local';
+      const r = f.raw || {};
+      $('edNombre').value = r.nombre || '';
+      $('edApellido').value = r.apellido || '';
+      $('edDni').value = r.dni || '';
+      $('edTel').value = r.telefono || '';
+      $('edDom').value = r.domicilio || '';
+      $('edCiudad').value = r.ciudad || '';
+    });
+  }
+
+  async function guardarEditarCliente(){
+    const cid = window._editCid;
+    if(!cid) return;
+    const body = {
+      nombre: $('edNombre').value.trim(),
+      apellido: $('edApellido').value.trim(),
+      dni: $('edDni').value.trim(),
+      telefono: $('edTel').value.trim(),
+      domicilio: $('edDom').value.trim(),
+      ciudad: $('edCiudad').value.trim(),
+    };
+    const d = await jpost(`/api/clientes/${cid}`, body);
+    if(!d.ok){ alert('⚠️ '+(d.error||'no se pudo')); return; }
+    const nombre = [body.apellido, body.nombre].filter(Boolean).join(', ') || body.dni;
+    if(nombre) $('pCliente').value = nombre;
+    cerrarModal('modalEditar');
+  }
+
+  function getValues(){
+    return {
+      cid: window._cid || null,
+      oid: window._oid || null,
+      clienteNombre: $('pCliente').value.trim(),
+      direccion: $('pDir').value.trim(),
+      ciudad: $('pCiudad').value,
+      piso: $('pPiso').value.trim(),
+      depto: $('pDepto').value.trim(),
+      referencia: $('pRef').value.trim(),
+      domicilioId: $('pDom').value || null,
+      domLat: window._domLat,
+      domLng: window._domLng,
+    };
+  }
+
+  // Badge mini "linkeado a..." en la línea del label Dirección. Diego pidió
+  // tenerlo a la vista para chequear de un vistazo si la conv apunta a un
+  // cliente ObServer o a un lead local sin sync.
+  function _pintarVinculoBadge(){
+    const el = $('vinculoBadge'); if (!el) return;
+    const oid = window._oid, cid = window._cid;
+    if (oid){
+      el.textContent = `🔗 ObServer #${oid}`;
+      el.title = 'Vinculado a un cliente de ObServer. ID en la columna observer_id.';
+      el.style.color = '#10b981';
+    } else if (cid){
+      el.textContent = `📝 Local #${cid}`;
+      el.title = 'Cliente local (sin observer_id). Lead creado desde el panel o por DNI sin match en ObServer.';
+      el.style.color = '#eab308';
+    } else {
+      el.textContent = '— sin vincular —';
+      el.title = 'No hay cliente vinculado a esta conv. Buscalo arriba o tocá ＋ para alta.';
+      el.style.color = '';
+    }
+  }
+
+  // Badge de OS al lado del label Cliente. Confirmada → tildecita; inferida → ~ con confianza.
+  function _pintarOsBadge(os){
+    const el = $('osBadge'); if (!el) return;
+    if (!os || !os.nombre){ el.style.display = 'none'; el.textContent = ''; return; }
+    if (os.fuente === 'inferida'){
+      const c = os.confidence_pct || os.confianza_pct || 0;
+      el.textContent = `🏥 ${os.nombre} ~${Math.round(c)}%`;
+      el.title = 'OS inferida del histórico (no confirmada manualmente).';
+    } else {
+      el.textContent = `🏥 ${os.nombre} ✓`;
+      el.title = 'OS confirmada por un operador.';
+    }
+    el.style.display = '';
+  }
+
+  function clear(){
+    ['pCliente','pDir','pPiso','pDepto','pRef'].forEach(i=>{
+      const el = $(i); if (el) el.value = '';
+    });
+    $('pDom').innerHTML = '<option value="">— escribir dirección —</option>';
+    if ($('btnEditarCli')) $('btnEditarCli').style.display = 'none';
+    _pintarOsBadge(null);
+    window._cid = null;
+    window._oid = null;
+    _pintarVinculoBadge();
+    window._doms = [];
+    window._domLat = null;
+    window._domLng = null;
+    window._domGeoAt = null;
+    window._geoRefStatus = null;
+    actualizarDomDropdown([]);
+    renderDomCoords();
+    if (callbacks.onClear) callbacks.onClear();
+  }
+
+  function init(opts){
+    Object.assign(callbacks, opts || {});
+
+    // Estado inicial del badge de vínculo: "sin vincular" (lo hosts que
+    // arrancan con un cliente cargado llaman loadCliente() y lo repintan).
+    _pintarVinculoBadge();
+
+    // Auto-close dropdowns al clickear fuera (idempotente: solo una vez).
+    if (!window._cpDocListener){
+      document.addEventListener('click', (e) => {
+        const boxCli = $('resCli');
+        const boxGeo = $('resGeo');
+        if (boxCli && !e.target.closest('#pCliente') && !boxCli.contains(e.target)) boxCli.style.display='none';
+        if (boxGeo && !e.target.closest('#pDir') && !boxGeo.contains(e.target)) boxGeo.style.display='none';
+      });
+      window._cpDocListener = true;
+    }
+  }
+
+  // Field picker: el operador selecciona texto en el input Dirección
+  // (window.getSelection o input.selectionStart/End) y al click toma el texto
+  // y lo pone en el campo destino + lo quita de Dirección.
+  // Diego 2026-06-15: util para "DONADO 976 BIS DP 2" → selecciono "DP 2",
+  // toco ✂ Depto → pDepto="DP 2", pDir="DONADO 976 BIS".
+  function fieldPick(targetId){
+    const dirEl = $('pDir');
+    const tgt = $(targetId);
+    if (!dirEl || !tgt) return;
+    let texto = '';
+    let inicio = -1, fin = -1;
+    if (document.activeElement === dirEl
+        && dirEl.selectionStart != null
+        && dirEl.selectionStart !== dirEl.selectionEnd){
+      inicio = dirEl.selectionStart;
+      fin = dirEl.selectionEnd;
+      texto = dirEl.value.substring(inicio, fin);
+    } else {
+      // Fallback: selección "flotante" del documento (usuario seleccionó pero
+      // tocó el botón sin reclickear el input). Buscamos esa selección en pDir.
+      const sel = (window.getSelection && window.getSelection().toString()) || '';
+      const t = sel.trim();
+      if (t && dirEl.value.includes(t)){
+        texto = t;
+        inicio = dirEl.value.indexOf(t);
+        fin = inicio + t.length;
+      }
+    }
+    texto = (texto || '').trim();
+    if (!texto){
+      alert('Seleccioná primero el pedazo de texto en el campo Dirección.');
+      dirEl.focus();
+      return;
+    }
+    tgt.value = texto;
+    // Quitar el texto de Dirección y limpiar dobles espacios + separadores
+    // sueltos al borde.
+    if (inicio >= 0){
+      const nuevo = (dirEl.value.slice(0, inicio) + dirEl.value.slice(fin))
+        .replace(/\s+/g, ' ')
+        .replace(/^[\s,\-/]+|[\s,\-/]+$/g, '')
+        .trim();
+      dirEl.value = nuevo;
+    }
+    tgt.focus();
+  }
+
+  window.ClientePicker = {
+    init,
+    getValues,
+    clear,
+    loadCliente,
+    // métodos expuestos para handlers onclick/oninput del macro:
+    onClienteInput, buscarCli, pickCli,
+    onDirInput, buscarGeoSugerencias, pickGeo, fieldPick,
+    onDomChange,
+    abrirNuevoCliente, cerrarModal, guardarNuevoCliente,
+    abrirEditarCliente, guardarEditarCliente,
+    // helpers internos usables por el host:
+    renderDomCoords,
+    actualizarDomDropdown,
+  };
+})();

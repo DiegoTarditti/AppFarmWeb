@@ -7,6 +7,13 @@ Estrategia:
 4. Además propaga productos.observer_id a Render, matcheando por codigo_barra
    (el id numérico NO coincide entre ambas DBs).
 
+⚠ IMPORTANTE — enumeración de columnas obligatoria:
+El COPY se hace SIEMPRE con lista explícita de columnas: la intersección de las
+que existen en LOCAL y en RENDER. Sin esto, si los schemas divergen en orden
+(las ALTER TABLE quedan al final en cada DB, y no siempre en el mismo orden),
+COPY corre los valores y podés terminar metiendo un varchar "L" en un integer
+(bug real detectado 2026-07-21 con id_tipo_venta_control cayendo en troquel).
+
 Config:
     DATABASE_URL         Postgres local (del .env ya existente)
     RENDER_DATABASE_URL  Postgres de Render (External Database URL)
@@ -55,13 +62,56 @@ def _normalize_url(url):
     return url
 
 
-def push(local_url=None, render_url=None, log=print):
+def _cols_de(cur, tabla: str) -> list[str]:
+    """Devuelve la lista de columnas de una tabla, en su orden físico actual."""
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = %s ORDER BY ordinal_position",
+        (tabla,),
+    )
+    return [r[0] for r in cur.fetchall()]
+
+
+def _cols_comunes(lc, rc, tabla: str) -> list[str]:
+    """Intersección de columnas local ∩ Render. Ordena por el orden del destino
+    para que el COPY FROM sea determinista. Warns si hay columnas exclusivas.
+    """
+    local_cols = _cols_de(lc, tabla)
+    render_cols = _cols_de(rc, tabla)
+    l_set, r_set = set(local_cols), set(render_cols)
+    comunes = [c for c in render_cols if c in l_set]
+    solo_local = [c for c in local_cols if c not in r_set]
+    solo_render = [c for c in render_cols if c not in l_set]
+    if solo_local:
+        print(f'    [warn] {tabla}: columnas solo en LOCAL (no se pushean): {solo_local}')
+    if solo_render:
+        print(f'    [warn] {tabla}: columnas solo en RENDER (quedan NULL/default): {solo_render}')
+    return comunes
+
+
+def push(local_url=None, render_url=None, log=print, tablas=None):
     local_url = _normalize_url(local_url or os.environ.get('DATABASE_URL'))
     render_url = _normalize_url(render_url or os.environ.get('RENDER_DATABASE_URL'))
     if not local_url:
         raise RuntimeError('Falta DATABASE_URL (Postgres local)')
     if not render_url:
         raise RuntimeError('Falta RENDER_DATABASE_URL (externa de Render)')
+
+    # Push parcial (tablas=[...]): solo seguro para tablas HOJA (sin hijos FK).
+    # Si el subset incluye una tabla padre (productos/refs), su TRUNCATE CASCADE
+    # borraria hijos que no re-copiamos (ventas_detalle) -> hacemos push completo.
+    LEAF_SEGURAS = {'obs_stock', 'obs_ventas_mensuales'}
+    if tablas is not None:
+        pedido = [t for t in TABLAS if t in set(tablas)]
+        if not pedido:
+            log('Push: subset vacio, nada que pushear.')
+            return {'TOTAL_MS': 0}
+        if set(pedido).issubset(LEAF_SEGURAS):
+            tablas_push, es_parcial = pedido, True
+        else:
+            tablas_push, es_parcial = list(TABLAS), False
+    else:
+        tablas_push, es_parcial = list(TABLAS), False
 
     resultados = {}
     t_total = time.time()
@@ -70,32 +120,44 @@ def push(local_url=None, render_url=None, log=print):
         with local.cursor() as lc, remote.cursor() as rc:
 
             # 1. TRUNCATE en Render en orden inverso (primero hijos, después padres)
-            log('Limpiando Render…')
-            for t in reversed(TABLAS):
+            log(f'Limpiando Render… ({"parcial: " + ",".join(tablas_push) if es_parcial else "completo"})')
+            for t in reversed(tablas_push):
                 rc.execute(f'TRUNCATE TABLE {t} CASCADE')
 
-            # 2. Streaming COPY por cada tabla
-            for t in TABLAS:
+            # 2. Streaming COPY por cada tabla — SIEMPRE con lista explícita
+            # de columnas (intersección local ∩ Render). Ver docstring: sin
+            # esto, cualquier divergencia de orden entre schemas mete valores
+            # en columnas equivocadas.
+            for t in tablas_push:
                 t0 = time.time()
+                cols = _cols_comunes(lc, rc, t)
+                if not cols:
+                    log(f'  {t}: SKIP (sin columnas comunes)')
+                    resultados[t] = {'filas': 0, 'ms': 0, 'skip': True}
+                    continue
+                col_list = ', '.join(cols)
                 buf = io.StringIO()
-                lc.copy_expert(f'COPY {t} TO STDOUT', buf)
+                lc.copy_expert(f'COPY {t} ({col_list}) TO STDOUT', buf)
                 buf.seek(0)
-                rc.copy_expert(f'COPY {t} FROM STDIN', buf)
+                rc.copy_expert(f'COPY {t} ({col_list}) FROM STDIN', buf)
                 # Contar filas copiadas
                 rc.execute(f'SELECT COUNT(*) FROM {t}')
                 n = rc.fetchone()[0]
                 ms = int((time.time() - t0) * 1000)
                 resultados[t] = {'filas': n, 'ms': ms}
-                log(f'  {t}: {n:,} filas en {ms} ms')
+                log(f'  {t}: {n:,} filas en {ms} ms  ({len(cols)} cols)')
 
-            # 3. Propagar productos.observer_id por codigo_barra
+            # 3. Propagar productos.observer_id por codigo_barra (solo en push
+            #    completo — en parcial de stock/ventas el master no cambió).
             t0 = time.time()
-            lc.execute("""
-                SELECT codigo_barra, observer_id
-                FROM productos
-                WHERE observer_id IS NOT NULL AND codigo_barra IS NOT NULL
-            """)
-            pares = lc.fetchall()
+            pares = []
+            if not es_parcial:
+                lc.execute("""
+                    SELECT codigo_barra, observer_id
+                    FROM productos
+                    WHERE observer_id IS NOT NULL AND codigo_barra IS NOT NULL
+                """)
+                pares = lc.fetchall()
             if pares:
                 rc.execute("""
                     CREATE TEMP TABLE _bridge (

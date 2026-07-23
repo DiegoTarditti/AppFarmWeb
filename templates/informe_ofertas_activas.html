@@ -9,6 +9,10 @@
         <p class="text-xs text-[#888] mt-0.5">Todas las ofertas cargadas en el sistema — por lab, droguería y módulos.</p>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
+        {# Sync/Pull local↔Render: solo tiene sentido desde una instancia LOCAL.
+           En Render (entorno.codigo == 'render') se ocultan — "sync a Render"
+           desde Render no aplica. #}
+        {% if entorno.codigo != 'render' %}
         <button type="button" id="btn-sync-all-render" onclick="syncAllRender()"
                 title="Empujar TODAS las ofertas a Render. Requiere RENDER_BASE_URL + PANEL_REMOTO_TOKEN en env."
                 class="text-xs bg-sky-50 hover:bg-sky-100 border border-sky-300 text-sky-800 font-semibold px-3 py-1.5 rounded-lg">
@@ -18,6 +22,17 @@
                 title="Traer TODAS las ofertas de Render (upsert local)."
                 class="text-xs bg-violet-50 hover:bg-violet-100 border border-violet-300 text-violet-800 font-semibold px-3 py-1.5 rounded-lg">
             ⬇ Pull TODAS de Render
+        </button>
+        {% endif %}
+        <button type="button" id="btn-limpiar-sospechosas" onclick="abrirLimpiarSospechosas()"
+                title="Detectar y borrar ofertas donde la observación parece una presentación de producto ('30 comp', '100 ml', etc.) — síntoma de un import donde mapearon la columna mal."
+                class="text-xs bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 font-semibold px-3 py-1.5 rounded-lg">
+            🧹 Limpiar sospechosas
+        </button>
+        <button type="button" id="btn-limpiar-queue" onclick="abrirLimpiarQueue()"
+                title="Detectar y borrar ofertas auto-creadas desde la queue de pendientes (observacion 'Aplicada desde queue por …') — ruido del flujo manual."
+                class="text-xs bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-800 font-semibold px-3 py-1.5 rounded-lg">
+            🗑 Borrar del queue
         </button>
         <a href="{{ url_for('informes_index') }}" class="text-xs text-sky-600 hover:underline">← Informes</a>
     </div>
@@ -68,7 +83,238 @@ async function pullAllRender() {
         btn.disabled = false; btn.textContent = '⬇ Pull TODAS de Render';
     }
 }
+
+// ── Limpiar ofertas con observación sospechosa (tipo presentación) ───────
+async function abrirLimpiarSospechosas() {
+    const modal = document.getElementById('sosp-modal');
+    const body  = document.getElementById('sosp-body');
+    body.innerHTML = '<p class="text-xs text-[#888] py-4 text-center">Buscando ofertas sospechosas…</p>';
+    modal.classList.remove('hidden');
+    try {
+        const r = await fetch('/informes/ofertas-activas/sospechosas/preview', {credentials: 'same-origin'});
+        const d = await r.json();
+        document.getElementById('sosp-count').textContent = `${d.n} oferta${d.n !== 1 ? 's' : ''} con observación tipo presentación`;
+        if (d.n === 0) {
+            body.innerHTML = '<p class="text-xs text-emerald-700 py-4 text-center font-semibold">✓ No hay sospechosas. Todo limpio.</p>';
+            document.getElementById('sosp-btn-borrar').disabled = true;
+            return;
+        }
+        body.innerHTML = `
+            <p class="text-[11px] text-[#666] mb-2 px-1">
+                Se van a <strong class="text-red-700">borrar</strong> estas ${d.n} ofertas:
+            </p>
+            <table class="w-full text-[11px] border-collapse">
+                <thead>
+                    <tr class="bg-amber-50 text-[#666] uppercase text-[9px] tracking-wide">
+                        <th class="text-left px-2 py-1">Lab</th>
+                        <th class="text-left px-2 py-1">Observación</th>
+                        <th class="text-left px-2 py-1">EAN</th>
+                        <th class="text-left px-2 py-1">Descripción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${d.items.map(it => `
+                        <tr class="border-b border-[#f0f0f0]">
+                            <td class="px-2 py-1 text-[#555]">${it.lab}</td>
+                            <td class="px-2 py-1 text-amber-700 font-semibold">${it.observacion}</td>
+                            <td class="px-2 py-1 font-mono text-[#888] text-[10px]">${it.ean}</td>
+                            <td class="px-2 py-1 text-[#1e1e1e] truncate">${(it.descripcion || '').replace(/</g, '&lt;')}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>`;
+        document.getElementById('sosp-btn-borrar').disabled = false;
+    } catch (e) {
+        body.innerHTML = '<p class="text-xs text-red-600 py-4 text-center">Error: ' + e.message + '</p>';
+    }
+}
+
+function cerrarLimpiarSospechosas() {
+    document.getElementById('sosp-modal').classList.add('hidden');
+}
+
+async function toggleGrupoActiva(chk) {
+    const setTo = chk.checked;
+    const summary = chk.closest('summary');
+    const body = {
+        lab_id: chk.dataset.labId || null,
+        tipo: chk.dataset.tipo || null,
+        observacion: chk.dataset.obs || '',
+        vigencia_hasta: chk.dataset.vh || '',
+        drog_id: chk.dataset.drogId || null,
+        set_to: setTo,
+    };
+    chk.disabled = true;
+    try {
+        const r = await fetch('/informes/ofertas-activas/grupo/toggle-activa', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body), credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!d.ok) {
+            alert('Error: ' + (d.error || 'no se pudo actualizar'));
+            chk.checked = !setTo;
+            return;
+        }
+        // Feedback visual: si se destildó, el grupo queda atenuado hasta el próximo reload.
+        if (!setTo && summary) {
+            summary.style.opacity = '.5';
+            summary.style.textDecoration = 'line-through';
+        } else if (summary) {
+            summary.style.opacity = '';
+            summary.style.textDecoration = '';
+        }
+    } catch (e) {
+        alert('Error de red: ' + e.message);
+        chk.checked = !setTo;
+    } finally {
+        chk.disabled = false;
+    }
+}
+
+async function confirmarBorrarSospechosas() {
+    const btn = document.getElementById('sosp-btn-borrar');
+    btn.disabled = true; btn.textContent = '⏳ Borrando…';
+    try {
+        const r = await fetch('/informes/ofertas-activas/sospechosas/borrar', {
+            method: 'POST', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!d.ok) {
+            alert('Error: ' + (d.error || 'no se pudo borrar'));
+            return;
+        }
+        alert(`✓ ${d.borradas} ofertas borradas.`);
+        location.reload();
+    } catch (e) {
+        alert('Error de red: ' + e.message);
+    } finally {
+        btn.disabled = false; btn.textContent = '🗑 Borrar';
+    }
+}
+
+// ── Limpiar ofertas auto-creadas desde la queue (observacion "Aplicada desde queue por …") ──
+async function abrirLimpiarQueue() {
+    const modal = document.getElementById('queue-modal');
+    const body  = document.getElementById('queue-body');
+    body.innerHTML = '<p class="text-xs text-[#888] py-4 text-center">Buscando ofertas del queue…</p>';
+    modal.classList.remove('hidden');
+    try {
+        const r = await fetch('/informes/ofertas-activas/queue/preview', {credentials: 'same-origin'});
+        const d = await r.json();
+        document.getElementById('queue-count').textContent = `${d.n} oferta${d.n !== 1 ? 's' : ''} auto-creada${d.n !== 1 ? 's' : ''} desde la queue de pendientes`;
+        if (d.n === 0) {
+            body.innerHTML = '<p class="text-xs text-emerald-700 py-4 text-center font-semibold">✓ No hay ofertas del queue. Todo limpio.</p>';
+            document.getElementById('queue-btn-borrar').disabled = true;
+            return;
+        }
+        body.innerHTML = `
+            <p class="text-[11px] text-[#666] mb-2 px-1">
+                Se van a <strong class="text-red-700">borrar</strong> estas ${d.n} ofertas (auto-creadas por el flujo de productos pendientes):
+            </p>
+            <table class="w-full text-[11px] border-collapse">
+                <thead>
+                    <tr class="bg-rose-50 text-[#666] uppercase text-[9px] tracking-wide">
+                        <th class="text-left px-2 py-1">Lab</th>
+                        <th class="text-left px-2 py-1">Observación</th>
+                        <th class="text-left px-2 py-1">EAN</th>
+                        <th class="text-left px-2 py-1">Descripción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${d.items.map(it => `
+                        <tr class="border-b border-[#f0f0f0]">
+                            <td class="px-2 py-1 text-[#555]">${it.lab}</td>
+                            <td class="px-2 py-1 text-rose-700 font-semibold">${it.observacion}</td>
+                            <td class="px-2 py-1 font-mono text-[#888] text-[10px]">${it.ean}</td>
+                            <td class="px-2 py-1 text-[#1e1e1e] truncate">${(it.descripcion || '').replace(/</g, '&lt;')}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>`;
+        document.getElementById('queue-btn-borrar').disabled = false;
+    } catch (e) {
+        body.innerHTML = '<p class="text-xs text-red-600 py-4 text-center">Error: ' + e.message + '</p>';
+    }
+}
+
+function cerrarLimpiarQueue() {
+    document.getElementById('queue-modal').classList.add('hidden');
+}
+
+async function confirmarBorrarQueue() {
+    const btn = document.getElementById('queue-btn-borrar');
+    btn.disabled = true; btn.textContent = '⏳ Borrando…';
+    try {
+        const r = await fetch('/informes/ofertas-activas/queue/borrar', {
+            method: 'POST', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!d.ok) {
+            alert('Error: ' + (d.error || 'no se pudo borrar'));
+            return;
+        }
+        alert(`✓ ${d.borradas} ofertas borradas.`);
+        location.reload();
+    } catch (e) {
+        alert('Error de red: ' + e.message);
+    } finally {
+        btn.disabled = false; btn.textContent = '🗑 Borrar';
+    }
+}
 </script>
+
+<!-- Modal: limpiar ofertas sospechosas (preview + confirmar) -->
+<div id="sosp-modal" class="hidden fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4"
+     onclick="if(event.target===this) cerrarLimpiarSospechosas()">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col">
+        <div class="px-4 py-3 border-b border-[#ececec] flex items-center justify-between bg-amber-50">
+            <span class="text-sm font-bold text-amber-900">🧹 Limpiar ofertas sospechosas</span>
+            <button type="button" onclick="cerrarLimpiarSospechosas()"
+                    class="w-7 h-7 flex items-center justify-center rounded text-amber-700 hover:bg-amber-100 text-lg">✕</button>
+        </div>
+        <div class="px-4 py-2 border-b border-[#ececec]">
+            <p id="sosp-count" class="text-xs text-[#666] font-semibold">—</p>
+        </div>
+        <div class="flex-1 overflow-y-auto px-2 py-2" id="sosp-body">
+            <p class="text-xs text-[#888] py-4 text-center">Cargando…</p>
+        </div>
+        <div class="px-4 py-3 border-t border-[#ececec] bg-[#fafafa] flex items-center justify-end gap-2">
+            <button type="button" onclick="cerrarLimpiarSospechosas()"
+                    class="text-xs px-3 py-1.5 rounded border border-[#e0e0e0] text-[#666] hover:bg-[#f5f5f5]">Cancelar</button>
+            <button type="button" id="sosp-btn-borrar" onclick="confirmarBorrarSospechosas()"
+                    class="text-xs bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-4 py-1.5 rounded">
+                🗑 Borrar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: limpiar ofertas auto-creadas desde la queue (preview + confirmar) -->
+<div id="queue-modal" class="hidden fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4"
+     onclick="if(event.target===this) cerrarLimpiarQueue()">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col">
+        <div class="px-4 py-3 border-b border-[#ececec] flex items-center justify-between bg-rose-50">
+            <span class="text-sm font-bold text-rose-900">🗑 Borrar ofertas del queue</span>
+            <button type="button" onclick="cerrarLimpiarQueue()"
+                    class="w-7 h-7 flex items-center justify-center rounded text-rose-700 hover:bg-rose-100 text-lg">✕</button>
+        </div>
+        <div class="px-4 py-2 border-b border-[#ececec]">
+            <p id="queue-count" class="text-xs text-[#666] font-semibold">—</p>
+        </div>
+        <div class="flex-1 overflow-y-auto px-2 py-2" id="queue-body">
+            <p class="text-xs text-[#888] py-4 text-center">Cargando…</p>
+        </div>
+        <div class="px-4 py-3 border-t border-[#ececec] bg-[#fafafa] flex items-center justify-end gap-2">
+            <button type="button" onclick="cerrarLimpiarQueue()"
+                    class="text-xs px-3 py-1.5 rounded border border-[#e0e0e0] text-[#666] hover:bg-[#f5f5f5]">Cancelar</button>
+            <button type="button" id="queue-btn-borrar" onclick="confirmarBorrarQueue()"
+                    class="text-xs bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-4 py-1.5 rounded">
+                🗑 Borrar
+            </button>
+        </div>
+    </div>
+</div>
 
 <div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
 
@@ -94,9 +340,20 @@ async function pullAllRender() {
 
     {# ── Grupos OfertaMinimo — nivel 1 con detalle desplegable ── #}
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
-        <div class="px-4 py-2 border-b border-[#f0f0f0] flex items-center justify-between">
-            <span class="text-xs font-semibold text-[#555]">Ofertas de productos</span>
-            <span class="text-[10px] text-[#999]">{{ grupos|length }} ofertas</span>
+        <div class="px-4 py-2 border-b border-[#f0f0f0] flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="chk-select-all" onchange="toggleSelectAllGrupos(this)"
+                       class="w-4 h-4 accent-red-600 cursor-pointer"
+                       title="Seleccionar / deseleccionar TODAS las ofertas">
+                <span class="text-xs font-semibold text-[#555]">Ofertas de productos</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <button type="button" id="btn-borrar-bulk" onclick="borrarSeleccionadas()"
+                        class="hidden text-xs bg-red-600 hover:bg-red-700 text-white font-semibold px-3 py-1.5 rounded">
+                    🗑 Borrar seleccionadas (<span id="bulk-count">0</span>)
+                </button>
+                <span class="text-[10px] text-[#999]">{{ grupos|length }} ofertas</span>
+            </div>
         </div>
 
         {% if not grupos %}
@@ -106,7 +363,26 @@ async function pullAllRender() {
             {% for g in grupos %}
             <details class="group/det">
                 <summary class="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-black/[0.02] list-none select-none">
+                    <input type="checkbox"
+                           class="chk-bulk-del w-4 h-4 accent-red-600 cursor-pointer flex-shrink-0"
+                           onclick="event.stopPropagation();"
+                           onchange="onBulkChkChange()"
+                           data-lab-id="{{ g.lab_id if g.lab_id is not none else 'null' }}"
+                           data-tipo="{{ g.tipo }}"
+                           data-obs="{{ g.observacion }}"
+                           data-drog-id="{{ g.drog_id if g.drog_id is not none else 'null' }}"
+                           title="Marcar para borrado masivo">
                     <svg class="w-3.5 h-3.5 text-[#ccc] flex-shrink-0 transition-transform group-open/det:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                    <input type="checkbox" checked
+                           class="chk-activa w-4 h-4 accent-emerald-600 cursor-pointer flex-shrink-0"
+                           onclick="event.stopPropagation();"
+                           onchange="toggleGrupoActiva(this)"
+                           data-lab-id="{{ g.lab_id if g.lab_id is not none else '' }}"
+                           data-tipo="{{ g.tipo }}"
+                           data-obs="{{ g.observacion }}"
+                           data-vh="{{ g._raw_vh.isoformat() if g._raw_vh else '' }}"
+                           data-drog-id="{{ g.drog_id if g.drog_id is not none else '' }}"
+                           title="Activa: si está tildada, esta oferta se carga en /order Stage 2. Destildá para que sea histórica.">
 
                     {# Nombre: observacion si existe, si no lab + tipo #}
                     <span class="font-semibold text-sm text-[#1e1e1e] flex-1 min-w-0 truncate">
@@ -127,14 +403,18 @@ async function pullAllRender() {
                     {% else %}
                     <span class="text-[9px] bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">SIMPLE</span>
                     {% endif %}
+                    {% if g.sospechosa %}
+                    <span class="text-[9px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-bold flex-shrink-0"
+                          title="La observación parece una presentación de producto. Posiblemente mal importada.">⚠ REVISAR</span>
+                    {% endif %}
 
                     {# Meta #}
-                    <span class="text-[10px] text-[#bbb] flex-shrink-0">{{ g.prods|length }} prod.</span>
+                    <span class="text-[10px] text-[#555] font-semibold flex-shrink-0">{{ g.prods|length }} prod.</span>
                     {% if g.vigencia %}
-                    <span class="text-[10px] text-[#bbb] flex-shrink-0">hasta {{ g.vigencia }}</span>
+                    <span class="text-[10px] text-[#555] font-semibold flex-shrink-0">hasta {{ g.vigencia }}</span>
                     {% endif %}
                     {% if g.actualizado %}
-                    <span class="text-[10px] text-[#ddd] flex-shrink-0 hidden sm:inline">imp. {{ g.actualizado }}</span>
+                    <span class="text-[10px] text-[#777] flex-shrink-0 hidden sm:inline">imp. {{ g.actualizado }}</span>
                     {% endif %}
 
                     <button class="btn-del-grupo ml-1 text-red-300 hover:text-red-600 text-xs font-bold flex-shrink-0 px-1"
@@ -146,6 +426,21 @@ async function pullAllRender() {
                 </summary>
 
                 <div class="border-t border-[#f5f5f5] bg-[#fafafa] overflow-x-auto">
+                    {# Banner con metadatos del grupo: observación, drog, lab. #}
+                    <div class="px-10 py-1.5 bg-amber-50/40 border-b border-amber-100 flex items-center gap-4 text-[10px] text-[#666] flex-wrap">
+                        <span><strong class="text-[#444]">Observación:</strong>
+                            {% if g.observacion %}
+                                <span class="text-amber-800 font-semibold">{{ g.observacion }}</span>
+                            {% else %}
+                                <span class="text-[#bbb] italic">(vacía)</span>
+                            {% endif %}
+                        </span>
+                        <span><strong class="text-[#444]">Laboratorio:</strong> {{ g.lab }}</span>
+                        {% if g.drog %}
+                        <span><strong class="text-[#444]">Droguería:</strong> {{ g.drog }}</span>
+                        {% endif %}
+                        <span><strong class="text-[#444]">Tipo:</strong> {{ g.tipo }}</span>
+                    </div>
                     <table class="w-full text-xs">
                         <thead class="text-[9px] uppercase tracking-wide text-[#bbb]">
                             <tr>
@@ -155,6 +450,7 @@ async function pullAllRender() {
                                 <th class="text-right px-3 py-1.5">Mín.</th>
                                 {% endif %}
                                 <th class="text-right px-3 py-1.5">Dto%</th>
+                                <th class="text-left px-3 py-1.5">Observación</th>
                                 <th class="text-right px-3 py-1.5">Vigencia</th>
                             </tr>
                         </thead>
@@ -168,6 +464,9 @@ async function pullAllRender() {
                                 {% endif %}
                                 <td class="px-3 py-1 text-right {% if item.descuento %}text-emerald-700 font-semibold{% else %}text-[#bbb]{% endif %}">
                                     {{ '%.1f'|format(item.descuento) if item.descuento is not none else '—' }}
+                                </td>
+                                <td class="px-3 py-1 {% if item.observacion %}text-amber-800{% else %}text-[#ccc] italic{% endif %} max-w-[200px] truncate" title="{{ item.observacion }}">
+                                    {{ item.observacion or '—' }}
                                 </td>
                                 <td class="px-3 py-1 text-right text-[#bbb]">{{ item.vigencia or '—' }}</td>
                             </tr>
@@ -208,6 +507,57 @@ async function pullAllRender() {
 </div>
 
 <script>
+// ── Selección masiva de grupos para borrado ──────────────────────────────
+function toggleSelectAllGrupos(master) {
+    document.querySelectorAll('.chk-bulk-del').forEach(c => { c.checked = master.checked; });
+    onBulkChkChange();
+}
+function onBulkChkChange() {
+    const checked = document.querySelectorAll('.chk-bulk-del:checked');
+    const n = checked.length;
+    const btn = document.getElementById('btn-borrar-bulk');
+    const cnt = document.getElementById('bulk-count');
+    if (cnt) cnt.textContent = n;
+    if (btn) btn.classList.toggle('hidden', n === 0);
+    // Master tri-state: si están todos marcados → master checked; si ninguno → unchecked
+    const master = document.getElementById('chk-select-all');
+    const all = document.querySelectorAll('.chk-bulk-del');
+    if (n === 0) { master.checked = false; master.indeterminate = false; }
+    else if (n === all.length) { master.checked = true; master.indeterminate = false; }
+    else { master.checked = false; master.indeterminate = true; }
+}
+async function borrarSeleccionadas() {
+    const checked = [...document.querySelectorAll('.chk-bulk-del:checked')];
+    if (!checked.length) return;
+    if (!confirm(`¿Borrar ${checked.length} oferta(s) seleccionada(s)?\n\nEsta acción no se puede deshacer.`)) return;
+    const groups = checked.map(c => ({
+        lab_id:  c.dataset.labId  === 'null' ? null : parseInt(c.dataset.labId),
+        tipo:    c.dataset.tipo,
+        obs:     c.dataset.obs,
+        drog_id: c.dataset.drogId === 'null' ? null : parseInt(c.dataset.drogId),
+    }));
+    const btn = document.getElementById('btn-borrar-bulk');
+    const origHtml = btn.innerHTML;  // preservar el <span id="bulk-count">
+    btn.disabled = true; btn.textContent = '⏳ Borrando…';
+    try {
+        const r = await fetch('/informes/ofertas-activas/borrar-grupos-bulk', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({groups}), credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!d.ok) { alert('Error: ' + (d.error || 'desconocido')); return; }
+        // Quitar los <details> borrados del DOM (no full reload).
+        checked.forEach(c => c.closest('details').remove());
+        alert(`✓ ${d.borradas} oferta(s) borradas (${d.grupos} grupo(s)).`);
+    } catch (e) {
+        alert('Error de red: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;  // restaurar span bulk-count
+        onBulkChkChange();  // ahora cnt existe de nuevo
+    }
+}
+
 document.querySelectorAll('.btn-del-grupo').forEach(btn => {
     btn.addEventListener('click', async e => {
         e.preventDefault();

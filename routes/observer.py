@@ -17,6 +17,7 @@ from auth import tiene_permiso
 from database import AnalisisSesion, Pedido, PedidoItem
 from helpers import PURCHASE_FOLDER, _upsert_producto, get_config, now_ar
 from purchase_engine import analyze_purchase
+from services.farmacia import farmacia_operativa
 
 
 def _user_tiene_observer(user):
@@ -24,6 +25,21 @@ def _user_tiene_observer(user):
     if not user or not user.is_authenticated:
         return False
     return user.rol in ('farmacia', 'dev', 'admin')
+
+
+_RECEPCIONES_PENDIENTE = ('Traer recepciones desde ObServer todavía no está implementado. '
+                          'Cruzá subiendo el Excel del ERP.')
+
+
+def _recepciones_implementadas():
+    """observer_source.get_recepciones_factura no existe todavía.
+
+    Las dos rutas que la llaman se escribieron contra una función que nunca se
+    implementó: tocar el botón "ObServer" en el cruce daba AttributeError → 500.
+    Se chequea en runtime (y no con un flag) para que el día que se agregue la
+    función se prenda solo, sin tener que acordarse de tocar esto.
+    """
+    return hasattr(observer_source, 'get_recepciones_factura')
 
 
 def init_app(app):
@@ -75,7 +91,7 @@ def init_app(app):
         per_page = 50
         offset = (page - 1) * per_page
 
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
 
         with database.get_db() as session:
             base = session.query(database.ObsProducto)
@@ -262,7 +278,7 @@ def init_app(app):
         per_page = 40
         offset = (page - 1) * per_page
 
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
 
         with database.get_db() as session:
             mv_estado = matviews.estado_matview(session, 'mv_stats_drogas')
@@ -407,7 +423,7 @@ def init_app(app):
 
         from sqlalchemy import func as _f
 
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         hoy = datetime.now()
 
         # Generar (year, month) de los últimos 12 meses hasta el actual
@@ -457,7 +473,7 @@ def init_app(app):
 
         from sqlalchemy import func as _f
 
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         hoy = datetime.now()
 
         def _ym_hace(n):
@@ -569,7 +585,7 @@ def init_app(app):
         if len(lab_ids) < 2:
             return jsonify({'error': 'Se requieren al menos 2 laboratorios'}), 400
 
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         hoy = datetime.now()
 
         # Meses de los últimos 12
@@ -1051,6 +1067,174 @@ def init_app(app):
         flash(f'Análisis de {laboratorio} completado desde ObServer.', 'success')
         return redirect(url_for('purchase_results', uid=uid))
 
+    @app.route('/observer/pedido-rapido', methods=['GET', 'POST'])
+    @login_required
+    def observer_pedido_rapido():
+        """Ciclo rápido paralelo a /observer/analizar: form mínimo (lab + n_days)
+        → calcula stock + ventas → crea el Pedido directo → aterriza en
+        /order/<id>. Se saltea la pantalla intermedia /purchase/results.
+
+        La ruta /observer/analizar queda intacta (camino original con grilla
+        editable y exports). Esta es para el flujo express.
+        """
+        if not _user_tiene_observer(current_user):
+            flash('Tu usuario no tiene acceso a ObServer.', 'error')
+            return redirect(url_for('index'))
+        if not observer_source.observer_analisis_disponible():
+            flash('No hay datos de ventas para analizar. Corré el sync desde la PC '
+                  'de la farmacia.', 'error')
+            return redirect(url_for('purchase_index'))
+
+        if request.method == 'GET':
+            labs = observer_source.get_laboratorios_disponibles()
+            lab_pre = (request.args.get('lab') or '').strip()
+            proceso_id = request.args.get('proceso', type=int)
+            return render_template('observer_pedido_rapido.html',
+                                   laboratorios=labs, n_days_default=35,
+                                   lab_preseleccionado=lab_pre,
+                                   proceso_id=proceso_id)
+
+        # POST: calcular + crear pedido + redirigir a /order/<id>.
+        laboratorio = (request.form.get('laboratorio') or '').strip()
+        try:
+            n_days = max(1, min(365, int(request.form.get('n_days', 35))))
+        except (ValueError, TypeError):
+            n_days = 35
+        proceso_id = request.form.get('proceso_id', type=int)
+
+        if not laboratorio:
+            flash('Elegí un laboratorio.', 'error')
+            return redirect(url_for('observer_pedido_rapido', proceso=proceso_id))
+
+        hoy = datetime.now()
+        anio, mes = hoy.year, hoy.month
+        productos = observer_source.get_ventas_laboratorio(laboratorio, anio, mes)
+        if not productos:
+            flash(f'Sin datos de ventas para "{laboratorio}" este período.', 'warning')
+            return redirect(url_for('observer_pedido_rapido',
+                                    lab=laboratorio, proceso=proceso_id))
+
+        # Ventana 12m hacia atrás (igual que /observer/analizar).
+        start_m = mes - 11
+        start_y = anio
+        while start_m <= 0:
+            start_m += 12
+            start_y -= 1
+
+        cfg = get_config()
+        results = analyze_purchase(
+            productos, n_days, start_m, mes,
+            umbral_pico=cfg['umbral_pico'],
+            umbral_baja=cfg['umbral_baja'],
+            umbral_tendencia=cfg['umbral_tendencia'],
+            rot_alta_min=cfg['rot_alta_min'],
+            rot_media_min=cfg['rot_media_min'],
+        )
+
+        # Override de ventana: si el lab usa packs (flujo Roemmers), el avg_monthly
+        # y la rotación se calculan con los últimos 3 meses (no los 12 default).
+        # Esto refleja la política del tipo PEDIDO_ROEMMERS (base_demanda=u3m).
+        # Hardcoded por usa_packs como acordamos — si más adelante hay varios
+        # tipos custom, se cambia a un lookup de tipo_pedido_config.
+        try:
+            from sqlalchemy import func as _func
+
+            from purchase_engine import rotation_index as _rot_idx
+            with database.get_db() as _s_lab:
+                _lab_row = _s_lab.query(database.Laboratorio).filter(
+                    _func.lower(database.Laboratorio.nombre) == laboratorio.lower()
+                ).first()
+                _usa_packs = bool(_lab_row and _lab_row.usa_packs)
+            if _usa_packs:
+                for _r in results:
+                    _v3 = (_r.get('ventas') or [])[-3:]
+                    if len(_v3) >= 1:
+                        _avg3 = sum(_v3) / float(len(_v3))
+                        _r['avg_monthly'] = round(_avg3, 1)
+                        _r['rotacion'] = _rot_idx(
+                            _avg3, cfg['rot_alta_min'], cfg['rot_media_min'])
+        except Exception as _e:
+            # No-fatal: si algo falla seguimos con la ventana 12m default.
+            import logging as _lg
+            _lg.getLogger(__name__).warning(
+                'override u3m falló para lab=%s: %s', laboratorio, _e)
+
+        periodo_str = f'{start_m:02d}/{start_y} - {mes:02d}/{anio}'
+        farmacia_nom = current_user.nombre_completo or 'Farmacia'
+
+        with database.get_db() as session:
+            from helpers import _upsert_pedido_items as _ups_pi
+
+            sesion = AnalisisSesion(
+                laboratorio_nombre=laboratorio, periodo=periodo_str,
+                farmacia=farmacia_nom, n_days=n_days, fuente='observer',
+                n_productos=len(results),
+            )
+            session.add(sesion)
+            session.flush()
+            sesion_id = sesion.id
+
+            items = []
+            for p in results:
+                qty = int(p.get('order_qty') or 0)
+                if qty <= 0:
+                    continue
+                cb = (p.get('codigo_barra') or '').strip()
+                obs_id = p.get('observer_id')
+                # Si falta el EAN pero hay observer_id, lookup directo.
+                if not cb and obs_id:
+                    ean_real = (session.query(database.ObsCodigoBarras.codigo_barras)
+                                .filter(database.ObsCodigoBarras.producto_observer == obs_id,
+                                        database.ObsCodigoBarras.orden == 1,
+                                        database.ObsCodigoBarras.fecha_baja.is_(None))
+                                .first())
+                    cb = ean_real[0] if ean_real else ''
+                precio = float(p.get('precio_pvp') or 0)
+                items.append(PedidoItem(
+                    codigo_barra=cb, nombre=p.get('nombre', ''),
+                    cantidad=qty, precio_pvp=precio,
+                    subtotal=round(qty * precio, 2),
+                    rotacion=p.get('rotacion') or None,
+                    avg_monthly=p.get('avg_monthly') or None,
+                ))
+
+            if not items:
+                flash(f'El análisis no sugirió ningún producto a pedir para '
+                      f'"{laboratorio}".', 'warning')
+                return redirect(url_for('observer_pedido_rapido',
+                                        lab=laboratorio, proceso=proceso_id))
+
+            pedido = Pedido(
+                laboratorio=laboratorio, farmacia=farmacia_nom,
+                periodo=periodo_str, n_days=n_days,
+                analisis_sesion_id=sesion_id,
+                items=items, origen='Rapido',
+            )
+            session.add(pedido)
+            _ups_pi(session, items, observer_bridge=True)
+            session.flush()
+            pedido_id = pedido.id
+
+            # Linkear al proceso si vino el query/hidden.
+            if proceso_id:
+                proc = session.get(database.ProcesoCompra, proceso_id)
+                if proc:
+                    proc.pedido_id = pedido_id
+                    proc.analisis_sesion_id = sesion_id
+                    if not proc.analisis_hecho_en:
+                        proc.analisis_hecho_en = now_ar()
+                    if not proc.pedido_hecho_en:
+                        proc.pedido_hecho_en = now_ar()
+                    if proc.estado in ('BORRADOR', None):
+                        proc.estado = 'PEDIDO'
+                    proc.actualizado_en = now_ar()
+
+            session.commit()
+
+        flash(f'Pedido creado para {laboratorio}: {len(items)} productos.',
+              'success')
+        return redirect(url_for('order_detail', pedido_id=pedido_id))
+
     @app.route('/observer/factura/<int:invoice_id>/recepciones')
     @login_required
     def observer_recepciones_factura(invoice_id):
@@ -1059,6 +1243,8 @@ def init_app(app):
             return jsonify({'ok': False, 'error': 'Sin acceso a ObServer'}), 403
         if not observer_source.observer_disponible():
             return jsonify({'ok': False, 'error': 'ObServer no disponible'}), 503
+        if not _recepciones_implementadas():
+            return jsonify({'ok': False, 'error': _RECEPCIONES_PENDIENTE}), 501
         with database.get_db() as session:
             inv = session.get(database.Invoice, invoice_id)
             if not inv:
@@ -1084,6 +1270,10 @@ def init_app(app):
             flash('ObServer no está disponible en este momento.', 'error')
             return redirect(url_for('compare_view', invoice_id=invoice_id))
 
+        if not _recepciones_implementadas():
+            flash(_RECEPCIONES_PENDIENTE, 'error')
+            return redirect(url_for('compare_view', invoice_id=invoice_id))
+
         comprobante = (request.form.get('comprobante') or '').strip()
         if not comprobante:
             flash('Ingresá el número de comprobante de recepción de ObServer.', 'error')
@@ -1102,16 +1292,21 @@ def init_app(app):
                       f'(proveedor {inv.proveedor_cuit or "—"}).', 'warning')
                 return redirect(url_for('compare_view', invoice_id=invoice_id))
 
-            # Convertir recepciones de ObServer al formato erp_items
+            # Convertir recepciones de ObServer al formato erp_items.
+            # precio_unitario es POR UNIDAD: no multiplicar por cantidad (eso da el
+            # importe). El Ratio% de compare.html compara Unit.ERP contra el unitario
+            # de la factura, así que multiplicarlo lo distorsiona en todo ítem con
+            # cantidad > 1.
             erp_items = [{
                 'codigo_barra': r['codigo_barra'],
                 'descripcion': r['descripcion'],
                 'cantidad': r['cantidad'],
-                'precio_unitario': r['precio_unitario'] * r['cantidad']
-                                    if r.get('precio_unitario') and r.get('cantidad') else 0,
+                'precio_unitario': r.get('precio_unitario') or 0,
             } for r in recepciones]
 
-            save_erp_to_db(session, erp_items)
+            inv.erp_filename = f'ObServer {comprobante}'
+            inv.erp_carga_id = save_erp_to_db(session, erp_items)
+            session.commit()   # habilita el cruce antes de comparar
             differences = compare_invoice_vs_erp(session, invoice_id)
             save_differences(session, invoice_id, differences)
 

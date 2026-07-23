@@ -23,14 +23,24 @@ def init_app(app):
             rot_filter = ''
         q_text = (request.args.get('q') or '').strip()
         only_sin_mov = request.args.get('sin_mov') == '1'
+        # Filtro de rubro para las stats. Default Medicamentos: saca servicios y
+        # accesorios que ensucian todo (Sellado de Recetas, Costo Receta/Cupón,
+        # Retira en Farmacia, M.Farmacia…). 'todos' = sin filtrar.
+        rubro_cat = (request.args.get('rubro_cat') or 'Medicamentos').strip()
 
         with database.get_db() as session:
             PA = database.ProductAnalytics
+
+            def _rub(query):
+                if rubro_cat and rubro_cat != 'todos':
+                    return query.filter(PA.rubro == rubro_cat)
+                return query
+
             cobertura_expr = _case(
                 (PA.avg_monthly == 0, None),
                 else_=(PA.stock * 30.0 / PA.avg_monthly)
             )
-            q = session.query(PA, cobertura_expr.label('cobertura'))
+            q = _rub(session.query(PA, cobertura_expr.label('cobertura')))
             if lab_filter:
                 q = q.filter(PA.laboratorio == lab_filter)
             if rot_filter:
@@ -45,17 +55,21 @@ def init_app(app):
                 q_alerts = q_alerts.order_by(cobertura_expr.asc())
             alerts = q_alerts.limit(200).all()
 
-            labs = [row[0] for row in session.query(PA.laboratorio)
+            labs = [row[0] for row in _rub(session.query(PA.laboratorio))
                     .filter(PA.laboratorio.isnot(None))
                     .distinct().order_by(PA.laboratorio).all()]
+            # Rubros disponibles para el selector (con productos en el snapshot).
+            rubros_cat = [r for (r,) in session.query(PA.rubro)
+                          .filter(PA.rubro.isnot(None))
+                          .distinct().order_by(PA.rubro).all()]
 
-            total_products = session.query(_func.count(PA.codigo_barra)).scalar() or 0
-            alerts_count = session.query(_func.count(PA.codigo_barra)).filter(
+            total_products = _rub(session.query(_func.count(PA.codigo_barra))).scalar() or 0
+            alerts_count = _rub(session.query(_func.count(PA.codigo_barra)).filter(
                 PA.avg_monthly > 0, PA.stock * 30.0 / PA.avg_monthly < n_days
-            ).scalar() or 0
-            sin_mov_count = session.query(_func.count(PA.codigo_barra)).filter(
+            )).scalar() or 0
+            sin_mov_count = _rub(session.query(_func.count(PA.codigo_barra)).filter(
                 PA.sin_mov_60d == 1
-            ).scalar() or 0
+            )).scalar() or 0
             claims_open = session.query(_func.count(database.Claim.id)).filter(
                 database.Claim.estado == 'ABIERTO'
             ).scalar() or 0
@@ -86,7 +100,7 @@ def init_app(app):
 
             ultima_act = session.query(_func.max(PA.actualizado_en)).scalar()
 
-            base_q = session.query(PA)
+            base_q = _rub(session.query(PA))
             if lab_filter:
                 base_q = base_q.filter(PA.laboratorio == lab_filter)
             top_qty_rows = base_q.order_by(PA.avg_monthly.desc()).limit(10).all()
@@ -96,7 +110,10 @@ def init_app(app):
             } for p in top_qty_rows]
 
             valor_expr = PA.avg_monthly * PA.precio_pvp
-            top_val_rows = base_q.order_by(valor_expr.desc()).limit(10).all()
+            # precio_pvp NULL → valor_expr NULL → en Postgres ordena NULLS FIRST,
+            # así que los sin precio coparían el top con valor 0 (gráfico en blanco).
+            top_val_rows = (base_q.filter(PA.precio_pvp.isnot(None), PA.avg_monthly > 0)
+                            .order_by(valor_expr.desc()).limit(10).all())
             top_val = [{
                 'nombre': (p.descripcion or p.codigo_barra or '')[:40],
                 'valor': float(p.avg_monthly or 0) * float(p.precio_pvp or 0),
@@ -111,16 +128,17 @@ def init_app(app):
             } for p in loss_rows]
 
             capital_expr = PA.stock * PA.precio_pvp
-            capital_q = session.query(_func.coalesce(_func.sum(capital_expr), 0))
-            muerto_q = session.query(_func.coalesce(_func.sum(capital_expr), 0))\
-                .filter(PA.sin_mov_60d == 1)
+            capital_q = _rub(session.query(_func.coalesce(_func.sum(capital_expr), 0)))
+            muerto_q = _rub(session.query(_func.coalesce(_func.sum(capital_expr), 0))
+                            .filter(PA.sin_mov_60d == 1))
             if lab_filter:
                 capital_q = capital_q.filter(PA.laboratorio == lab_filter)
                 muerto_q = muerto_q.filter(PA.laboratorio == lab_filter)
             capital_total = float(capital_q.scalar() or 0)
             stock_muerto_total = float(muerto_q.scalar() or 0)
 
-            muerto_rows = base_q.filter(PA.sin_mov_60d == 1, PA.stock > 0)\
+            muerto_rows = base_q.filter(PA.sin_mov_60d == 1, PA.stock > 0,
+                                        PA.precio_pvp.isnot(None))\
                 .order_by(capital_expr.desc()).limit(10).all()
             top_muerto = [{
                 'nombre': (p.descripcion or p.codigo_barra or '')[:40],
@@ -133,6 +151,8 @@ def init_app(app):
                                rot_filter=rot_filter,
                                q_text=q_text,
                                only_sin_mov=only_sin_mov,
+                               rubro_cat=rubro_cat,
+                               rubros_cat=rubros_cat,
                                labs=labs,
                                alerts=alert_rows,
                                total_products=total_products,
@@ -147,6 +167,18 @@ def init_app(app):
                                top_muerto=top_muerto,
                                capital_total=capital_total,
                                stock_muerto_total=stock_muerto_total)
+
+    @app.route('/dashboard/recalcular', methods=['POST'])
+    def dashboard_recalcular():
+        """Refresca el snapshot product_analytics desde Observer (datos vivos).
+        Reemplaza la fuente vieja (flujo /purchase, en desuso)."""
+        from services.dashboard_snapshot import refrescar_product_analytics
+        try:
+            with database.get_db() as session:
+                stats = refrescar_product_analytics(session)
+            return jsonify({'ok': True, **stats})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
 
     @app.route('/dashboard/help')
     def dashboard_help():

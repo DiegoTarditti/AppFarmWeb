@@ -266,9 +266,38 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def get_providers():
+def pdf_de_carpeta_proveedor(ruta_base, nombre):
+    """Path real de un PDF elegido del listado de la carpeta del proveedor, o None.
+
+    Valida por igualdad exacta contra el listado real en vez de sanitizar el nombre.
+    El nombre lo emitió el server (/api/provider/<id>/folder-files), no el usuario, y
+    secure_filename() mangla los nombres válidos ("FC A 1234.pdf" → "FC_A_1234.pdf"),
+    con lo cual el archivo no se encontraba nunca. La igualdad exacta contra os.listdir
+    también corta path traversal: ".." o "/etc/passwd" no están en el listado.
+    """
+    if not ruta_base or not nombre or not os.path.isdir(ruta_base):
+        return None
+    try:
+        reales = {n for n in os.listdir(ruta_base) if n.lower().endswith('.pdf')}
+    except OSError:
+        return None
+    if nombre not in reales:
+        return None
+    path = os.path.join(ruta_base, nombre)
+    return path if os.path.isfile(path) else None
+
+
+def get_providers(solo_drog_activas=False):
+    """Proveedores para los dropdowns. Con solo_drog_activas=True filtra a las
+    droguerías activas para pedido (tipo='drogueria' + activo + activa_ped),
+    el mismo set que el dropdown 'Pedido a droguería' (/api/proveedores/drog-activas)."""
     with database.get_db() as session:
-        providers = session.query(database.Provider).order_by(database.Provider.razon_social).all()
+        q = session.query(database.Provider)
+        if solo_drog_activas:
+            q = q.filter(database.Provider.tipo == 'drogueria',
+                         database.Provider.activo.is_(True),
+                         database.Provider.activa_ped.is_(True))
+        providers = q.order_by(database.Provider.razon_social).all()
         return [{'id': p.id, 'razon_social': p.razon_social, 'cuit': p.cuit or '',
                  'parser_file': p.parser_file or '',
                  'ruta_facturas': p.ruta_facturas or '',
@@ -328,14 +357,33 @@ def _normalizar_nombre_entidad(nombre):
     ]
     for sufijo in sufijos:
         s = re.sub(sufijo + r'\s*$', '', s).strip()
-    # Quitar prefijos genéricos
-    prefijos = [r'^drogueria\s+', r'^drog\.?\s+', r'^laboratorio\s+', r'^lab\.?\s+']
+    # Quitar prefijos genéricos (singular y plural: "Laboratorios Bagó" → "bago")
+    prefijos = [r'^droguerias?\s+', r'^drog\.?\s+', r'^laboratorios?\s+', r'^lab\.?\s+']
     for pref in prefijos:
         s = re.sub(pref, '', s).strip()
     # Colapsar puntos, comas y espacios múltiples
     s = re.sub(r'[.,]+', ' ', s)
     s = re.sub(r'\s+', ' ', s).strip()
     return s
+
+
+def buscar_laboratorio_por_nombre(session, nombre, excluir_id=None):
+    """Busca un Laboratorio por nombre normalizado (case-insensitive, sin
+    acentos, sin sufijos societarios; ver `_normalizar_nombre_entidad`).
+    Devuelve el primer match o None. NO crea ni modifica nada.
+
+    excluir_id: ignora ese id (para chequear colisión al renombrar OTRO lab).
+    """
+    norm = _normalizar_nombre_entidad(nombre)
+    if not norm:
+        return None
+    q = session.query(database.Laboratorio)
+    if excluir_id is not None:
+        q = q.filter(database.Laboratorio.id != excluir_id)
+    for c in q.all():
+        if _normalizar_nombre_entidad(c.nombre) == norm:
+            return c
+    return None
 
 
 def get_or_create_laboratorio(session, nombre, observer_id=None, activo=True):
@@ -363,15 +411,12 @@ def get_or_create_laboratorio(session, nombre, observer_id=None, activo=True):
         if existente:
             return existente
     # 2. Match por nombre normalizado (defensa contra variantes "Roemmers" / "Roemmers S.A." / "ROEMMERS")
-    norm_buscado = _normalizar_nombre_entidad(nombre)
-    if norm_buscado:
-        candidatos = session.query(database.Laboratorio).all()
-        for c in candidatos:
-            if _normalizar_nombre_entidad(c.nombre) == norm_buscado:
-                # Si el existente no tiene observer_id pero el nuevo sí, asignárselo
-                if observer_id is not None and not c.observer_id:
-                    c.observer_id = observer_id
-                return c
+    c = buscar_laboratorio_por_nombre(session, nombre)
+    if c:
+        # Si el existente no tiene observer_id pero el nuevo sí, asignárselo
+        if observer_id is not None and not c.observer_id:
+            c.observer_id = observer_id
+        return c
     # 3. No existe → crear
     nuevo = database.Laboratorio(nombre=nombre, observer_id=observer_id, activo=activo)
     session.add(nuevo)
@@ -444,6 +489,7 @@ def get_config():
             session.commit()
         return {
             'farmacia_nombre': cfg.farmacia_nombre,
+            'farmacia_cuit': cfg.farmacia_cuit or '',
             'ruta_facturas': cfg.ruta_facturas or '',
             'ruta_excels': cfg.ruta_excels or '',
             'ruta_descargas': cfg.ruta_descargas or '',
@@ -457,7 +503,31 @@ def get_config():
             'rot_media_min': float(cfg.rot_media_min or 5.0),
             'rot_media_tol': float(cfg.rot_media_tol or 0.0),
             'rot_baja_tol': float(cfg.rot_baja_tol or 0.0),
+            'keep_alive_enabled': bool(cfg.keep_alive_enabled),
+            'keep_alive_interval_min': int(cfg.keep_alive_interval_min or 10),
+            'dockerpanel_ruta': cfg.dockerpanel_ruta or '',
+            'transfer_excedente_meses': float(cfg.transfer_excedente_meses or 6.0),
+            'transfer_necesita_meses': float(cfg.transfer_necesita_meses or 2.0),
         }
+
+
+# Defaults de formato de archivo por droguería (intrínsecos a la droguería, no a
+# la farmacia: Kellerhoff siempre .ped/KEL, 20 de Junio siempre .txt/20J). Así al
+# instalar una farmacia solo hace falta cargar codcli + carpeta en /providers.
+DROGUERIA_FORMATOS = {
+    'kellerhoff': {'formato_archivo': 'ped', 'sufijo': 'KEL'},
+    '20dejunio': {'formato_archivo': 'txt20j', 'sufijo': '20J'},
+}
+
+
+def drogueria_defaults(razon_social):
+    """formato/sufijo default según el nombre de la droguería (match por substring).
+    Devuelve {} si no matchea ninguna conocida."""
+    norm = re.sub(r'[^a-z0-9]', '', (razon_social or '').lower())
+    for clave, vals in DROGUERIA_FORMATOS.items():
+        if clave in norm:
+            return dict(vals)
+    return {}
 
 
 # ── Product helpers ──────────────────────────────────────────────────────────
@@ -627,8 +697,70 @@ def _find_producto(session, codigo_barra):
     return None
 
 
+def _ensure_producto(session, codigo_barra, *, descripcion=None, precio_pvp=None,
+                     laboratorio_id=None, fecha_compra=None, codigo_alfabeta=None):
+    """Garantiza un Producto local para ``codigo_barra``.
+
+    Estrategia:
+      1. Si ya existe (principal o alt), lo devuelve sin modificar.
+      2. Si el EAN está en ``obs_codigos_barras`` (vigente), lo materializa
+         vía :func:`materializar_producto` — observer_id linkeado,
+         fuente_creacion='materializar_obs', desc oficial de ObServer.
+         Si el EAN importado no es el primario del observer_id, se agrega
+         como alt en ``producto_codigos_barra``.
+      3. Si no hay match en ObServer, crea un Producto con
+         ``fuente_creacion='import_huerfano'`` para que sea auditable
+         (estos pueden materializarse después si aparecen en un sync).
+    """
+    from database import ObsCodigoBarras
+
+    if not codigo_barra:
+        return None
+    codigo_barra = str(codigo_barra).strip()
+
+    prod = _find_producto(session, codigo_barra)
+    if prod:
+        return prod
+
+    obs_row = (session.query(ObsCodigoBarras.producto_observer)
+               .filter(ObsCodigoBarras.codigo_barras == codigo_barra,
+                       ObsCodigoBarras.fecha_baja.is_(None))
+               .first())
+    if obs_row:
+        prod, _err = materializar_producto(session, obs_row[0])
+        if prod is not None:
+            if prod.codigo_barra != codigo_barra:
+                _add_alt_barcode(session, prod.codigo_barra, codigo_barra, fuente='import')
+            if precio_pvp and float(precio_pvp) > 0:
+                prod.precio_pvp = precio_pvp
+            if fecha_compra and (not prod.ultima_compra or fecha_compra > prod.ultima_compra):
+                prod.ultima_compra = fecha_compra
+            if laboratorio_id and not prod.laboratorio_id:
+                prod.laboratorio_id = laboratorio_id
+            return prod
+        # err = colisión por observer_id; caemos al huérfano para no perder el item.
+
+    prod = Producto(
+        codigo_barra=codigo_barra,
+        descripcion=str(descripcion).strip() if descripcion else '',
+        precio_pvp=precio_pvp,
+        laboratorio_id=laboratorio_id,
+        ultima_compra=fecha_compra,
+        codigo_alfabeta=str(codigo_alfabeta).strip() if codigo_alfabeta else None,
+        fuente_creacion='import_huerfano',
+    )
+    session.add(prod)
+    session.flush()
+    return prod
+
+
 def _upsert_producto(session, codigo_barra, descripcion, precio_pvp=None, laboratorio_id=None, fecha_compra=None, codigo_alfabeta=None):
-    """Crea o actualiza un producto en la tabla productos."""
+    """Crea o actualiza un producto en la tabla productos.
+
+    Para creaciones nuevas, delega en :func:`_ensure_producto` para que el
+    Producto quede materializado contra ObServer cuando sea posible
+    (evita fantasmas con observer_id=NULL que rompen el bridge).
+    """
     if not codigo_barra:
         return
     codigo_barra = str(codigo_barra).strip()
@@ -648,14 +780,10 @@ def _upsert_producto(session, codigo_barra, descripcion, precio_pvp=None, labora
         from datetime import datetime as _dt
         prod.actualizado_en = _dt.utcnow()
     else:
-        session.add(Producto(
-            codigo_barra=codigo_barra,
-            descripcion=str(descripcion).strip() if descripcion else '',
-            precio_pvp=precio_pvp,
-            laboratorio_id=laboratorio_id,
-            ultima_compra=fecha_compra,
-            codigo_alfabeta=codigo_alfabeta,
-        ))
+        _ensure_producto(session, codigo_barra,
+                         descripcion=descripcion, precio_pvp=precio_pvp,
+                         laboratorio_id=laboratorio_id, fecha_compra=fecha_compra,
+                         codigo_alfabeta=codigo_alfabeta)
 
 
 def _upsert_pedido_items(session, items, observer_bridge=False):
@@ -775,7 +903,6 @@ def _bulk_upsert_productos(session, items):
         except Exception:
             pass
 
-    new_prods = []
     for codigo_barra, descripcion, precio_pvp, fecha_compra in items:
         if not codigo_barra:
             continue
@@ -790,19 +917,15 @@ def _bulk_upsert_productos(session, items):
                 prod.ultima_compra = fecha_compra
             prod.actualizado_en = _dt.utcnow()
         else:
-            new_prod = Producto(
-                codigo_barra=bc,
-                descripcion=str(descripcion).strip() if descripcion else '',
-                precio_pvp=precio_pvp,
-                ultima_compra=fecha_compra,
-            )
-            new_prods.append(new_prod)
-            prod_map[bc] = new_prod
-    if new_prods:
-        session.add_all(new_prods)
-        # Flush para que una llamada subsiguiente vea estos productos en el SELECT
-        # y no intente insertarlos de nuevo (evita UNIQUE violation en codigo_barra).
-        session.flush()
+            # Delegado a _ensure_producto: materializa contra ObServer si está
+            # en obs_codigos_barras (evita fantasmas con observer_id=NULL).
+            # Si no, crea con fuente_creacion='import_huerfano' para auditoría.
+            new_prod = _ensure_producto(session, bc,
+                                        descripcion=descripcion,
+                                        precio_pvp=precio_pvp,
+                                        fecha_compra=fecha_compra)
+            if new_prod is not None:
+                prod_map[bc] = new_prod
 
 
 # ── Normalizador de texto PDF con caracteres cuadruplicados ───────────────
@@ -1211,29 +1334,26 @@ def calcular_metricas_pedido_auto(stock, minimo, maximo, u12m, m12m,
     }
 
 
-def aplicar_overrides_planificador(sugerido, stock, minimo, cant_fija, oferta_min):
+def aplicar_overrides_planificador(sugerido, stock, minimo, cant_fija, oferta_min,
+                                   cant_fija_efecto='override',
+                                   oferta_min_efecto='piso'):
     """Aplica overrides operativos sobre un sugerido calculado.
 
     Función pura, sin DB. Sirve para que /pedido/prueba (planificador) muestre
     los mismos números que después aparecen en /compras/dia/armar (operativo),
     que ya respeta estos overrides via services/calculo_pedido.py.
 
-    Reglas (orden de precedencia):
-      1. cant_fija (Producto.cantidad_reposicion_fija): hard override. Si
-         stock <= minimo y cant_fija > 0 → sugerido = cant_fija, regardless
-         de lo que diga el cálculo. Decisión explícita del operador.
-      2. oferta_min (OfertaMinimo.unidades_minima): piso. Si sugerido > 0
-         y sugerido < oferta_min → sugerido = oferta_min (subir al mínimo
-         para acceder al descuento TRF). Si sugerido = 0 NO sube (no compro
-         solo por la oferta).
-      3. Sin override → sugerido sin cambios.
+    La POLÍTICA de cada override viene del TipoPedidoConfig (configurable desde
+    /config/tipos-pedido). Los defaults reproducen el comportamiento histórico.
 
-    Args:
-        sugerido: int, cantidad calculada antes de override.
-        stock: int, stock actual (usado para regla cant_fija).
-        minimo: int, mínimo configurado (usado para regla cant_fija).
-        cant_fija: int|None, valor de Producto.cantidad_reposicion_fija.
-        oferta_min: int|None, valor de OfertaMinimo.unidades_minima vigente.
+    cant_fija_efecto:
+      - 'override' (default): si stock<=minimo y cant_fija>0 → sugerido=cant_fija.
+      - 'piso':     sugerido = max(sugerido, cant_fija) (nunca menos), si cant_fija>0.
+      - 'ninguno':  ignora cant_fija.
+    oferta_min_efecto:
+      - 'piso' (default): si 0 < sugerido < oferta_min → sube a oferta_min (TRF).
+      - 'indicador': NO toca la cantidad (solo se muestra el chip aparte).
+      - 'ninguno':  ignora oferta_min.
 
     Returns:
         tuple (sugerido_final, override_slug, override_valor) donde
@@ -1245,9 +1365,14 @@ def aplicar_overrides_planificador(sugerido, stock, minimo, cant_fija, oferta_mi
     cant_fija = int(cant_fija) if cant_fija else 0
     oferta_min = int(oferta_min) if oferta_min else 0
 
-    if cant_fija > 0 and stock <= minimo:
-        return (cant_fija, 'cant_fija', cant_fija)
-    if oferta_min > 0 and 0 < sugerido < oferta_min:
+    # 1) Cantidad fija del producto.
+    if cant_fija > 0 and cant_fija_efecto != 'ninguno':
+        if cant_fija_efecto == 'override' and stock <= minimo:
+            return (cant_fija, 'cant_fija', cant_fija)
+        if cant_fija_efecto == 'piso' and cant_fija > sugerido:
+            return (cant_fija, 'cant_fija', cant_fija)
+    # 2) Mínimo de oferta (solo 'piso' toca la cantidad; 'indicador'/'ninguno' no).
+    if oferta_min_efecto == 'piso' and oferta_min > 0 and 0 < sugerido < oferta_min:
         return (oferta_min, 'oferta_min', oferta_min)
     return (sugerido, None, None)
 
@@ -1267,6 +1392,32 @@ CADENCIA_BUCKETS = [
     ('baja',       'Baja (5-10/mes)',          '🐌',  5.0, '~45 días',     'azul'),
     ('muy_baja',   'Muy baja (<5/mes)',        '💤',  0.0, '~60-90 días',  'mute'),
 ]
+
+# Matriz Recencia × Rotación (mini-RFM): cruza CUÁNTO vende (avg 12m) con
+# HACE CUÁNTO vendió por última vez. Desambigua el avg: un producto con avg
+# bajo puede ser "vende poco pero seguido" (vivo) o "vendió fuerte hace un año
+# y nada desde entonces" (muerto arrastrando promedio).
+RFM_REC_MESES = 2     # "reciente" = vendió algo en los últimos 2 meses
+RFM_FREQ_MIN  = 5.0   # "vende seguido" = avg 12m ≥ 5 u/mes
+RFM_QUADRANTS = [
+    ('core',      '🟢 Core',             'rojo',     'Vende seguido y reciente — reponer normal'),
+    ('caida',     '🔻 En caída',          'amarillo', 'Vendía seguido pero hace rato no vende — revisar faltante / discontinuado'),
+    ('ocasional', '🔵 Ocasional vivo',    'azul',     'Esporádico pero con venta reciente — reponer poco'),
+    ('dormido',   '💤 Dormido / revisar', 'mute',     'Esporádico y sin ventas recientes — candidato a no reponer / devolver'),
+]
+
+
+def _clasif_rfm(avg12, meses_ult):
+    """Cuadrante RFM según avg 12m (frecuencia) y meses desde última venta."""
+    seguido = avg12 >= RFM_FREQ_MIN
+    reciente = meses_ult is not None and meses_ult <= RFM_REC_MESES
+    if seguido and reciente:
+        return 'core'
+    if seguido and not reciente:
+        return 'caida'
+    if not seguido and reciente:
+        return 'ocasional'
+    return 'dormido'
 
 
 def _bucket_cadencia(avg_mensual):
@@ -1380,6 +1531,63 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
                  .group_by(vm.producto_observer).all())
     urot_map = {r[0]: (float(r[1] or 0), float(r[2] or 0)) for r in urot_rows}
 
+    # 2b. Última venta (mes más reciente con unidades > 0, sin límite de ventana)
+    #     + avg de 12 meses completos (eje "frecuencia" de la matriz RFM —
+    #     más largo que la ventana de rotación para detectar caídas).
+    ult_rows = (session.query(vm.producto_observer,
+                              _f.max(vm.anio * 100 + vm.mes))
+                .filter(vm.producto_observer.in_(obs_ids), vm.unidades > 0)
+                .group_by(vm.producto_observer).all())
+    ult_map = {r[0]: int(r[1]) for r in ult_rows if r[1]}
+
+    s12_mes, s12_anio = end_mes - 11, end_anio
+    while s12_mes <= 0:
+        s12_mes += 12
+        s12_anio -= 1
+    desde12_ym = s12_anio * 100 + s12_mes
+    u12_rows = (session.query(vm.producto_observer, _f.sum(vm.unidades))
+                .filter(vm.producto_observer.in_(obs_ids),
+                        vm.anio * 100 + vm.mes >= desde12_ym,
+                        vm.anio * 100 + vm.mes <= hasta_ym)
+                .group_by(vm.producto_observer).all())
+    u12_map = {r[0]: float(r[1] or 0) for r in u12_rows}
+
+    # Precio para valorizar el stock dormido. Prioridad:
+    #   1. Precio ACTUAL = ProductAnalytics.precio_pvp (snapshot, PVP reciente —
+    #      el mismo que usa el dashboard). Es lo que más se acerca al precio de hoy.
+    #   2. Fallback: precio histórico de venta (monto/unidades sobre toda la
+    #      historia). NOTA: el "precio de última compra" no se usa porque
+    #      Producto.ultima_compra y las facturas están vacíos en la práctica.
+    pa_price = {}
+    for oid, pvp in (session.query(database.Producto.observer_id,
+                                   database.ProductAnalytics.precio_pvp)
+                     .join(database.ProductAnalytics,
+                           database.ProductAnalytics.codigo_barra == database.Producto.codigo_barra)
+                     .filter(database.Producto.observer_id.in_(obs_ids),
+                             database.ProductAnalytics.precio_pvp.isnot(None),
+                             database.ProductAnalytics.precio_pvp > 0)):
+        pa_price[oid] = float(pvp)
+
+    precio_rows = (session.query(vm.producto_observer, _f.sum(vm.unidades),
+                                 _f.sum(vm.monto))
+                   .filter(vm.producto_observer.in_(obs_ids))
+                   .group_by(vm.producto_observer).all())
+    precio_hist = {r[0]: (float(r[2] or 0) / float(r[1]))
+                   for r in precio_rows if r[1] and float(r[1]) > 0}
+
+    hoy_idx = hoy.year * 12 + hoy.month
+
+    def _meses_desde(ym):
+        if not ym:
+            return None
+        return hoy_idx - ((ym // 100) * 12 + (ym % 100))
+
+    # Matriz Recencia × Rotación: acumula sobre TODOS los productos del lab
+    # (con y sin ventas recientes), no solo los de los buckets.
+    matriz = {slug: {'slug': slug, 'label': label, 'color': color, 'desc': desc,
+                     'n': 0, 'monto_mensual': 0.0, 'stock_u': 0}
+              for slug, label, color, desc in RFM_QUADRANTS}
+
     # 3. Por producto: calcular cadencia + bucket + monto mensual.
     # Nota: usamos 'productos' (no 'items') porque en Jinja2 `dict.items`
     # resuelve al método del dict, no a la key — sería un bug silencioso.
@@ -1391,18 +1599,40 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
     sin_ventas = []
 
     for r in rows_prod:
+        # Recencia × rotación (sobre todos los productos del lab).
+        avg12 = u12_map.get(r.observer_id, 0.0) / 12.0
+        meses_ult = _meses_desde(ult_map.get(r.observer_id))
+        rfm = _clasif_rfm(avg12, meses_ult)
+        st = stock_map.get(r.observer_id, 0)
+        matriz[rfm]['n'] += 1
+        matriz[rfm]['stock_u'] += st
+
         u_rot, m_rot = urot_map.get(r.observer_id, (0.0, 0.0))
         if u_rot <= 0:
+            if r.observer_id in pa_price:
+                precio_v, precio_origen = pa_price[r.observer_id], 'actual'
+            elif r.observer_id in precio_hist:
+                precio_v, precio_origen = precio_hist[r.observer_id], 'venta'
+            else:
+                precio_v, precio_origen = 0.0, None
+            valor = round(st * precio_v, 2) if st > 0 else 0.0
             sin_ventas.append({
                 'observer_id': r.observer_id,
                 'nombre': r.descripcion,
                 'codigo_alfabeta': r.codigo_alfabeta,
+                'meses_ult_venta': meses_ult,
+                'rfm': rfm,
+                'stock': st,
+                'precio_unit': round(precio_v, 2),
+                'precio_origen': precio_origen,
+                'valor': valor,
             })
             continue
         avg_diario = u_rot / dias_rotacion
         avg_mensual = avg_diario * _DIAS_PROM_MES
         precio_unit = (m_rot / u_rot) if u_rot else 0  # PVP estimado
         monto_mensual = avg_mensual * precio_unit
+        matriz[rfm]['monto_mensual'] += monto_mensual
         cant_fija = cant_fija_map.get(r.observer_id)
         # Cant de reposición: si tiene cant_fija configurada usa eso;
         # sino, asume cobertura_default días.
@@ -1423,7 +1653,7 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
             'observer_id': r.observer_id,
             'nombre': r.descripcion,
             'codigo_alfabeta': r.codigo_alfabeta,
-            'stock': stock_map.get(r.observer_id, 0),
+            'stock': st,
             'avg_diario': round(avg_diario, 2),
             'avg_mensual': round(avg_mensual, 1),
             'cant_repo': cant_repo,
@@ -1431,6 +1661,8 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
             'cadencia_dias': round(cadencia_dias, 1),
             'precio_unit': round(precio_unit, 2),
             'monto_mensual': round(monto_mensual, 2),
+            'meses_ult_venta': meses_ult,
+            'rfm': rfm,
         })
 
     # Ordenar productos dentro de cada bucket por monto mensual desc (lo que más
@@ -1444,18 +1676,95 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
     con_ventas = sum(b['n_productos'] for b in buckets)
     monto_total = sum(b['monto_mensual'] for b in buckets)
 
+    for m in matriz.values():
+        m['monto_mensual'] = round(m['monto_mensual'], 2)
+    matriz_list = [matriz[slug] for slug, *_ in RFM_QUADRANTS]
+
+    # Catálogo dormido: orden descendente por última venta (la más reciente
+    # primero; los "nunca" al final) y stats de stock parado valorizado.
+    sin_ventas.sort(key=lambda x: (x['meses_ult_venta'] is None,
+                                   x['meses_ult_venta'] if x['meses_ult_venta'] is not None else 9999,
+                                   -x['valor']))
+    dormido_con_stock = sum(1 for x in sin_ventas if x['stock'] > 0)
+    dormido_stock_u = sum(x['stock'] for x in sin_ventas if x['stock'] > 0)
+    dormido_valor = round(sum(x['valor'] for x in sin_ventas), 2)
+
     return {
         'lab_id': lab_observer_id,
         'meses_rotacion': meses_rotacion,
         'cobertura_default': cobertura_default,
         'buckets': buckets,
-        'sin_ventas': sorted(sin_ventas, key=lambda x: x['nombre']),
+        'matriz': matriz_list,
+        'rfm_rec_meses': RFM_REC_MESES,
+        'rfm_freq_min': RFM_FREQ_MIN,
+        'sin_ventas': sin_ventas,
         'totales': {
             'productos_con_ventas': con_ventas,
             'productos_sin_ventas': len(sin_ventas),
             'monto_mensual_total': round(monto_total, 2),
+            'dormido_con_stock': dormido_con_stock,
+            'dormido_stock_u': dormido_stock_u,
+            'dormido_valor': dormido_valor,
         }
     }
+
+
+def recalcular_snapshot_cadencias(session, cobertura=30, meses_rot=3):
+    """Materializa `analizar_cadencias_lab` para TODOS los labs con ventas y
+    reemplaza la tabla `cadencia_lab_snapshot`. Devuelve la cantidad de filas.
+
+    Reusado por el endpoint web /informes/cadencias-resumen/recalcular y por el
+    push a Render (computa local, después se copia la tabla). ~5s para ~400 labs.
+    """
+    from sqlalchemy import func as _f
+
+    import database
+    lab_ids = [r[0] for r in (session.query(database.ObsProducto.laboratorio_observer)
+               .join(database.ObsVentaMensual,
+                     database.ObsVentaMensual.producto_observer == database.ObsProducto.observer_id)
+               .filter(database.ObsProducto.fecha_baja.is_(None),
+                       database.ObsProducto.laboratorio_observer.isnot(None))
+               .distinct().all())]
+    lab_nombre = dict(session.query(database.ObsLaboratorio.observer_id,
+                                    database.ObsLaboratorio.descripcion))
+    ahora = database.now_ar()
+    rows = []
+    for lid in lab_ids:
+        d = analizar_cadencias_lab(session, lid, meses_rotacion=meses_rot,
+                                   cobertura_default=cobertura)
+        t = d['totales']
+        if t['productos_con_ventas'] == 0 and t['productos_sin_ventas'] == 0:
+            continue
+        rfm = {m['slug']: m['n'] for m in d['matriz']}
+        rfm_m = {m['slug']: m['monto_mensual'] for m in d['matriz']}
+        bk = {b['slug']: b['n_productos'] for b in d['buckets']}
+        bk_m = {b['slug']: b['monto_mensual'] for b in d['buckets']}
+        rows.append({
+            'lab_id': lid, 'lab_nombre': lab_nombre.get(lid, str(lid)),
+            'core': rfm.get('core', 0), 'ocasional': rfm.get('ocasional', 0),
+            'caida': rfm.get('caida', 0), 'dormido': rfm.get('dormido', 0),
+            'alta': bk.get('alta', 0), 'media_alta': bk.get('media_alta', 0),
+            'media': bk.get('media', 0), 'baja': bk.get('baja', 0),
+            'muy_baja': bk.get('muy_baja', 0),
+            'core_monto': rfm_m.get('core', 0), 'ocasional_monto': rfm_m.get('ocasional', 0),
+            'caida_monto': rfm_m.get('caida', 0), 'dormido_monto': rfm_m.get('dormido', 0),
+            'alta_monto': bk_m.get('alta', 0), 'media_alta_monto': bk_m.get('media_alta', 0),
+            'media_monto': bk_m.get('media', 0), 'baja_monto': bk_m.get('baja', 0),
+            'muy_baja_monto': bk_m.get('muy_baja', 0),
+            'con_ventas': t['productos_con_ventas'],
+            'sin_ventas': t['productos_sin_ventas'],
+            'monto_mensual': t['monto_mensual_total'],
+            'dormido_valor': t['dormido_valor'],
+            'dormido_con_stock': t['dormido_con_stock'],
+            'dormido_stock_u': t['dormido_stock_u'],
+            'cobertura': cobertura, 'meses_rot': meses_rot,
+            'actualizado_en': ahora,
+        })
+    session.query(database.CadenciaLabSnapshot).delete()
+    session.flush()
+    session.bulk_insert_mappings(database.CadenciaLabSnapshot, rows)
+    session.commit()
+    return len(rows)
 
 
 def calcular_alertas_repo_fija(session, dias_aviso=7, meses_rotacion=3,
@@ -1644,6 +1953,74 @@ def normalizar_unidades_minima(valor):
     return max(1, v)
 
 
+def resolver_laboratorio(session, laboratorio_observer):
+    """Devuelve el Laboratorio master para un observer_id de ObServer, creándolo
+    si hace falta. NO commitea (flush cuando crea).
+
+    Resuelve por ``observer_id``; si no existe, reusa el lab con el mismo
+    ``nombre`` (backfilleando su ``observer_id`` si estaba NULL) antes de crear.
+    Esto evita violar ``laboratorios_nombre_key`` cuando el lab ya está cargado
+    por otra fuente (ej. import manual) con observer_id distinto/NULL.
+    """
+    from database import Laboratorio, ObsLaboratorio
+    if not laboratorio_observer:
+        return None
+    lab = (session.query(Laboratorio)
+           .filter_by(observer_id=laboratorio_observer).first())
+    if lab:
+        return lab
+    obs_lab = session.get(ObsLaboratorio, laboratorio_observer)
+    if not obs_lab:
+        return None
+    nombre = (obs_lab.descripcion or '').strip()
+    if not nombre:
+        return None
+    # Reusar por nombre si ya existe (evita violar nombre UNIQUE).
+    lab = session.query(Laboratorio).filter_by(nombre=nombre).first()
+    if lab:
+        if lab.observer_id is None:
+            lab.observer_id = laboratorio_observer
+        return lab
+    lab = Laboratorio(nombre=nombre, observer_id=laboratorio_observer, activo=True)
+    session.add(lab)
+    session.flush()
+    return lab
+
+
+def materializar_producto(session, observer_id):
+    """Crea (o devuelve) el Producto master local a partir de un ObsProducto.
+
+    Misma lógica que la ruta /producto/materializar, pero reutilizable desde
+    flujos bulk (ej. presentación a varios). NO commitea — flush para tener el
+    id; el caller decide el commit. Devuelve (Producto|None, error_str|None).
+    """
+    from database import ObsCodigoBarras, ObsProducto
+    obs = session.get(ObsProducto, observer_id)
+    if not obs:
+        return None, f'observer_id {observer_id} no existe'
+    existente = session.query(Producto).filter_by(observer_id=observer_id).first()
+    if existente:
+        return existente, None
+    # EAN principal (orden mínimo, activo). Placeholder si ObServer no tiene EAN.
+    ean_row = (session.query(ObsCodigoBarras.codigo_barras)
+               .filter_by(producto_observer=observer_id)
+               .filter(ObsCodigoBarras.fecha_baja.is_(None))
+               .order_by(ObsCodigoBarras.orden).first())
+    ean = ean_row[0] if ean_row else f'OBS-{observer_id}'
+    colision = session.query(Producto).filter_by(codigo_barra=ean).first()
+    if colision:
+        return None, f'EAN {ean} ya está en el producto #{colision.id}'
+    lab = resolver_laboratorio(session, obs.laboratorio_observer)
+    lab_id_local = lab.id if lab else None
+    prod = Producto(codigo_barra=ean, descripcion=obs.descripcion,
+                    observer_id=observer_id, laboratorio_id=lab_id_local,
+                    codigo_alfabeta=obs.codigo_alfabeta,
+                    fuente_creacion='materializar_obs')
+    session.add(prod)
+    session.flush()
+    return prod, None
+
+
 def _sin_acentos(s):
     """lowercase + sin acentos, para matching insensible a tildes.
 
@@ -1672,26 +2049,44 @@ def _ventana_12m_ym(hoy=None):
     return desde_y * 100 + desde_m, hasta
 
 
-def analizar_gap_marcas(session, lab_observer_id):
-    """Informe 1 — Gap de captura por marca estrella.
+def resolver_obs_lab_por_nombre(session, nombre):
+    """Devuelve el observer_id de un ObsLaboratorio cuyo nombre normalizado
+    matchea `nombre`, o None.
 
-    Para cada marca del portfolio de referencia del lab, cruza contra las
-    ventas propias (u12m + monto) de los productos de ese lab cuya descripción
-    matchea el patrón de la marca. Detecta marcas líderes a nivel país que la
-    farmacia vende poco o nada → oportunidad de captura.
-
-    Returns dict {nombre_lab, nota, total_u12m, total_monto, marcas: [...]} o None.
+    Normaliza con `_normalizar_nombre_entidad` (sin acentos, sin sufijos
+    societarios). El observer_id DIFIERE entre farmacias (Badia/Pieri tienen
+    DBs separadas), por eso siempre se resuelve por nombre en runtime.
     """
-    import referencia_mercado
-    ref = referencia_mercado.referencia_de_lab(lab_observer_id)
-    if not ref:
+    norm = _normalizar_nombre_entidad(nombre)
+    if not norm:
         return None
+    for lab in (session.query(database.ObsLaboratorio.observer_id,
+                              database.ObsLaboratorio.descripcion)
+                .filter(database.ObsLaboratorio.fecha_baja.is_(None)).all()):
+        if _normalizar_nombre_entidad(lab.descripcion) == norm:
+            return lab.observer_id
+    return None
+
+
+def cruzar_marcas_vs_ventas(session, lab_observer_id, marcas, nombre_lab, nota=''):
+    """Cruza una lista de marcas contra las ventas propias del lab.
+
+    `marcas`: lista de dicts {marca, molecula, indicacion, top10_nacional,
+    match_pattern}. Para cada una busca los productos del lab cuya descripción
+    matchea `match_pattern` (ILIKE) y suma u12m + monto de la ventana 12m.
+
+    Returns dict {nombre_lab, nota, total_u12m, total_monto, marcas: [...]}.
+    Fuente de las marcas indistinta: dataset curado o web search.
+    """
     from sqlalchemy import func as _f
     desde, hasta = _ventana_12m_ym()
 
     marcas_out = []
     total_u, total_m = 0, 0.0
-    for marca, molecula, indicacion, top10, match in ref['marcas']:
+    for m in marcas:
+        match = (m.get('match_pattern') or m.get('marca') or '').strip()
+        if not match:
+            continue
         prods = (session.query(database.ObsProducto.observer_id)
                  .filter(database.ObsProducto.laboratorio_observer == lab_observer_id,
                          database.ObsProducto.descripcion.ilike(f'%{match}%'),
@@ -1711,18 +2106,36 @@ def analizar_gap_marcas(session, lab_observer_id):
         total_u += u12m
         total_m += monto
         marcas_out.append({
-            'marca': marca, 'molecula': molecula, 'indicacion': indicacion,
-            'top10_nacional': top10, 'n_productos': len(pids),
+            'marca': m.get('marca', ''), 'molecula': m.get('molecula', ''),
+            'indicacion': m.get('indicacion', ''),
+            'top10_nacional': bool(m.get('top10_nacional')),
+            'n_productos': len(pids),
             'u12m': u12m, 'u_mensual': round(u12m / 12.0, 1),
             'monto': round(monto, 2), 'vende': u12m > 0,
         })
     # Orden: top10 nacional primero, dentro de cada grupo por u12m desc.
-    marcas_out.sort(key=lambda m: (not m['top10_nacional'], -m['u12m']))
+    marcas_out.sort(key=lambda x: (not x['top10_nacional'], -x['u12m']))
     return {
-        'nombre_lab': ref['nombre'], 'nota': ref.get('nota', ''),
+        'nombre_lab': nombre_lab, 'nota': nota,
         'total_u12m': total_u, 'total_monto': round(total_m, 2),
         'marcas': marcas_out,
     }
+
+
+def analizar_gap_marcas(session, lab_observer_id):
+    """Informe 1 (dataset curado) — wrapper legacy. Convierte el dataset de
+    referencia a dicts y delega en `cruzar_marcas_vs_ventas`. None si no hay
+    dataset. (El flujo nuevo de gap-marcas usa web search; ver routes/informes.)
+    """
+    import referencia_mercado
+    ref = referencia_mercado.referencia_de_lab(lab_observer_id)
+    if not ref:
+        return None
+    marcas = [{'marca': mc, 'molecula': mol, 'indicacion': ind,
+               'top10_nacional': top10, 'match_pattern': match}
+              for mc, mol, ind, top10, match in ref['marcas']]
+    return cruzar_marcas_vs_ventas(session, lab_observer_id, marcas,
+                                   ref['nombre'], ref.get('nota', ''))
 
 
 def analizar_ranking_vs_nacional(session, lab_observer_id, limit=30):

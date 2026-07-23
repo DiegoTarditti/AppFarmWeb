@@ -202,6 +202,54 @@ def init_app(app):
         info['python_version'] = sys.version.split()[0]
         info['worker_pid'] = os.getpid()
 
+        # ── Espacio en disco — para dimensionar la VM y planear la migración
+        # de volúmenes al server nuevo. ──
+        disco = {}
+        try:
+            import shutil
+            total, usado, libre = shutil.disk_usage('/')
+            disco = {'total_gb': round(total / 1e9, 1), 'usado_gb': round(usado / 1e9, 1),
+                     'libre_gb': round(libre / 1e9, 1),
+                     'pct': round(usado * 100 / total) if total else 0}
+        except Exception as e:
+            disco = {'error': str(e)[:120]}
+        info['disco'] = disco
+
+        # Tamaño de la DB + top tablas por peso (no por filas: por bytes en disco).
+        info['db_size'] = None
+        info['tablas_peso'] = []
+        if db_ok:
+            try:
+                with database.get_db() as s:
+                    row = s.execute(_text(
+                        "SELECT pg_size_pretty(pg_database_size(current_database()))")).fetchone()
+                    info['db_size'] = row[0] if row else None
+                    rows = s.execute(_text("""
+                        SELECT relname, pg_size_pretty(pg_total_relation_size(c.oid)) AS pretty
+                          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                         WHERE n.nspname = 'public' AND c.relkind = 'r'
+                         ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 8
+                    """)).fetchall()
+                    info['tablas_peso'] = [{'tabla': r[0], 'pretty': r[1]} for r in rows]
+            except Exception as e:
+                info['db_size_error'] = str(e)[:120]
+
+        # Directorios que crecen (media/cache) — hay que migrarlos aparte de la DB.
+        dirs = []
+        raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for nombre in ('uploads', '.whisper_cache'):
+            ruta = os.path.join(raiz, nombre)
+            if os.path.isdir(ruta):
+                tot = 0
+                for r_, _dirs, fs in os.walk(ruta):
+                    for x in fs:
+                        try:
+                            tot += os.path.getsize(os.path.join(r_, x))
+                        except OSError:
+                            pass
+                dirs.append({'nombre': nombre, 'mb': round(tot / 1e6, 1)})
+        info['dirs_peso'] = dirs
+
         return render_template('admin_health.html', info=info)
 
     @app.route('/admin/alarmas')
@@ -744,6 +792,7 @@ def init_app(app):
     # vía polling outbound. Permite deployar / ejecutar comandos desde
     # cualquier device sin necesidad de exponer la red de la farmacia.
     PANEL_COMANDOS_WHITELIST = {
+        # AppFarmWeb (docker compose)
         'pull_restart': 'Pull código + Restart Web',
         'restart': 'Restart Web',
         'restart_full': 'Down + Up (recreate)',
@@ -751,10 +800,18 @@ def init_app(app):
         'status': 'Estado contenedores',
         'version': 'Versión deployada (git rev)',
         'sync_now': 'Sync ObServer ahora',
+        'sync_inteligente': 'Sync ObServer inteligente (solo vencidos)',
+        'push_cadencias': 'Generar + subir cadencias a Render',
         'dedupe_labs_dry': 'Dedupe labs/proveedores (DRY-RUN)',
         'dedupe_labs_apply': 'Dedupe labs/proveedores (APLICAR)',
         'purgar_cron_log': 'Purgar cron_log >7 días',
+        'backup': 'Backup ad-hoc (pg_dump)',
         'health': 'Health check completo',
+        # AppCajasBadia (systemd service, distinto stack en el mismo server)
+        'actualizar-cajas': '💳 AppCajas — Actualizar (git pull + restart)',
+        'restart-cajas': '💳 AppCajas — Restart',
+        'logs-cajas': '💳 AppCajas — Logs (50 líneas)',
+        'status-cajas': '💳 AppCajas — Estado del service',
     }
 
     @app.route('/admin/panel')
@@ -818,7 +875,12 @@ def init_app(app):
                 'resultado': (r.resultado[:8000] if r.resultado else None),
                 'origen': r.origen,
             } for r in rows]
-        return jsonify({'ok': True, 'comandos': recientes})
+            hb = session.get(database.PanelHeartbeat, 1)
+            heartbeat = {
+                'ultimo_visto': hb.ultimo_visto.isoformat() if hb and hb.ultimo_visto else None,
+                'origen': hb.origen if hb else None,
+            }
+        return jsonify({'ok': True, 'comandos': recientes, 'heartbeat': heartbeat})
 
     def _check_panel_token():
         """Wrapper sobre _check_token_header para X-Panel-Token + PANEL_REMOTO_TOKEN."""
@@ -843,6 +905,15 @@ def init_app(app):
             return jsonify({'ok': False, 'error': err[0]}), err[1]
         origen = (request.args.get('origen') or 'dockerpanel').strip()[:40]
         with database.get_db() as session:
+            # Heartbeat: estampar que la PC poleó (haya o no comandos). Permite
+            # ver desde Render si el DockerPanel está vivo → la PC está prendida.
+            hb = session.get(database.PanelHeartbeat, 1)
+            if hb is None:
+                hb = database.PanelHeartbeat(id=1)
+                session.add(hb)
+            hb.ultimo_visto = now_ar()
+            hb.origen = origen
+            session.commit()
             # Zombie sweep — sin esto, un en_proceso sin reportar nunca se libera.
             umbral_zombie = now_ar() - timedelta(minutes=10)
             session.execute(_text(

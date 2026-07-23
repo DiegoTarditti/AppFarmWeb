@@ -1,0 +1,149 @@
+{# Macro reutilizable: buscador de cliente + dirección con autocomplete,
+   manejo de domicilios guardados, geocodificación y modales nuevo/editar.
+
+   Uso:
+     {% from "_cliente_picker.html" import cliente_picker, cliente_picker_modales %}
+
+     <div class="seccion">
+       <div class="seccion-titulo">👤 Cliente</div>
+       {{ cliente_picker() }}
+     </div>
+     ...
+     {{ cliente_picker_modales() }}
+
+   Requiere también:
+     <script src="/static/js/cliente_picker.js"></script>
+     ClientePicker.init({ onAddressChange: ()=>cotizarEnvio() });
+
+   Nota: por ahora los IDs son fijos (pCliente, pDir, pPiso, etc.), una sola
+   instancia por página. Si necesitás múltiples instancias en la misma vista,
+   agregar prefijo via parámetro del macro y refactorizar los getElementById
+   en cliente_picker.js.
+#}
+
+{% macro cliente_picker(con_alta_edicion=True) %}
+{# Inyecta la whitelist de ciudades del geocoder para el JS (env: ENVIO_CIUDADES_FILTRO).
+   `con_alta_edicion=False` esconde los botones + (nuevo) y ✏️ (editar), p.ej. cuando se usa
+   solo para cotizar tarifas y no se quiere permitir altas desde acá. #}
+<script>window.ENVIO_CIUDADES_FILTRO = {{ (envio_ciudades_filtro or ['rosario','funes','roldan'])|tojson }};</script>
+<div class="grid grid-cliente">
+  <div class="field" style="position:relative;">
+    <label>Cliente
+      <span id="osBadge" style="display:none; margin-left:6px; font-size:10px; padding:2px 7px; border-radius:999px; font-weight:700; background:rgba(124,77,255,.18); color:#a78bfa; border:1px solid rgba(124,77,255,.35);"></span>
+    </label>
+    <div style="display:flex; gap:5px;">
+      <input id="pCliente" class="input" placeholder="Buscar (multi-palabra)" style="flex:1;" autocomplete="off" oninput="ClientePicker.onClienteInput()" onkeydown="if(event.key==='Escape')document.getElementById('resCli').style.display='none'">
+      <button onclick="ClientePicker.buscarCli()" class="hbtn" title="Forzar búsqueda">🔎</button>
+      {% if con_alta_edicion %}
+      <button onclick="ClientePicker.abrirNuevoCliente()" class="hbtn" title="Nuevo cliente">＋</button>
+      <button id="btnEditarCli" class="hbtn" title="Editar datos" style="display:none;" onclick="ClientePicker.abrirEditarCliente(window._cid, window._oid)">✏️</button>
+      {% endif %}
+    </div>
+  </div>
+  <div class="field" style="position:relative;">
+    <label>Dirección (calle y número)
+      {# Mini-indicador del vínculo conv ↔ cliente. Lo pinta cliente_picker.js
+         (_pintarVinculoBadge) al final de loadCliente/limpia en clear(). #}
+      <span id="vinculoBadge" class="muted2" style="margin-left:8px; font-size:10px; font-weight:400;"></span>
+    </label>
+    <div style="display:flex; gap:5px;">
+      <input id="pDir" class="input" placeholder="ej: Av. Córdoba 3400" style="flex:1;" autocomplete="off" oninput="ClientePicker.onDirInput()" onkeydown="if(event.key==='Escape')document.getElementById('resGeo').style.display='none'">
+      <button type="button" onclick="ClientePicker.buscarGeoSugerencias()" class="hbtn" title="Buscar dirección en mapa">📍</button>
+    </div>
+    <div id="resGeo" class="res" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:5;"></div>
+  </div>
+  {# Piso + Depto van en la misma fila (son inputs chicos y se desperdicia ancho).
+     Cada label tiene un mini-botón ✂ "tomar selección": selecciona texto en el
+     campo Dirección y al click el texto va al campo + se quita de Dirección. #}
+  <div class="field" style="flex:0 0 160px;">
+    <div style="display:flex; gap:8px;">
+      <div style="flex:1; min-width:0;">
+        <label style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
+          <span>Piso</span>
+          <button type="button" onclick="ClientePicker.fieldPick('pPiso')" title="Tomar la selección del campo Dirección"
+                  style="background:none; border:none; cursor:pointer; padding:0 3px; font-size:11px; opacity:0.55;">✂</button>
+        </label>
+        <input id="pPiso" class="input" placeholder="ej: 1 / PB" style="width:100%;">
+      </div>
+      <div style="flex:1; min-width:0;">
+        <label style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
+          <span>Depto</span>
+          <button type="button" onclick="ClientePicker.fieldPick('pDepto')" title="Tomar la selección del campo Dirección"
+                  style="background:none; border:none; cursor:pointer; padding:0 3px; font-size:11px; opacity:0.55;">✂</button>
+        </label>
+        <input id="pDepto" class="input" placeholder="ej: B" style="width:100%;">
+      </div>
+    </div>
+  </div>
+  {# Referencia + Ciudad en misma línea (Diego 2026-06-15) — Referencia más ancha,
+     Ciudad fija a la derecha. #}
+  <div class="field" style="flex:1 1 200px;">
+    <div style="display:flex; gap:8px;">
+      <div style="flex:2; min-width:0;">
+        <label style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
+          <span>Referencia</span>
+          <button type="button" onclick="ClientePicker.fieldPick('pRef')" title="Tomar la selección del campo Dirección"
+                  style="background:none; border:none; cursor:pointer; padding:0 3px; font-size:11px; opacity:0.55;">✂</button>
+        </label>
+        <input id="pRef" class="input" placeholder="monoblock 4, torre B, entre calles..." style="width:100%;">
+      </div>
+      <div style="flex:1; min-width:0;">
+        <label style="display:block;">Ciudad <span id="pCiudadExtra" style="margin-left:4px; font-weight:400; font-size:10px;"></span></label>
+        <select id="pCiudad" class="input" style="width:100%;"></select>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="grid grid-cliente" style="margin-top:10px;">
+  {# 'Domicilio' label se quitó (Diego 2026-06-14): redundante visualmente.
+     El contador (pDomCount) sigue en el DOM para que el JS lo escriba si hay varios. #}
+  <div class="field" id="pDomWrap" style="display:none; grid-column: 1 / -1;">
+    <span id="pDomCount" class="muted2" style="font-size:10px;"></span>
+    <select id="pDom" class="input" onchange="ClientePicker.onDomChange()" style="display:none; max-width:380px;" title="Elegí un domicilio guardado o dejá '— ninguno —' para escribir uno nuevo arriba"><option value="">— ninguno · usar la dirección de arriba —</option></select>
+    <div id="pDomSingle" class="muted" style="font-size:11px; padding:0;"></div>
+    <div id="pDomCoords" style="font-family:monospace; padding:0; min-height:14px;"></div>
+  </div>
+</div>
+<div id="resCli" class="res" style="display:none;"></div>
+{% endmacro %}
+
+
+{% macro cliente_picker_modales() %}
+<div id="modalNuevo" class="modal-overlay">
+  <div class="card" style="width:360px; max-width:90vw; max-height:90vh; overflow:auto;">
+    <h3 style="margin:0 0 6px; font-size:14px; color:var(--title);">＋ Nuevo cliente</h3>
+    <div class="muted2" style="font-size:10px; margin-bottom:10px;">
+      Datos básicos. El domicilio lo cargás abajo con el buscador 📍 (queda con geolocalización).
+    </div>
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <input id="ncNombre" class="input" placeholder="Nombre">
+      <input id="ncApellido" class="input" placeholder="Apellido">
+      <input id="ncDni" class="input" placeholder="DNI">
+      <input id="ncTel" class="input" placeholder="Teléfono">
+    </div>
+    <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end;">
+      <button class="hbtn" onclick="ClientePicker.cerrarModal('modalNuevo')">Cancelar</button>
+      <button class="hbtn hbtn-ok" onclick="ClientePicker.guardarNuevoCliente()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="modalEditar" class="modal-overlay">
+  <div class="card" style="width:400px; max-width:90vw; max-height:90vh; overflow:auto;">
+    <h3 style="margin:0 0 10px; font-size:14px; color:var(--title);">✏️ Editar datos del cliente</h3>
+    <div id="edObsRef" class="muted2" style="font-size:11px; margin-bottom:8px;"></div>
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <input id="edNombre" class="input" placeholder="Nombre">
+      <input id="edApellido" class="input" placeholder="Apellido">
+      <input id="edDni" class="input" placeholder="DNI">
+      <input id="edTel" class="input" placeholder="Teléfono">
+      <input id="edDom" class="input" placeholder="Domicilio">
+      <input id="edCiudad" class="input" placeholder="Ciudad">
+    </div>
+    <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end;">
+      <button class="hbtn" onclick="ClientePicker.cerrarModal('modalEditar')">Cancelar</button>
+      <button class="hbtn hbtn-ok" onclick="ClientePicker.guardarEditarCliente()">Guardar</button>
+    </div>
+  </div>
+</div>
+{% endmacro %}

@@ -1,0 +1,302 @@
+"""Comparación de ventas año contra año, agregada por mes.
+
+Para un año elegido vs el anterior, agrega `obs_ventas_detalle` por mes y
+devuelve tickets / importe / unidades alineados 1..12, con variación % mes a mes.
+Un ticket = una operación (`id_operacion`). Solo ventas (`tipo_operacion='V'`).
+
+Totales: se comparan en modo "acumulado justo" (YTD) — solo hasta el último mes
+con datos del año actual, contra los MISMOS meses del año anterior. Así no se
+castiga al año en curso por los meses que todavía no pasaron.
+
+Fuente: ObServer DW.ProductosVendidos → sync a obs_ventas_detalle.
+"""
+from sqlalchemy import case, func
+
+from database import ObsVentaDetalle
+from services.farmacia import farmacia_operativa
+
+_MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+          'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
+
+def _var_pct(cur, prev):
+    """Variación % de cur respecto de prev. None si no hay base de comparación."""
+    if not prev:
+        return None
+    return round((cur - prev) / prev * 100, 1)
+
+
+def anios_disponibles(session, id_farmacia=None):
+    """Años (int) con ventas cargadas, desc. Para el selector de la pantalla."""
+    if id_farmacia is None:
+        id_farmacia = farmacia_operativa()
+    rows = (session.query(ObsVentaDetalle.anio)
+            .filter(ObsVentaDetalle.id_farmacia == id_farmacia,
+                    ObsVentaDetalle.tipo_operacion == 'V',
+                    ObsVentaDetalle.anio.isnot(None))
+            .distinct().order_by(ObsVentaDetalle.anio.desc()).all())
+    return [r[0] for r in rows]
+
+
+def comparativa_anual(session, anio, anio_prev=None, id_farmacia=None,
+                      mes_tope=None, mes_parcial=None):
+    """Devuelve dict con la serie mensual de `anio` vs `anio_prev` (default anio-1).
+
+    - mes_tope: último mes COMPLETO a incluir en los totales YTD. Si None, se usa
+      el último mes con datos del año actual. Sirve para no comparar un mes en
+      curso (parcial) contra el mismo mes ya cerrado del año anterior.
+    - mes_parcial: número de mes en curso (se marca `parcial=True` en la serie).
+
+    Estructura:
+      meses: [ {mes, nombre, parcial, cur:{tickets,importe,unidades},
+                prev:{...}, var_tickets, var_importe}, ... x12 ]
+      totales: {cur:{...}, prev:{...}, var_tickets, var_importe, ticket_prom_cur/prev,
+                meses_comparados, hasta_mes_nombre}
+      meta: {anio, anio_prev}
+    """
+    if anio_prev is None:
+        anio_prev = anio - 1
+    if id_farmacia is None:
+        id_farmacia = farmacia_operativa()
+
+    # Transacciones (tickets): distinct IdOperacion de ventas — una venta real.
+    # Ítems (renglones): cantidad de líneas de producto vendidas (= "Cant. Oper."
+    #   del Analítico de ObServer, que en realidad cuenta líneas, no operaciones).
+    # Importe y unidades: NETOS de devoluciones — las 'D' tienen importe y
+    #   cantidad negativos, así que sumar V+D descuenta la devolución.
+    tickets_v = func.count(func.distinct(
+        case((ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.id_operacion))))
+    renglones_v = func.sum(case((ObsVentaDetalle.tipo_operacion == 'V', 1), else_=0))
+    devol_imp = func.sum(
+        case((ObsVentaDetalle.tipo_operacion == 'D', ObsVentaDetalle.importe), else_=0))
+    rows = (session.query(
+                ObsVentaDetalle.anio,
+                ObsVentaDetalle.mes,
+                tickets_v.label('tickets'),
+                renglones_v.label('renglones'),
+                func.sum(ObsVentaDetalle.cantidad).label('unidades'),
+                func.sum(ObsVentaDetalle.importe).label('importe'),
+                devol_imp.label('devol'))
+            .filter(ObsVentaDetalle.id_farmacia == id_farmacia,
+                    ObsVentaDetalle.tipo_operacion.in_(['V', 'D']),
+                    ObsVentaDetalle.anio.in_([anio, anio_prev]),
+                    ObsVentaDetalle.mes.isnot(None))
+            .group_by(ObsVentaDetalle.anio, ObsVentaDetalle.mes)
+            .all())
+
+    # (anio, mes) -> métricas. devol se guarda como magnitud positiva (para mostrar).
+    data = {}
+    for r in rows:
+        data[(r.anio, r.mes)] = {
+            'tickets': int(r.tickets or 0),
+            'renglones': int(r.renglones or 0),
+            'importe': round(float(r.importe or 0)),
+            'unidades': round(float(r.unidades or 0), 1),
+            'devol': round(-float(r.devol or 0)),
+        }
+
+    _cero = {'tickets': 0, 'renglones': 0, 'importe': 0, 'unidades': 0, 'devol': 0}
+    meses = []
+    ultimo_mes_cur = 0
+    for m in range(1, 13):
+        cur = data.get((anio, m), dict(_cero))
+        prev = data.get((anio_prev, m), dict(_cero))
+        if cur['tickets']:
+            ultimo_mes_cur = m
+        meses.append({
+            'mes': m,
+            'nombre': _MESES[m],
+            'parcial': (m == mes_parcial),
+            'cur': cur,
+            'prev': prev,
+            'var_tickets': _var_pct(cur['tickets'], prev['tickets']),
+            'var_renglones': _var_pct(cur['renglones'], prev['renglones']),
+            'var_importe': _var_pct(cur['importe'], prev['importe']),
+        })
+
+    # Totales YTD justos: solo meses COMPLETOS en ambos años. Si el año está en
+    # curso, mes_tope excluye el mes parcial para no comparar medio mes vs uno
+    # entero. Si no se pasó, cae al último mes con datos.
+    tope = mes_tope if mes_tope else (ultimo_mes_cur or 12)
+    tope = max(1, min(12, tope))
+    tot_cur = {'tickets': 0, 'renglones': 0, 'importe': 0, 'unidades': 0, 'devol': 0}
+    tot_prev = {'tickets': 0, 'renglones': 0, 'importe': 0, 'unidades': 0, 'devol': 0}
+    for mrow in meses[:tope]:
+        for k in tot_cur:
+            tot_cur[k] += mrow['cur'][k]
+            tot_prev[k] += mrow['prev'][k]
+
+    totales = {
+        'cur': tot_cur,
+        'prev': tot_prev,
+        'var_tickets': _var_pct(tot_cur['tickets'], tot_prev['tickets']),
+        'var_renglones': _var_pct(tot_cur['renglones'], tot_prev['renglones']),
+        'var_importe': _var_pct(tot_cur['importe'], tot_prev['importe']),
+        'var_unidades': _var_pct(tot_cur['unidades'], tot_prev['unidades']),
+        'ticket_prom_cur': round(tot_cur['importe'] / tot_cur['tickets']) if tot_cur['tickets'] else 0,
+        'ticket_prom_prev': round(tot_prev['importe'] / tot_prev['tickets']) if tot_prev['tickets'] else 0,
+        'items_x_venta_cur': round(tot_cur['renglones'] / tot_cur['tickets'], 2) if tot_cur['tickets'] else 0,
+        'meses_comparados': tope,
+        'hasta_mes_nombre': _MESES[tope],
+    }
+
+    return {'meses': meses, 'totales': totales,
+            'meta': {'anio': anio, 'anio_prev': anio_prev}}
+
+
+def comparativa_producto_anual(session, anio, anio_prev=None, id_farmacia=None,
+                               mes_tope=None):
+    """Comparación año vs año agregada por PRODUCTO (para top movers + tabla).
+
+    Mismo criterio que comparativa_anual: importe/unidades NETOS de devoluciones
+    (V+D), acumulado YTD hasta mes_tope (meses cerrados) en ambos años. Devuelve
+    la lista completa de productos con ventas en cualquiera de los dos años; la
+    categorización (crecieron/cayeron/nuevos/perdidos) y el orden se hacen en el
+    front según la métrica elegida (importe o unidades).
+
+    Estructura:
+      productos: [ {id, desc, lab, ci, pi, cu, pu} ]   # c=cur, p=prev; i=importe, u=unid
+      meta: {anio, anio_prev, hasta_mes, n}
+    """
+    from database import ObsLaboratorio, ObsProducto
+    if anio_prev is None:
+        anio_prev = anio - 1
+    if id_farmacia is None:
+        id_farmacia = farmacia_operativa()
+    tope = max(1, min(12, mes_tope or 12))
+
+    rows = (session.query(
+                ObsVentaDetalle.producto_observer.label('pid'),
+                ObsVentaDetalle.anio.label('anio'),
+                func.sum(ObsVentaDetalle.importe).label('imp'),
+                func.sum(ObsVentaDetalle.cantidad).label('uni'))
+            .filter(ObsVentaDetalle.id_farmacia == id_farmacia,
+                    ObsVentaDetalle.tipo_operacion.in_(['V', 'D']),
+                    ObsVentaDetalle.anio.in_([anio, anio_prev]),
+                    ObsVentaDetalle.mes <= tope)
+            .group_by(ObsVentaDetalle.producto_observer, ObsVentaDetalle.anio)
+            .all())
+
+    prods = {}
+    for r in rows:
+        p = prods.setdefault(r.pid, {'ci': 0, 'pi': 0, 'cu': 0, 'pu': 0})
+        if r.anio == anio:
+            p['ci'] = round(float(r.imp or 0)); p['cu'] = round(float(r.uni or 0), 1)
+        else:
+            p['pi'] = round(float(r.imp or 0)); p['pu'] = round(float(r.uni or 0), 1)
+
+    # Descripción + lab por producto (solo los que tuvieron ventas).
+    metas = {}
+    ids = list(prods.keys())
+    if ids:
+        q = (session.query(ObsProducto.observer_id,
+                           ObsProducto.descripcion,
+                           ObsLaboratorio.descripcion)
+             .outerjoin(ObsLaboratorio,
+                        ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+             .filter(ObsProducto.observer_id.in_(ids)))
+        for oid, desc, lab in q.all():
+            metas[oid] = (desc, lab)
+
+    productos = []
+    for pid, m in prods.items():
+        desc, lab = metas.get(pid, (None, None))
+        productos.append({
+            'id': pid,
+            'desc': (desc or str(pid)).strip(),
+            'lab': (lab or '—'),
+            'ci': m['ci'], 'pi': m['pi'],
+            'cu': m['cu'], 'pu': m['pu'],
+        })
+
+    return {'productos': productos,
+            'meta': {'anio': anio, 'anio_prev': anio_prev,
+                     'hasta_mes': _MESES[tope], 'n': len(productos)}}
+
+
+def comparativa_droga_anual(session, anio, anio_prev=None, id_farmacia=None,
+                            mes_tope=None, lab_id=None):
+    """Comparación año vs año jerárquica: por DROGA (monodroga) con drill-down
+    a sus productos. Mismo criterio que comparativa_anual (importe/unidades
+    netos de devoluciones, YTD hasta mes_tope).
+
+    Los productos sin monodroga (perfumería, leche, OTC) caen en el bucket
+    droga_id=0 → "Sin droga asignada". El front agrupa y despliega client-side.
+
+    Si `lab_id` viene: JOIN a ObsProducto y filtra solo productos de ese
+    laboratorio (para el filtro "Lab" del informe web).
+
+    Estructura:
+      drogas:    [ {id, droga, n, ci, pi, cu, pu} ]            # n = nº productos
+      productos: [ {did, desc, lab, ci, pi, cu, pu} ]          # did = droga_id
+      meta: {anio, anio_prev, hasta_mes, n_drogas, n_prod}
+    """
+    from database import ObsLaboratorio, ObsNombreDroga, ObsProducto
+    if anio_prev is None:
+        anio_prev = anio - 1
+    if id_farmacia is None:
+        id_farmacia = farmacia_operativa()
+    tope = max(1, min(12, mes_tope or 12))
+
+    q = (session.query(
+                ObsVentaDetalle.producto_observer.label('pid'),
+                ObsVentaDetalle.anio.label('anio'),
+                func.sum(ObsVentaDetalle.importe).label('imp'),
+                func.sum(ObsVentaDetalle.cantidad).label('uni'))
+            .filter(ObsVentaDetalle.id_farmacia == id_farmacia,
+                    ObsVentaDetalle.tipo_operacion.in_(['V', 'D']),
+                    ObsVentaDetalle.anio.in_([anio, anio_prev]),
+                    ObsVentaDetalle.mes <= tope))
+    if lab_id:
+        q = (q.join(ObsProducto,
+                    ObsProducto.observer_id == ObsVentaDetalle.producto_observer)
+              .filter(ObsProducto.laboratorio_observer == lab_id))
+    rows = q.group_by(ObsVentaDetalle.producto_observer, ObsVentaDetalle.anio).all()
+
+    prods = {}
+    for r in rows:
+        p = prods.setdefault(r.pid, {'ci': 0, 'pi': 0, 'cu': 0, 'pu': 0})
+        if r.anio == anio:
+            p['ci'] = round(float(r.imp or 0)); p['cu'] = round(float(r.uni or 0), 1)
+        else:
+            p['pi'] = round(float(r.imp or 0)); p['pu'] = round(float(r.uni or 0), 1)
+
+    # Meta por producto: descripción, lab, droga (id + nombre).
+    metas = {}
+    ids = list(prods.keys())
+    if ids:
+        q = (session.query(ObsProducto.observer_id,
+                           ObsProducto.descripcion,
+                           ObsLaboratorio.descripcion,
+                           ObsProducto.nombre_droga_observer,
+                           ObsNombreDroga.descripcion)
+             .outerjoin(ObsLaboratorio,
+                        ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+             .outerjoin(ObsNombreDroga,
+                        ObsNombreDroga.observer_id == ObsProducto.nombre_droga_observer)
+             .filter(ObsProducto.observer_id.in_(ids)))
+        for oid, desc, lab, did, dname in q.all():
+            metas[oid] = (desc, lab, did, dname)
+
+    productos = []
+    drogas = {}
+    for pid, m in prods.items():
+        desc, lab, did, dname = metas.get(pid, (None, None, None, None))
+        did = did or 0
+        dname = dname or 'Sin droga asignada'
+        productos.append({
+            'did': did,
+            'desc': (desc or str(pid)).strip(),
+            'lab': (lab or '—'),
+            'ci': m['ci'], 'pi': m['pi'], 'cu': m['cu'], 'pu': m['pu'],
+        })
+        dg = drogas.setdefault(did, {'id': did, 'droga': dname, 'n': 0,
+                                     'ci': 0, 'pi': 0, 'cu': 0, 'pu': 0})
+        dg['n'] += 1
+        dg['ci'] += m['ci']; dg['pi'] += m['pi']
+        dg['cu'] = round(dg['cu'] + m['cu'], 1); dg['pu'] = round(dg['pu'] + m['pu'], 1)
+
+    return {'drogas': list(drogas.values()),
+            'productos': productos,
+            'meta': {'anio': anio, 'anio_prev': anio_prev, 'hasta_mes': _MESES[tope],
+                     'n_drogas': len(drogas), 'n_prod': len(productos)}}

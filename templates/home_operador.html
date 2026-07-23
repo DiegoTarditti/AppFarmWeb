@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inicio</title>
+<style>
+  :root { --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; font-family:var(--font-sans);
+         background:#22222d; color:#ececf0; }
+  .topbar { background:#2c2c39; border-bottom:0.5px solid rgba(255,255,255,0.14);
+            display:flex; align-items:center; justify-content:space-between; padding:12px 22px; }
+  .brand { display:flex; align-items:center; gap:11px; }
+  .logo { background:#534AB7; color:#EEEDFE; width:30px; height:30px; border-radius:8px;
+          display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:700; }
+  .title { color:#fafafc; font-size:14px; font-weight:600; }
+  .who { color:#ffffff; font-size:13px; font-weight:600; }
+  .logout { color:#c8c8d0; text-decoration:none; font-size:12px; border:0.5px solid rgba(255,255,255,0.20);
+            padding:6px 13px; border-radius:20px; }
+  .logout:hover { color:#fafafc; }
+  .wrap { max-width:900px; margin:0 auto; padding:40px 22px; }
+  .hello { color:#b8b8c0; font-size:14px; margin:0 0 26px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:18px; }
+  .card { display:flex; flex-direction:column; align-items:flex-start; gap:14px;
+          background:#2c2c39; border:0.5px solid rgba(255,255,255,0.18); border-radius:14px;
+          padding:24px 22px; text-decoration:none; color:#ececf0; transition:all .12s;
+          min-height:140px; justify-content:space-between; }
+  .card:hover { border-color:#534AB7; background:#3a3a47; transform:translateY(-2px); }
+  .card .ic { font-size:34px; line-height:1; }
+  .card .lb { font-size:16px; font-weight:600; color:#fafafc; }
+  .card .go { font-size:12px; color:#5DCAA5; }
+  .vacio { background:#2c2c39; border:0.5px solid rgba(255,255,255,0.18); border-radius:14px;
+           padding:28px; color:#c8c8d0; font-size:13.5px; line-height:1.6; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo">+</div>
+      <span class="title">Inicio</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <span class="who">{{ nombre }}</span>
+      <a href="{{ url_for('auth_logout') }}" class="logout">Salir</a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <p class="hello">Hola {{ nombre }} — elegí qué querés hacer.</p>
+
+    {% if botones %}
+    <div class="grid">
+      {% for b in botones %}
+      <a href="{{ b.url }}" class="card">
+        <span class="ic">{{ b.icono }}</span>
+        <span class="lb">{{ b.label }}</span>
+        <span class="go">Abrir →</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="vacio">
+      Todavía no tenés ningún perfil asignado. Pedile a un administrador que te
+      habilite los perfiles que necesitás desde <strong>Usuarios</strong>.
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>

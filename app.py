@@ -54,13 +54,41 @@ if os.environ.get('RUN_INIT_DB_ON_STARTUP') == '1':
     init_db(DATABASE_URL)
 
 
+# Hosts del dominio propio de la tienda pública. Cuando alguien entra a
+# https://farmbadia.com.ar/ (o /www) lo mandamos directo a /tienda (la landing).
+# El resto de rutas (admin, atencion, etc.) siguen funcionando normal desde
+# el mismo dominio con login. Diego 2026-06-24.
+_TIENDA_HOSTS = {'farmbadia.com.ar', 'www.farmbadia.com.ar'}
+
+
+@app.before_request
+def redirigir_root_a_tienda():
+    from flask import redirect, request
+    if request.path != '/':
+        return None
+    host = (request.host or '').split(':')[0].lower()
+    if host in _TIENDA_HOSTS:
+        return redirect('/tienda', code=302)
+    return None
+
+
 @app.before_request
 def exigir_login():
     from flask import jsonify, redirect, request, url_for
     from flask_login import current_user
     # Rutas públicas (no requieren login)
     rutas_publicas = {'auth_login', 'static', 'health', 'docs_pendientes_upload_api',
+                      # Filtro droguería: herramienta standalone sin login.
+                      'filtro_drogueria', 'filtro_drogueria_generar',
                       'api_auto_sync', 'api_auto_sync_status',
+                      # WhatsApp Cloud API webhook (llamado por Meta, sin sesión)
+                      'whatsapp_webhook_get', 'whatsapp_webhook_post',
+                      'whatsapp_reenganche',
+                      # WAHA webhook del grupo de reparto (red docker interna)
+                      'reparto_whatsapp_grupo_webhook',
+                      # Telegram webhook del grupo de cadetes (auth propia via
+                      # X-Telegram-Bot-Api-Secret-Token header).
+                      'reparto_telegram_cadetes_webhook',
                       # Crons externos: auth propia via X-Cron-Secret header.
                       'api_cron_recalcular_os_clientes',
                       'api_cron_notificar_alarmas',
@@ -69,8 +97,16 @@ def exigir_login():
                       # Sync local↔Render: auth propia via X-Panel-Token header.
                       'api_ofertas_sync_from_local', 'api_ofertas_from_server',
                       # Push master local→Render: auth propia via X-Auto-Sync-Token.
-                      'push_productos_master'}
+                      'push_productos_master', 'push_cadencias',
+                      # Tienda pública (catálogo OTC + pedido por WhatsApp).
+                      # Diego 2026-06-24. Kill switch via Config.tienda_activa.
+                      'tienda_home', 'tienda_catalogo', 'tienda_producto',
+                      'tienda_pedir', 'tienda_upload_file'}
     if request.endpoint in rutas_publicas or request.endpoint is None:
+        return None
+    # API pública (auth por X-Api-Key, no por sesión Flask-Login).
+    # Todos los endpoints /api/publica/* usan @requiere_api_key — dejalos pasar.
+    if request.path.startswith('/api/publica/'):
         return None
     if not current_user.is_authenticated:
         # Para rutas /api/* devolvemos 401 JSON en vez de redirect HTML, así
@@ -130,6 +166,44 @@ from helpers import detectar_entorno
 def _inyectar_entorno():
     return {'entorno': detectar_entorno()}
 
+
+@app.context_processor
+def _inyectar_ciudades_envio():
+    """Whitelist de ciudades que el cliente_picker filtra en el dropdown del
+    geocoder. Configurable por env var ENVIO_CIUDADES_FILTRO (CSV, p.ej.
+    'rosario,funes,roldan'). Default: las 3 de Badia."""
+    raw = os.environ.get('ENVIO_CIUDADES_FILTRO', 'rosario,funes,roldan')
+    ciudades = [c.strip().lower() for c in raw.split(',') if c.strip()]
+    return {'envio_ciudades_filtro': ciudades}
+
+
+@app.context_processor
+def _inyectar_turno_actual():
+    """Turno global compartido (Config.turno_actual): default sticky del dropdown
+    de turno en /atención. Vacío si no se eligió ninguno todavía."""
+    turno = ''
+    try:
+        with database.get_db() as s:
+            cfg = s.get(database.Config, 1)
+            turno = (cfg.turno_actual if cfg else '') or ''
+    except Exception:  # noqa: BLE001 — defensivo (DB no disponible en algunos render iniciales)
+        pass
+    return {'turno_actual': turno}
+
+
+@app.context_processor
+def _inyectar_alias_transferencia():
+    """Alias para transferencias (config en /config/envio). Se usa en /atencion
+    cuando el operador elige forma de pago = Transferencia. None si no se cargó."""
+    alias = ''
+    try:
+        from bot import envio as _envio
+        c = _envio.get_config()
+        alias = (c.get('alias_transferencia') or '') or ''
+    except Exception:  # noqa: BLE001 — defensivo (DB no disponible en algunos render iniciales)
+        pass
+    return {'alias_transferencia': alias}
+
 from routes import register_routes
 
 register_routes(app)
@@ -147,7 +221,15 @@ def _keep_alive_loop():
         except Exception:
             enabled, interval = False, 10
         interval = max(1, min(60, interval))
-        if enabled:
+        # Solo mantener despierto en horario de atención (08:00–18:00 AR).
+        # Fuera de ese rango se deja dormir a Render (ahorra horas de instancia
+        # del plan free; decisión Diego 2026-06-18).
+        try:
+            hora = database.now_ar().hour
+        except Exception:
+            hora = 12
+        en_horario = 8 <= hora < 18
+        if enabled and en_horario:
             try:
                 urlopen(f'{base_url}/health_web', timeout=10).read()
             except (URLError, OSError):
@@ -156,6 +238,23 @@ def _keep_alive_loop():
 
 
 threading.Thread(target=_keep_alive_loop, daemon=True).start()
+
+# Telegram (grupo de cadetes): polling worker. No-op si está apagado en env.
+# Lo arrancamos acá (no en cada worker de gunicorn) para que solo UN proceso
+# haga polling — sino se pelean por los updates.
+try:
+    from bot import telegram_grupo
+    telegram_grupo.iniciar_polling_thread()
+except Exception:  # noqa: BLE001
+    pass
+
+# Cron SLA del flujo de reparto (reaviso de publicación + desasignar retiros
+# vencidos). Lock por socket para que solo un worker corra.
+try:
+    from services import reparto_sla_cron
+    reparto_sla_cron.iniciar_cron_thread()
+except Exception:  # noqa: BLE001
+    pass
 
 
 if __name__ == '__main__':

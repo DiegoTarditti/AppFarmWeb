@@ -97,6 +97,16 @@ def calcular_a_pedir(cfg, ctx):
         - pack_quantity (int|None): tamaño de pack si aplica
         - u12m (int): ventas 12m (para validar si rota)
         - sin_mov (bool): True si sin movimiento 60d
+        - pvp (float): precio venta público (para la regla caro+rotación baja)
+        - rotacion (str): 'A'|'M'|'B' (clasificación por Config.rot_alta/media_min)
+        - ventas_mensuales (list[int]): unidades por mes (slot 11 = actual) — la
+          regla caro+baja evalúa si vendió en la ventana `dias_valor_piso`.
+
+    cfg keys relevantes extra:
+        - valor_piso (number): PVP desde el cual un producto es "caro". Si está
+          seteado (>0) y rotacion=='B', el a_pedir se topea en 1. Default 0 = off.
+        - dias_valor_piso (int): ventana (días) para decidir si el caro+baja
+          vendió algo. Sin venta en la ventana → 0. Default 60.
 
     Returns:
       dict {a_pedir, ideal, regla_usada, override_aplicado}
@@ -115,16 +125,42 @@ def calcular_a_pedir(cfg, ctx):
     u12m = ctx.get('u12m') or 0
     sin_mov = bool(ctx.get('sin_mov'))
 
-    # Sin rotación → nada que pedir, independiente del tipo.
-    if u12m == 0 or sin_mov:
+    # ── Caro + rotación baja: ventana de venta PROPIA ────────────────────────
+    # Para productos caros (PVP >= valor_piso) de rotación 'B', la decisión
+    # "comprar o no" usa `dias_valor_piso` (default 60), NO el sin_mov global:
+    #   - si no vendió nada en esa ventana → 0 (no inmovilizar plata).
+    #   - si vendió → sigue el cálculo y al final se topea en 1 unidad.
+    # Las ventas son mensuales → la ventana se evalúa en meses (ceil(N/30.42)).
+    valor_piso = float(cfg.get('valor_piso') or 0)
+    pvp = float(ctx.get('pvp') or 0)
+    es_caro_baja = valor_piso > 0 and pvp >= valor_piso and ctx.get('rotacion') == 'B'
+    if es_caro_baja:
+        dias_vp = int(cfg.get('dias_valor_piso') or 60)
+        meses_vp = max(1, math.ceil(dias_vp / 30.42))
+        vm = ctx.get('ventas_mensuales') or []
+        vendio = (sum(vm[-meses_vp:]) > 0) if vm else (u12m > 0 and not sin_mov)
+        if not vendio:
+            return {'a_pedir': 0, 'ideal': 0,
+                    'regla_usada': f'caro_baja_sin_venta_{dias_vp}d',
+                    'override_aplicado': False}
+    # Sin rotación → nada que pedir (no aplica a caros, ya resueltos arriba con
+    # su ventana propia).
+    elif u12m == 0 or sin_mov:
         return {'a_pedir': 0, 'ideal': 0,
                 'regla_usada': 'sin_rotacion', 'override_aplicado': False}
 
-    # Override por producto. Solo si el override está habilitado en el tipo
-    # Y el valor está seteado en el producto Y stock cayó al mínimo.
+    # Override por producto. `cant_fija_efecto` (default 'override') decide la
+    # POLÍTICA cuando override_producto='cantidad_reposicion_fija' y el producto
+    # tiene cantidad fija seteada:
+    #   - 'override': si stock<=mínimo, la cantidad fija MANDA (histórico).
+    #   - 'piso':     no corta acá; abajo el ideal nunca baja de cant_fija.
+    #   - 'ninguno':  se ignora la cantidad fija.
     override_kind = cfg.get('override_producto', 'none')
-    if override_kind == 'cantidad_reposicion_fija' and cant_fija and cant_fija > 0 \
-            and stock <= min_efectivo:
+    cant_fija_efecto = cfg.get('cant_fija_efecto', 'override')
+    _cant_fija_activa = (override_kind == 'cantidad_reposicion_fija'
+                         and cant_fija and cant_fija > 0
+                         and cant_fija_efecto != 'ninguno')
+    if _cant_fija_activa and cant_fija_efecto == 'override' and stock <= min_efectivo:
         return {'a_pedir': int(cant_fija), 'ideal': int(cant_fija),
                 'regla_usada': 'override_cantidad_fija', 'override_aplicado': True}
 
@@ -155,6 +191,13 @@ def calcular_a_pedir(cfg, ctx):
     # piso ya contiene la cobertura completa, target_unid=0 no aporta.
     ideal = max(piso, target_unid)
 
+    # 3b) cant_fija como PISO (cant_fija_efecto='piso'): el ideal nunca baja de
+    #     la cantidad fija. Distinto de 'override' (que ya cortó arriba).
+    override_piso = False
+    if _cant_fija_activa and cant_fija_efecto == 'piso' and int(cant_fija) > ideal:
+        ideal = int(cant_fija)
+        override_piso = True
+
     # 4) Buffer (%) — margen sobre el ideal para no quedar en 0.
     buffer_pct = int(cfg.get('buffer_pct', 0) or 0)
     if buffer_pct:
@@ -166,9 +209,17 @@ def calcular_a_pedir(cfg, ctx):
         ideal = math.ceil(ideal / pack_qty) * pack_qty
 
     a_pedir = max(0, int(ideal) - int(stock))
+    regla = (f'piso={piso_kind} target={tgt_kind} buffer={buffer_pct}%'
+             + (' +cant_fija_piso' if override_piso else ''))
+
+    # Caro + rotación baja (ya pasó el chequeo de ventana arriba): topear en 1.
+    # No inmovilizar capital en caros que apenas giran. valor_piso=0 → apagado.
+    if es_caro_baja and a_pedir > 1:
+        a_pedir = 1
+        regla += ' +caro_baja_cap1'
+
     return {'a_pedir': a_pedir, 'ideal': int(ideal),
-            'regla_usada': f'piso={piso_kind} target={tgt_kind} buffer={buffer_pct}%',
-            'override_aplicado': False}
+            'regla_usada': regla, 'override_aplicado': override_piso}
 
 
 def shadow_compare(slug, ctx, a_pedir_actual, log_threshold=0):

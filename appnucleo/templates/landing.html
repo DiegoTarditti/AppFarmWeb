@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+{% block title %}Resumen del grupo · AppNúcleo{% endblock %}
+{% block nav_home %}bg-white/10 text-[color:var(--mint)]{% endblock %}
+{% block content %}
+
+<div class="flex items-end justify-between flex-wrap gap-2 mb-4">
+  <div>
+    <h1 class="text-2xl font-extrabold tracking-tight">Resumen del grupo</h1>
+    <p class="text-[color:var(--mute)] text-sm">
+      {{ por_far | length }} farmacias · ventas valorizadas de los últimos 12 meses
+    </p>
+  </div>
+  <div class="flex items-center gap-2 text-xs">
+    {% for f in por_far %}
+      <span class="pill border {{ 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' if f.ok else 'bg-rose-500/10 text-rose-300 border-rose-500/30' }}"
+            title="{{ f.actualizado or 'sin datos' }}{{ ' · '+f.error if f.error else '' }}">
+        {{ '🟢' if f.ok else '🔴' }} {{ f.nombre }}
+      </span>
+    {% endfor %}
+  </div>
+</div>
+
+{# ── KPIs (animados al cargar) ── #}
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+  <div class="kpi glow p-4">
+    <div class="text-[11px] uppercase tracking-wide text-[color:var(--mute)]">Ventas 12m (valorizado)</div>
+    <div class="text-2xl sm:text-3xl font-extrabold mt-1 text-[color:var(--mint)]"
+         data-countup="{{ tot.ventas_val }}" data-kind="money">{{ tot.ventas_val | money }}</div>
+  </div>
+  <div class="kpi p-4">
+    <div class="text-[11px] uppercase tracking-wide text-[color:var(--mute)]">Unidades 12m</div>
+    <div class="text-2xl sm:text-3xl font-extrabold mt-1"
+         data-countup="{{ tot.unidades }}" data-kind="miles">{{ tot.unidades | miles }}</div>
+  </div>
+  <div class="kpi p-4">
+    <div class="text-[11px] uppercase tracking-wide text-[color:var(--mute)]">Stock valorizado</div>
+    <div class="text-2xl sm:text-3xl font-extrabold mt-1"
+         data-countup="{{ tot.stock_val }}" data-kind="money">{{ tot.stock_val | money }}</div>
+  </div>
+  <div class="kpi p-4">
+    <div class="text-[11px] uppercase tracking-wide text-[color:var(--mute)]">Sin movimiento 60d</div>
+    <div class="text-2xl sm:text-3xl font-extrabold mt-1 text-amber-300"
+         data-countup="{{ tot.sin_mov }}" data-kind="miles">{{ tot.sin_mov | miles }}</div>
+    <div class="text-[11px] text-[color:var(--mute)]">de {{ tot.skus | miles }} SKUs</div>
+  </div>
+</div>
+
+{# ── Hero: tendencia 12m apilada ── #}
+<div class="card glow p-4 mb-4">
+  <div class="flex items-center justify-between mb-2">
+    <h2 class="font-bold">Tendencia de ventas · 12 meses</h2>
+    <span class="text-[11px] text-[color:var(--mute)]">apilado por farmacia · $ valorizado</span>
+  </div>
+  <div class="h-[320px]"><canvas id="chTendencia"></canvas></div>
+</div>
+
+{# ── Fila de 3 gráficos ── #}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
+  <div class="card p-4">
+    <h2 class="font-bold mb-2">Participación por farmacia</h2>
+    <div class="h-[260px]"><canvas id="chParticipacion"></canvas></div>
+  </div>
+  <div class="card p-4 lg:col-span-1">
+    <h2 class="font-bold mb-2">Top 10 laboratorios</h2>
+    <div class="h-[260px]"><canvas id="chLabs"></canvas></div>
+  </div>
+  <div class="card p-4">
+    <h2 class="font-bold mb-2">Rotación del catálogo</h2>
+    <div class="h-[260px]"><canvas id="chRotacion"></canvas></div>
+  </div>
+</div>
+
+{# ── Mapa de calor: cobertura laboratorio × farmacia ── #}
+<div class="card glow p-4 mb-4">
+  <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+    <h2 class="font-bold">Mapa de cobertura · laboratorio × farmacia</h2>
+    <span class="text-[11px] text-[color:var(--mute)]">$ valorizado 12m · intensidad = peso relativo</span>
+  </div>
+  <div class="overflow-x-auto">
+    <div class="min-w-[560px]">
+      <div class="grid items-center gap-1 mb-1"
+           style="grid-template-columns:200px repeat({{ heatmap.slugs|length }},minmax(0,1fr));">
+        <div></div>
+        {% for s in heatmap.slugs %}
+        <div class="text-center text-[11px] uppercase tracking-wide text-[color:var(--mute)] truncate">{{ heatmap.nombres[s] }}</div>
+        {% endfor %}
+      </div>
+      {% for lab in heatmap.labs %}
+      <div class="grid items-center gap-1 mb-1"
+           style="grid-template-columns:200px repeat({{ heatmap.slugs|length }},minmax(0,1fr));">
+        <div class="text-sm truncate pr-2" title="{{ lab }}">
+          {{ lab }}
+          <span class="text-[10px] text-[color:var(--mute)]">· {{ heatmap.presentes[lab] }}/{{ heatmap.slugs|length }}</span>
+        </div>
+        {% for s in heatmap.slugs %}
+          {% set v = heatmap.celdas[lab][s] %}
+          {% set inten = (v / heatmap.max) if heatmap.max else 0 %}
+          <div class="rounded-md text-center py-2 text-[11px] font-semibold"
+               style="background:rgba(52,211,153,{{ '%.3f' % (0.05 + 0.85 * inten) }});color:{{ '#062018' if inten > 0.42 else '#cfe7dd' }};"
+               title="{{ heatmap.nombres[s] }} · {{ lab }}: {{ v | money }}">
+            {{ v | money if v else '·' }}
+          </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# ── Tabla por farmacia (clickeable → drill-down) ── #}
+<div class="card overflow-hidden">
+  <div class="px-4 py-3 border-b border-[color:var(--line)] font-bold flex items-center justify-between">
+    <span>Detalle por farmacia</span>
+    <span class="text-[11px] font-normal text-[color:var(--mute)]">clic en una fila para el detalle ↳</span>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-[11px] uppercase text-[color:var(--mute)] bg-white/5">
+        <tr>
+          <th class="text-left px-4 py-2">Farmacia</th>
+          <th class="text-right px-4 py-2">Ventas 12m</th>
+          <th class="text-right px-4 py-2">Unidades</th>
+          <th class="text-right px-4 py-2">Stock $</th>
+          <th class="text-right px-4 py-2">Sin mov.</th>
+          <th class="text-right px-4 py-2">SKUs</th>
+          <th class="text-left px-4 py-2">Actualizado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in por_far %}
+        <tr class="border-t border-[color:var(--line)] hover:bg-white/5 cursor-pointer"
+            onclick="openDrill('{{ f.slug }}')">
+          <td class="px-4 py-2 font-semibold">{{ '🟢' if f.ok else '🔴' }} {{ f.nombre }}</td>
+          <td class="px-4 py-2 text-right text-[color:var(--mint)]">{{ f.ventas_val | money }}</td>
+          <td class="px-4 py-2 text-right">{{ f.unidades | miles }}</td>
+          <td class="px-4 py-2 text-right">{{ f.stock_val | money }}</td>
+          <td class="px-4 py-2 text-right text-amber-300">{{ f.sin_mov | miles }}</td>
+          <td class="px-4 py-2 text-right">{{ f.skus | miles }}</td>
+          <td class="px-4 py-2 text-[color:var(--mute)] text-xs">{{ (f.actualizado or '—')[:16] | replace('T',' ') }}{% if f.error %} · <span class="text-rose-300">err</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── Modal drill-down por farmacia ── #}
+<div id="drill" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+  <div class="card glow w-full max-w-2xl p-5 relative">
+    <button type="button" onclick="closeDrill()" aria-label="Cerrar"
+            class="absolute top-3 right-4 text-[color:var(--mute)] hover:text-white text-2xl leading-none">×</button>
+    <h3 id="drillTitle" class="text-xl font-extrabold"></h3>
+    <p class="text-[color:var(--mute)] text-xs mb-3">Tendencia 12m ($) y top laboratorios de la farmacia</p>
+    <div class="h-[200px] mb-4"><canvas id="chDrill"></canvas></div>
+    <div id="drillLabs" class="space-y-1.5"></div>
+  </div>
+</div>
+
+<script>
+const MESES = {{ meses | tojson }};
+const TEND  = {{ tendencia | tojson }};
+const PORF  = {{ por_far | tojson }};
+const LABS  = {{ top_labs | tojson }};
+const ROT   = {{ rotacion | tojson }};
+const DET   = {{ detalle | tojson }};
+
+const PALETA = ['#34d399','#22d3ee','#a3e635','#fbbf24','#f472b6','#818cf8','#fb7185'];
+Chart.defaults.color = '#7fa394';
+Chart.defaults.font.family = "Inter, system-ui, sans-serif";
+Chart.defaults.plugins.legend.labels.boxWidth = 12;
+
+function grad(ctx, color){
+  const g = ctx.createLinearGradient(0,0,0,300);
+  g.addColorStop(0, color+'cc'); g.addColorStop(1, color+'10');
+  return g;
+}
+
+// ── Gráficos: se dibujan al irse el splash (evento 'nuc:start'), con reveal ──
+let _drawn = false;
+function drawCharts(){
+  if (_drawn) return;
+  _drawn = true;
+
+  // Hero: área apilada · entrada escalonada por farmacia
+  new Chart(document.getElementById('chTendencia'), {
+    type:'line',
+    data:{ labels:MESES, datasets: TEND.map((s,i)=>({
+      label:s.nombre, data:s.data, fill:true, tension:.35, borderWidth:2,
+      borderColor:PALETA[i%PALETA.length],
+      backgroundColor:(c)=>grad(c.chart.ctx, PALETA[i%PALETA.length]),
+      pointRadius:0, pointHoverRadius:4,
+    }))},
+    options:{ maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+      animation:{ duration:900, easing:'easeOutCubic',
+        delay:(ctx)=> (ctx.type==='data' && ctx.mode==='default') ? ctx.datasetIndex*180 : 0 },
+      scales:{ y:{stacked:true, grid:{color:'#13241d'}, ticks:{callback:v=>'$'+(v/1e6).toFixed(0)+'M'}},
+               x:{stacked:true, grid:{display:false}} },
+      plugins:{ legend:{position:'top'}, tooltip:{callbacks:{
+        label:c=>c.dataset.label+': $'+Math.round(c.parsed.y).toLocaleString('es-AR')}}}}
+  });
+
+  // Donut participación
+  new Chart(document.getElementById('chParticipacion'), {
+    type:'doughnut',
+    data:{ labels:PORF.map(f=>f.nombre), datasets:[{
+      data:PORF.map(f=>f.ventas_val), borderWidth:0,
+      backgroundColor:PORF.map((_,i)=>PALETA[i%PALETA.length]) }]},
+    options:{ maintainAspectRatio:false, cutout:'62%',
+      animation:{ animateScale:true, animateRotate:true, duration:1000 },
+      plugins:{ legend:{position:'bottom'}, tooltip:{callbacks:{
+        label:c=>c.label+': $'+(c.parsed/1e6).toFixed(1)+'M'}}}}
+  });
+
+  // Top labs barra horizontal apilada POR FARMACIA · entrada barra por barra
+  new Chart(document.getElementById('chLabs'), {
+    type:'bar',
+    data:{ labels:LABS.labs, datasets: LABS.slugs.map((s,i)=>({
+      label:LABS.nombres[s], data:LABS.data[s], backgroundColor:PALETA[i%PALETA.length],
+      borderRadius:4, stack:'far' })) },
+    options:{ indexAxis:'y', maintainAspectRatio:false,
+      animation:{ duration:700, easing:'easeOutQuart',
+        delay:(ctx)=> ctx.type==='data' ? ctx.dataIndex*55 : 0 },
+      scales:{ x:{stacked:true, grid:{color:'#13241d'}, ticks:{callback:v=>'$'+(v/1e6).toFixed(0)+'M'}},
+               y:{stacked:true, grid:{display:false}} },
+      plugins:{ legend:{position:'bottom'}, tooltip:{callbacks:{
+        label:c=>c.dataset.label+': $'+Math.round(c.parsed.x).toLocaleString('es-AR')}}}}
+  });
+
+  // Rotación doughnut
+  new Chart(document.getElementById('chRotacion'), {
+    type:'doughnut',
+    data:{ labels:['Alta','Media','Baja','Sin clasificar'], datasets:[{
+      data:[ROT.A,ROT.M,ROT.B,ROT.sin], borderWidth:0,
+      backgroundColor:['#34d399','#fbbf24','#fb7185','#475569'] }]},
+    options:{ maintainAspectRatio:false, cutout:'62%',
+      animation:{ animateScale:true, animateRotate:true, duration:1000 },
+      plugins:{ legend:{position:'bottom'} }}
+  });
+}
+window.addEventListener('nuc:start', drawCharts);
+setTimeout(drawCharts, 5000);                       // fallback si el evento no llega
+
+// ── Formato (espeja los filtros money/miles del server) ──
+function fmtMoney(v){
+  v = +v || 0;
+  for (const [d,s] of [[1e9,' MM'],[1e6,' M'],[1e3,' K']])
+    if (Math.abs(v) >= d) return '$ '+(v/d).toFixed(1).replace('.',',')+s;
+  return '$ '+Math.round(v);
+}
+const fmtMiles = v => Math.round(+v || 0).toLocaleString('es-AR');
+
+// ── Count-up de los KPIs (arranca cuando el splash se va: evento 'nuc:start') ──
+(function(){
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const els = document.querySelectorAll('[data-countup]');
+  const fmtOf = el => el.dataset.kind === 'money' ? fmtMoney : fmtMiles;
+  // Estado inicial en 0 (queda tapado por el splash hasta que arranca).
+  if (!reduce) els.forEach(el => { el.textContent = fmtOf(el)(0); });
+  let started = false;
+  function run(){
+    if (started) return;
+    started = true;
+    els.forEach(el => {
+      const target = +el.dataset.countup || 0, fmt = fmtOf(el);
+      if (reduce){ el.textContent = fmt(target); return; }
+      const dur = 1400, t0 = performance.now();
+      requestAnimationFrame(function tick(now){
+        const p = Math.min(1, (now - t0) / dur);
+        const e = 1 - Math.pow(1 - p, 3);          // easeOutCubic
+        el.textContent = fmt(target * e);
+        if (p < 1) requestAnimationFrame(tick);
+        else el.textContent = fmt(target);
+      });
+    });
+  }
+  window.addEventListener('nuc:start', run);
+  setTimeout(run, 5000);                            // fallback si el evento no llega
+})();
+
+// ── Drill-down por farmacia ──
+let _chDrill = null;
+function openDrill(slug){
+  const d = DET[slug];
+  if (!d) return;
+  document.getElementById('drillTitle').textContent = d.nombre;
+  const max = Math.max(1, ...d.top_labs.map(l=>l.ventas_val));
+  document.getElementById('drillLabs').innerHTML = d.top_labs.map(l=>`
+    <div class="flex items-center gap-2 text-sm">
+      <span class="w-36 truncate" title="${l.lab}">${l.lab}</span>
+      <span class="flex-1 h-2.5 rounded bg-white/5 overflow-hidden">
+        <span style="display:block;height:100%;width:${(l.ventas_val/max*100).toFixed(1)}%;background:#34d399"></span>
+      </span>
+      <span class="w-20 text-right text-[color:var(--mint)] font-semibold">${fmtMoney(l.ventas_val)}</span>
+    </div>`).join('');
+  const m = document.getElementById('drill');
+  m.classList.remove('hidden'); m.classList.add('flex');
+  if (_chDrill) _chDrill.destroy();
+  _chDrill = new Chart(document.getElementById('chDrill'), {
+    type:'line',
+    data:{ labels:MESES, datasets:[{ data:d.serie, fill:true, tension:.35,
+      borderColor:'#34d399', borderWidth:2, pointRadius:0, pointHoverRadius:4,
+      backgroundColor:(c)=>grad(c.chart.ctx,'#34d399') }]},
+    options:{ maintainAspectRatio:false,
+      scales:{ y:{grid:{color:'#13241d'}, ticks:{callback:v=>'$'+(v/1e6).toFixed(0)+'M'}},
+               x:{grid:{display:false}} },
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{
+        label:c=>'$'+Math.round(c.parsed.y).toLocaleString('es-AR')}}}}
+  });
+}
+function closeDrill(){
+  const m = document.getElementById('drill');
+  m.classList.add('hidden'); m.classList.remove('flex');
+}
+document.getElementById('drill').addEventListener('click', e=>{
+  if (e.target.id === 'drill') closeDrill();
+});
+document.addEventListener('keydown', e=>{ if (e.key === 'Escape') closeDrill(); });
+</script>
+{% endblock %}

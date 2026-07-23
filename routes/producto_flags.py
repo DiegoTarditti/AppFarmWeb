@@ -79,6 +79,87 @@ def _row_to_dict(r, productos_map, flag_configs):
 
 def init_app(app):
 
+    @app.route('/productos/presentaciones')
+    @login_required
+    def productos_presentaciones():
+        """Pantalla dedicada: arriba el buscador para configurar presentación
+        (fraccionado + envase + equivalencia Kellerhoff); abajo la lista de los
+        productos que ya tienen presentación configurada."""
+        from routes.kellerhoff import corregir_eans, ean_export_de_producto, estado_equivalencia
+        with get_db() as session:
+            # "Presentación configurada" = fraccionado=True (se vende suelto, se
+            # pide por envase). El cantidad_envase suelto NO alcanza: está
+            # auto-parseado en ~60k productos en catalogación, y un envase editado
+            # a mano sin marcar fraccionado tampoco es una presentación (confunde).
+            q = (session.query(Producto, ProductoAtributo)
+                 .outerjoin(ProductoAtributo, ProductoAtributo.producto_id == Producto.id)
+                 .filter(Producto.fraccionado.is_(True))
+                 .order_by(Producto.descripcion))
+            prod_rows = q.limit(2000).all()
+
+            # EAN que el export emite por producto + su equivalencia Kellerhoff.
+            export_eans = {p.id: ean_export_de_producto(session, p)
+                           for p, _ in prod_rows}
+            corr = corregir_eans(session, list(export_eans.values()))
+
+            # Laboratorio: master (Producto.laboratorio) o, si no, vía ObServer
+            # (observer_id → ObsProducto.laboratorio_observer → ObsLaboratorio).
+            from database import ObsLaboratorio, ObsProducto
+            obs_ids = [p.observer_id for p, _ in prod_rows if p.observer_id]
+            lab_by_oid = {}
+            if obs_ids:
+                for oid, labdesc in (session.query(
+                        ObsProducto.observer_id, ObsLaboratorio.descripcion)
+                        .outerjoin(ObsLaboratorio,
+                                   ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+                        .filter(ObsProducto.observer_id.in_(obs_ids))):
+                    lab_by_oid[oid] = labdesc or ''
+
+            # Stock de la farmacia operativa → "Frac." (cajas/unidades) tipo ObServer.
+            from database import ObsStock
+            from services.farmacia import farmacia_operativa
+            stock_by_oid = {}
+            if obs_ids:
+                _fid = farmacia_operativa()
+                for oid, st in (session.query(ObsStock.producto_observer, ObsStock.stock_actual)
+                                .filter(ObsStock.id_farmacia == _fid,
+                                        ObsStock.producto_observer.in_(obs_ids)).all()):
+                    stock_by_oid[oid] = st
+
+            filas = []
+            for prod, atr in prod_rows:
+                ce = atr.cantidad_envase if (atr and atr.cantidad_envase is not None) else None
+                _stk = stock_by_oid.get(prod.observer_id)
+                frac = (f'{int(_stk) // int(ce)}/{int(_stk)}' if (ce and _stk) else None)
+                eean = export_eans[prod.id]
+                est = estado_equivalencia(session, eean)
+                estado = est.get('estado')
+                if estado in ('directo', 'equivalencia'):
+                    kel_desc = est.get('desc') or ''
+                    kel_codigo = est.get('codigo') or ''
+                    kel_ean_eq = corr.get(eean) or ''
+                elif estado == 'no_disponible':
+                    kel_desc, kel_codigo, kel_ean_eq = 'Kellerhoff no lo trae', '', ''
+                else:  # sin_resolver / sin_catalogo
+                    kel_desc, kel_codigo, kel_ean_eq = '', '', ''
+                filas.append({
+                    'ean': prod.codigo_barra,
+                    'observer_id': prod.observer_id,
+                    'export_ean': eean,
+                    'nombre': prod.descripcion or '',
+                    'lab': (prod.laboratorio.nombre if prod.laboratorio
+                            else lab_by_oid.get(prod.observer_id, '')),
+                    'fraccionado': bool(prod.fraccionado),
+                    'cantidad_envase': int(ce) if ce is not None else None,
+                    'stock_actual': _stk,
+                    'frac': frac,
+                    'kel_estado': estado,
+                    'kel_desc': kel_desc,
+                    'kel_codigo': kel_codigo,
+                    'kel_ean_eq': kel_ean_eq,
+                })
+        return render_template('productos_presentaciones.html', filas=filas)
+
     @app.route('/productos/flags')
     @login_required
     def producto_flags_list():
@@ -122,11 +203,23 @@ def init_app(app):
                     .filter(Laboratorio.activo.is_(True))
                     .order_by(Laboratorio.nombre).all())
 
+            # Productos marcados "no pedir" al armar un pedido (Producto.no_pedir).
+            # No son flags de la tabla ProductoFlag: es una columna del master que
+            # se setea desde compras/dia → "Pide 0 (no reponer)".
+            np_rows = (session.query(Producto.id, Producto.codigo_barra,
+                                     Producto.descripcion, Laboratorio.nombre)
+                       .outerjoin(Laboratorio, Laboratorio.id == Producto.laboratorio_id)
+                       .filter(Producto.no_pedir.is_(True))
+                       .order_by(Producto.descripcion).all())
+            no_pedir_items = [{'id': r[0], 'ean': r[1], 'nombre': r[2] or '',
+                               'lab': r[3] or ''} for r in np_rows]
+
         return render_template('producto_flags.html',
                                flags=flags,
                                flag_configs=cfgs,
                                filtro_slug=filtro_slug,
-                               labs=labs)
+                               labs=labs,
+                               no_pedir_items=no_pedir_items)
 
     @app.route('/productos/flags/asignar', methods=['POST'])
     @login_required
@@ -225,15 +318,33 @@ def init_app(app):
             from routes.kellerhoff import ean_export_de_producto, estado_equivalencia
             kel_ean = ean_export_de_producto(session, prod)
             kel = estado_equivalencia(session, kel_ean)
+            # Oferta vigente del producto (lab derivado del producto — un producto
+            # = un solo lab). Para la pestaña Oferta de la ficha 360.
+            from database import OfertaMinimo
+            oferta = None
+            if prod.laboratorio_id:
+                of = (session.query(OfertaMinimo)
+                      .filter_by(ean=prod.codigo_barra, laboratorio_id=prod.laboratorio_id)
+                      .order_by(OfertaMinimo.actualizado_en.desc()).first())
+                if of:
+                    oferta = {
+                        'descuento_psl': float(of.descuento_psl) if of.descuento_psl is not None else None,
+                        'unidades_minima': of.unidades_minima,
+                    }
             return jsonify({
                 'ok': True,
                 'existe_master': True,
+                'producto_id': prod.id,
                 'ean': prod.codigo_barra,
                 'descripcion': prod.descripcion or '',
                 'lab': prod.laboratorio.nombre if prod.laboratorio else '',
+                'lab_id': prod.laboratorio_id,
                 'fraccionado': bool(prod.fraccionado),
                 'cantidad_envase': cant,
                 'cantidad_envase_obs': cant_obs,
+                'es_pack': bool(prod.es_pack),
+                'cantidad_reposicion_fija': prod.cantidad_reposicion_fija,
+                'oferta': oferta,
                 'kellerhoff': kel,
             })
 
@@ -275,3 +386,231 @@ def init_app(app):
             return jsonify({'ok': True, 'fraccionado': prod.fraccionado,
                             'cantidad_envase': float(atr.cantidad_envase)
                             if (atr and atr.cantidad_envase is not None) else None})
+
+    @app.route('/api/producto/oferta', methods=['POST'])
+    @login_required
+    def api_producto_oferta_guardar():
+        """Carga/actualiza UNA oferta para un producto (ficha 360, pestaña Oferta).
+        El laboratorio se DERIVA del producto (un producto = un solo lab). Body
+        JSON: {ean, descuento_psl, unidades_minima}. unidades_minima 1 = simple,
+        >1 = con_minimo. descuento_psl vacío → borra la oferta."""
+        from database import OfertaMinimo, now_ar
+        body = request.get_json(silent=True) or {}
+        ean = str(body.get('ean', '')).strip()
+        if not ean:
+            return jsonify({'ok': False, 'error': 'Falta EAN'}), 400
+        with get_db() as session:
+            prod = _resolver_producto_por_ean(session, ean)
+            if not prod:
+                return jsonify({'ok': False, 'error': 'Producto sin ficha master local.'}), 404
+            if not prod.laboratorio_id:
+                return jsonify({'ok': False, 'error': 'El producto no tiene laboratorio asignado.'}), 400
+            ean_p = prod.codigo_barra
+            existing = (session.query(OfertaMinimo)
+                        .filter_by(ean=ean_p, laboratorio_id=prod.laboratorio_id)
+                        .order_by(OfertaMinimo.actualizado_en.desc()).first())
+            dto_raw = str(body.get('descuento_psl', '')).strip().replace(',', '.')
+            if not dto_raw:  # vaciar = borrar
+                if existing:
+                    session.delete(existing)
+                    session.commit()
+                return jsonify({'ok': True, 'borrada': True})
+            try:
+                dto = float(dto_raw)
+            except ValueError:
+                return jsonify({'ok': False, 'error': 'Descuento inválido.'}), 400
+            try:
+                um = max(1, int(body.get('unidades_minima') or 1))
+            except (ValueError, TypeError):
+                um = 1
+            obj = existing or OfertaMinimo(ean=ean_p, laboratorio_id=prod.laboratorio_id)
+            if not existing:
+                session.add(obj)
+            obj.descripcion     = prod.descripcion
+            obj.unidades_minima = um
+            obj.descuento_psl   = dto
+            obj.tipo_descuento  = 'simple' if um <= 1 else 'con_minimo'
+            obj.activo          = True
+            obj.actualizado_en  = now_ar()
+            session.commit()
+            return jsonify({'ok': True, 'unidades_minima': um,
+                            'descuento_psl': dto, 'tipo_descuento': obj.tipo_descuento})
+
+    @app.route('/api/producto/configurados')
+    @login_required
+    def api_producto_configurados():
+        """Lista de productos que tienen algo configurado para un modo, para la
+        tabla contextual de abajo. modo: oferta | repo | pack."""
+        modo = (request.args.get('modo') or '').strip()
+        rows = []
+        with get_db() as session:
+            if modo == 'oferta':
+                from database import Laboratorio, OfertaMinimo
+                q = (session.query(OfertaMinimo, Laboratorio.nombre)
+                     .outerjoin(Laboratorio, Laboratorio.id == OfertaMinimo.laboratorio_id)
+                     .filter(OfertaMinimo.activo.is_(True),
+                             OfertaMinimo.descuento_psl.isnot(None))
+                     .order_by(OfertaMinimo.descripcion.nullslast()).limit(500).all())
+                for of, labnom in q:
+                    um = of.unidades_minima or 1
+                    val = f'{float(of.descuento_psl):g}%' + (f' · mín {um}' if um > 1 else '')
+                    rows.append({'nombre': of.descripcion or of.ean, 'ean': of.ean,
+                                 'lab': labnom or '', 'valor': val})
+            elif modo == 'repo':
+                q = (session.query(Producto)
+                     .filter(Producto.cantidad_reposicion_fija.isnot(None),
+                             Producto.cantidad_reposicion_fija > 0)
+                     .order_by(Producto.descripcion).limit(500).all())
+                for p in q:
+                    rows.append({'nombre': p.descripcion or p.codigo_barra, 'ean': p.codigo_barra,
+                                 'lab': p.laboratorio.nombre if p.laboratorio else '',
+                                 'valor': f'{p.cantidad_reposicion_fija} u'})
+            elif modo == 'pack':
+                q = (session.query(Producto).filter(Producto.es_pack == 1)
+                     .order_by(Producto.descripcion).limit(500).all())
+                for p in q:
+                    rows.append({'nombre': p.descripcion or p.codigo_barra, 'ean': p.codigo_barra,
+                                 'lab': p.laboratorio.nombre if p.laboratorio else '', 'valor': 'Sí'})
+            else:
+                return jsonify({'ok': False, 'error': 'modo inválido'}), 400
+        return jsonify({'ok': True, 'rows': rows})
+
+    @app.route('/api/producto/config-bulk', methods=['POST'])
+    @login_required
+    def api_producto_config_bulk():
+        """Aplica oferta / repo_fija / pack a VARIOS productos a la vez (1 o N).
+        Body: {observer_ids:[...], modo:'oferta'|'repo_fija'|'pack', valores:{...}}.
+        Materializa el master si no existe. El lab de la oferta se deriva del
+        producto (un producto = un solo lab)."""
+        from database import OfertaMinimo, now_ar
+        from helpers import materializar_producto
+        body = request.get_json(silent=True) or {}
+        obs_ids = [int(x) for x in (body.get('observer_ids') or [])
+                   if str(x).strip().lstrip('-').isdigit()]
+        modo = (body.get('modo') or '').strip()
+        val = body.get('valores') or {}
+        if not obs_ids:
+            return jsonify({'ok': False, 'error': 'No seleccionaste productos.'}), 400
+        if modo not in ('oferta', 'repo_fija', 'pack'):
+            return jsonify({'ok': False, 'error': 'Modo inválido.'}), 400
+
+        # Pre-parse de valores según el modo (falla rápido si están mal).
+        dto = um = rf = es_pack = None
+        if modo == 'oferta':
+            dto_raw = str(val.get('descuento_psl', '')).strip().replace(',', '.')
+            try:
+                dto = float(dto_raw) if dto_raw else None  # None → borrar oferta
+            except ValueError:
+                return jsonify({'ok': False, 'error': 'Descuento inválido.'}), 400
+            try:
+                um = max(1, int(val.get('unidades_minima') or 1))
+            except (ValueError, TypeError):
+                um = 1
+        elif modo == 'repo_fija':
+            rf_raw = str(val.get('cantidad', '')).strip()
+            if rf_raw:
+                try:
+                    rf = int(rf_raw)
+                    if rf < 0:
+                        return jsonify({'ok': False, 'error': 'Debe ser >= 0'}), 400
+                except ValueError:
+                    return jsonify({'ok': False, 'error': 'Cantidad inválida.'}), 400
+        elif modo == 'pack':
+            es_pack = 1 if val.get('es_pack') in (True, '1', 1, 'true') else 0
+
+        aplicados = materializados = sin_lab = errores = 0
+        with get_db() as session:
+            for oid in obs_ids:
+                ya = session.query(Producto).filter_by(observer_id=oid).first() is not None
+                prod, err = materializar_producto(session, oid)
+                if not prod:
+                    errores += 1
+                    continue
+                if not ya:
+                    materializados += 1
+                if modo == 'repo_fija':
+                    prod.cantidad_reposicion_fija = rf if (rf and rf > 0) else None
+                elif modo == 'pack':
+                    prod.es_pack = es_pack
+                elif modo == 'oferta':
+                    if not prod.laboratorio_id:
+                        sin_lab += 1
+                        continue
+                    of = (session.query(OfertaMinimo)
+                          .filter_by(ean=prod.codigo_barra, laboratorio_id=prod.laboratorio_id)
+                          .order_by(OfertaMinimo.actualizado_en.desc()).first())
+                    if dto is None:
+                        if of:
+                            session.delete(of)
+                        aplicados += 1
+                        continue
+                    if not of:
+                        of = OfertaMinimo(ean=prod.codigo_barra, laboratorio_id=prod.laboratorio_id)
+                        session.add(of)
+                    of.descripcion = prod.descripcion
+                    of.unidades_minima = um
+                    of.descuento_psl = dto
+                    of.tipo_descuento = 'simple' if um <= 1 else 'con_minimo'
+                    of.activo = True
+                    of.actualizado_en = now_ar()
+                aplicados += 1
+            session.commit()
+        return jsonify({'ok': True, 'aplicados': aplicados, 'materializados': materializados,
+                        'sin_lab': sin_lab, 'errores': errores})
+
+    @app.route('/api/producto/presentacion-bulk', methods=['POST'])
+    @login_required
+    def api_producto_presentacion_bulk():
+        """Marca fraccionado + cantidad_envase en VARIOS productos a la vez.
+
+        Body: {observer_ids: [...], fraccionado: bool, cantidad_envase: num|null}.
+        Envase: si viene `cantidad_envase` → común para todos; si no → el de
+        ObServer de cada producto. Materializa el master si no existe.
+        """
+        from database import ObsProducto
+        from helpers import materializar_producto
+        body = request.get_json(silent=True) or {}
+        obs_ids = [int(x) for x in (body.get('observer_ids') or [])
+                   if str(x).strip().lstrip('-').isdigit()]
+        if not obs_ids:
+            return jsonify({'ok': False, 'error': 'No seleccionaste productos.'}), 400
+        fraccionado = bool(body.get('fraccionado', True))
+        raw = body.get('cantidad_envase')
+        envase_comun = None
+        if raw not in (None, ''):
+            try:
+                envase_comun = Decimal(str(raw).replace('.', '').replace(',', '.'))
+            except (InvalidOperation, ValueError):
+                return jsonify({'ok': False, 'error': 'Envase común inválido.'}), 400
+
+        aplicados = materializados = sin_envase = errores = 0
+        with get_db() as session:
+            for oid in obs_ids:
+                ya_existia = (session.query(Producto)
+                              .filter_by(observer_id=oid).first() is not None)
+                prod, err = materializar_producto(session, oid)
+                if not prod:
+                    errores += 1
+                    continue
+                if not ya_existia:
+                    materializados += 1
+                prod.fraccionado = fraccionado
+                # Envase: común si lo mandaron; sino el de ObServer del producto.
+                env = envase_comun
+                if env is None:
+                    obs = session.get(ObsProducto, oid)
+                    env = obs.cantidad_envase if (obs and obs.cantidad_envase) else None
+                if env is not None and env > 0:
+                    atr = session.get(ProductoAtributo, prod.id)
+                    if atr is None:
+                        atr = ProductoAtributo(producto_id=prod.id)
+                        session.add(atr)
+                    atr.cantidad_envase = env
+                    atr.fuente = 'manual'
+                else:
+                    sin_envase += 1
+                aplicados += 1
+            session.commit()
+        return jsonify({'ok': True, 'aplicados': aplicados,
+                        'materializados': materializados,
+                        'sin_envase': sin_envase, 'errores': errores})

@@ -1,0 +1,146 @@
+{# Chart histórico anual (12m) reutilizable — extraído de _grafico_dual_panel.html.
+
+   Uso:
+     1. Incluir Chart.js antes (si no está): {% block extra_head %} <script src="..."></script>
+     2. {% include '_grafico_anio.html' %} en la posición donde querés el panel.
+     3. Llamar `cargarGraficoAnio(observerId, nombre)` desde el código de la página.
+
+   Datos: /api/observer-product/<id>/chart (12 meses + tendencia + proyección + stock + mín).
+#}
+<div id="solo-anio-panel" class="bg-white border border-surface-border rounded-xl px-3 py-2 shadow-sm h-full flex flex-col">
+    <div class="flex items-center justify-between mb-1.5">
+        <p class="text-[10px] font-bold uppercase text-[#888] tracking-wide">Año (12m)</p>
+        <p id="solo-anio-titulo" class="text-[10px] text-[#888] truncate ml-2 min-w-0"></p>
+    </div>
+    <div class="bg-white border border-surface-border rounded-lg relative flex-1" style="min-height:320px">
+        <canvas id="solo-anio-canvas"></canvas>
+        <p id="solo-anio-empty" class="absolute inset-0 flex items-center justify-center text-xs text-[#bbb]">(sin selección)</p>
+    </div>
+    <div class="flex flex-wrap gap-1 mt-1.5" id="solo-anio-stats"></div>
+</div>
+
+<script>
+(function() {
+    const _MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    let _chart = null;
+
+    const _T = {
+        text:'#1e1e1e', soft:'#555', mute:'#888',
+        good:'#15803d', warn:'#b45309', danger:'#dc2626', violet:'#7c3aed',
+        line:'#e8e8e8', line2:'#e0e0e0', surface:'#fff',
+        barVentasBg:'rgba(34,197,94,0.5)', barVentasBd:'rgba(34,197,94,0.85)',
+        barProyBg:'rgba(99,102,241,0.25)', barProyBd:'rgba(99,102,241,0.7)',
+        lineTendencia:'#f97316', lineProm:'#EAB308', lineStock:'#ef4444',
+        slopeUp:'#4ade80', slopeDown:'#f87171',
+    };
+
+    function _err(msg) {
+        const e = document.getElementById('solo-anio-empty');
+        e.textContent = msg; e.classList.remove('hidden');
+        if (_chart) { _chart.destroy(); _chart = null; }
+        document.getElementById('solo-anio-stats').innerHTML = '';
+    }
+
+    function _render(p) {
+        const avg = p.avg_monthly||0, slope = p.slope||0, rot = p.rotacion||'B';
+        const rC = {A:_T.good,M:_T.warn,B:_T.danger}, rL = {A:'Alta',M:'Media',B:'Baja'};
+        const sd = avg>0&&p.stock>0 ? Math.round(p.stock/(avg/30.4))+'d' : p.stock<=0?'agotado':'—';
+        const minimo = p.minimo || 0;
+        const stockBajoMin = minimo > 0 && p.stock < minimo;
+        const grid = document.getElementById('solo-anio-stats');
+
+        if (p.sin_historial || !p.ventas || !p.ventas.length) {
+            const sH = [
+                {l:'Prom/mes',v:Math.round(avg),c:_T.text},
+                {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||_T.mute},
+                {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:stockBajoMin?_T.danger:(p.stock<=0?_T.danger:_T.text)},
+            ];
+            if (minimo > 0) sH.push({l:'Mín.',v:minimo,c:_T.violet});
+            sH.push({l:'Cobertura',v:sd,c:_T.mute});
+            grid.innerHTML = sH.map(s=>`<div class="bg-[#fafafa] rounded-lg px-2 py-1 text-center"><p class="text-[8px] text-[#aaa] uppercase tracking-wide leading-none mb-0.5">${s.l}</p><p class="text-[11px] font-bold leading-none" style="color:${s.c}">${s.v}</p></div>`).join('');
+            if (_chart) { _chart.destroy(); _chart = null; }
+            const empty = document.getElementById('solo-anio-empty');
+            empty.textContent = 'Sin historial mensual.';
+            empty.classList.remove('hidden');
+            return;
+        }
+        document.getElementById('solo-anio-empty').classList.add('hidden');
+        const ventas = p.ventas, sm = p.start_month||4, FM = 11, N_D = p.n_days||35;
+        const monthLabels = Array.from({length:12}, (_,i) => _MES[(sm-1+i)%12]);
+        const today = new Date(), de = today.getDate(), dim = new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
+        const ps = ventas[11]||0;
+        const pf = (avg>0&&de>0) ? Math.round(ps+(avg/dim)*(dim-de)) : (ps>0&&de>0?Math.round(ps*dim/de):0);
+        const pr = Math.max(0, pf-ps);
+        const vals = ventas.slice(0,FM), mx = (FM-1)/2, my = vals.reduce((a,b)=>a+b,0)/FM;
+        const nF = N_D>=35?2:1;
+        const fv = [];
+        for (let o=0;o<nF;o++) {
+            const si = (avg>0&&ventas[o]>0)?ventas[o]/avg:1.0, th = Math.min(FM+o-mx,2.0);
+            fv.push(Math.max(0,Math.round(avg*si+slope*th)));
+        }
+        const fl = fv.map((_,i)=>_MES[(sm-1+i)%12]+'→'), tc = 12+nF;
+        const tC = avg>0?avg*0.6:Infinity;
+        const tL = Array.from({length:tc},(_,i)=>{const r=my+slope*(i-mx);return Math.max(0,avg>0?Math.min(Math.max(r,avg-tC),avg+tC):r);});
+        const labels = [...monthLabels.map((m,i)=>i===11?m+'*':m),...fl];
+        const hd = [...ventas,...Array(nF).fill(null)], fd = [...Array(12).fill(null),...fv];
+        const blp = {id:'soloBarLabels',afterDraw(chart){
+            const ctx2=chart.ctx,yS=chart.scales.y;
+            chart.data.datasets.forEach((d,di)=>{
+                const meta=chart.getDatasetMeta(di);
+                if(meta.type!=='bar') return;
+                meta.data.forEach((bar,i)=>{
+                    const v=d.data[i]; if(v==null||v<=0) return;
+                    if(di===0&&i===11&&pr>0){
+                        const yt=yS.getPixelForValue(pf),hw=bar.width/2;
+                        ctx2.save();ctx2.fillStyle='rgba(234,179,8,0.22)';ctx2.fillRect(bar.x-hw,yt,bar.width,bar.y-yt);
+                        ctx2.strokeStyle='rgba(234,179,8,0.7)';ctx2.lineWidth=1;ctx2.setLineDash([3,2]);ctx2.strokeRect(bar.x-hw,yt,bar.width,bar.y-yt);ctx2.restore();
+                        ctx2.save();ctx2.font='bold 11px sans-serif';ctx2.fillStyle=_T.text;ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(ps,bar.x,bar.y-3);ctx2.restore();
+                        ctx2.save();ctx2.font='bold 11px sans-serif';ctx2.fillStyle=_T.warn;ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText('~'+pf,bar.x,yt-3);ctx2.restore();
+                        return;
+                    }
+                    ctx2.save();ctx2.font='bold 11px sans-serif';ctx2.fillStyle=_T.text;ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(Math.round(v),bar.x,bar.y-3);ctx2.restore();
+                });
+            });
+        }};
+        const ctx = document.getElementById('solo-anio-canvas').getContext('2d');
+        if (_chart) _chart.destroy();
+        _chart = new Chart(ctx, {
+            type:'bar', plugins:[blp],
+            data:{labels, datasets:[
+                {label:'Ventas',data:hd,type:'bar',backgroundColor:_T.barVentasBg,borderColor:_T.barVentasBd,borderWidth:1,borderRadius:4,order:3, datalabels:{display:false}},
+                {label:'Proyección',data:fd,type:'bar',backgroundColor:_T.barProyBg,borderColor:_T.barProyBd,borderWidth:1,borderRadius:4,order:3, datalabels:{display:false}},
+                {label:'Tendencia',data:tL,type:'line',borderColor:_T.lineTendencia,borderWidth:2.5,pointRadius:0,tension:0,fill:false,order:1, datalabels:{display:false}},
+                {label:'Prom.',data:Array(tc).fill(avg),type:'line',borderColor:_T.lineProm,borderWidth:2,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2, datalabels:{display:false}},
+                ...(p.stock>0?[{label:'Stock',data:Array(tc).fill(p.stock),type:'line',borderColor:_T.lineStock,borderWidth:1.5,borderDash:[3,3],pointRadius:0,tension:0,fill:false,order:2, hidden:true, datalabels:{display:false}}]:[]),
+                ...(minimo>0?[{label:'Mínimo',data:Array(tc).fill(minimo),type:'line',borderColor:_T.violet,borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2, hidden:true, datalabels:{display:false}}]:[]),
+            ]},
+            options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+                plugins:{legend:{labels:{color:_T.soft,font:{size:9,weight:'600'},boxWidth:12,padding:6}},tooltip:{backgroundColor:_T.surface,titleColor:_T.text,bodyColor:_T.soft,borderColor:_T.line2,borderWidth:1,padding:8}},
+                scales:{x:{stacked:true,grid:{color:_T.line},ticks:{color:_T.soft,font:{size:9}}},y:{stacked:true,grid:{color:_T.line},ticks:{color:_T.soft,font:{size:9}},beginAtZero:true}}}
+        });
+        const ss = slope>0.05?'↑':slope<-0.05?'↓':'→', sc = slope>0.05?_T.slopeUp:slope<-0.05?_T.slopeDown:_T.mute;
+        const stats = [
+            {l:'Prom/mes',v:Math.round(avg),c:_T.text},
+            {l:'Anual (12m)',v:Math.round(ventas.slice(0,12).reduce((a,b)=>a+(b||0),0)),c:_T.text},
+            {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||_T.mute},
+            {l:'Tendencia',v:`${ss} ${Math.abs(slope).toFixed(1)}/m`,c:sc},
+            {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:stockBajoMin?_T.danger:(p.stock<=0?_T.danger:_T.text)},
+        ];
+        if (minimo > 0) stats.push({l:'Mín.',v:minimo,c:_T.violet});
+        stats.push({l:'Cobertura',v:sd,c:_T.mute});
+        if (ps>0) stats.push({l:`Mes (${de}/${dim}d)`,v:`${ps}/~${pf}`,c:_T.warn});
+        grid.innerHTML = stats.map(s=>`<div class="bg-[#fafafa] rounded-lg px-2 py-1 text-center"><p class="text-[8px] text-[#aaa] uppercase tracking-wide leading-none mb-0.5">${s.l}</p><p class="text-[11px] font-bold leading-none" style="color:${s.c}">${s.v}</p></div>`).join('');
+    }
+
+    window.cargarGraficoAnio = async function(observerId, nombre) {
+        if (!observerId) return;
+        if (nombre) document.getElementById('solo-anio-titulo').textContent = nombre;
+        try {
+            const r = await fetch(`/api/observer-product/${observerId}/chart`, {credentials: 'same-origin'});
+            const d = await r.json();
+            if (!d.ok) { _err('Error: ' + (d.error || 'sin datos')); return; }
+            _render(d);
+        } catch (e) { _err('Error de red'); }
+    };
+})();
+</script>

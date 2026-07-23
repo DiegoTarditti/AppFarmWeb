@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Armar reparto · Badia</title>
+<style>
+  :root {
+    --bg:#22222d; --surface:#2c2c39; --card:#272732; --txt:#ececf0; --title:#fafafc;
+    --muted:#9c9ca4; --muted2:#7a7a82; --border:rgba(255,255,255,0.14); --accent:#1D9E75;
+    --accent-ink:#06241a; --row-bd:rgba(255,255,255,0.10); --hov:#3a3a47; --warn:#EF9F27;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--txt); font-family:var(--font); }
+  .topbar { height:54px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:12px; padding:0 18px; flex-wrap:wrap; }
+  .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .logo .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border); background:var(--hov); color:var(--txt); cursor:pointer; text-decoration:none; }
+  .hbtn-ok { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700; }
+  .hbtn-danger { background:transparent; color:#F09595; border-color:#5a2a2a; font-size:10px; padding:2px 7px; }
+  .input { background:var(--hov); color:var(--txt); border:1px solid var(--border); border-radius:8px; padding:7px 9px; font-size:13px; }
+  .wrap { padding:16px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:16px; }
+  .muted { color:var(--muted); } .muted2 { color:var(--muted2); }
+  .cols { display:flex; gap:12px; overflow-x:auto; padding-bottom:8px; align-items:flex-start; }
+  .col { background:var(--card); border:1px solid var(--border); border-radius:14px; min-width:240px; max-width:280px; flex:0 0 auto; display:flex; flex-direction:column; max-height:72vh; }
+  .col-head { padding:10px 12px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
+  .dotc { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .col-body { padding:8px; overflow-y:auto; display:flex; flex-direction:column; gap:7px; }
+  .ped { border:1px solid var(--row-bd); border-radius:10px; padding:8px 9px; font-size:12px; }
+  .ped.entregado { opacity:.5; }
+  .ped.urg { border-left:3px solid #DC2626; }
+  .badge { font-size:9px; padding:1px 7px; border-radius:999px; font-weight:700; background:var(--hov); color:var(--muted); }
+  .res { background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:4px; max-height:160px; overflow:auto; }
+  .res .it { padding:6px 9px; cursor:pointer; font-size:12px; border-bottom:1px solid var(--row-bd); }
+  .res .it:hover { background:var(--hov); }
+  a.link { color:#7fb0e0; }
+  #map { height:62vh; border-radius:14px; border:1px solid var(--border); }
+  .leaflet-popup-content { color:#1a1a1a; }
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:50; display:none; align-items:center; justify-content:center; }
+</style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo"><span class="dot"></span>🚚 Armar reparto · Badia</div>
+    <div style="flex:1"></div>
+    <label class="muted" style="font-size:12px;">Día <input type="date" id="fecha" class="input" onchange="cargar()"></label>
+    <button onclick="toggleMapa()" class="hbtn" id="btnMapa">🗺️ Mapa</button>
+    <a href="/reparto" class="hbtn">🛵 Por cadete</a>
+    <a href="/rutas" class="hbtn">Definir rutas</a>
+    <a href="/reparto/planilla" class="hbtn">📋 Planilla</a>
+    <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
+  </div>
+
+  <div class="wrap">
+    <div id="bannerUrg" style="display:none; background:#3a1414; border:1px solid #5a2a2a; color:#F09595; border-radius:10px; padding:8px 12px; margin-bottom:14px; font-size:13px;"></div>
+
+    <div id="mapwrap" style="display:none;"><div id="map"></div></div>
+    <div class="cols" id="cols"><div class="muted">Cargando…</div></div>
+  </div>
+
+<script>
+const CUAD = {N:'Norte', S:'Sur', E:'Este', O:'Oeste'};
+window._oid = null;
+window._cid = null;
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&','<':'<','>':'>','"':'"'}[c])); }
+async function jpost(u,b){ return (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json(); }
+function hoyISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fechaVal(){ return document.getElementById('fecha').value || hoyISO(); }
+
+async function cargar(){
+  const d = await (await fetch('/reparto/api?fecha='+fechaVal())).json();
+  window._data = d;
+  window._rutas = d.rutas||[];
+  const peds = d.pedidos||[];
+  const PR = {urgente:0, normal:1, programado:2};
+  const urgSin = peds.filter(p=>p.prioridad==='urgente' && !p.ruta_id && p.estado!=='entregado').length;
+  const banner = document.getElementById('bannerUrg');
+  banner.style.display = urgSin?'block':'none';
+  banner.textContent = urgSin?`⚠️ ${urgSin} pedido(s) URGENTE(s) sin asignar a una ruta.`:'';
+  const optRutas = '<option value="">(sin asignar)</option>' + window._rutas.map(r=>`<option value="${r.id}">${esc(r.nombre)}</option>`).join('');
+  const grupos = [{id:null, nombre:'Sin asignar', color:'#6a6a72'}].concat(window._rutas);
+  document.getElementById('cols').innerHTML = grupos.map(g=>{
+    const items = peds.filter(p=> (p.ruta_id||null) === (g.id||null))
+      .sort((a,b)=> (PR[a.prioridad]??1)-(PR[b.prioridad]??1) || (a.orden||999)-(b.orden||999));
+    const filas = items.map(p=>pedCard(p, optRutas)).join('') || '<div class="muted2" style="font-size:11px; padding:6px;">—</div>';
+    const exp = g.id ? `<button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="optimizar(${g.id})" title="Optimizar">Optimizar</button> <button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="exportar(${g.id})">Exportar</button>` : '';
+    const cad = g.cadete ? `<span class="muted2" style="font-size:10px;">· ${esc(g.cadete)}</span>` : '';
+    return `<div class="col">
+      <div class="col-head">
+        <span class="dotc" style="background:${esc(g.color||'#6a6a72')}"></span>
+        <b style="font-size:12px;">${esc(g.nombre)}</b> <span class="muted2" style="font-size:11px;">(${items.length})</span> ${cad}
+        <div style="flex:1"></div>${exp}
+      </div>
+      <div class="col-body">${filas}</div>
+    </div>`;
+  }).join('');
+  if(document.getElementById('mapwrap').style.display!=='none') renderMapa();
+}
+
+let _map=null, _layer=null;
+function toggleMapa(){
+  const w=document.getElementById('mapwrap'), cols=document.getElementById('cols');
+  const show = w.style.display==='none';
+  w.style.display = show?'block':'none';
+  cols.style.display = show?'none':'flex';
+  document.getElementById('btnMapa').textContent = show?'📋 Listas':'🗺️ Mapa';
+  if(show){ if(!_map) initMapa(); setTimeout(()=>{ _map.invalidateSize(); renderMapa(); },60); }
+}
+function initMapa(){
+  _map = L.map('map');
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}).addTo(_map);
+  _layer = L.layerGroup().addTo(_map);
+  _map.setView([-32.95,-60.66], 12);
+}
+function renderMapa(){
+  if(!_map || !window._data) return;
+  _layer.clearLayers();
+  const d=window._data, f=d.farmacia||{}, pts=[];
+  const rById={}; (d.rutas||[]).forEach(r=>rById[r.id]=r);
+  (d.rutas||[]).forEach(r=>{
+    if(r.poligono && r.poligono.length>=3){
+      L.polygon(r.poligono, {color:r.color||'#6a6a72', weight:2, fillOpacity:.08})
+        .addTo(_layer).bindPopup('Zona: '+esc(r.nombre));
+      r.poligono.forEach(c=>pts.push(c));
+    }
+  });
+  if(f.lat!=null){ L.marker([f.lat,f.lng]).addTo(_layer).bindPopup('🏥 Farmacia'); pts.push([f.lat,f.lng]); }
+  (d.pedidos||[]).forEach(p=>{
+    if(p.lat==null||p.lng==null) return;
+    const color=(rById[p.ruta_id]||{}).color||'#6a6a72';
+    L.circleMarker([p.lat,p.lng],{radius:7,color:'#fff',weight:1,fillColor:color,fillOpacity:.9})
+      .addTo(_layer).bindPopup(`<b>${esc(p.cliente_nombre)}</b><br>${esc(p.direccion)}${p.orden?'<br>parada #'+p.orden:''}`);
+    pts.push([p.lat,p.lng]);
+  });
+  (d.rutas||[]).forEach(r=>{
+    const ps=(d.pedidos||[]).filter(p=>p.ruta_id===r.id && p.lat!=null && p.orden).sort((a,b)=>a.orden-b.orden);
+    if(ps.length){ const line=f.lat!=null?[[f.lat,f.lng]]:[]; ps.forEach(p=>line.push([p.lat,p.lng]));
+      L.polyline(line,{color:r.color||'#6a6a72',weight:2.5,opacity:.6}).addTo(_layer); }
+  });
+  if(pts.length) _map.fitBounds(pts, {padding:[30,30]});
+}
+async function optimizar(rid){ await jpost(`/reparto/ruta/${rid}/optimizar`, {fecha:fechaVal()}); cargar(); }
+
+function pedCard(p, optRutas){
+  const ent = p.estado==='entregado';
+  const urg = p.prioridad==='urgente';
+  const bprio = urg ? '<span class="badge" style="background:#DC2626;color:#fff;">🔴 Urgente</span>'
+              : (p.prioridad==='programado' ? '<span class="badge" style="background:#185FA5;color:#fff;">🕐 Prog.</span>' : '');
+  const bcuad = p.cuadrante ? `<span class="badge">${esc(CUAD[p.cuadrante]||p.cuadrante)}</span>` : '<span class="badge" style="background:#5a2a2a;color:#F09595;">s/ubicar</span>';
+  const bcob = p.importe != null ? `$ ${Number(p.importe).toFixed(2)}` : '';
+  const bform = p.forma_pago ? esc(p.forma_pago) : '';
+  const bpag = p.pagado ? '<span class="badge" style="background:var(--accent);color:var(--accent-ink);">✓ Pagado</span>' : '';
+  const bvuelto = p.vuelto ? `<span class="muted2" style="font-size:10px;">↩ ${esc(p.vuelto)}</span>` : '';
+  const bturno = p.turno ? `<span class="badge">${esc(p.turno)}</span>` : '';
+  const btomo = p.tomo ? `<span class="muted2" style="font-size:10px;">👤 ${esc(p.tomo)}</span>` : '';
+  const bcanal = p.canal && p.canal!=='manual' ? `<span class="badge" style="background:#2a3a5a;">${esc(p.canal)}</span>` : '';
+  const bprod = p.producto ? `<span class="muted2" style="font-size:10px;">📦 ${esc(p.producto)}</span>` : '';
+  const breceta = p.requiere_receta ? '<span class="badge" style="background:#5a1a1a;color:#F09595;">📋 Receta</span>' : '';
+  const bobs = p.observacion ? `<span class="muted2" style="font-size:10px;">📝 ${esc(p.observacion)}</span>` : '';
+  const bnota = p.nota && p.nota!==p.observacion ? `<span class="muted2" style="font-size:10px;">📎 ${esc(p.nota)}</span>` : '';
+  const btotal = [bcob, bform, bpag, bvuelto].filter(Boolean).join(' · ');
+  return `<div class="ped ${ent?'entregado':''} ${urg?'urg':''}">
+    <div style="display:flex; justify-content:space-between; gap:6px;">
+      <span>${p.orden?`<span class="badge" style="background:var(--accent);color:var(--accent-ink);">#${p.orden}</span> `:''}<b>${esc(p.cliente_nombre)}</b></span>
+      <span style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;">${bprio}${bcuad}${bturno}${bcanal}</span>
+    </div>
+    <div class="muted" style="margin:2px 0;">${esc(p.direccion)}</div>
+    ${btotal ? `<div style="font-size:12px; font-weight:600; margin:2px 0;">${btotal}</div>` : ''}
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin:2px 0;">${btomo}${breceta}${bprod}${bobs}${bnota}</div>
+    <div style="display:flex; gap:5px; margin-top:6px; align-items:center;">
+      <select class="input" style="flex:1; padding:3px 6px; font-size:11px;" onchange="reasignar(${p.id}, this.value)">
+        ${optRutas.replace('value="'+(p.ruta_id||'')+'"', 'value="'+(p.ruta_id||'')+'" selected')}
+      </select>
+      ${ent? `<button class="hbtn" style="font-size:10px;padding:3px 6px;" onclick="estado(${p.id},'pendiente')">↩</button>`
+           : `<button class="hbtn hbtn-ok" style="font-size:10px;padding:3px 6px;" onclick="estado(${p.id},'entregado')">✓</button>`}
+      <button class="hbtn hbtn-danger" onclick="delPed(${p.id})">✕</button>
+    </div>
+  </div>`;
+}
+
+async function reasignar(pid, ruta_id){ await jpost(`/reparto/pedido/${pid}/asignar`, {ruta_id: ruta_id||null}); cargar(); }
+async function estado(pid, e){ await jpost(`/reparto/pedido/${pid}/estado`, {estado:e}); cargar(); }
+async function delPed(pid){ if(confirm('¿Quitar pedido?')){ await jpost(`/reparto/pedido/${pid}/delete`); cargar(); } }
+async function exportar(rid){
+  const d = await (await fetch(`/reparto/ruta/${rid}/export?fecha=`+fechaVal())).json();
+  if(d.link){ window.open(d.link, '_blank'); }
+  else { alert('No hay paradas con ubicación para armar el recorrido.'); }
+}
+
+document.getElementById('fecha').value = hoyISO();
+cargar();
+</script>
+</body>
+</html>

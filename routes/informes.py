@@ -4,13 +4,19 @@ Cada informe vive en su propia ruta + template. La pantalla `/informes` es
 el índice con tarjetas para cada informe. Pensado para crecer agregando
 más cruces sin romper la organización.
 
-Informes implementados:
-1. Labs por droga — "¿Qué labs fabrican esta droga y cuál vendo más?"
+La lista viva de rutas está en docs/MAPA.generado.md (sección routes/informes.py)
+— no se enumera acá para que no se pudra. Grandes familias:
+  · Catálogo/ventas por droga (labs por droga, presentaciones, sin alternativa)
+  · Cadencias por lab (rotación, snapshot cross-lab, análisis IA)
+  · Posicionamiento de mercado (gap de marcas, ranking nacional — con IA)
+  · Clínica/PAMI (crónicos por afiliado — requiere Observer premium, user sa)
+  · Ventas (por vendedor, comparación anual YoY)
 
-Pendientes (próximas iteraciones):
-2. Drogas con un solo proveedor — alerta de dependencia.
-4. Presentaciones por droga — qué tamaños venden más.
+Ojo: los informes que leen de ObServer tienen dos trampas documentadas en
+docs/observer_ventas_reconciliacion.md (el sync que congelaba días + el
+"Cant. Oper." de ObServer que en realidad son renglones, no operaciones).
 """
+import json
 from datetime import date
 
 from flask import jsonify, render_template, request
@@ -34,6 +40,84 @@ def _ventana_12m():
     return desde, hasta
 
 
+def _leer_snapshot_cadencias(session):
+    """Lee el snapshot de cadencias (1 fila por lab) ya ordenado por
+    monto_mensual desc. Devuelve (filas, totales, meta).
+
+    Una sola fuente de verdad compartida por la pantalla
+    `/informes/cadencias-resumen` y el análisis IA `/.../analizar-ia`.
+    """
+    from database import CadenciaLabSnapshot
+    int_keys = ('core', 'ocasional', 'caida', 'dormido', 'alta', 'media_alta',
+                'media', 'baja', 'muy_baja', 'con_ventas', 'sin_ventas',
+                'dormido_con_stock', 'dormido_stock_u')
+    float_keys = ('monto_mensual', 'dormido_valor',
+                  'core_monto', 'ocasional_monto', 'caida_monto', 'dormido_monto',
+                  'alta_monto', 'media_alta_monto', 'media_monto', 'baja_monto',
+                  'muy_baja_monto')
+    keys = int_keys + float_keys
+    tot = {k: 0 for k in keys}
+    filas = []
+    meta = None
+    rows = (session.query(CadenciaLabSnapshot)
+            .order_by(CadenciaLabSnapshot.monto_mensual.desc()).all())
+    for r in rows:
+        fila = {'lab_id': r.lab_id, 'nombre': r.lab_nombre or str(r.lab_id)}
+        for k in keys:
+            v = getattr(r, k) or 0
+            v = float(v) if k in float_keys else int(v)
+            fila[k] = v
+            tot[k] += v
+        filas.append(fila)
+    if rows:
+        meta = {
+            'actualizado_en': max((r.actualizado_en for r in rows if r.actualizado_en),
+                                  default=None),
+            'cobertura': rows[0].cobertura,
+            'meses_rot': rows[0].meses_rot,
+            'n_labs': len(rows),
+        }
+    return filas, tot, meta
+
+
+def _guardar_analisis_cache(clave, titulo, texto, usage=None):
+    """Upsert del último análisis IA por clave (para re-mostrarlo sin gastar API).
+
+    Defensivo: si el guardado falla, no rompe la respuesta del análisis.
+    """
+    try:
+        ti = getattr(usage, 'input_tokens', None) if usage else None
+        to = getattr(usage, 'output_tokens', None) if usage else None
+        with database.get_db() as s:
+            row = s.get(database.AnalisisIaCache, clave)
+            if row:
+                row.titulo, row.texto = titulo, texto
+                row.tokens_in, row.tokens_out = ti, to
+                row.creado_en = database.now_ar()
+            else:
+                s.add(database.AnalisisIaCache(
+                    clave=clave, titulo=titulo, texto=texto,
+                    tokens_in=ti, tokens_out=to))
+            s.commit()
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning('no pude cachear análisis %s', clave, exc_info=True)
+
+
+def _friendly_api_error(e):
+    """Mapea una excepción de la API de Claude a un JSON 502 con mensaje claro."""
+    msg = str(e); low = msg.lower()
+    if 'credit balance' in low or 'insufficient' in low:
+        friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito y reintentá.'
+    elif 'invalid' in low and 'api' in low and 'key' in low:
+        friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada.'
+    elif 'rate limit' in low or '429' in low:
+        friendly = 'Rate limit alcanzado. Esperá unos segundos y reintentá.'
+    else:
+        friendly = f'Claude API: {msg}'
+    return jsonify({'ok': False, 'error': friendly}), 502
+
+
 def init_app(app):
 
     @app.route('/informes')
@@ -41,6 +125,535 @@ def init_app(app):
     def informes_index():
         """Índice con tarjetas para cada informe disponible."""
         return render_template('informes_index.html')
+
+    @app.route('/informes/eventos-sla')
+    @login_required
+    def informes_eventos_sla():
+        """Log de eventos SLA (cadetes, droguería, demoras, sin respuesta).
+        Solo lectura. Filtros: tipo, severidad, resuelto/pendiente."""
+        from sqlalchemy import desc
+        tipo = request.args.get('tipo') or ''
+        sev = request.args.get('sev') or ''
+        estado = request.args.get('estado') or 'pendientes'  # pendientes | resueltos | todos
+        with database.get_db() as s:
+            E = database.EventoSLA
+            q = s.query(E)
+            if tipo:
+                q = q.filter(E.tipo == tipo)
+            if sev:
+                q = q.filter(E.severidad == sev)
+            if estado == 'pendientes':
+                q = q.filter(E.resuelto_en.is_(None))
+            elif estado == 'resueltos':
+                q = q.filter(E.resuelto_en.isnot(None))
+            eventos = q.order_by(desc(E.id)).limit(500).all()
+            # Resumen contadores por tipo (todos, sin filtros)
+            from sqlalchemy import func
+            por_tipo = (s.query(E.tipo, func.count(E.id))
+                        .filter(E.resuelto_en.is_(None))
+                        .group_by(E.tipo).all())
+        return render_template('eventos_sla.html',
+                               eventos=eventos, por_tipo=por_tipo,
+                               tipo=tipo, sev=sev, estado=estado)
+
+    @app.route('/informes/ventas-vendedor')
+    @login_required
+    def informes_ventas_vendedor():
+        """Ventas por vendedor/operador (ObServer DW.ProductosVendidos.IdOperador)."""
+        import calendar
+        from datetime import date as _date
+
+        from services.comparativa_ventas import meses_disponibles
+        from services.ventas_vendedor import ventas_por_vendedor
+        meses = meses_disponibles()
+        mes = request.args.get('mes', type=int) or meses[0]['key']
+        anio, m = mes // 100, mes % 100
+        if not (1 <= m <= 12):
+            mes, anio, m = meses[0]['key'], meses[0]['key'] // 100, meses[0]['key'] % 100
+        d1 = _date(anio, m, 1)
+        d2 = _date(anio, m, calendar.monthrange(anio, m)[1])
+        with database.get_db() as session:
+            data = ventas_por_vendedor(session, d1, d2)
+        tot_imp = sum(x['importe'] for x in data)
+        tot_u = sum(x['unidades'] for x in data)
+        return render_template('informes_ventas_vendedor.html',
+                               data=data, meses=meses, mes_sel=mes,
+                               tot_imp=tot_imp, tot_u=tot_u)
+
+    @app.route('/informes/ventas-comparativa')
+    @login_required
+    def informe_ventas_comparativa():
+        """Comparación año contra año de tickets e importe, agregada por mes.
+        Barras 12 meses (año actual vs anterior), toggle tickets/importe.
+        Fuente: ObServer DW.ProductosVendidos (obs_ventas_detalle)."""
+        from datetime import date as _date
+
+        from services.ventas_comparativa import anios_disponibles, comparativa_anual
+        hoy = _date.today()
+        with database.get_db() as session:
+            anios = anios_disponibles(session)
+            try:
+                anio = int(request.args.get('anio') or (anios[0] if anios else hoy.year))
+            except (TypeError, ValueError):
+                anio = anios[0] if anios else hoy.year
+            # Si el año elegido es el actual, el mes en curso es parcial: se marca
+            # en la serie y se excluye del total YTD (comparo solo meses cerrados).
+            if anio == hoy.year:
+                mes_parcial = hoy.month
+                mes_tope = hoy.month - 1 or None   # enero en curso → sin mes cerrado
+            else:
+                mes_parcial, mes_tope = None, None
+            data = comparativa_anual(session, anio, anio - 1,
+                                     mes_tope=mes_tope, mes_parcial=mes_parcial)
+        return render_template('informes_ventas_comparativa.html',
+                               data=data, anio=anio, anio_prev=anio - 1,
+                               anios=anios)
+
+    @app.route('/informes/ventas-producto-anual')
+    @login_required
+    def informe_ventas_producto_anual():
+        """Comparación año vs año POR PRODUCTO: top movers (crecieron, cayeron,
+        nuevos, perdidos) + tabla completa buscable. Toggle importe/unidades.
+        Acumulado YTD sobre meses cerrados. Fuente: obs_ventas_detalle."""
+        from datetime import date as _date
+
+        from services.ventas_comparativa import anios_disponibles, comparativa_producto_anual
+        hoy = _date.today()
+        with database.get_db() as session:
+            anios = anios_disponibles(session)
+            try:
+                anio = int(request.args.get('anio') or (anios[0] if anios else hoy.year))
+            except (TypeError, ValueError):
+                anio = anios[0] if anios else hoy.year
+            # YTD justo: hasta el último mes cerrado si el año está en curso.
+            mes_tope = (hoy.month - 1 or 1) if anio == hoy.year else 12
+            data = comparativa_producto_anual(session, anio, anio - 1, mes_tope=mes_tope)
+        return render_template('informes_ventas_producto_anual.html',
+                               data=data, anio=anio, anio_prev=anio - 1, anios=anios)
+
+    @app.route('/informes/ventas-droga-anual')
+    @login_required
+    def informe_ventas_droga_anual():
+        """Comparación año vs año POR DROGA (monodroga) con drill-down a productos.
+        Tabla de drogas desplegable + top movers. Toggle importe/unidades.
+        Acumulado YTD sobre meses cerrados. Fuente: obs_ventas_detalle.
+        Filtro opcional por laboratorio (?lab_id=N)."""
+        from datetime import date as _date
+
+        from services.ventas_comparativa import anios_disponibles, comparativa_droga_anual
+        hoy = _date.today()
+        with database.get_db() as session:
+            anios = anios_disponibles(session)
+            try:
+                anio = int(request.args.get('anio') or (anios[0] if anios else hoy.year))
+            except (TypeError, ValueError):
+                anio = anios[0] if anios else hoy.year
+            try:
+                lab_id = int(request.args.get('lab_id') or 0) or None
+            except (TypeError, ValueError):
+                lab_id = None
+            # Lista de labs para el dropdown (solo los que tienen productos con
+            # ventas — evitamos labs vacíos).
+            labs = (session.query(ObsLaboratorio.observer_id,
+                                  ObsLaboratorio.descripcion)
+                    .order_by(ObsLaboratorio.descripcion).all())
+            mes_tope = (hoy.month - 1 or 1) if anio == hoy.year else 12
+            data = comparativa_droga_anual(session, anio, anio - 1,
+                                           mes_tope=mes_tope, lab_id=lab_id)
+            lab_nombre = None
+            if lab_id:
+                lab = session.get(ObsLaboratorio, lab_id)
+                lab_nombre = lab.descripcion if lab else None
+        return render_template('informes_ventas_droga_anual.html',
+                               data=data, anio=anio, anio_prev=anio - 1,
+                               anios=anios, labs=labs,
+                               lab_id=lab_id, lab_nombre=lab_nombre)
+
+    # ── Crónicos PAMI: vista panorámica ─────────────────────────────────────
+    # Detecta drogas que un afiliado PAMI recibe con cadencia mensual (20-55d)
+    # en la ventana X → candidatos crónicos. Base: Gestion.Recetas +
+    # RecetasRenglones agrupadas por NombresDrogas (captura cambio de dosis/marca).
+    # Consumido por AppClinica vía /api/publica/pami/afiliado/{n}/cronicos-sugeridos.
+
+    @app.route('/informes/cronicos-pami')
+    @login_required
+    def informe_cronicos_pami():
+        """Informe panorámico de crónicos PAMI. Filtros: ventana, cadencia, OS.
+
+        3 vistas complementarias:
+          1. Top drogas: cuáles son las más recetadas en modo crónico
+          2. Top afiliados: pacientes con más crónicos identificados (los complejos)
+          3. Distribución: cuántos afiliados tienen 1, 2, 3, ...N crónicos
+        """
+        from observer_source import _connect, _test_acceso_gestion
+        try:
+            ventana = min(24, max(1, int(request.args.get('ventana_meses') or 6)))
+            min_disp = max(2, int(request.args.get('min_dispensas') or 3))
+            cad_min = max(1, int(request.args.get('cadencia_min') or 20))
+            cad_max = max(cad_min + 1, int(request.args.get('cadencia_max') or 55))
+        except (TypeError, ValueError):
+            ventana, min_disp, cad_min, cad_max = 6, 3, 20, 55
+        obra_social = (request.args.get('os') or 'PAMI').strip() or 'PAMI'
+        filtros = dict(ventana=ventana, min_disp=min_disp,
+                       cad_min=cad_min, cad_max=cad_max, os=obra_social)
+
+        # Degradación graceful: la data vive en Gestion.Recetas, schema premium.
+        # Farmacias con usuarioDW no lo tienen — mostramos cartel en vez de romper.
+        if not _test_acceso_gestion():
+            return render_template('informes_cronicos_pami.html',
+                                   sin_acceso_premium=True, filtros=filtros)
+
+        conn = _connect(timeout=60)
+        if conn is None:
+            return render_template('informes_cronicos_pami.html',
+                                   error='ObServer no disponible desde este server.',
+                                   filtros=filtros)
+        try:
+            with conn.cursor(as_dict=True) as cur:
+                # CTE base: pares (afiliado, droga) con métricas
+                base_cte = f"""
+                    WITH pares AS (
+                        SELECT
+                            r.NumeroAfiliado,
+                            nd.IdNombresDrogas AS id_droga,
+                            nd.Descripcion     AS droga,
+                            COUNT(DISTINCT r.IdReceta) AS dispensas,
+                            DATEDIFF(day, MIN(r.FechaDeVenta), MAX(r.FechaDeVenta)) AS span_dias
+                        FROM Gestion.Recetas r
+                        JOIN Gestion.RecetasRenglones rr ON rr.IdReceta = r.IdReceta
+                        JOIN DW.Productos pr ON pr.IdProducto = rr.IdProducto
+                        JOIN DW.NombresDrogas nd ON nd.IdNombresDrogas = pr.IdNombresDrogas
+                        LEFT JOIN DW.Planes p ON p.IdPlan = r.IdPlan
+                        LEFT JOIN DW.Convenios cv ON cv.IdConvenio = p.IdConvenio
+                        LEFT JOIN DW.ObrasSociales os ON os.IdObraSocial = cv.IdObraSocial
+                        WHERE r.Anulada = 0 AND rr.Rechazado = 0
+                          AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
+                          AND os.Descripcion = %s
+                          AND r.NumeroAfiliado IS NOT NULL AND LEN(r.NumeroAfiliado) >= 10
+                        GROUP BY r.NumeroAfiliado, nd.IdNombresDrogas, nd.Descripcion
+                        HAVING COUNT(DISTINCT r.IdReceta) >= {min_disp}
+                    ),
+                    filtrados AS (
+                        SELECT *,
+                               CAST(span_dias AS FLOAT) / NULLIF(dispensas - 1, 0) AS cad
+                          FROM pares
+                    )
+                """
+
+                # 1. Top drogas — cuáles se recetan más "en crónico"
+                cur.execute(base_cte + f"""
+                    SELECT TOP 30
+                        id_droga, droga,
+                        COUNT(DISTINCT NumeroAfiliado) AS afiliados,
+                        AVG(dispensas) AS disp_prom,
+                        AVG(cad) AS cad_prom
+                      FROM filtrados
+                     WHERE cad BETWEEN {cad_min} AND {cad_max}
+                     GROUP BY id_droga, droga
+                     ORDER BY afiliados DESC
+                """, (obra_social,))
+                top_drogas = [{
+                    'id_droga': r['id_droga'],
+                    'droga': (r['droga'] or '').strip(),
+                    'afiliados': r['afiliados'],
+                    'disp_prom': round(float(r['disp_prom'] or 0), 1),
+                    'cad_prom': round(float(r['cad_prom'] or 0), 1),
+                } for r in cur.fetchall()]
+
+                # 2. Top afiliados — los más "complejos"
+                cur.execute(base_cte + f"""
+                    SELECT TOP 30
+                        f.NumeroAfiliado,
+                        (SELECT TOP 1 NombreAfiliado FROM Gestion.Recetas r2
+                          WHERE r2.NumeroAfiliado = f.NumeroAfiliado
+                          ORDER BY r2.FechaDeOperacion DESC) AS nombre,
+                        COUNT(DISTINCT id_droga) AS n_cronicos,
+                        SUM(dispensas) AS dispensas_totales
+                      FROM filtrados f
+                     WHERE cad BETWEEN {cad_min} AND {cad_max}
+                     GROUP BY f.NumeroAfiliado
+                     ORDER BY n_cronicos DESC, dispensas_totales DESC
+                """, (obra_social,))
+                top_afiliados = [{
+                    'numero': r['NumeroAfiliado'],
+                    'nombre': (r['nombre'] or '').strip(),
+                    'n_cronicos': r['n_cronicos'],
+                    'dispensas_totales': r['dispensas_totales'],
+                } for r in cur.fetchall()]
+
+                # 3. Distribución cronicos-por-afiliado (histograma)
+                cur.execute(base_cte + f"""
+                    SELECT n_cronicos, COUNT(*) AS afiliados
+                      FROM (
+                          SELECT NumeroAfiliado, COUNT(DISTINCT id_droga) AS n_cronicos
+                            FROM filtrados
+                           WHERE cad BETWEEN {cad_min} AND {cad_max}
+                           GROUP BY NumeroAfiliado
+                      ) t
+                     GROUP BY n_cronicos
+                     ORDER BY n_cronicos
+                """, (obra_social,))
+                histograma = [{'n_cronicos': r['n_cronicos'], 'afiliados': r['afiliados']}
+                              for r in cur.fetchall()]
+
+                # Totales
+                cur.execute(base_cte + f"""
+                    SELECT
+                        COUNT(DISTINCT NumeroAfiliado) AS afiliados_con_cronicos,
+                        COUNT(DISTINCT id_droga)        AS drogas_distintas,
+                        COUNT(*)                        AS pares_totales
+                      FROM filtrados WHERE cad BETWEEN {cad_min} AND {cad_max}
+                """, (obra_social,))
+                tot = cur.fetchone() or {}
+        finally:
+            conn.close()
+
+        return render_template('informes_cronicos_pami.html',
+                               top_drogas=top_drogas,
+                               top_afiliados=top_afiliados,
+                               histograma=histograma,
+                               totales={
+                                   'afiliados': tot.get('afiliados_con_cronicos', 0) or 0,
+                                   'drogas': tot.get('drogas_distintas', 0) or 0,
+                                   'pares': tot.get('pares_totales', 0) or 0,
+                               },
+                               filtros=dict(ventana=ventana, min_disp=min_disp,
+                                            cad_min=cad_min, cad_max=cad_max,
+                                            os=obra_social))
+
+    # Drill-down por afiliado: reusa el endpoint API pública (mismo cálculo
+    # que consume AppClinica) y renderiza pantalla dedicada. Acepta numero o dni.
+    @app.route('/informes/cronicos-pami/afiliado')
+    @login_required
+    def informe_cronicos_pami_afiliado():
+        """Detalle de crónicos sugeridos para un afiliado PAMI puntual.
+        Query params: numero (afiliado) o dni. Filtros: ventana_meses, cadencia_*."""
+        from observer_source import _connect, _test_acceso_gestion
+        try:
+            ventana = min(24, max(1, int(request.args.get('ventana_meses') or 6)))
+            min_disp = max(2, int(request.args.get('min_dispensas') or 3))
+            cad_min = max(1, int(request.args.get('cadencia_min') or 20))
+            cad_max = max(cad_min + 1, int(request.args.get('cadencia_max') or 55))
+        except (TypeError, ValueError):
+            ventana, min_disp, cad_min, cad_max = 6, 3, 20, 55
+        numero = (request.args.get('numero') or '').strip()
+        dni = (request.args.get('dni') or '').strip()
+        filtros = dict(ventana=ventana, min_disp=min_disp,
+                       cad_min=cad_min, cad_max=cad_max,
+                       numero=numero, dni=dni)
+
+        if not _test_acceso_gestion():
+            return render_template('informes_cronicos_pami_afiliado.html',
+                                   sin_acceso_premium=True, filtros=filtros)
+
+        conn = _connect(timeout=60)
+        if conn is None:
+            return render_template('informes_cronicos_pami_afiliado.html',
+                                   error='ObServer no disponible', filtros=filtros)
+
+        try:
+            with conn.cursor(as_dict=True) as cur:
+                # Resolver DNI → afiliado si vino sólo DNI
+                if not numero and dni.isdigit():
+                    cur.execute("""
+                        SELECT TOP 1 NumeroAfiliado
+                          FROM Gestion.Recetas
+                         WHERE DocumentoAfiliado_Numero = %d
+                         ORDER BY FechaDeOperacion DESC
+                    """, (int(dni),))
+                    row = cur.fetchone()
+                    numero = (row['NumeroAfiliado'] or '').strip() if row else ''
+
+                if not numero or not numero.isdigit():
+                    return render_template('informes_cronicos_pami_afiliado.html',
+                                           afiliado=None,
+                                           error='Ingresá un número de afiliado o DNI válido.',
+                                           filtros=filtros)
+
+                # Cabecera del afiliado
+                cur.execute("""
+                    SELECT TOP 1 NumeroAfiliado, NombreAfiliado, SexoAfiliado,
+                           DocumentoAfiliado_Numero AS dni
+                      FROM Gestion.Recetas
+                     WHERE NumeroAfiliado = %s
+                     ORDER BY FechaDeOperacion DESC
+                """, (numero,))
+                cab = cur.fetchone()
+                if not cab:
+                    return render_template('informes_cronicos_pami_afiliado.html',
+                                           afiliado=None,
+                                           error=f'Sin recetas en Observer para el afiliado {numero}.',
+                                           filtros=filtros)
+
+                # Drogas del afiliado con métricas
+                cur.execute(f"""
+                    SELECT
+                        nd.IdNombresDrogas AS id_droga,
+                        nd.Descripcion     AS droga,
+                        COUNT(DISTINCT r.IdReceta)             AS dispensas,
+                        COUNT(DISTINCT rr.IdProducto)          AS n_presentaciones,
+                        AVG(CAST(rr.Cantidad AS FLOAT))        AS cant_prom,
+                        MIN(r.FechaDeVenta)                    AS primera,
+                        MAX(r.FechaDeVenta)                    AS ultima,
+                        DATEDIFF(day, MIN(r.FechaDeVenta), MAX(r.FechaDeVenta)) AS span_dias,
+                        SUM(rr.ImporteRenglon)                 AS importe_total,
+                        SUM(rr.ImporteACargoOS)                AS cargo_os_total
+                    FROM Gestion.Recetas r
+                    JOIN Gestion.RecetasRenglones rr ON rr.IdReceta = r.IdReceta
+                    JOIN DW.Productos pr             ON pr.IdProducto = rr.IdProducto
+                    JOIN DW.NombresDrogas nd         ON nd.IdNombresDrogas = pr.IdNombresDrogas
+                    WHERE r.NumeroAfiliado = %s
+                      AND r.Anulada = 0 AND rr.Rechazado = 0
+                      AND rr.Cantidad > 0
+                      AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
+                    GROUP BY nd.IdNombresDrogas, nd.Descripcion
+                    HAVING COUNT(DISTINCT r.IdReceta) >= {min_disp}
+                    ORDER BY COUNT(DISTINCT r.IdReceta) DESC
+                """, (numero,))
+                drogas = cur.fetchall()
+
+                # Presentaciones por droga
+                pres_por_droga = {}
+                if drogas:
+                    ids = [d['id_droga'] for d in drogas]
+                    placeholders = ','.join(['%d'] * len(ids))
+                    cur.execute(f"""
+                        SELECT DISTINCT pr.IdNombresDrogas AS id_droga,
+                               pr.IdProducto AS id_producto,
+                               pr.Producto   AS producto,
+                               (SELECT COUNT(*) FROM Gestion.RecetasRenglones rr2
+                                  JOIN Gestion.Recetas r2 ON r2.IdReceta = rr2.IdReceta
+                                 WHERE r2.NumeroAfiliado = %s
+                                   AND rr2.IdProducto = pr.IdProducto
+                                   AND r2.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
+                                   AND r2.Anulada = 0 AND rr2.Rechazado = 0
+                                   AND rr2.Cantidad > 0) AS n_veces
+                          FROM Gestion.RecetasRenglones rr
+                          JOIN Gestion.Recetas r ON r.IdReceta = rr.IdReceta
+                          JOIN DW.Productos pr ON pr.IdProducto = rr.IdProducto
+                         WHERE r.NumeroAfiliado = %s
+                           AND r.Anulada = 0 AND rr.Rechazado = 0
+                           AND rr.Cantidad > 0
+                           AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
+                           AND pr.IdNombresDrogas IN ({placeholders})
+                         ORDER BY pr.IdNombresDrogas, n_veces DESC
+                    """, tuple([numero, numero] + ids))
+                    for r in cur.fetchall():
+                        pres_por_droga.setdefault(r['id_droga'], []).append({
+                            'id_producto': r['id_producto'],
+                            'producto': (r['producto'] or '').strip(),
+                            'n_veces': r['n_veces'],
+                        })
+
+                # Detalle de dispensas por droga: fecha + médico + producto +
+                # cantidad + importes. Cada renglón de receta es una fila.
+                #
+                # 2 queries separadas para NO duplicar renglones:
+                #   1) renglones sin JOIN a médicos (una fila por renglón real)
+                #   2) DW.MedicosMatriculas → DW.Medicos con MIN(Medico) GROUP
+                #      BY Matricula (elige 1 solo médico por matrícula). Si el
+                #      JOIN va en la query principal, cuando una matrícula tiene
+                #      varias filas en MedicosMatriculas (misma matrícula ↔
+                #      distintos IdMedico, pasa en Praxis) el resultado se
+                #      multiplica.
+                dispensas_por_droga = {}
+                if drogas:
+                    cur.execute(f"""
+                        SELECT pr.IdNombresDrogas AS id_droga,
+                               r.IdReceta,
+                               r.NumeroReceta,
+                               r.FechaDeVenta,
+                               r.MatriculaMedico,
+                               rr.Cantidad,
+                               rr.ImporteRenglon,
+                               rr.ImporteACargoOS,
+                               pr.Producto
+                          FROM Gestion.Recetas r
+                          JOIN Gestion.RecetasRenglones rr ON rr.IdReceta = r.IdReceta
+                          JOIN DW.Productos pr             ON pr.IdProducto = rr.IdProducto
+                         WHERE r.NumeroAfiliado = %s
+                           AND r.Anulada = 0 AND rr.Rechazado = 0
+                           AND rr.Cantidad > 0
+                           AND r.FechaDeOperacion >= DATEADD(month, -{ventana}, GETDATE())
+                           AND pr.IdNombresDrogas IN ({placeholders})
+                         ORDER BY pr.IdNombresDrogas, r.FechaDeVenta DESC
+                    """, tuple([numero] + ids))
+                    rows = cur.fetchall()
+
+                    # Resolver matrícula → nombre (una entrada por matrícula).
+                    # OJO: MatriculaMedico es varchar(10) en ambas tablas y
+                    # llega con tabs/espacios de padding ('\t657      '). Con
+                    # placeholder %d, SQL Server intenta cast a int y falla.
+                    # → usar %s y normalizar con .strip() en ambos lados.
+                    matriculas = {(r['MatriculaMedico'] or '').strip()
+                                  for r in rows if r['MatriculaMedico']}
+                    matriculas.discard('')
+                    medico_por_mat = {}
+                    if matriculas:
+                        mat_placeholders = ','.join(['%s'] * len(matriculas))
+                        cur.execute(f"""
+                            SELECT LTRIM(RTRIM(mm.Matricula)) AS Matricula,
+                                   MIN(m.Medico) AS Medico
+                              FROM DW.MedicosMatriculas mm
+                              JOIN DW.Medicos m ON m.IdMedico = mm.IdMedico
+                             WHERE LTRIM(RTRIM(mm.Matricula)) IN ({mat_placeholders})
+                             GROUP BY LTRIM(RTRIM(mm.Matricula))
+                        """, tuple(matriculas))
+                        medico_por_mat = {r['Matricula']: (r['Medico'] or '').strip() or None
+                                          for r in cur.fetchall()}
+
+                    for r in rows:
+                        mat = (r['MatriculaMedico'] or '').strip() or None
+                        dispensas_por_droga.setdefault(r['id_droga'], []).append({
+                            'id_receta':          r['IdReceta'],
+                            'numero_receta':      r['NumeroReceta'],
+                            'fecha_venta':        r['FechaDeVenta'],
+                            'medico_matricula':   mat,
+                            'medico_nombre':      medico_por_mat.get(mat) if mat else None,
+                            'producto':           (r['Producto'] or '').strip(),
+                            'cantidad':           int(r['Cantidad'] or 0),
+                            'importe':            float(r['ImporteRenglon'] or 0),
+                            'importe_os':         float(r['ImporteACargoOS'] or 0),
+                        })
+        finally:
+            conn.close()
+
+        sugeridos, descartados = [], []
+        for d in drogas:
+            disp = d['dispensas']; span = d['span_dias'] or 0
+            cad = round(span / max(1, disp - 1), 1) if disp > 1 else None
+            detalle = dispensas_por_droga.get(d['id_droga'], [])
+            unidades_total = sum(x['cantidad'] for x in detalle)
+            item = {
+                'droga': (d['droga'] or '').strip(),
+                'dispensas': disp,
+                'n_presentaciones': d['n_presentaciones'],
+                'cantidad_prom': round(float(d['cant_prom'] or 0), 2),
+                'unidades_total': unidades_total,
+                'cadencia_dias': cad,
+                'primera': d['primera'],
+                'ultima': d['ultima'],
+                'importe_total': float(d['importe_total'] or 0),
+                'cargo_os_total': float(d['cargo_os_total'] or 0),
+                'presentaciones': pres_por_droga.get(d['id_droga'], []),
+                'dispensas_detalle': detalle,
+            }
+            if cad is not None and cad_min <= cad <= cad_max:
+                sugeridos.append(item)
+            else:
+                razon = ('muy_rapida' if cad is not None and cad < cad_min
+                         else 'muy_lenta' if cad is not None else 'una_sola_fecha')
+                item['razon_descarte'] = razon
+                descartados.append(item)
+
+        return render_template('informes_cronicos_pami_afiliado.html',
+                               afiliado={'numero': (cab['NumeroAfiliado'] or '').strip(),
+                                         'nombre': (cab['NombreAfiliado'] or '').strip(),
+                                         'sexo': cab['SexoAfiliado'],
+                                         'dni': cab.get('dni')},
+                               sugeridos=sugeridos,
+                               descartados=descartados,
+                               filtros=filtros)
 
     @app.route('/informes/cadencias-lab')
     @login_required
@@ -80,6 +693,95 @@ def init_app(app):
                                data=data, cobertura=cobertura,
                                meses_rot=meses_rot)
 
+    @app.route('/informes/cadencias-resumen')
+    @login_required
+    def informe_cadencias_resumen():
+        """Plataforma cross-lab: lee el snapshot materializado (1 fila por lab)
+        y lo renderiza para filtrar/ordenar client-side. El cálculo pesado se
+        hace en /recalcular (todos los labs de una). Drill-down por lab en vivo."""
+        with database.get_db() as session:
+            filas, tot, meta = _leer_snapshot_cadencias(session)
+        return render_template('informes_cadencias_resumen.html',
+                               filas=filas, totales=tot, meta=meta)
+
+    @app.route('/informes/cadencias-resumen/recalcular', methods=['POST'])
+    @login_required
+    def informe_cadencias_resumen_recalcular():
+        """Materializa el análisis de cadencias para TODOS los labs con ventas
+        y reemplaza el snapshot. ~25s. Params cobertura/meses_rot baked in."""
+        import time
+
+        from helpers import recalcular_snapshot_cadencias
+        data = request.get_json(silent=True) or {}
+        cobertura = max(7, min(int(data.get('cobertura') or 30), 90))
+        meses_rot = max(1, min(int(data.get('meses_rot') or 3), 12))
+        t0 = time.time()
+        with database.get_db() as session:
+            n = recalcular_snapshot_cadencias(session, cobertura, meses_rot)
+        return jsonify({'ok': True, 'filas': n,
+                        'segundos': round(time.time() - t0, 1)})
+
+    @app.route('/informes/cadencias-resumen/analizar', methods=['POST'])
+    @login_required
+    def informe_cadencias_resumen_analizar():
+        """Manda el top N labs del snapshot a Claude y devuelve un análisis en
+        prosa (para mostrar en un modal). On-demand: consume crédito de la API."""
+        import os
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        body = request.get_json(silent=True) or {}
+        try:
+            top_n = max(1, min(int(body.get('top') or 10), 30))
+        except (TypeError, ValueError):
+            top_n = 10
+        vista = 'monto' if (body.get('vista') == 'monto') else 'cantidad'
+        with database.get_db() as session:
+            filas, _tot, meta = _leer_snapshot_cadencias(session)
+        if not filas:
+            return jsonify({'ok': False, 'error': 'No hay snapshot. Tocá "Recalcular" primero.'}), 400
+        from services import cadencias_analisis
+        try:
+            texto, usage = cadencias_analisis.analizar_cadencias(
+                filas[:top_n], meta, api_key, vista=vista)
+            _guardar_analisis_cache('cadencias', 'Análisis de cadencias por laboratorio', texto, usage)
+        except ImportError:
+            return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:
+            msg = str(e); low = msg.lower()
+            if 'credit balance' in low or 'insufficient' in low:
+                friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito y reintentá.'
+            elif 'invalid' in low and 'api' in low and 'key' in low:
+                friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada.'
+            elif 'rate limit' in low or '429' in low:
+                friendly = 'Rate limit alcanzado. Esperá unos segundos y reintentá.'
+            else:
+                friendly = f'Claude API: {msg}'
+            return jsonify({'ok': False, 'error': friendly}), 502
+        return jsonify({'ok': True, 'analisis': texto, 'top': top_n,
+                        'tokens_in': getattr(usage, 'input_tokens', None),
+                        'tokens_out': getattr(usage, 'output_tokens', None)})
+
+    @app.route('/informes/analisis-ia/ultimo')
+    @login_required
+    def informe_analisis_ia_ultimo():
+        """Devuelve el último análisis IA cacheado para una clave (sin llamar API).
+
+        Para "Ver último análisis" en demos: cero gasto, cero riesgo de fallo.
+        """
+        clave = (request.args.get('clave') or '').strip()
+        if not clave:
+            return jsonify({'ok': False, 'error': 'clave requerida'}), 400
+        with database.get_db() as s:
+            row = s.get(database.AnalisisIaCache, clave)
+        if not row:
+            return jsonify({'ok': False, 'error': 'Todavía no generaste un análisis para esto.'}), 404
+        return jsonify({'ok': True, 'analisis': row.texto, 'titulo': row.titulo,
+                        'tokens_in': row.tokens_in, 'tokens_out': row.tokens_out,
+                        'creado_en': row.creado_en.strftime('%d/%m/%Y %H:%M') if row.creado_en else None})
+
     # ── Comparación portfolio líder de un lab vs ventas propias ──
     # Datasets de referencia (IQVIA/IMS) en referencia_mercado.py. Por ahora
     # solo Roemmers (152). El selector lista los labs con dataset cargado.
@@ -98,12 +800,143 @@ def init_app(app):
                 data = funcion_analisis(session, lab_id)
         return render_template(template, labs_ref=labs_ref, lab_id=lab_id, data=data)
 
+    # ── Gap de marcas (8 labs, web search) ──
+    # Flujo en 2 pasos: (1) /recopilar → Claude+web search trae marcas+fuentes
+    # (cacheado por nombre normalizado del lab); el front muestra un modal con
+    # esos datos; (2) /analizar → cruza esas marcas vs ventas propias + prosa.
+    _GAP_WS_TTL_DIAS = 90  # los datos de mercado cacheados valen 90 días; después se re-buscan
+
+    def _clave_ws_data(nombre_lab):
+        from helpers import _normalizar_nombre_entidad
+        return f'gap_ws_data:{_normalizar_nombre_entidad(nombre_lab)}'[:80]
+
     @app.route('/informes/lab-gap-marcas')
     @login_required
     def informe_lab_gap_marcas():
-        """Informe — Gap de captura por marca estrella del lab."""
-        from helpers import analizar_gap_marcas
-        return _ctx_referencia(analizar_gap_marcas, 'informes_lab_gap_marcas.html')
+        """Informe — Gap de captura por marca estrella. Dropdown de 8 labs; el
+        análisis es on-demand por POST (no se corre en el GET)."""
+        import referencia_mercado
+        with database.get_db() as session:
+            disponibles = referencia_mercado.labs_gap_disponibles(session)
+        labs_ref = [{'id': d['observer_id'], 'nombre': d['nombre']} for d in disponibles]
+        lab_id = request.args.get('lab_id', type=int)
+        return render_template('informes_lab_gap_marcas.html',
+                               labs_ref=labs_ref, lab_id=lab_id, data=None)
+
+    @app.route('/informes/lab-gap-marcas/recopilar', methods=['POST'])
+    @login_required
+    def informe_lab_gap_marcas_recopilar():
+        """PASO 1 — recopila marcas estrella del lab vía web search (cacheado)."""
+        import os
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        body = request.get_json(silent=True) or {}
+        try:
+            lab_id = int(body.get('lab_id'))
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'lab_id inválido.'}), 400
+        forzar = bool(body.get('forzar'))
+        with database.get_db() as session:
+            lab = session.get(ObsLaboratorio, lab_id)
+            if not lab:
+                return jsonify({'ok': False, 'error': 'Laboratorio inexistente.'}), 404
+            nombre = lab.descripcion
+        clave = _clave_ws_data(nombre)
+        if not forzar:
+            with database.get_db() as s:
+                row = s.get(database.AnalisisIaCache, clave)
+            if row and row.texto:
+                edad = (database.now_ar() - row.creado_en).days if row.creado_en else None
+                vencido = edad is not None and edad > _GAP_WS_TTL_DIAS
+                if not vencido:
+                    try:
+                        cached = json.loads(row.texto)
+                        return jsonify({'ok': True, 'cacheado': True, 'nombre_lab': nombre,
+                                        'marcas': cached.get('marcas', []),
+                                        'fuentes': cached.get('fuentes', []),
+                                        'fecha': row.creado_en.strftime('%d/%m/%Y') if row.creado_en else None,
+                                        'edad_dias': edad})
+                    except (ValueError, TypeError):
+                        pass
+                # vencido → cae al web search de abajo (datos frescos)
+        from services import referencia_websearch
+        try:
+            marcas, fuentes, usage = referencia_websearch.recopilar_marcas_estrella(nombre, api_key)
+        except ImportError:
+            return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:
+            return _friendly_api_error(e)
+        _guardar_analisis_cache(clave, f'Marcas {nombre} (web)',
+                                json.dumps({'marcas': marcas, 'fuentes': fuentes}), usage)
+        return jsonify({'ok': True, 'cacheado': False, 'nombre_lab': nombre,
+                        'marcas': marcas, 'fuentes': fuentes,
+                        'fecha': database.now_ar().strftime('%d/%m/%Y'), 'edad_dias': 0,
+                        'tokens_in': getattr(usage, 'input_tokens', None),
+                        'tokens_out': getattr(usage, 'output_tokens', None)})
+
+    @app.route('/informes/lab-gap-marcas/analizar', methods=['POST'])
+    @login_required
+    def informe_lab_gap_marcas_analizar():
+        """PASO 2 — cruza las marcas recopiladas vs ventas propias + prosa Claude."""
+        import os
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        body = request.get_json(silent=True) or {}
+        try:
+            lab_id = int(body.get('lab_id'))
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'lab_id inválido.'}), 400
+        from helpers import cruzar_marcas_vs_ventas
+        with database.get_db() as session:
+            lab = session.get(ObsLaboratorio, lab_id)
+            if not lab:
+                return jsonify({'ok': False, 'error': 'Laboratorio inexistente.'}), 404
+            nombre = lab.descripcion
+            row = session.get(database.AnalisisIaCache, _clave_ws_data(nombre))
+            if not row or not row.texto:
+                return jsonify({'ok': False, 'error': 'Primero recopilá los datos del lab.'}), 400
+            try:
+                cached = json.loads(row.texto)
+            except (ValueError, TypeError):
+                return jsonify({'ok': False, 'error': 'Datos recopilados corruptos. Re-buscá.'}), 400
+            marcas = cached.get('marcas', [])
+            fuentes = cached.get('fuentes', [])
+            if not marcas:
+                return jsonify({'ok': False, 'error': 'No hay marcas recopiladas para este lab.'}), 400
+            data = cruzar_marcas_vs_ventas(session, lab_id, marcas, nombre)
+        from services import referencia_ia
+        try:
+            texto, usage = referencia_ia.analizar_gap_marcas(data, api_key, model='claude-sonnet-4-6')
+            _guardar_analisis_cache(f'lab_gap_marcas:{lab_id}',
+                                    f'Gap de captura — {nombre}', texto, usage)
+        except ImportError:
+            return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:
+            return _friendly_api_error(e)
+        return jsonify({'ok': True, 'analisis': texto, 'data': data, 'fuentes': fuentes,
+                        'tokens_in': getattr(usage, 'input_tokens', None),
+                        'tokens_out': getattr(usage, 'output_tokens', None)})
+
+    @app.route('/informes/comparativa-drogas')
+    @login_required
+    def informe_comparativa_drogas():
+        """Comparativa por droga: cruza la inteligencia de mercado (marcas del
+        web search cacheadas por lab) con las ventas propias. Panel de labs +
+        última consulta arriba; multiselect (≤3) para refrescar vía web search."""
+        from services import mercado_drogas
+        with database.get_db() as session:
+            labs_estado = mercado_drogas.labs_cacheados_estado(session)
+            comparativa = mercado_drogas.comparativa_mercado_por_droga(session)
+            fuentes_lab = mercado_drogas.fuentes_por_lab(session)
+        return render_template('comparativa_drogas.html',
+                               labs_estado=labs_estado, comparativa=comparativa,
+                               fuentes_lab=fuentes_lab, ttl_dias=_GAP_WS_TTL_DIAS)
 
     @app.route('/informes/lab-ranking-nacional')
     @login_required
@@ -112,12 +945,98 @@ def init_app(app):
         from helpers import analizar_ranking_vs_nacional
         return _ctx_referencia(analizar_ranking_vs_nacional, 'informes_lab_ranking_nacional.html')
 
+    @app.route('/informes/lab-ranking-nacional/analizar', methods=['POST'])
+    @login_required
+    def informe_lab_ranking_nacional_analizar():
+        """Análisis IA del ranking propio del lab vs marcas estrella nacionales."""
+        import os
+
+        from helpers import analizar_ranking_vs_nacional
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        body = request.get_json(silent=True) or {}
+        try:
+            lab_id = int(body.get('lab_id'))
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'lab_id inválido.'}), 400
+        with database.get_db() as session:
+            data = analizar_ranking_vs_nacional(session, lab_id)
+        if not data:
+            return jsonify({'ok': False, 'error': 'No hay dataset de referencia para ese lab.'}), 400
+        from services import referencia_ia
+        try:
+            texto, usage = referencia_ia.analizar_ranking_vs_nacional(data, api_key)
+            _guardar_analisis_cache(f'lab_ranking_nacional:{lab_id}',
+                                    f'Ranking vs nacional — {data.get("nombre_lab") or ""}', texto, usage)
+        except ImportError:
+            return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:
+            msg = str(e); low = msg.lower()
+            if 'credit balance' in low or 'insufficient' in low:
+                friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito y reintentá.'
+            elif 'invalid' in low and 'api' in low and 'key' in low:
+                friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada.'
+            elif 'rate limit' in low or '429' in low:
+                friendly = 'Rate limit alcanzado. Esperá unos segundos y reintentá.'
+            else:
+                friendly = f'Claude API: {msg}'
+            return jsonify({'ok': False, 'error': friendly}), 502
+        return jsonify({'ok': True, 'analisis': texto,
+                        'tokens_in': getattr(usage, 'input_tokens', None),
+                        'tokens_out': getattr(usage, 'output_tokens', None)})
+
     @app.route('/informes/lab-cobertura-moleculas')
     @login_required
     def informe_lab_cobertura_moleculas():
         """Informe — Cobertura de moléculas líderes nacionales."""
         from helpers import analizar_cobertura_moleculas
         return _ctx_referencia(analizar_cobertura_moleculas, 'informes_lab_cobertura_moleculas.html')
+
+    @app.route('/informes/lab-cobertura-moleculas/analizar', methods=['POST'])
+    @login_required
+    def informe_lab_cobertura_moleculas_analizar():
+        """Análisis IA de la cobertura de moléculas líderes de un lab."""
+        import os
+
+        from helpers import analizar_cobertura_moleculas
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        body = request.get_json(silent=True) or {}
+        try:
+            lab_id = int(body.get('lab_id'))
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'lab_id inválido.'}), 400
+        with database.get_db() as session:
+            data = analizar_cobertura_moleculas(session, lab_id)
+        if not data:
+            return jsonify({'ok': False, 'error': 'No hay dataset de referencia para ese lab.'}), 400
+        from services import referencia_ia
+        try:
+            texto, usage = referencia_ia.analizar_cobertura_moleculas(data, api_key)
+            _guardar_analisis_cache(f'lab_cobertura_moleculas:{lab_id}',
+                                    f'Cobertura de moléculas — {data.get("nombre_lab") or ""}', texto, usage)
+        except ImportError:
+            return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:
+            msg = str(e); low = msg.lower()
+            if 'credit balance' in low or 'insufficient' in low:
+                friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito y reintentá.'
+            elif 'invalid' in low and 'api' in low and 'key' in low:
+                friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada.'
+            elif 'rate limit' in low or '429' in low:
+                friendly = 'Rate limit alcanzado. Esperá unos segundos y reintentá.'
+            else:
+                friendly = f'Claude API: {msg}'
+            return jsonify({'ok': False, 'error': friendly}), 502
+        return jsonify({'ok': True, 'analisis': texto,
+                        'tokens_in': getattr(usage, 'input_tokens', None),
+                        'tokens_out': getattr(usage, 'output_tokens', None)})
 
     @app.route('/informes/labs-por-droga')
     @login_required
@@ -745,6 +1664,7 @@ def init_app(app):
         producto_id = request.args.get('producto_id', type=int)
         medico_id = request.args.get('medico_id', type=int)
         os_id = request.args.get('os_id', type=int)
+        lab_id = request.args.get('lab_id', type=int)
         # Rubro: si no viene en URL, default = 12 (Medicamentos). Para "Todos"
         # el user pasa rubro_id=0 explícito.
         if 'rubro_id' in request.args:
@@ -754,12 +1674,16 @@ def init_app(app):
         if rubro_id == 0:
             rubro_id = None
         excluir_sin_droga = request.args.get('excluir_sin_droga') == '1'
+        # "Solo con receta": filtra por ObsProducto.id_tipo_venta_control != 'L'.
+        # Valores: L=Venta Libre, R=Bajo Receta, A=Receta Archivada,
+        # 1-4=Psicotrópico, 5-8=Estupefaciente. Todo lo no-libre requiere receta.
+        solo_con_receta = request.args.get('solo_con_receta') == '1'
         group_by = (request.args.get('group_by') or 'producto').strip()
-        if group_by not in ('producto', 'droga', 'medico', 'mes', 'dia', 'os'):
+        if group_by not in ('producto', 'droga', 'laboratorio', 'medico', 'mes', 'dia', 'os'):
             group_by = 'producto'
 
         # Etiquetas opcionales para los filtros aplicados (mostrar en UI).
-        droga_nombre = producto_desc = medico_nombre = os_nombre = None
+        droga_nombre = producto_desc = medico_nombre = os_nombre = lab_nombre = None
 
         rows = []
         total_cantidad = 0.0
@@ -792,7 +1716,7 @@ def init_app(app):
                     os_nombre = os_obj.descripcion
             ya_joined_obs = False
             ya_joined_subrubro = False
-            if droga_id or excluir_sin_droga or rubro_id:
+            if droga_id or excluir_sin_droga or rubro_id or solo_con_receta or lab_id:
                 # Cualquiera de estos requiere joinear ObsProducto.
                 base = base.join(
                     ObsProducto,
@@ -804,8 +1728,17 @@ def init_app(app):
                 d = session.get(ObsNombreDroga, droga_id)
                 if d:
                     droga_nombre = d.descripcion
+            if lab_id:
+                from database import ObsLaboratorio
+                base = base.filter(ObsProducto.laboratorio_observer == lab_id)
+                lab_obj = session.get(ObsLaboratorio, lab_id)
+                if lab_obj:
+                    lab_nombre = lab_obj.descripcion
             if excluir_sin_droga:
                 base = base.filter(ObsProducto.nombre_droga_observer.isnot(None))
+            if solo_con_receta:
+                base = base.filter(ObsProducto.id_tipo_venta_control.isnot(None),
+                                   ObsProducto.id_tipo_venta_control != 'L')
             if rubro_id:
                 from database import ObsSubrubro
                 base = base.join(
@@ -859,6 +1792,33 @@ def init_app(app):
                 for r in base_rows:
                     rows.append({
                         'key_id': r.key, 'key_label': desc_por_id.get(r.key, '— sin droga —' if not r.key else f'#{r.key}'),
+                        'cantidad': float(r.cant or 0), 'importe': float(r.imp or 0),
+                        'operaciones': int(r.ops or 0),
+                    })
+
+            elif group_by == 'laboratorio':
+                from database import ObsLaboratorio
+                base_q = base if ya_joined_obs else base.join(
+                    ObsProducto,
+                    ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
+                )
+                q = (base_q.with_entities(
+                             ObsProducto.laboratorio_observer.label('key'),
+                             _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                             _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                             _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                         ).group_by(ObsProducto.laboratorio_observer)
+                         .order_by(_func.sum(ObsVentaDetalle.cantidad).desc())
+                         .limit(200))
+                base_rows = q.all()
+                ids = [r.key for r in base_rows if r.key]
+                lab_por_id = dict(session.query(ObsLaboratorio.observer_id,
+                                                 ObsLaboratorio.descripcion)
+                                  .filter(ObsLaboratorio.observer_id.in_(ids)).all()) if ids else {}
+                for r in base_rows:
+                    rows.append({
+                        'key_id': r.key,
+                        'key_label': lab_por_id.get(r.key, '— sin laboratorio —' if not r.key else f'#{r.key}'),
                         'cantidad': float(r.cant or 0), 'importe': float(r.imp or 0),
                         'operaciones': int(r.ops or 0),
                     })
@@ -1023,8 +1983,10 @@ def init_app(app):
                                producto_id=producto_id, producto_desc=producto_desc,
                                medico_id=medico_id, medico_nombre=medico_nombre,
                                os_id=os_id, os_nombre=os_nombre,
+                               lab_id=lab_id, lab_nombre=lab_nombre,
                                rubro_id=rubro_id,
                                excluir_sin_droga=excluir_sin_droga,
+                               solo_con_receta=solo_con_receta,
                                rubros=rubros,
                                group_by=group_by, rows=rows,
                                total_cantidad=total_cantidad,
@@ -1064,8 +2026,20 @@ def init_app(app):
         droga_id = request.args.get('droga_id', type=int)
         producto_id = request.args.get('producto_id', type=int)
         medico_id = request.args.get('medico_id', type=int)
+        lab_id = request.args.get('lab_id', type=int)
+        os_id = request.args.get('os_id', type=int)
+        # Rubro: mismo comportamiento que la pantalla — default 12 (Medicamentos),
+        # 0 explícito = "Todos" → None.
+        if 'rubro_id' in request.args:
+            rubro_id = request.args.get('rubro_id', type=int)
+        else:
+            rubro_id = 12
+        if rubro_id == 0:
+            rubro_id = None
+        excluir_sin_droga = request.args.get('excluir_sin_droga') == '1'
+        solo_con_receta = request.args.get('solo_con_receta') == '1'
         group_by = (request.args.get('group_by') or 'producto').strip()
-        if group_by not in ('producto', 'droga', 'medico', 'mes', 'dia'):
+        if group_by not in ('producto', 'droga', 'laboratorio', 'medico', 'mes', 'dia', 'os'):
             group_by = 'producto'
 
         # Reusar la misma lógica de query (copia del handler de la pantalla).
@@ -1080,13 +2054,30 @@ def init_app(app):
                 from helpers import medicos_observer_ids_compartidos
                 ids_med = medicos_observer_ids_compartidos(session, medico_id)
                 base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
+            if os_id:
+                base = base.filter(ObsVentaDetalle.obra_social_observer == os_id)
             ya_joined_obs = False
-            if droga_id:
+            if droga_id or solo_con_receta or lab_id or rubro_id or excluir_sin_droga:
                 base = base.join(
                     ObsProducto,
                     ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
-                ).filter(ObsProducto.nombre_droga_observer == droga_id)
+                )
                 ya_joined_obs = True
+            if droga_id:
+                base = base.filter(ObsProducto.nombre_droga_observer == droga_id)
+            if lab_id:
+                base = base.filter(ObsProducto.laboratorio_observer == lab_id)
+            if excluir_sin_droga:
+                base = base.filter(ObsProducto.nombre_droga_observer.isnot(None))
+            if solo_con_receta:
+                base = base.filter(ObsProducto.id_tipo_venta_control.isnot(None),
+                                   ObsProducto.id_tipo_venta_control != 'L')
+            if rubro_id:
+                from database import ObsSubrubro
+                base = base.join(
+                    ObsSubrubro,
+                    ObsSubrubro.observer_id == ObsProducto.subrubro_observer,
+                ).filter(ObsSubrubro.rubro_observer == rubro_id)
 
             rows_data = []
             if group_by == 'producto':
@@ -1099,10 +2090,26 @@ def init_app(app):
                      .order_by(_func.sum(ObsVentaDetalle.cantidad).desc()).limit(2000))
                 base_rows = q.all()
                 pids = [r.key for r in base_rows]
-                desc_por_pid = dict(session.query(ObsProducto.observer_id, ObsProducto.descripcion)
-                                    .filter(ObsProducto.observer_id.in_(pids)).all()) if pids else {}
+                # Traigo descripción + id_laboratorio de cada producto
+                if pids:
+                    prod_info = {p.observer_id: (p.descripcion, p.laboratorio_observer)
+                                 for p in session.query(ObsProducto.observer_id,
+                                                        ObsProducto.descripcion,
+                                                        ObsProducto.laboratorio_observer)
+                                                 .filter(ObsProducto.observer_id.in_(pids)).all()}
+                    # Nombres de laboratorio (join separado para no romper el pivot).
+                    from database import ObsLaboratorio
+                    lab_ids = {info[1] for info in prod_info.values() if info[1]}
+                    lab_por_id = (dict(session.query(ObsLaboratorio.observer_id,
+                                                     ObsLaboratorio.descripcion)
+                                       .filter(ObsLaboratorio.observer_id.in_(lab_ids)).all())
+                                  if lab_ids else {})
+                else:
+                    prod_info, lab_por_id = {}, {}
                 for r in base_rows:
-                    rows_data.append((desc_por_pid.get(r.key, f'#{r.key}'),
+                    desc, lab_id_r = prod_info.get(r.key, (f'#{r.key}', None))
+                    lab_nombre = lab_por_id.get(lab_id_r, '') if lab_id_r else ''
+                    rows_data.append((desc, lab_nombre,
                                       int(r.ops or 0), float(r.cant or 0), float(r.imp or 0)))
             elif group_by == 'droga':
                 base_q = base if ya_joined_obs else base.join(
@@ -1120,6 +2127,25 @@ def init_app(app):
                                    .filter(ObsNombreDroga.observer_id.in_(ids)).all()) if ids else {}
                 for r in base_rows:
                     rows_data.append((desc_por_id.get(r.key, '— sin droga —'),
+                                      int(r.ops or 0), float(r.cant or 0), float(r.imp or 0)))
+            elif group_by == 'laboratorio':
+                from database import ObsLaboratorio
+                base_q = base if ya_joined_obs else base.join(
+                    ObsProducto, ObsProducto.observer_id == ObsVentaDetalle.producto_observer)
+                q = (base_q.with_entities(
+                        ObsProducto.laboratorio_observer.label('key'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                        _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                    ).group_by(ObsProducto.laboratorio_observer)
+                     .order_by(_func.sum(ObsVentaDetalle.cantidad).desc()).limit(2000))
+                base_rows = q.all()
+                ids = [r.key for r in base_rows if r.key]
+                lab_por_id = dict(session.query(ObsLaboratorio.observer_id,
+                                                 ObsLaboratorio.descripcion)
+                                  .filter(ObsLaboratorio.observer_id.in_(ids)).all()) if ids else {}
+                for r in base_rows:
+                    rows_data.append((lab_por_id.get(r.key, '— sin laboratorio —'),
                                       int(r.ops or 0), float(r.cant or 0), float(r.imp or 0)))
             elif group_by == 'medico':
                 q = (base.with_entities(
@@ -1173,28 +2199,49 @@ def init_app(app):
         if droga_id: filtros_txt.append(f'droga_id={droga_id}')
         if producto_id: filtros_txt.append(f'producto_id={producto_id}')
         if medico_id: filtros_txt.append(f'medico_id={medico_id}')
+        if lab_id: filtros_txt.append(f'lab_id={lab_id}')
+        if os_id: filtros_txt.append(f'os_id={os_id}')
+        if rubro_id: filtros_txt.append(f'rubro_id={rubro_id}')
+        if excluir_sin_droga: filtros_txt.append('excluir_sin_droga')
+        if solo_con_receta: filtros_txt.append('solo_con_receta')
         ws.append([f"Filtros: {', '.join(filtros_txt) or '(ninguno)'}"])
         ws.append([f'Agrupado por: {group_by}'])
         ws.append([])
 
-        # Headers de tabla.
+        # Headers de tabla — columna Laboratorio solo cuando group_by='producto'
+        # (una droga tiene N labs, no corresponde; los otros pivots tampoco).
+        con_lab = (group_by == 'producto')
         col_label = {'producto': 'Producto', 'droga': 'Droga',
-                     'medico': 'Médico', 'mes': 'Mes', 'dia': 'Día'}.get(group_by, 'Grupo')
-        headers = [col_label, 'Operaciones', 'Cantidad', 'Importe']
+                     'laboratorio': 'Laboratorio', 'medico': 'Médico',
+                     'mes': 'Mes', 'dia': 'Día', 'os': 'Obra social'}.get(group_by, 'Grupo')
+        if con_lab:
+            headers = [col_label, 'Laboratorio', 'Operaciones', 'Cantidad', 'Importe']
+        else:
+            headers = [col_label, 'Operaciones', 'Cantidad', 'Importe']
         ws.append(headers)
         for cell in ws[ws.max_row]:
             cell.font = Font(bold=True, color='FFFFFF')
             cell.fill = PatternFill('solid', fgColor='6B21A8')
             cell.alignment = Alignment(horizontal='center')
 
-        for grupo, ops, cant, imp in rows_data:
-            ws.append([grupo, ops, cant, imp])
+        if con_lab:
+            for grupo, lab, ops, cant, imp in rows_data:
+                ws.append([grupo, lab, ops, cant, imp])
+        else:
+            for grupo, ops, cant, imp in rows_data:
+                ws.append([grupo, ops, cant, imp])
 
         # Anchos.
         ws.column_dimensions['A'].width = 50
-        ws.column_dimensions['B'].width = 14
-        ws.column_dimensions['C'].width = 14
-        ws.column_dimensions['D'].width = 16
+        if con_lab:
+            ws.column_dimensions['B'].width = 30    # Laboratorio
+            ws.column_dimensions['C'].width = 14
+            ws.column_dimensions['D'].width = 14
+            ws.column_dimensions['E'].width = 16
+        else:
+            ws.column_dimensions['B'].width = 14
+            ws.column_dimensions['C'].width = 14
+            ws.column_dimensions['D'].width = 16
 
         bio = BytesIO()
         wb.save(bio)
@@ -1240,6 +2287,19 @@ def init_app(app):
         droga_id = request.args.get('droga_id', type=int)
         producto_id = request.args.get('producto_id', type=int)
         medico_id = request.args.get('medico_id', type=int)
+        lab_id = request.args.get('lab_id', type=int)
+        os_id = request.args.get('os_id', type=int)
+        # Mismos filtros de producto que el informe principal, para que el
+        # drill-down sea un subconjunto real (si no, mostraba venta libre y
+        # otros rubros bajo el grupo filtrado).
+        if 'rubro_id' in request.args:
+            rubro_id = request.args.get('rubro_id', type=int)
+        else:
+            rubro_id = 12  # Medicamentos por default (igual que el informe)
+        if rubro_id == 0:
+            rubro_id = None
+        solo_con_receta = request.args.get('solo_con_receta') == '1'
+        excluir_sin_droga = request.args.get('excluir_sin_droga') == '1'
         drill_dim = (request.args.get('drill_dim') or '').strip()
         drill_value = (request.args.get('drill_value') or '').strip()
 
@@ -1254,13 +2314,30 @@ def init_app(app):
                 from helpers import medicos_observer_ids_compartidos
                 ids_med = medicos_observer_ids_compartidos(session, medico_id)
                 base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
+            if os_id:
+                base = base.filter(ObsVentaDetalle.obra_social_observer == os_id)
             ya_joined_obs = False
-            if droga_id:
+            if droga_id or lab_id or rubro_id or solo_con_receta or excluir_sin_droga:
                 base = base.join(
                     ObsProducto,
                     ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
-                ).filter(ObsProducto.nombre_droga_observer == droga_id)
+                )
                 ya_joined_obs = True
+            if droga_id:
+                base = base.filter(ObsProducto.nombre_droga_observer == droga_id)
+            if lab_id:
+                base = base.filter(ObsProducto.laboratorio_observer == lab_id)
+            if excluir_sin_droga:
+                base = base.filter(ObsProducto.nombre_droga_observer.isnot(None))
+            if solo_con_receta:
+                base = base.filter(ObsProducto.id_tipo_venta_control.isnot(None),
+                                   ObsProducto.id_tipo_venta_control != 'L')
+            if rubro_id:
+                from database import ObsSubrubro
+                base = base.join(
+                    ObsSubrubro,
+                    ObsSubrubro.observer_id == ObsProducto.subrubro_observer,
+                ).filter(ObsSubrubro.rubro_observer == rubro_id)
 
             # Aplicar el drill: filtrar por la dimensión clickeada.
             if drill_dim == 'medico':
@@ -1453,6 +2530,22 @@ def init_app(app):
                        .limit(20).all())
             return jsonify({'items': [{'id': o.observer_id, 'nombre': o.descripcion}
                                        for o in results]})
+
+    @app.route('/api/informes/buscar-lab')
+    @login_required
+    def api_informes_buscar_lab():
+        """Autocomplete para filtro Laboratorio (catálogo ObServer)."""
+        from database import ObsLaboratorio
+        q = (request.args.get('q') or '').strip()
+        if len(q) < 2:
+            return jsonify({'items': []})
+        with database.get_db() as session:
+            results = (session.query(ObsLaboratorio)
+                       .filter(ObsLaboratorio.descripcion.ilike(f'%{q}%'))
+                       .order_by(ObsLaboratorio.descripcion)
+                       .limit(20).all())
+            return jsonify({'items': [{'id': l.observer_id, 'nombre': l.descripcion}
+                                       for l in results]})
 
     @app.route('/api/informes/buscar-producto-obs')
     @login_required
@@ -1658,6 +2751,73 @@ def init_app(app):
                 'hasta': hoy.isoformat(),
             })
 
+    @app.route('/api/stock/snapshot-diario', methods=['POST'])
+    @login_required
+    def api_stock_snapshot_diario():
+        """Crea snapshot diario de obs_stock — local-only (gated por env var).
+
+        Idempotente: si la fecha de hoy ya existe en la tabla, no inserta nada.
+        Trigger esperado: DockerPanel al iniciar, después del backup diario.
+        En Render queda 404 porque la env var no está seteada.
+        """
+        import os
+        if os.environ.get('STOCK_SNAPSHOT_ENABLED') != '1':
+            return jsonify({'ok': False, 'error': 'feature disabled'}), 404
+        from datetime import date as _date
+
+        from sqlalchemy import text
+        hoy = _date.today()
+        with database.get_db() as session:
+            existe = session.execute(
+                text("SELECT 1 FROM obs_stock_snapshot_diario "
+                     "WHERE fecha = :f LIMIT 1"),
+                {'f': hoy}).first()
+            if existe:
+                return jsonify({'ok': True, 'skipped': True, 'fecha': hoy.isoformat()})
+            # Single INSERT ... SELECT — copia obs_stock entero como snapshot del día.
+            # ON CONFLICT por si hay race (otro proceso ya empezó).
+            result = session.execute(text("""
+                INSERT INTO obs_stock_snapshot_diario
+                    (fecha, id_farmacia, producto_observer, stock_actual)
+                SELECT :f, id_farmacia, producto_observer, stock_actual FROM obs_stock
+                ON CONFLICT (fecha, id_farmacia, producto_observer) DO NOTHING
+            """), {'f': hoy})
+            session.commit()
+            return jsonify({
+                'ok': True, 'inserted': result.rowcount, 'fecha': hoy.isoformat(),
+            })
+
+    @app.route('/api/observer-product/<int:observer_id>/stock-snapshot')
+    @login_required
+    def api_observer_product_stock_snapshot(observer_id):
+        """Snapshots diarios del stock de un producto, últimos N días.
+
+        Devuelve `{ok, snapshots: [{fecha, stock_actual}, ...]}`. Si no hay
+        datos (ej. Render sin gate seteado), `snapshots: []` y el chart de la
+        Ficha sigue mostrando solo el stock implícito.
+        """
+        from datetime import date as _date
+        from datetime import timedelta
+
+        from sqlalchemy import text
+        dias = max(1, min(180, request.args.get('dias', 30, type=int)))
+        hoy = _date.today()
+        desde = hoy - timedelta(days=dias - 1)
+        with database.get_db() as session:
+            rows = session.execute(text("""
+                SELECT fecha, SUM(stock_actual) AS stock_total
+                FROM obs_stock_snapshot_diario
+                WHERE producto_observer = :pid AND fecha >= :d AND fecha <= :h
+                GROUP BY fecha ORDER BY fecha
+            """), {'pid': observer_id, 'd': desde, 'h': hoy}).fetchall()
+            snapshots = [{'fecha': r[0].isoformat(), 'stock_actual': int(r[1] or 0)}
+                         for r in rows]
+            return jsonify({
+                'ok': True, 'observer_id': observer_id,
+                'snapshots': snapshots,
+                'desde': desde.isoformat(), 'hasta': hoy.isoformat(),
+            })
+
     @app.route('/api/informes/buscar-droga')
     @login_required
     def api_buscar_droga():
@@ -1674,6 +2834,17 @@ def init_app(app):
             items = [{'id': r.observer_id, 'descripcion': r.descripcion}
                      for r in results]
         return jsonify({'items': items})
+
+    # Una observación mal importada suele ser una presentación de producto
+    # ("30 comp", "100 ml", "60 caps") que el wizard mapeó a observacion por
+    # error. Sirve para marcar grupos sospechosos y ofrecer limpieza bulk.
+    import re as _re_obs
+    _OBS_SOSPECHOSA_RE = _re_obs.compile(
+        r'^\s*\d+\s*(ml|comp|cap|caps|sob|amp|sup|kg|grm|gr|g|mg)\b', _re_obs.I,
+    )
+
+    def _obs_es_sospechosa(s):
+        return bool(s and _OBS_SOSPECHOSA_RE.match(s))
 
     @app.route('/informes/ofertas-activas')
     @login_required
@@ -1717,12 +2888,15 @@ def init_app(app):
                     'unidades_minima': o.unidades_minima,
                     'descuento':       float(o.descuento_psl) if o.descuento_psl is not None else None,
                     'vigencia':        o.vigencia_hasta.strftime('%d/%m/%Y') if o.vigencia_hasta else None,
+                    'observacion':     o.observacion or '',
                 })
                 if o.vigencia_hasta and (g['_vh'] is None or o.vigencia_hasta > g['_vh']):
                     g['_vh'] = o.vigencia_hasta
                     g['vigencia'] = o.vigencia_hasta.strftime('%d/%m/%Y')
 
-            grupos = [dict(g, _vh=None) for g in grupos_dict.values()]
+            grupos = [dict(g, _raw_vh=g.get('_vh'), _vh=None,
+                           sospechosa=_obs_es_sospechosa(g.get('observacion')))
+                      for g in grupos_dict.values()]
 
             # ── Módulos — agrupar por lab (nivel 1 solamente) ────────────────
             from sqlalchemy import func as _func2
@@ -1756,6 +2930,134 @@ def init_app(app):
     # Versiones "bulk" del sync/pull por-lab que están en routes/laboratorios.py.
     # Más cómodo cuando las ofertas entran por droguería (no por lab) y querés
     # mover todo de una.
+
+    @app.route('/informes/ofertas-activas/grupo/toggle-activa', methods=['POST'])
+    @login_required
+    def informes_ofertas_grupo_toggle_activa():
+        """Activa/desactiva (activo=True/False) todas las ofertas que matcheen
+        un grupo (lab, observacion, vigencia_hasta, drog, tipo). Para que el
+        operador deje 1 batch activo por lab y los anteriores como histórico.
+        Body JSON: {lab_id, observacion, vigencia_hasta, drog_id, tipo, set_to}.
+        """
+        from datetime import datetime as _dt
+
+        from database import OfertaMinimo
+        d = request.get_json(silent=True) or {}
+        try:
+            lab_id = int(d.get('lab_id')) if d.get('lab_id') not in (None, 'null', '') else None
+        except (TypeError, ValueError):
+            lab_id = None
+        try:
+            drog_id = int(d.get('drog_id')) if d.get('drog_id') not in (None, 'null', '') else None
+        except (TypeError, ValueError):
+            drog_id = None
+        observacion = (d.get('observacion') or '').strip() or None
+        tipo        = (d.get('tipo') or '').strip() or None
+        set_to      = bool(d.get('set_to'))
+        vh_str      = (d.get('vigencia_hasta') or '').strip()
+        vh = None
+        if vh_str:
+            for fmt in ('%Y-%m-%d', '%d/%m/%Y'):
+                try:
+                    vh = _dt.strptime(vh_str, fmt).date(); break
+                except ValueError:
+                    continue
+        with database.get_db() as session:
+            q = session.query(OfertaMinimo)
+            # Lab puede ser None (multi-lab); usamos `is_` cuando corresponde.
+            q = q.filter(OfertaMinimo.laboratorio_id == lab_id) if lab_id is not None \
+                else q.filter(OfertaMinimo.laboratorio_id.is_(None))
+            q = q.filter(OfertaMinimo.drogueria_id == drog_id) if drog_id is not None \
+                else q.filter(OfertaMinimo.drogueria_id.is_(None))
+            if observacion:
+                q = q.filter(OfertaMinimo.observacion == observacion)
+            else:
+                q = q.filter(OfertaMinimo.observacion.is_(None))
+            if tipo:
+                q = q.filter(OfertaMinimo.tipo_descuento == tipo)
+            if vh:
+                q = q.filter(OfertaMinimo.vigencia_hasta == vh)
+            n = q.update({OfertaMinimo.activo: set_to},
+                         synchronize_session=False)
+            session.commit()
+        return jsonify({'ok': True, 'actualizadas': int(n), 'set_to': set_to})
+
+    @app.route('/informes/ofertas-activas/sospechosas/preview', methods=['GET'])
+    @login_required
+    def informes_ofertas_sospechosas_preview():
+        """Lista las ofertas con `observacion` tipo presentación ('30 comp',
+        '100 ml', etc.) — síntoma típico de un import donde la columna se
+        mapeó por error al campo observacion."""
+        from database import Laboratorio, OfertaMinimo
+        with database.get_db() as session:
+            rows = (session.query(OfertaMinimo, Laboratorio.nombre)
+                    .outerjoin(Laboratorio, Laboratorio.id == OfertaMinimo.laboratorio_id)
+                    .filter(OfertaMinimo.activo.is_(True),
+                            OfertaMinimo.observacion.isnot(None))
+                    .order_by(Laboratorio.nombre, OfertaMinimo.observacion).all())
+            items = []
+            for o, lab in rows:
+                if _obs_es_sospechosa(o.observacion):
+                    items.append({
+                        'id':  o.id,
+                        'lab': lab or '—',
+                        'observacion': o.observacion,
+                        'ean': o.ean or '',
+                        'descripcion': (o.descripcion or '')[:120],
+                    })
+        return jsonify({'items': items, 'n': len(items)})
+
+    @app.route('/informes/ofertas-activas/sospechosas/borrar', methods=['POST'])
+    @login_required
+    def informes_ofertas_sospechosas_borrar():
+        """Borra (delete) todas las ofertas con observación tipo presentación.
+        El frontend ya confirmó con el user previa visualización."""
+        from database import OfertaMinimo
+        with database.get_db() as session:
+            rows = (session.query(OfertaMinimo)
+                    .filter(OfertaMinimo.activo.is_(True),
+                            OfertaMinimo.observacion.isnot(None)).all())
+            n = 0
+            for o in rows:
+                if _obs_es_sospechosa(o.observacion):
+                    session.delete(o)
+                    n += 1
+            session.commit()
+        return jsonify({'ok': True, 'borradas': n})
+
+    _QUEUE_OBS_PREFIX = 'Aplicada desde queue por '
+
+    @app.route('/informes/ofertas-activas/queue/preview', methods=['GET'])
+    @login_required
+    def informes_ofertas_queue_preview():
+        """Lista las ofertas auto-creadas desde la queue de pendientes
+        (observacion empieza con 'Aplicada desde queue por ...')."""
+        from database import Laboratorio, OfertaMinimo
+        with database.get_db() as session:
+            rows = (session.query(OfertaMinimo, Laboratorio.nombre)
+                    .outerjoin(Laboratorio, Laboratorio.id == OfertaMinimo.laboratorio_id)
+                    .filter(OfertaMinimo.observacion.like(_QUEUE_OBS_PREFIX + '%'))
+                    .order_by(Laboratorio.nombre, OfertaMinimo.observacion).all())
+        items = [{
+            'id':  o.id,
+            'lab': lab or '—',
+            'observacion': o.observacion,
+            'ean': o.ean or '',
+            'descripcion': (o.descripcion or '')[:120],
+        } for o, lab in rows]
+        return jsonify({'items': items, 'n': len(items)})
+
+    @app.route('/informes/ofertas-activas/queue/borrar', methods=['POST'])
+    @login_required
+    def informes_ofertas_queue_borrar():
+        """Borra todas las ofertas auto-creadas desde la queue."""
+        from database import OfertaMinimo
+        with database.get_db() as session:
+            n = (session.query(OfertaMinimo)
+                 .filter(OfertaMinimo.observacion.like(_QUEUE_OBS_PREFIX + '%'))
+                 .delete(synchronize_session=False))
+            session.commit()
+        return jsonify({'ok': True, 'borradas': int(n)})
 
     @app.route('/informes/ofertas-activas/sync-render-bulk', methods=['POST'])
     @login_required
@@ -2012,6 +3314,41 @@ def init_app(app):
             q.delete(synchronize_session=False)
             session.commit()
         return ('', 204)
+
+    @app.route('/informes/ofertas-activas/borrar-grupos-bulk', methods=['POST'])
+    @login_required
+    def informe_grupos_borrar_bulk():
+        """Borra varios grupos (lab+tipo+obs+drogueria) en una sola transacción."""
+        from database import OfertaMinimo
+        data = request.get_json(silent=True) or {}
+        groups = data.get('groups') or []
+        if not isinstance(groups, list) or not groups:
+            return jsonify({'ok': False, 'error': 'Sin grupos'}), 400
+        borradas = 0
+        with database.get_db() as session:
+            for g in groups:
+                lab_id  = g.get('lab_id')
+                tipo    = g.get('tipo')
+                obs     = g.get('obs', '')
+                drog_id = g.get('drog_id')
+                q = session.query(OfertaMinimo)
+                if lab_id is not None:
+                    q = q.filter(OfertaMinimo.laboratorio_id == lab_id)
+                else:
+                    q = q.filter(OfertaMinimo.laboratorio_id.is_(None))
+                if tipo:
+                    q = q.filter(OfertaMinimo.tipo_descuento == tipo)
+                if obs:
+                    q = q.filter(OfertaMinimo.observacion == obs)
+                else:
+                    q = q.filter(OfertaMinimo.observacion.is_(None) | (OfertaMinimo.observacion == ''))
+                if drog_id is not None:
+                    q = q.filter(OfertaMinimo.drogueria_id == drog_id)
+                else:
+                    q = q.filter(OfertaMinimo.drogueria_id.is_(None))
+                borradas += q.delete(synchronize_session=False)
+            session.commit()
+        return jsonify({'ok': True, 'borradas': borradas, 'grupos': len(groups)})
 
     @app.route('/informes/ofertas-activas/borrar-modulo/<int:modulo_id>', methods=['POST'])
     @login_required

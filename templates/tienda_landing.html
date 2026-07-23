@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ cfg.tienda_titulo or 'Farmacia' }} | Envíos a domicilio</title>
+<meta name="description" content="{{ cfg.tienda_hero_texto or 'Envíos a domicilio y atención personalizada. Pedí por WhatsApp.' }}">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E💊%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --verde:#0B6B4F;
+  --verde-prof:#053B2C;
+  --menta:#BFF3D9;
+  --menta-claro:#EAFBF2;
+  --tinta:#0C2019;
+  --blanco:#FFFFFF;
+  --linea:#D9EAE1;
+  --coral:#ED9C2B;
+  --radius:16px;
+  --display:'Archivo',sans-serif;
+  --body:'Figtree',sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--body);color:var(--tinta);background:var(--blanco);line-height:1.6;font-size:17px}
+a{color:inherit}
+.container{max-width:1120px;margin:0 auto;padding:0 24px}
+
+/* ---------- Header transparente sobre el banner ---------- */
+header{position:absolute;top:0;left:0;right:0;z-index:40}
+.nav{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 24px;max-width:1180px;margin:0 auto;
+}
+.logo{
+  display:flex;align-items:center;gap:10px;text-decoration:none;
+  font-family:var(--display);font-weight:800;font-size:22px;color:#fff;
+  font-variation-settings:'wdth' 110;letter-spacing:-.01em;
+}
+/* Cruz LED del logo */
+.cruz-logo{
+  --dot:3.5px;--gap:1.5px;
+  display:grid;
+  grid-template-columns:repeat(9,var(--dot));
+  grid-template-rows:repeat(9,var(--dot));
+  gap:var(--gap);
+  background:var(--verde-prof);
+  padding:6px;border-radius:9px;
+  box-shadow:0 0 14px rgba(191,243,217,.45);
+  flex-shrink:0;
+}
+.cruz-logo i{width:var(--dot);height:var(--dot);border-radius:50%;background:#0B3A2B}
+.cruz-logo i.on{
+  background:var(--menta);
+  box-shadow:0 0 3px var(--menta),0 0 7px rgba(191,243,217,.7);
+  animation:parpadeo-logo 2.4s ease-in-out infinite;
+}
+.cruz-logo i.on:nth-child(3n){animation-delay:.4s}
+.cruz-logo i.on:nth-child(4n){animation-delay:.9s}
+.cruz-logo i.on:nth-child(5n){animation-delay:1.4s}
+@keyframes parpadeo-logo{0%,100%{opacity:1}50%{opacity:.5}}
+
+.nav-links{display:flex;gap:26px;list-style:none;align-items:center}
+.nav-links a{text-decoration:none;color:rgba(255,255,255,.9);font-weight:500;font-size:15px;transition:color .2s}
+.nav-links a:hover,.nav-links a:focus-visible{color:var(--menta)}
+
+.btn{
+  display:inline-flex;align-items:center;gap:8px;border:none;cursor:pointer;
+  font-family:var(--body);font-weight:700;font-size:15.5px;
+  padding:13px 24px;border-radius:999px;text-decoration:none;
+  transition:transform .15s,box-shadow .2s,background .2s;
+}
+.btn:focus-visible{outline:3px solid var(--menta);outline-offset:2px}
+.btn.menta{background:var(--menta);color:var(--verde-prof)}
+.btn.menta:hover{background:#A9EECB;transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,.2)}
+.btn.blanco{background:#fff;color:var(--verde-prof)}
+.btn.blanco:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,.18)}
+.btn.verde{background:var(--verde);color:#fff}
+.btn.verde:hover{background:var(--verde-prof);transform:translateY(-2px)}
+.btn.coral{background:var(--coral);color:#3D2800}
+.btn.coral:hover{background:#DB8A15;transform:translateY(-2px);box-shadow:0 10px 24px rgba(237,156,43,.4)}
+
+/* ---------- BANNER HERO ---------- */
+.banner{
+  position:relative;min-height:92vh;
+  display:flex;align-items:center;
+  background:
+    radial-gradient(1200px 600px at 85% 15%, rgba(191,243,217,.22), transparent 60%),
+    linear-gradient(155deg, #0A5C43 0%, #075038 45%, #053B2C 100%);
+  overflow:hidden;color:#fff;
+}
+.banner .patron{position:absolute;inset:0;pointer-events:none;opacity:.5}
+.banner .patron svg{position:absolute;width:100%;height:100%}
+.flotante{animation:flotar 9s ease-in-out infinite}
+.flotante.f2{animation-duration:12s;animation-delay:-3s}
+.flotante.f3{animation-duration:10s;animation-delay:-6s}
+@keyframes flotar{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-22px) rotate(3deg)}}
+.banner .onda{position:absolute;bottom:-2px;left:0;right:0;line-height:0}
+.banner .onda svg{width:100%;height:90px;display:block}
+.banner-inner{position:relative;z-index:2;max-width:1120px;margin:0 auto;padding:130px 24px 140px;width:100%}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:var(--mono);font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:#FFC46A;border:1px solid rgba(237,156,43,.5);
+  padding:7px 16px;border-radius:999px;margin-bottom:26px;backdrop-filter:blur(4px);
+}
+.eyebrow .punto{width:7px;height:7px;border-radius:50%;background:var(--coral);animation:latido 2s infinite}
+@keyframes latido{0%,100%{opacity:1}50%{opacity:.35}}
+h1{
+  font-family:var(--display);font-weight:900;font-variation-settings:'wdth' 108;
+  font-size:clamp(40px,6vw,72px);line-height:1.02;letter-spacing:-.03em;
+  max-width:15ch;margin-bottom:22px;
+}
+h1 .resalte{color:var(--menta)}
+.banner p.lead{font-size:19.5px;color:rgba(255,255,255,.85);max-width:52ch;margin-bottom:36px}
+
+/* Buscador */
+.buscador{
+  display:flex;align-items:center;gap:0;
+  background:#fff;border-radius:999px;padding:6px 6px 6px 24px;
+  max-width:560px;box-shadow:0 20px 50px rgba(0,0,0,.3);margin-bottom:34px;
+}
+.buscador input{
+  flex:1;border:none;outline:none;font-family:var(--body);
+  font-size:16px;color:var(--tinta);background:transparent;min-width:0;
+}
+.buscador input::placeholder{color:#7C948A}
+
+.banner-datos{display:flex;gap:34px;flex-wrap:wrap}
+.banner-datos div{font-family:var(--mono);font-size:13px;color:rgba(255,255,255,.65)}
+.banner-datos strong{
+  display:block;font-family:var(--display);font-variation-settings:'wdth' 105;
+  font-size:22px;font-weight:800;color:#fff;letter-spacing:-.01em;
+}
+@media (prefers-reduced-motion:reduce){
+  .flotante,.eyebrow .punto,.cruz-logo i.on{animation:none}
+  html{scroll-behavior:auto}
+}
+
+/* Franja de confianza */
+.franja{background:var(--menta-claro);border-bottom:1px solid var(--linea);padding:22px 0}
+.franja .container{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.franja span{display:inline-flex;align-items:center;gap:10px;font-weight:600;font-size:15px;color:var(--verde-prof)}
+.franja .ic{font-size:20px}
+
+/* Secciones */
+section{padding:80px 0}
+.section-head{max-width:660px;margin-bottom:46px}
+.kicker{font-family:var(--mono);font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--verde);display:block;margin-bottom:10px}
+.section-head h2{
+  font-family:var(--display);font-weight:800;font-variation-settings:'wdth' 106;
+  font-size:clamp(28px,3.6vw,40px);letter-spacing:-.02em;line-height:1.08;margin-bottom:12px;
+}
+.section-head p{color:#3E534A}
+
+/* Categorías */
+.cats{display:grid;grid-template-columns:repeat({{ rubros|length or 1 }},1fr);gap:18px}
+.cat{
+  position:relative;border-radius:var(--radius);overflow:hidden;text-decoration:none;
+  min-height:190px;display:flex;flex-direction:column;justify-content:flex-end;
+  padding:22px;color:#fff;transition:transform .18s,box-shadow .18s;
+}
+.cat:hover,.cat:focus-visible{transform:translateY(-5px);box-shadow:0 16px 34px rgba(5,59,44,.25)}
+.cat::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 30%,rgba(5,59,44,.85));z-index:1}
+.cat .fondo{position:absolute;inset:0;display:grid;place-items:center;font-size:64px}
+.cat.c1 .fondo{background:linear-gradient(135deg,#0E7A5A,#0A5C43)}
+.cat.c2 .fondo{background:linear-gradient(135deg,#15A97C,#0E7A5A)}
+.cat.c3 .fondo{background:linear-gradient(135deg,#0A5C43,#053B2C)}
+.cat.c4 .fondo{background:linear-gradient(135deg,#0E7A5A,#15A97C)}
+.cat h3{position:relative;z-index:2;font-family:var(--display);font-weight:800;font-variation-settings:'wdth' 105;font-size:19px;letter-spacing:-.01em}
+.cat p{position:relative;z-index:2;font-size:13.5px;color:rgba(255,255,255,.85)}
+
+/* Productos destacados */
+.destacados{background:var(--menta-claro)}
+.prods{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.prod{
+  background:#fff;border-radius:var(--radius);overflow:hidden;
+  border:1px solid var(--linea);display:flex;flex-direction:column;
+  transition:transform .18s,box-shadow .18s;text-decoration:none;color:inherit;
+}
+.prod:hover{transform:translateY(-4px);box-shadow:0 16px 36px rgba(5,59,44,.12)}
+.prod-img{
+  height:180px;display:grid;place-items:center;font-size:56px;
+  background:linear-gradient(135deg,#F2FBF6,#E2F5EB);
+  position:relative;overflow:hidden;
+}
+.prod-img img{max-width:80%;max-height:80%;object-fit:contain}
+.prod-body{padding:20px;display:flex;flex-direction:column;gap:8px;flex:1}
+.prod h3{font-family:var(--display);font-weight:700;font-variation-settings:'wdth' 104;font-size:17px;line-height:1.25;letter-spacing:-.01em}
+.prod-stock{font-size:12.5px;color:#0E7A5A;font-weight:600}
+.prod-pie{display:flex;align-items:center;justify-content:space-between;padding-top:14px;border-top:1px solid var(--linea);margin-top:auto}
+.prod-pie .precio{font-family:var(--mono);font-weight:600;font-size:20px;color:var(--verde-prof)}
+.prod-pie .link{font-size:13.5px;font-weight:700;color:var(--verde)}
+
+/* Envíos */
+.envios{
+  position:relative;overflow:hidden;
+  background:linear-gradient(120deg,var(--verde) 0%,var(--verde-prof) 100%);
+  color:#fff;border-radius:24px;padding:60px 48px;
+  display:grid;grid-template-columns:1.2fr .8fr;gap:40px;align-items:center;
+}
+.envios::after{content:'💊';position:absolute;right:-20px;bottom:-30px;font-size:220px;opacity:.12;transform:rotate(-8deg)}
+.envios h2{font-family:var(--display);font-weight:800;font-variation-settings:'wdth' 106;font-size:clamp(26px,3.2vw,36px);letter-spacing:-.02em;line-height:1.1;margin-bottom:14px}
+.envios p{color:rgba(255,255,255,.85);margin-bottom:26px;max-width:46ch}
+.envios .mini-pasos{list-style:none;display:flex;flex-direction:column;gap:14px;position:relative;z-index:2}
+.envios .mini-pasos li{display:flex;gap:14px;align-items:flex-start;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:14px 18px;font-size:15px}
+.envios .mini-pasos .n{font-family:var(--mono);font-weight:600;color:var(--menta);flex-shrink:0}
+
+/* Obras sociales */
+.obras-lista{display:flex;flex-wrap:wrap;gap:12px}
+.obras-lista span{font-family:var(--mono);font-size:13.5px;background:var(--menta-claro);border:1px solid var(--linea);color:var(--verde-prof);padding:9px 18px;border-radius:999px}
+.obras small{display:block;margin-top:20px;color:#5C7268;font-size:13.5px}
+
+/* Ubicación */
+.ubi{background:var(--menta-claro)}
+.ubi-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start}
+.dato{display:flex;gap:14px;padding:16px 0;border-bottom:1px dashed var(--linea);align-items:flex-start}
+.dato:last-child{border-bottom:none}
+.dato .ic{font-size:22px;line-height:1.4}
+.dato strong{display:block;font-family:var(--display);font-weight:700;font-variation-settings:'wdth' 104;color:var(--verde-prof)}
+.dato span{font-size:15px;color:#3E534A}
+.horarios{background:#fff;border:1px solid var(--linea);border-radius:var(--radius);padding:28px;font-family:var(--mono);font-size:14.5px}
+.horarios h3{font-family:var(--display);font-weight:800;font-variation-settings:'wdth' 105;font-size:20px;color:var(--verde-prof);margin-bottom:16px;letter-spacing:-.01em}
+.horarios pre{white-space:pre-wrap;font-family:inherit;color:#33463D;line-height:1.9}
+
+/* CTA final */
+.cta-final{
+  position:relative;overflow:hidden;text-align:center;color:#fff;
+  background:radial-gradient(800px 400px at 50% 120%, rgba(191,243,217,.25), transparent 60%),linear-gradient(160deg,#0A5C43,#053B2C);
+  padding:88px 24px;
+}
+.cta-final h2{font-family:var(--display);font-weight:900;font-variation-settings:'wdth' 108;font-size:clamp(30px,4vw,48px);letter-spacing:-.025em;line-height:1.05;max-width:18ch;margin:0 auto 16px}
+.cta-final p{color:rgba(255,255,255,.8);max-width:52ch;margin:0 auto 32px}
+
+/* Footer */
+footer{padding:44px 0 36px;color:#5C7268;font-size:14px;background:#fff}
+.footer-grid{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:center}
+footer .logo{color:var(--verde-prof);font-size:18px}
+footer nav{display:flex;gap:20px}
+footer a{text-decoration:none}
+footer a:hover{text-decoration:underline}
+.legal{margin-top:22px;font-size:12.5px;color:#8AA096;border-top:1px solid var(--linea);padding-top:18px}
+
+/* WhatsApp flotante */
+.wsp-float{
+  position:fixed;right:22px;bottom:22px;z-index:60;
+  width:58px;height:58px;border-radius:50%;background:#25D366;color:#fff;
+  display:grid;place-items:center;font-size:28px;text-decoration:none;
+  box-shadow:0 10px 26px rgba(0,0,0,.25);transition:transform .18s;
+}
+.wsp-float:hover{transform:scale(1.08)}
+
+/* Responsive */
+@media(max-width:960px){
+  .cats{grid-template-columns:repeat(2,1fr) !important}
+  .prods{grid-template-columns:1fr 1fr}
+  .envios{grid-template-columns:1fr;padding:44px 30px}
+  .ubi-grid{grid-template-columns:1fr}
+  .banner-inner{padding:120px 24px 130px}
+}
+@media(max-width:640px){
+  .nav-links{display:none}
+  .cats,.prods{grid-template-columns:1fr !important}
+  section{padding:60px 0}
+  .buscador{flex-direction:row}
+  .buscador input{font-size:15px}
+  .banner{min-height:auto}
+  .banner-datos{gap:22px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="nav">
+    <a href="{{ url_for('tienda_home') }}" class="logo"><span class="cruz-logo" aria-hidden="true"></span>{{ cfg.tienda_titulo or 'Farmacia' }}</a>
+    <ul class="nav-links">
+      <li><a href="{{ url_for('tienda_catalogo') }}">Catálogo</a></li>
+      <li><a href="#envios">Envíos</a></li>
+      <li><a href="#ubicacion">Ubicación</a></li>
+    </ul>
+    <a class="btn menta" href="{{ wa_pedido }}" target="_blank" rel="noopener">Pedir por WhatsApp</a>
+  </div>
+</header>
+
+<!-- BANNER HERO -->
+<div class="banner">
+  <div class="patron" aria-hidden="true">
+    <svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
+      <g class="flotante" opacity=".35">
+        <rect x="950" y="120" width="90" height="38" rx="19" fill="#BFF3D9" transform="rotate(-24 995 139)"/>
+        <line x1="978" y1="146" x2="1012" y2="131" stroke="#053B2C" stroke-width="3"/>
+      </g>
+      <g class="flotante f2" opacity=".25">
+        <rect x="120" y="520" width="74" height="30" rx="15" fill="#BFF3D9" transform="rotate(18 157 535)"/>
+        <line x1="143" y1="541" x2="171" y2="550" stroke="#053B2C" stroke-width="3"/>
+      </g>
+      <g class="flotante f3" opacity=".3">
+        <path d="M1060 460 h26 v26 h26 v26 h-26 v26 h-26 v-26 h-26 v-26 h26 z" fill="#BFF3D9" transform="rotate(12 1086 499)"/>
+      </g>
+      <g class="flotante f2" opacity=".2">
+        <path d="M200 130 h20 v20 h20 v20 h-20 v20 h-20 v-20 h-20 v-20 h20 z" fill="#BFF3D9" transform="rotate(-15 220 165)"/>
+      </g>
+      <g class="flotante" opacity=".18">
+        <circle cx="820" cy="620" r="26" fill="none" stroke="#BFF3D9" stroke-width="5"/>
+        <circle cx="820" cy="620" r="9" fill="#BFF3D9"/>
+      </g>
+      <circle cx="1080" cy="680" r="220" fill="#BFF3D9" opacity=".05"/>
+      <circle cx="80" cy="80" r="180" fill="#BFF3D9" opacity=".05"/>
+    </svg>
+  </div>
+
+  <div class="banner-inner">
+    <span class="eyebrow"><span class="punto"></span>Envíos en el día</span>
+    <h1>La farmacia del barrio, <span class="resalte">directo a tu puerta<span style="color:var(--coral)">.</span></span></h1>
+    <p class="lead">{{ cfg.tienda_hero_texto or 'Medicamentos de venta libre, dermocosmética, perfumería y productos para toda la familia. Pedís por WhatsApp y lo recibís en tu casa.' }}</p>
+
+    <form class="buscador" id="buscador" method="get" action="{{ url_for('tienda_catalogo') }}">
+      <input type="text" name="q" id="busqueda" placeholder="¿Qué estás buscando? Ej: protector solar, ibuprofeno…" aria-label="Buscar producto">
+      <button type="submit" class="btn coral">Buscar</button>
+    </form>
+
+    <div class="banner-datos">
+      <div><strong>Rosario</strong>envíos en el día</div>
+      <div><strong>WhatsApp</strong>atención directa</div>
+      <div><strong>Todas</strong>las obras sociales</div>
+    </div>
+  </div>
+
+  <div class="onda" aria-hidden="true">
+    <svg viewBox="0 0 1440 90" preserveAspectRatio="none">
+      <path d="M0,50 C240,95 480,0 720,35 C960,70 1200,20 1440,55 L1440,90 L0,90 Z" fill="#FFFFFF"/>
+    </svg>
+  </div>
+</div>
+
+<!-- FRANJA DE CONFIANZA -->
+<div class="franja">
+  <div class="container">
+    <span><span class="ic">🛵</span>Envíos en el día en Rosario</span>
+    <span><span class="ic">💳</span>Efectivo, tarjeta o transferencia</span>
+    <span><span class="ic">🧑‍⚕️</span>Asesoramiento farmacéutico real</span>
+    <span><span class="ic">📄</span>Recetas por WhatsApp</span>
+  </div>
+</div>
+
+<!-- CATEGORÍAS -->
+{% if rubros %}
+<section id="categorias">
+  <div class="container">
+    <div class="section-head">
+      <span class="kicker">Nuestros productos</span>
+      <h2>Elegí una categoría</h2>
+      <p>Si no encontrás lo que buscás, escribinos igual: te lo conseguimos.</p>
+    </div>
+    <div class="cats">
+      {% for r in rubros %}
+      <a href="{{ url_for('tienda_catalogo', rubro=r.id) }}" class="cat c{{ loop.index }}">
+        <div class="fondo" aria-hidden="true">💊</div>
+        <h3>{{ r.nombre }}</h3>
+        <p>Ver productos</p>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<!-- DESTACADOS -->
+{% if destacados %}
+<section class="destacados">
+  <div class="container">
+    <div class="section-head">
+      <span class="kicker">Ofertas de la semana</span>
+      <h2>Destacados</h2>
+      <p>Precios de referencia. Confirmá stock y promos vigentes por WhatsApp.</p>
+    </div>
+    <div class="prods">
+      {% for p in destacados %}
+      <a href="{{ url_for('tienda_producto', oid=p.oid) }}" class="prod">
+        <div class="prod-img">
+          {% if p.imagen_ruta %}
+            {% set _fname = p.imagen_ruta.split('/', 1)[1] if '/' in p.imagen_ruta else p.imagen_ruta %}
+            <img src="{{ url_for('tienda_upload_file', filename=_fname) }}" alt="{{ p.nombre }}" loading="lazy">
+          {% else %}
+            💊
+          {% endif %}
+        </div>
+        <div class="prod-body">
+          <h3>{{ p.nombre }}</h3>
+          <div class="prod-stock">✓ En stock</div>
+          <div class="prod-pie">
+            {% if p.precio %}
+            <span class="precio">${{ '{:,.0f}'.format(p.precio).replace(',', '.') }}</span>
+            {% else %}
+            <span class="precio" style="font-size:14px; color:#5C7268;">A consultar</span>
+            {% endif %}
+            <span class="link">Ver →</span>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    <div style="text-align:center; margin-top:36px;">
+      <a href="{{ url_for('tienda_catalogo') }}" class="btn verde">Ver catálogo completo →</a>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<!-- ENVÍOS -->
+<section id="envios">
+  <div class="container">
+    <div class="envios">
+      <div>
+        <h2>Pedís por WhatsApp,<br>lo recibís en tu casa.</h2>
+        <p>Sin apps raras ni registros. Nos escribís como le escribirías a un amigo, y del otro lado te responde un farmacéutico de verdad.</p>
+        <a class="btn blanco" href="{{ wa_pedido }}" target="_blank" rel="noopener">Empezar mi pedido</a>
+      </div>
+      <ul class="mini-pasos">
+        <li><span class="n">01</span>Escribinos qué necesitás o mandá foto de la receta</li>
+        <li><span class="n">02</span>Confirmá el total con descuentos de tu obra social</li>
+        <li><span class="n">03</span>Recibilo en el día o retiralo por el mostrador</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- OBRAS SOCIALES -->
+<section id="obras-sociales">
+  <div class="container">
+    <div class="section-head">
+      <span class="kicker">Coberturas</span>
+      <h2>Atendemos tu obra social y prepaga</h2>
+      <p>Traé tu receta o mandala por WhatsApp y aplicamos los descuentos que te corresponden.</p>
+    </div>
+    <div class="obras-lista">
+      <span>PAMI</span><span>IAPOS</span><span>OSDE</span><span>Swiss Medical</span>
+      <span>OSECAC</span><span>Sancor Salud</span><span>Jerárquicos</span><span>Galeno</span>
+      <span>Y muchas más</span>
+    </div>
+    <small class="obras">¿No ves la tuya? <a href="{{ wa_general }}" target="_blank" rel="noopener" style="color:var(--verde);text-decoration:underline">Consultanos</a>: trabajamos con la mayoría de las obras sociales y prepagas.</small>
+  </div>
+</section>
+
+<!-- UBICACIÓN -->
+<section class="ubi" id="ubicacion">
+  <div class="container">
+    <div class="section-head">
+      <span class="kicker">Dónde estamos</span>
+      <h2>Vení a visitarnos</h2>
+    </div>
+    <div class="ubi-grid">
+      <div>
+        {% if cfg.tienda_direccion %}
+        <div class="dato"><span class="ic">📍</span><div><strong>Dirección</strong><span>{{ cfg.tienda_direccion }}</span></div></div>
+        {% endif %}
+        {% if cfg.tienda_whatsapp_numero %}
+        <div class="dato"><span class="ic">📱</span><div><strong>WhatsApp</strong><span>+{{ cfg.tienda_whatsapp_numero }}</span></div></div>
+        {% endif %}
+        <div class="dato"><span class="ic">🛵</span><div><strong>Zona de envíos</strong><span>Todo Rosario. Consultá por localidades vecinas.</span></div></div>
+      </div>
+      {% if cfg.tienda_horarios %}
+      <div class="horarios">
+        <h3>Horarios de atención</h3>
+        <pre>{{ cfg.tienda_horarios }}</pre>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<!-- CTA FINAL -->
+<div class="cta-final">
+  <h2>¿Necesitás algo de la farmacia hoy?</h2>
+  <p>Escribinos ahora y te lo llevamos en el día. Atención personalizada de farmacéuticos, como siempre fue en el barrio.</p>
+  <a class="btn menta" href="{{ wa_pedido }}" target="_blank" rel="noopener">Pedir por WhatsApp ahora</a>
+</div>
+
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <a href="{{ url_for('tienda_home') }}" class="logo"><span class="cruz-logo" aria-hidden="true"></span>{{ cfg.tienda_titulo or 'Farmacia' }}</a>
+      <nav>
+        <a href="{{ url_for('tienda_catalogo') }}">Catálogo</a>
+        <a href="#envios">Envíos</a>
+        <a href="#ubicacion">Ubicación</a>
+      </nav>
+    </div>
+    <p class="legal">{{ cfg.tienda_titulo or 'Farmacia' }} · Los medicamentos de venta bajo receta requieren prescripción médica. Ante cualquier duda consultá a tu médico o farmacéutico.</p>
+  </div>
+</footer>
+
+<a class="wsp-float" href="{{ wa_pedido }}" target="_blank" rel="noopener" aria-label="Pedir por WhatsApp">💬</a>
+
+<script>
+// Cruz LED del logo: grilla 9x9, se encienden los puntos que forman la cruz
+document.querySelectorAll('.cruz-logo').forEach(function(grid){
+  const N = 9, brazo = 3;
+  const ini = (N - brazo) / 2, fin = ini + brazo - 1;
+  for (let f = 0; f < N; f++) {
+    for (let c = 0; c < N; c++) {
+      const dot = document.createElement('i');
+      if ((c >= ini && c <= fin) || (f >= ini && f <= fin)) dot.classList.add('on');
+      grid.appendChild(dot);
+    }
+  }
+});
+</script>
+
+</body>
+</html>

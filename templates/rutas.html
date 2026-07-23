@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rutas de reparto · Badia</title>
+<style>
+  :root {
+    --bg:#14141a; --surface:#1a1a22; --card:#16161d; --txt:#e0e0e6; --title:#f0f0f3;
+    --muted:#8a8a92; --border:rgba(255,255,255,0.08); --accent:#1D9E75; --accent-ink:#06241a;
+    --row-bd:rgba(255,255,255,0.05); --hov:#23232d;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--txt); font-family:var(--font); }
+  .topbar { height:54px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:14px; padding:0 18px; }
+  .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .logo .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border); background:var(--hov); color:var(--txt); cursor:pointer; }
+  .hbtn-ok { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700; }
+  .hbtn-danger { background:transparent; color:#F09595; border-color:#5a2a2a; font-size:10px; padding:3px 8px; }
+  .input { background:var(--hov); color:var(--txt); border:1px solid var(--border); border-radius:8px; padding:6px 9px; font-size:13px; }
+  .wrap { max-width:860px; margin:0 auto; padding:18px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; color:var(--muted); font-weight:600; padding:7px 6px; border-bottom:1px solid var(--border); }
+  td { padding:6px; border-bottom:1px solid var(--row-bd); }
+  .badge { font-size:10px; padding:2px 8px; border-radius:999px; font-weight:700; background:var(--hov); color:var(--muted); }
+  .muted { color:var(--muted); }
+  a.link { color:#7fb0e0; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo"><span class="dot"></span>🚚 Rutas de reparto · Badia</div>
+    <div style="flex:1"></div>
+    <button onclick="cargarDistritos()" class="hbtn">📥 Cargar distritos oficiales (Rosario)</button>
+    <a href="/cadetes" class="hbtn">🧑‍🦽 Cadetes</a>
+    <a href="/reparto" class="hbtn hbtn-ok">Armar reparto →</a>
+    <a href="{{ url_for('auth_logout') }}" class="hbtn">Salir</a>
+  </div>
+  <div class="wrap">
+    <div class="card">
+      <h2 style="margin:0 0 4px; font-size:15px; color:var(--title);">Rutas</h2>
+      <div class="muted" style="font-size:11px; margin-bottom:12px;">
+        Cada ruta agrupa una zona. Por defecto, 4 cuadrantes (Norte/Sur/Este/Oeste) según el ángulo desde la farmacia.
+        Configurá la ubicación de la farmacia en <a class="link" href="/config/envio">Envíos</a>.
+      </div>
+      <table>
+        <thead><tr><th>Nombre</th><th>Cuadrante</th><th>Zona</th><th>Color</th><th>Cadete</th><th>Activa</th><th></th></tr></thead>
+        <tbody id="tb"></tbody>
+      </table>
+      <div style="display:flex; gap:6px; margin-top:12px; flex-wrap:wrap;">
+        <input id="nNombre" class="input" placeholder="Nombre de ruta" style="flex:1; min-width:120px;">
+        <select id="nCuad" class="input"><option value="">— cuadrante —</option><option>N</option><option>S</option><option>E</option><option>O</option></select>
+        <select id="nCadete" class="input" style="width:140px;"></select>
+        <button onclick="addRuta()" class="hbtn hbtn-ok">+ Agregar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalZona" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:50; align-items:center; justify-content:center;">
+    <div class="card" style="width:480px; max-width:92vw;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <b id="zonaTitulo">Zona de la ruta</b>
+        <span onclick="cerrarZona()" class="muted" style="cursor:pointer;">✕</span>
+      </div>
+      <div class="muted" style="font-size:11px; margin-bottom:8px;">
+        Dibujá el polígono en <a class="link" href="https://geojson.io" target="_blank">geojson.io</a> y pegá acá el <b>GeoJSON</b>,
+        o pegá las esquinas como <b>lat, lng</b> (una por línea, de Google Maps). Vacío = sin zona (usa el cuadrante).
+      </div>
+      <textarea id="zonaTexto" class="input" style="width:100%; height:170px; font-family:monospace; font-size:11px;"></textarea>
+      <div style="display:flex; gap:6px; margin-top:10px; justify-content:flex-end;">
+        <button onclick="cerrarZona()" class="hbtn">Cancelar</button>
+        <button onclick="guardarZona()" class="hbtn hbtn-ok">Guardar zona</button>
+      </div>
+    </div>
+  </div>
+<script>
+const CUAD = {N:'Norte', S:'Sur', E:'Este', O:'Oeste'};
+let _zonaId = null;
+function editarZona(id){
+  _zonaId = id; const r = window._rutas[id] || {};
+  document.getElementById('zonaTitulo').textContent = 'Zona — ' + (r.nombre||'');
+  document.getElementById('zonaTexto').value = (r.poligono||[]).map(p=>p[0]+', '+p[1]).join('\n');
+  document.getElementById('modalZona').style.display = 'flex';
+}
+function cerrarZona(){ document.getElementById('modalZona').style.display='none'; _zonaId=null; }
+async function guardarZona(){
+  const r = window._rutas[_zonaId] || {};
+  await jpost('/rutas', {id:_zonaId, nombre:r.nombre, cuadrante:r.cuadrante, color:r.color,
+                         cadete_id:r.cadete_id, activa:r.activa,
+                         poligono_texto: document.getElementById('zonaTexto').value});
+  cerrarZona(); cargar();
+}
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+async function jpost(u,b){ return (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json(); }
+function cadeteOpts(sel){
+  return '<option value="">— sin cadete —</option>' + (window._cadetes||[]).map(c=>
+    `<option value="${c.id}" ${c.id==sel?'selected':''}>${esc(c.nombre)}${c.activo?'':' (inactivo)'}</option>`).join('');
+}
+async function cargar(){
+  const d = await (await fetch('/rutas/api')).json();
+  window._rutas = {}; (d.rutas||[]).forEach(r=>window._rutas[r.id]=r);
+  window._cadetes = d.cadetes||[];
+  document.getElementById('tb').innerHTML = (d.rutas||[]).map(r=>`
+    <tr>
+      <td><input class="input" value="${esc(r.nombre)}" onchange="save(${r.id},'nombre',this.value)"></td>
+      <td><span class="badge">${r.cuadrante?esc(CUAD[r.cuadrante]||r.cuadrante):'—'}</span></td>
+      <td>${r.n_puntos?`<span class="badge" style="background:var(--accent);color:var(--accent-ink);">✓ ${r.n_puntos} pts</span>`:'<span class="muted">—</span>'} <button class="hbtn" style="font-size:10px;padding:3px 7px;" onclick="editarZona(${r.id})">Zona</button></td>
+      <td><input type="color" value="${esc(r.color)}" onchange="save(${r.id},'color',this.value)" style="width:42px;height:28px;background:none;border:none;cursor:pointer;"></td>
+      <td><select class="input" onchange="save(${r.id},'cadete_id',this.value?+this.value:null)" style="width:140px;">${cadeteOpts(r.cadete_id)}</select></td>
+      <td><input type="checkbox" ${r.activa?'checked':''} onchange="save(${r.id},'activa',this.checked)"></td>
+      <td><button class="hbtn hbtn-danger" onclick="delRuta(${r.id})">Quitar</button></td>
+    </tr>`).join('') || '<tr><td colspan="7" class="muted">Sin rutas.</td></tr>';
+  document.getElementById('nCadete').innerHTML = cadeteOpts('');
+}
+async function save(id, campo, val){
+  const r = window._rutas[id] || {};
+  await jpost('/rutas', {id, nombre:r.nombre, cuadrante:r.cuadrante, color:r.color, cadete_id:r.cadete_id, activa:r.activa, [campo]:val});
+  cargar();
+}
+async function addRuta(){
+  const nombre = document.getElementById('nNombre').value.trim(); if(!nombre) return;
+  const cad = document.getElementById('nCadete').value;
+  await jpost('/rutas', {nombre, cuadrante:document.getElementById('nCuad').value||null, cadete_id:cad?+cad:null});
+  document.getElementById('nNombre').value=''; cargar();
+}
+async function delRuta(id){ if(confirm('¿Quitar ruta?')){ await jpost(`/rutas/${id}/delete`); cargar(); } }
+async function cargarDistritos(){
+  if(!confirm('Carga las 6 rutas de los distritos oficiales de Rosario con su zona real. ¿Seguimos?')) return;
+  const d = await jpost('/rutas/cargar-distritos');
+  if(d.ok){ alert(`✅ ${d.cargados} distritos cargados.`); cargar(); }
+  else alert('⚠️ '+(d.error||'no se pudo'));
+}
+cargar();
+</script>
+</body>
+</html>

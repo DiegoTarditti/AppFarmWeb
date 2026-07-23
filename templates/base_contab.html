@@ -1,0 +1,61 @@
+{# Layout standalone del módulo de Contabilidad.
+   Extiende base.html (hereda el design-system emerald), oculta el sidebar
+   operativo y reemplaza la navegación por un menú horizontal propio.
+   Cada pantalla del módulo extiende este layout y rellena {% block contab %}. #}
+{% extends "base.html" %}
+{% set hide_sidebar = True %}
+
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+  <div style="max-width:1200px; margin:0 auto; padding:14px 22px 28px;">
+
+    {# ── Menú horizontal del módulo ───────────────────────────────────── #}
+    <nav style="display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-bottom:20px;
+                background:var(--ds-surface); border:1px solid var(--ds-line-2);
+                border-radius:var(--ds-r-lg); padding:8px 12px; box-shadow:var(--ds-shadow-md);">
+      <a href="{{ url_for('contabilidad_index') }}"
+         style="display:flex; align-items:center; gap:8px; text-decoration:none; padding:2px 8px;">
+        <span style="font-size:18px;">📊</span>
+        <span class="glow-text" style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px;">Contabilidad</span>
+      </a>
+      <span style="width:1px; height:22px; background:var(--ds-line-2); margin:0 8px;"></span>
+
+      {% set _menu = [
+          ('inicio',      'Inicio',            url_for('contabilidad_index'),        True),
+          ('proveedores', 'Proveedores',       url_for('contabilidad_proveedores'),  True),
+          ('ctacte',      'Cuentas corrientes',url_for('cuentas_corrientes'),        True),
+          ('formas_pago', 'Formas de pago',    url_for('contabilidad_formas_pago'),  True),
+          ('pagos',       'Pagos',             url_for('contabilidad_pagos'),        True),
+          ('rubros',      'Rubros',            '#',                            False),
+          ('libro_iva',   'Libro IVA',         '#',                            False),
+      ] %}
+      {% for slug, label, href, listo in _menu %}
+        {% if listo %}
+        <a href="{{ href }}"
+           style="padding:6px 13px; border-radius:var(--ds-r-sm); font-size:12.5px; font-weight:600; text-decoration:none; transition:all .12s;
+                  {% if contab_active == slug %}background:rgba(95,230,188,.16); color:var(--ds-mint);{% else %}color:var(--ds-text-soft);{% endif %}"
+           {% if contab_active != slug %}onmouseover="this.style.background='rgba(95,230,188,.07)'; this.style.color='var(--ds-text)';"
+           onmouseout="this.style.background='transparent'; this.style.color='var(--ds-text-soft)';"{% endif %}>
+          {{ label }}
+        </a>
+        {% else %}
+        <span title="Próximamente"
+              style="padding:6px 13px; border-radius:var(--ds-r-sm); font-size:12.5px; font-weight:600;
+                     color:var(--ds-text-mute); opacity:.55; cursor:default;">
+          {{ label }} <span style="font-size:9px; vertical-align:middle;">●</span>
+        </span>
+        {% endif %}
+      {% endfor %}
+
+      <a href="{{ url_for('index') }}" title="Volver a la app"
+         style="margin-left:auto; padding:6px 13px; border-radius:var(--ds-r-sm); font-size:12px;
+                color:var(--ds-text-mute); text-decoration:none;">↩ Salir del módulo</a>
+    </nav>
+
+    {% block contab %}{% endblock %}
+
+  </div>
+</div>
+{% endblock %}

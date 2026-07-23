@@ -174,18 +174,6 @@ ACCIONES_HOME = [
         'fg_default': '#2E7D5B',
     },
     {
-        'id': 'consulta_producto',
-        'titulo': 'Consultar medicamento',
-        'desc': 'Escaneá el troquel (cámara o pistola)',
-        'endpoint': 'consulta_producto',
-        'emoji': '🔍',
-        'tone': 'info',
-        'badge_key': None,
-        'icono_path': 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
-        'bg_default': '#DBEAFE',
-        'fg_default': '#1E40AF',
-    },
-    {
         'id': 'consulta_medico',
         'titulo': 'Consultar médico',
         'desc': 'Estadísticas: top productos, OS, evolución',
@@ -222,18 +210,6 @@ ACCIONES_HOME = [
         'fg_default': '#9333EA',
     },
     {
-        'id': 'config',
-        'titulo': 'Configuración',
-        'desc': 'Ajustes del sistema',
-        'endpoint': 'settings',
-        'emoji': '⚙️',
-        'tone': 'mute',
-        'badge_key': None,
-        'icono_path': 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
-        'bg_default': '#F3F4F6',
-        'fg_default': '#6b7280',
-    },
-    {
         'id': 'flujo_fondos',
         'titulo': 'Flujo de fondos',
         'desc': 'Ingreso vs egreso semanal por lab/drog — distribuí compras en 8 semanas',
@@ -257,6 +233,42 @@ ACCIONES_HOME = [
         'bg_default': '#FEF3C7',
         'fg_default': '#B45309',
     },
+    {
+        'id': 'envio',
+        'titulo': 'Envíos',
+        'desc': 'Tarifas y cotizador de envío a domicilio',
+        'endpoint': 'envio_panel',
+        'emoji': '🛵',
+        'tone': 'mint',
+        'badge_key': None,
+        'icono_path': 'M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z',
+        'bg_default': '#E8F3ED',
+        'fg_default': '#2E7D5B',
+    },
+    {
+        'id': 'reparto',
+        'titulo': 'Reparto',
+        'desc': 'Armar rutas de reparto y asignar pedidos del día',
+        'endpoint': 'reparto_panel',
+        'emoji': '🚚',
+        'tone': 'mint',
+        'badge_key': None,
+        'icono_path': 'M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1',
+        'bg_default': '#E8F3ED',
+        'fg_default': '#2E7D5B',
+    },
+    {
+        'id': 'cadetes',
+        'titulo': 'Cadetes',
+        'desc': 'Repartidores: zonas asignadas y tarifa por jornada',
+        'endpoint': 'cadetes_panel',
+        'emoji': '🧑‍🦽',
+        'tone': 'mint',
+        'badge_key': None,
+        'icono_path': 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
+        'bg_default': '#E8F3ED',
+        'fg_default': '#2E7D5B',
+    },
 ]
 
 ACCIONES_HOME_BY_ID = {c['id']: c for c in ACCIONES_HOME}
@@ -266,31 +278,42 @@ ACCIONES_HOME_BY_ID = {c['id']: c for c in ACCIONES_HOME}
 # 2026-05-09: 15 cards en flat list = no encuentra nada).
 # El orden de las claves dicta el orden de los grupos en pantalla.
 CATEGORIAS_HOME = [
-    ('operativo',  '🔄 Operativo diario'),
-    ('analisis',   '📊 Análisis e informes'),
-    ('catalogo',   '📚 Catálogo'),
-    ('datos',      '⚙ Datos y configuración'),
-    ('pendientes', '⏳ Pendientes'),
+    ('laboratorios',    '🧪 Laboratorios'),
+    ('droguerias',      '💊 Droguerías'),
+    ('operativo',       '⚡ Operativo'),
+    ('productos',       '📦 Productos'),
+    ('otras_entidades', '🏥 Otras entidades'),
+    ('informes',        '📊 Informes'),
 ]
 # Mapa card_id → categoria_key. Si una card no aparece, va a 'operativo' por default.
 CARD_CATEGORIA = {
+    # Operativo (día a día)
     'pedidos':              'operativo',
     'ingresos':             'operativo',
     'procesos':             'operativo',
-    'reclamos':             'operativo',
-    'informes':             'analisis',
-    'bi':                   'analisis',
-    'compras_recurrentes':  'analisis',
-    'obras_sociales':       'analisis',
-    'flujo_fondos':         'analisis',
-    'productos':            'catalogo',
-    'vademecum':            'catalogo',
-    'clientes':             'catalogo',
-    'ofertas_import':       'operativo',
-    'config':               'datos',
-    # Pendientes (al fondo)
-    'productos_pendientes': 'pendientes',
-    'cuentas':              'pendientes',
+    'consulta_stock':       'operativo',
+    'envio':                'operativo',
+    'reparto':              'operativo',
+    'cadetes':              'operativo',
+    # Laboratorios
+    'ofertas_import':       'laboratorios',
+    'consulta_lab':         'laboratorios',
+    # Droguerías
+    'reclamos':             'droguerias',
+    'cuentas':              'operativo',   # movida desde Droguerías (2026-05-25)
+    # Productos
+    'productos':            'productos',
+    'vademecum':            'productos',
+    'productos_pendientes': 'productos',
+    # Informes
+    'informes':             'informes',
+    'bi':                   'informes',
+    'flujo_fondos':         'informes',
+    'compras_recurrentes':  'informes',
+    # Otras entidades
+    'obras_sociales':       'otras_entidades',
+    'clientes':             'otras_entidades',
+    'consulta_medico':      'otras_entidades',
 }
 
 

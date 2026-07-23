@@ -54,6 +54,98 @@ def _connect(timeout=30):
     )
 
 
+# Cache module-level del resultado de "¿puedo leer schema Gestion?". Lo
+# probamos UNA vez por proceso para no spammear el server con tests cada
+# vez que arranca un sync premium. Se invalida en restart (cuando cambian
+# las credenciales OBSERVER_USER/PASS).
+# None = no testeado todavía, True/False = última respuesta cacheada.
+_ACCESO_GESTION = None
+
+
+def _test_acceso_gestion():
+    """Hace UN query mínimo al schema Gestion para detectar si tenemos
+    permisos. Devuelve True/False. Cachea el resultado.
+
+    Diego 2026-06-24: en la farmacia de Lisandro tenemos credenciales SA
+    con acceso a Gestion.* (precios exactos, condiciones comerciales, etc).
+    En otras farmacias solo hay usuarioDW con acceso a DW.* — las features
+    premium se skipean limpio para no romper el sync general.
+    """
+    global _ACCESO_GESTION
+    if _ACCESO_GESTION is not None:
+        return _ACCESO_GESTION
+    try:
+        conn = _connect(timeout=5)
+        if conn is None:
+            _ACCESO_GESTION = False
+            return False
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT TOP 1 1 FROM Gestion.CondicionesComerciales")
+                cur.fetchone()
+            _ACCESO_GESTION = True
+        finally:
+            conn.close()
+    except Exception as e:  # noqa: BLE001
+        _log.info('Sin acceso al schema Gestion (%s). Las features premium '
+                  'se saltarán: precios_vigentes, condiciones_comerciales.',
+                  type(e).__name__)
+        _ACCESO_GESTION = False
+    return _ACCESO_GESTION
+
+
+def reset_cache_acceso_gestion():
+    """Invalida el cache (útil tras cambiar OBSERVER_USER/PASS en runtime)."""
+    global _ACCESO_GESTION
+    _ACCESO_GESTION = None
+
+
+def diagnostico_acceso():
+    """Diagnóstico para /admin/observer/diagnostico. Devuelve qué schemas
+    son accesibles + nivel de privilegio del usuario actual."""
+    cfg = _config()
+    info = {
+        'host': cfg['host'] if cfg else None,
+        'port': cfg['port'] if cfg else None,
+        'user': cfg['user'] if cfg else None,
+        'database': cfg['database'] if cfg else None,
+        'observer_disponible': observer_disponible(),
+        'schemas': {},
+        'es_sysadmin': False,
+        'server_name': None,
+        'features_premium_disponibles': [],
+    }
+    if not info['observer_disponible']:
+        return info
+    try:
+        conn = _connect(timeout=10)
+        if conn is None:
+            return info
+        with conn.cursor() as cur:
+            cur.execute("SELECT @@SERVERNAME, IS_SRVROLEMEMBER('sysadmin')")
+            r = cur.fetchone()
+            info['server_name'] = r[0]
+            info['es_sysadmin'] = bool(r[1])
+            for schema, tabla_probe in (('DW', 'DW.Productos'),
+                                         ('Gestion', 'Gestion.CondicionesComerciales'),
+                                         ('dbo', 'dbo.FW_Permisos')):
+                try:
+                    cur.execute(f"SELECT TOP 1 1 FROM {tabla_probe}")
+                    cur.fetchone()
+                    info['schemas'][schema] = True
+                except Exception:  # noqa: BLE001
+                    info['schemas'][schema] = False
+        conn.close()
+        # Mapeo schema → features
+        if info['schemas'].get('Gestion'):
+            info['features_premium_disponibles'].extend([
+                'precios_vigentes', 'condiciones_comerciales',
+            ])
+    except Exception as e:  # noqa: BLE001
+        info['error'] = str(e)[:200]
+    return info
+
+
 def observer_disponible():
     if not _config():
         return False
@@ -238,10 +330,15 @@ def ejecutar_sql_readonly(query, max_rows=200, timeout=30):
 # local como parámetro para el upsert. Devuelve dict con stats.
 # ──────────────────────────────────────────────────────────────────────────
 
-def _log_sync(session, entidad, upsert, duracion_ms, error=None):
+def _log_sync(session, entidad, upsert, duracion_ms, error=None, info=None):
+    """Registra el resultado de un sync.
+
+    - error: solo para errores REALES (excepción, mensaje de falla). Se pinta rojo.
+    - info: nota descriptiva del sync exitoso (rango de meses, contadores, etc.). Se pinta gris.
+    """
     from database import ObsSyncLog
     session.add(ObsSyncLog(entidad=entidad, filas_upsert=upsert,
-                            duracion_ms=duracion_ms, error=error))
+                            duracion_ms=duracion_ms, error=error, info=info))
 
 
 def _upsert_obs(session, Model, pk_col, pk_value, **fields):
@@ -382,7 +479,7 @@ def sync_productos(session):
             cur.execute("""
                 SELECT IdProducto, Producto, IdLaboratorio, IdSubRubro, IdNombresDrogas,
                        CodigoAlfabeta, IdTipoVentaYControl, Troquel, CantidadDelEnvase,
-                       EsHabilitadoVenta, RequiereCadenaFrio, FechaBaja
+                       EsHabilitadoVenta, RequiereCadenaFrio, EsFraccionable, FechaBaja
                 FROM DW.Productos
             """)
             for r in cur.fetchall():
@@ -402,6 +499,7 @@ def sync_productos(session):
                     cantidad_envase=r['CantidadDelEnvase'],
                     es_habilitado_venta=bool(r['EsHabilitadoVenta']),
                     requiere_cadena_frio=bool(r['RequiereCadenaFrio']),
+                    es_fraccionable=bool(r['EsFraccionable']) if r['EsFraccionable'] is not None else False,
                     fecha_baja=r['FechaBaja'],
                     sync_en=now_ar(),
                 )
@@ -414,6 +512,279 @@ def sync_productos(session):
     duracion = int((time.time() - t0) * 1000)
     _log_sync(session, 'productos', n, duracion)
     return {'upsert': n, 'duracion_ms': duracion}
+
+
+def sync_precios_vigentes(session):
+    """Sync de Gestion.ProductosPreciosVigentes → obs_productos.precio_lista.
+
+    Esta vista de Observer expone el precio actual vigente por producto
+    (lo mismo que se ve en la UI de Observer). Sincronizando esto tenemos
+    el precio EXACTO, sin promedios históricos ni dumps manuales.
+
+    Requiere usuario con permisos sobre el schema `Gestion`. El `usuarioDW`
+    no lee ese schema → si la query falla por permisos, loggea warning y
+    devuelve sin tocar nada. Diego 2026-06-24: pasar a `sa` para tener el
+    precio actualizado automático.
+    """
+    from sqlalchemy import text
+
+    from database import now_ar
+    t0 = time.time()
+    conn = _connect(timeout=120)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    actualizados = 0
+    sin_match = 0
+    try:
+        ahora = now_ar()
+        # Traer todos los observer_id existentes localmente (universo a updatear)
+        existentes = {r[0] for r in session.execute(
+            text('SELECT observer_id FROM obs_productos')
+        ).fetchall()}
+        # Pull masivo de la vista. Procesamos en batches para no llenar memoria.
+        with conn.cursor(as_dict=True) as cur:
+            try:
+                cur.execute("""
+                    SELECT IdProducto, Precio, FechaVigencia
+                      FROM Gestion.ProductosPreciosVigentes
+                """)
+            except Exception as e:  # noqa: BLE001
+                _log.warning('sync_precios_vigentes: sin acceso a '
+                             'Gestion.ProductosPreciosVigentes (%s). Asegurate '
+                             'de usar OBSERVER_USER con permiso al schema Gestion.', e)
+                return {'upsert': 0, 'duracion_ms': int((time.time() - t0) * 1000),
+                        'error': 'permiso denegado'}
+
+            # UPDATE en batches de 1000 vía SQL crudo (el bulk ORM se queja
+            # con bindparam en la WHERE clause). Suficiente para 123k
+            # productos en ~10s.
+            stmt = text("""
+                UPDATE obs_productos
+                   SET precio_lista = :precio,
+                       precio_lista_fecha_vigencia = :fv,
+                       precio_lista_actualizado_en = :ahora
+                 WHERE observer_id = :oid
+            """)
+            BATCH = 1000
+            buffer = []
+            for r in cur:
+                obs_id = int(r['IdProducto'])
+                if obs_id not in existentes:
+                    sin_match += 1
+                    continue
+                buffer.append({
+                    'oid': obs_id, 'precio': float(r['Precio']),
+                    'fv': r['FechaVigencia'], 'ahora': ahora,
+                })
+                if len(buffer) >= BATCH:
+                    session.execute(stmt, buffer)
+                    actualizados += len(buffer)
+                    buffer.clear()
+            if buffer:
+                session.execute(stmt, buffer)
+                actualizados += len(buffer)
+        session.flush()
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'precios_vigentes', actualizados, duracion)
+    _log.info('sync_precios_vigentes: %d actualizados, %d sin_match local, %d ms',
+              actualizados, sin_match, duracion)
+    return {'upsert': actualizados, 'sin_match': sin_match,
+            'duracion_ms': duracion}
+
+
+def sync_condiciones_comerciales(session):
+    """Sync de Gestion.CondicionesComerciales (descuentos / promos vigentes).
+
+    Diego 2026-06-24: la vista Observer ya filtra las VIGENTES (149 filas
+    típicas vs 7.646 del historial). Hacemos un reemplazo total — borramos
+    todas las locales y volvemos a insertar — porque al ser tan pocas no
+    vale la pena un upsert. Requiere SA (el schema Gestion no es accesible
+    para usuarioDW).
+    """
+    # Skip limpio si no hay acceso al schema Gestion (otras farmacias).
+    if not _test_acceso_gestion():
+        return {'upsert': 0, 'skipped': True,
+                'razon': 'sin acceso al schema Gestion (requiere usuario sa)'}
+    from database import ObsCondicionComercial, now_ar
+    t0 = time.time()
+    conn = _connect(timeout=120)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    insertadas = 0
+    try:
+        ahora = now_ar()
+        with conn.cursor(as_dict=True) as cur:
+            try:
+                # Filtro: dejar afuera las ya vencidas (VigenciaHasta < hoy).
+                # Sí traemos las sin VigenciaHasta (NULL = sin límite) y las
+                # futuras (vigencia_desde > hoy). El filtro de "vigente HOY"
+                # lo aplica el caller en runtime. Diego 2026-06-24.
+                cur.execute("""
+                    SELECT IdCondicionComercial, HIS_IdCondicionComercial,
+                           IdTipoCondicionComercial, TipoPromocion,
+                           Descripcion, Orden, Porcentaje, AplicaSobrePVP,
+                           AplicaEnOfertas, AplicaEnParticularObraSocial,
+                           AplicaEnFraccionado, AplicaConCuotas,
+                           MxN, CantidadPara2daUnidad,
+                           VigenciaDesde, VigenciaHasta,
+                           HoraDesde, HoraHasta,
+                           Lunes, Martes, Miercoles, Jueves,
+                           Viernes, Sabado, Domingo,
+                           ConjuntoProductos, ConjuntoLaboratorios,
+                           ConjuntoRubros, ConjuntoSubrubros,
+                           ConjuntoFormasDePago, ConjuntoTarjetas, IdTipoTarjeta,
+                           ConjuntoConvenios, ConjuntoPlanes,
+                           ConjuntoTiposProducto, ConjuntoTiposVenta,
+                           ConjuntoGrupos, ConjuntoClientes, ConjuntoFarmacias,
+                           Formula
+                      FROM Gestion.CondicionesComerciales
+                     WHERE VigenciaHasta IS NULL
+                        OR VigenciaHasta >= CAST(GETDATE() AS DATE)
+                """)
+            except Exception as e:  # noqa: BLE001
+                _log.warning('sync_condiciones_comerciales: sin acceso a '
+                             'Gestion.CondicionesComerciales (%s). Requiere '
+                             'OBSERVER_USER con permiso al schema Gestion (ej. sa).', e)
+                return {'upsert': 0,
+                        'duracion_ms': int((time.time() - t0) * 1000),
+                        'error': 'permiso denegado'}
+            filas = cur.fetchall()
+
+        # Reemplazo total: 149 filas no vale la pena el overhead de upsert.
+        session.query(ObsCondicionComercial).delete()
+        session.flush()
+
+        def _str(v):
+            return (v or '').strip() or None if isinstance(v, str) else None
+
+        for r in filas:
+            cc = ObsCondicionComercial(
+                observer_id              = r['IdCondicionComercial'],
+                his_id                   = r['HIS_IdCondicionComercial'],
+                tipo                     = _str(r['IdTipoCondicionComercial']),
+                tipo_promocion           = _str(r['TipoPromocion']),
+                descripcion              = _str(r['Descripcion']),
+                orden                    = r['Orden'],
+                porcentaje               = r['Porcentaje'],
+                aplica_sobre_pvp         = bool(r['AplicaSobrePVP']),
+                aplica_en_ofertas        = _str(r['AplicaEnOfertas']),
+                aplica_en_particular_os  = _str(r['AplicaEnParticularObraSocial']),
+                aplica_en_fraccionado    = _str(r['AplicaEnFraccionado']),
+                aplica_con_cuotas        = _str(r['AplicaConCuotas']),
+                mxn                      = _str(r['MxN']),
+                cantidad_para_2da        = r['CantidadPara2daUnidad'],
+                vigencia_desde           = r['VigenciaDesde'],
+                vigencia_hasta           = r['VigenciaHasta'],
+                hora_desde               = _str(r['HoraDesde']),
+                hora_hasta               = _str(r['HoraHasta']),
+                lunes                    = bool(r['Lunes']),
+                martes                   = bool(r['Martes']),
+                miercoles                = bool(r['Miercoles']),
+                jueves                   = bool(r['Jueves']),
+                viernes                  = bool(r['Viernes']),
+                sabado                   = bool(r['Sabado']),
+                domingo                  = bool(r['Domingo']),
+                conj_productos           = r['ConjuntoProductos'],
+                conj_laboratorios        = r['ConjuntoLaboratorios'],
+                conj_rubros              = r['ConjuntoRubros'],
+                conj_subrubros           = r['ConjuntoSubrubros'],
+                conj_formas_pago         = r['ConjuntoFormasDePago'],
+                conj_tarjetas            = r['ConjuntoTarjetas'],
+                id_tipo_tarjeta          = _str(r['IdTipoTarjeta']),
+                conj_convenios           = r['ConjuntoConvenios'],
+                conj_planes              = r['ConjuntoPlanes'],
+                conj_tipos_producto      = r['ConjuntoTiposProducto'],
+                conj_tipos_venta         = r['ConjuntoTiposVenta'],
+                conj_grupos              = r['ConjuntoGrupos'],
+                conj_clientes            = r['ConjuntoClientes'],
+                conj_farmacias           = r['ConjuntoFarmacias'],
+                formula                  = r['Formula'],
+                sync_en                  = ahora,
+            )
+            session.add(cc)
+            insertadas += 1
+        session.flush()
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'condiciones_comerciales', insertadas, duracion)
+    _log.info('sync_condiciones_comerciales: %d filas en %d ms', insertadas, duracion)
+    return {'upsert': insertadas, 'duracion_ms': duracion}
+
+
+def sync_fraccionado_master(session):
+    """Deriva el flag fraccionado del master desde ObServer + el envase.
+
+    ObServer MANDA en presentación (decisión 2026-05-27): para productos con
+    observer_id, `Producto.fraccionado` refleja `obs_productos.es_fraccionable`,
+    y `ProductoAtributo.cantidad_envase` se sincroniza desde obs **pisando incluso
+    ediciones manuales** (lo cargado a mano es un stopgap; ObServer es la verdad).
+    Los productos sin observer_id no se tocan (ahí el marcado manual sigue siendo
+    la única fuente). PostgreSQL-only; correr después de sync_productos.
+
+    Paso 0: materializa la fila de master para las fraccionables de ObServer que
+    todavía no la tengan. La pantalla de presentación lee el master
+    (`Producto.fraccionado`); en una instancia nueva el master está casi vacío
+    aunque ObServer tenga las fraccionables, así que sin esto no habría filas
+    sobre las cuales setear flag/envase.
+    """
+    from sqlalchemy import text
+
+    from database import now_ar
+    from helpers import materializar_producto
+    t0 = time.time()
+    # 0) Materializar el master de las fraccionables de ObServer sin fila local.
+    faltantes = [r[0] for r in session.execute(text("""
+        SELECT o.observer_id
+        FROM obs_productos o
+        LEFT JOIN productos p ON p.observer_id = o.observer_id
+        WHERE o.es_fraccionable AND o.fecha_baja IS NULL AND p.id IS NULL
+    """)).fetchall()]
+    mat_nuevos = 0
+    for oid in faltantes:
+        prod, _err = materializar_producto(session, oid)
+        if prod is not None:
+            mat_nuevos += 1
+    if mat_nuevos:
+        session.flush()
+    # 1) Espejo del flag fraccionado (solo donde difiere).
+    #    Sin alias en la tabla destino: Postgres y SQLite (>=3.33) lo aceptan así.
+    flag = session.execute(text("""
+        UPDATE productos
+        SET fraccionado = o.es_fraccionable
+        FROM obs_productos o
+        WHERE o.observer_id = productos.observer_id
+          AND productos.fraccionado IS DISTINCT FROM o.es_fraccionable
+    """)).rowcount or 0
+    # 2a) Crear ProductoAtributo con el envase de obs para fraccionables sin atributo.
+    env_nuevos = session.execute(text("""
+        INSERT INTO producto_atributos (producto_id, cantidad_envase, fuente, confianza, extraido_en)
+        SELECT p.id, o.cantidad_envase, 'observer', 'ALTA', :ts
+        FROM productos p
+        JOIN obs_productos o ON o.observer_id = p.observer_id
+        LEFT JOIN producto_atributos a ON a.producto_id = p.id
+        WHERE o.es_fraccionable AND o.cantidad_envase IS NOT NULL
+          AND a.producto_id IS NULL
+    """), {'ts': now_ar()}).rowcount or 0
+    # 2b) Sincronizar envase desde obs en fraccionables, PISANDO el valor actual
+    #     (incluido manual) cuando difiere. ObServer manda en presentación.
+    env_completados = session.execute(text("""
+        UPDATE producto_atributos
+        SET cantidad_envase = o.cantidad_envase, fuente = 'observer'
+        FROM productos p, obs_productos o
+        WHERE producto_atributos.producto_id = p.id AND o.observer_id = p.observer_id
+          AND o.es_fraccionable AND o.cantidad_envase IS NOT NULL
+          AND producto_atributos.cantidad_envase IS DISTINCT FROM o.cantidad_envase
+    """)).rowcount or 0
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'fraccionado_master', flag, duracion,
+              info=(f'master: {mat_nuevos} materializados; '
+                    f'envase: {env_nuevos} nuevos, {env_completados} completados'))
+    return {'upsert': flag, 'duracion_ms': duracion, 'flag_updates': flag,
+            'mat_nuevos': mat_nuevos,
+            'env_nuevos': env_nuevos, 'env_completados': env_completados}
 
 
 def sync_colegios_medicos(session):
@@ -513,15 +884,24 @@ def sync_medicos_matriculas(session):
     return {'upsert': n, 'duracion_ms': duracion, 'skipped_fk': skipped}
 
 
-def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia=None):
+def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia=None,
+                        resync_window_dias=20):
     """Sync incremental de DW.ProductosVendidos (detalle por venta).
 
     Args:
         desde_fecha: si está, trae ventas con FechaEstadistica >= desde_fecha.
-                     Si None: usa MAX(fecha_estadistica) local + 1 día. Si no
-                     hay datos locales, arranca desde hoy - meses_default.
+                     Si None: usa MAX(fecha_estadistica) local - resync_window_dias
+                     (ventana de solape, ver abajo). Si no hay datos locales,
+                     arranca desde hoy - meses_default.
         meses_default: cuántos meses traer en el primer sync (default 24).
         id_farmacia: filtrar por farmacia (default OBSERVER_ID_FARMACIA).
+        resync_window_dias: días hacia atrás desde el MAX local que se vuelven a
+                     sincronizar en cada corrida. ObServer backfillea
+                     FechaEstadistica con retraso: si el watermark arranca en
+                     MAX(fecha)+1, los días que reciben registros DESPUÉS de que
+                     el sync ya pasó quedan congelados incompletos. Re-traer una
+                     ventana los completa; el upsert (ON CONFLICT) lo hace
+                     idempotente (no duplica). 0 = comportamiento viejo (MAX+1).
 
     Devuelve: {'upsert': n, 'duracion_ms': X, 'desde': fecha_iso, 'skipped_fk': N}.
     """
@@ -542,7 +922,9 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
                       .filter(ObsVentaDetalle.id_farmacia == id_farmacia)\
                       .order_by(ObsVentaDetalle.fecha_estadistica.desc()).limit(1).first()
         if last and last[0]:
-            desde_fecha = last[0] + timedelta(days=1)
+            # Ventana de solape en vez de MAX+1: re-sincroniza los últimos N días
+            # para captar registros backfilleados con FechaEstadistica retrasada.
+            desde_fecha = last[0] - timedelta(days=max(0, resync_window_dias))
         else:
             desde_fecha = (date.today().replace(day=1)
                            - timedelta(days=meses_default * 31))
@@ -557,9 +939,44 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
     planes_validos       = {i for (i,) in session.query(ObsPlan.observer_id).all()}
 
     conn = _connect(timeout=600)  # 10 min — es el sync más pesado
+
     if conn is None:
         raise RuntimeError('ObServer no configurado')
+
+    # Bulk upsert por lote (PostgreSQL ON CONFLICT). Antes se hacía un
+    # _upsert_obs (SELECT+INSERT) por fila + cur.fetchall() en RAM → en el
+    # primer sync de 24 meses eran millones de roundtrips + ~2 GiB de buffer, y
+    # el worker de gunicorn moría por timeout (900s) sin commitear → 0 filas.
+    # Ahora: cursor en streaming (fetchmany) + INSERT ... ON CONFLICT por lote
+    # + commit por lote, así el progreso parcial sobrevive y el sync incremental
+    # retoma desde el MAX(fecha) local.
+    from sqlalchemy.dialects.postgresql import insert as _pg_insert
+    es_pg = session.get_bind().dialect.name == 'postgresql'
+    _tabla = ObsVentaDetalle.__table__
+    _cols_update = [c.name for c in _tabla.columns if c.name != 'id_producto_vendido']
+
+    def _flush(mappings):
+        if not mappings:
+            return
+        if es_pg:
+            # Dedup por PK dentro del lote: ON CONFLICT no puede tocar la misma fila 2x.
+            dedup = {m['id_producto_vendido']: m for m in mappings}
+            stmt = _pg_insert(_tabla).values(list(dedup.values()))
+            stmt = stmt.on_conflict_do_update(
+                index_elements=['id_producto_vendido'],
+                set_={c: stmt.excluded[c] for c in _cols_update},
+            )
+            session.execute(stmt)
+        else:
+            # Fallback no-PG (ej. SQLite en dev): upsert fila por fila.
+            for m in mappings:
+                pk = m.pop('id_producto_vendido')
+                _upsert_obs(session, ObsVentaDetalle, 'id_producto_vendido', pk, **m)
+        session.commit()
+
+    BATCH = 5000
     n = skipped = 0
+    ts = now_ar()
     try:
         with conn.cursor(as_dict=True) as cur:
             cur.execute("""
@@ -571,64 +988,72 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
                        Importe, ImporteACargoOS, ACargoPlanPrincipal,
                        ImporteEfectivo, ImporteTarjeta, ImporteCheque, ImporteCuentaCorriente,
                        FechaDeOperacion, FechaEstadistica, [Año] AS Anio, Mes, Dia,
-                       IdFarmacia, IdCanalDeVenta, IdTipoOperacion
+                       IdFarmacia, IdCanalDeVenta, IdTipoOperacion, IdOperador
                 FROM DW.ProductosVendidos
                 WHERE FechaEstadistica >= %s AND IdFarmacia = %s
+                ORDER BY FechaEstadistica
             """, (desde_fecha, id_farmacia))
 
-            for r in cur.fetchall():
-                # FKs: skipear si producto no existe local (debería estar)
-                pid = int(r['IdProducto']) if r['IdProducto'] is not None else None
-                if pid is None or pid not in productos_validos:
-                    skipped += 1
-                    continue
-                cli = int(r['IdCliente']) if r['IdCliente'] is not None else None
-                if cli is not None and cli not in clientes_validos:
-                    cli = None
-                os_id = int(r['IdObraSocialPrincipal']) if r['IdObraSocialPrincipal'] is not None else None
-                if os_id is not None and os_id not in obras_validas:
-                    os_id = None
-                plan = int(r['IdPlanPrincipal']) if r['IdPlanPrincipal'] is not None else None
-                if plan is not None and plan not in planes_validos:
-                    plan = None
+            buffer = []
+            while True:
+                filas = cur.fetchmany(BATCH)
+                if not filas:
+                    break
+                for r in filas:
+                    # FKs: skipear si producto no existe local (debería estar)
+                    pid = int(r['IdProducto']) if r['IdProducto'] is not None else None
+                    if pid is None or pid not in productos_validos:
+                        skipped += 1
+                        continue
+                    cli = int(r['IdCliente']) if r['IdCliente'] is not None else None
+                    if cli is not None and cli not in clientes_validos:
+                        cli = None
+                    os_id = int(r['IdObraSocialPrincipal']) if r['IdObraSocialPrincipal'] is not None else None
+                    if os_id is not None and os_id not in obras_validas:
+                        os_id = None
+                    plan = int(r['IdPlanPrincipal']) if r['IdPlanPrincipal'] is not None else None
+                    if plan is not None and plan not in planes_validos:
+                        plan = None
 
-                _upsert_obs(
-                    session, ObsVentaDetalle, 'id_producto_vendido',
-                    int(r['IdProductoVendido']),
-                    id_operacion=int(r['IdOperacion']) if r['IdOperacion'] is not None else None,
-                    numero_renglon=int(r['NumeroRenglon']) if r['NumeroRenglon'] is not None else None,
-                    producto_observer=pid,
-                    cliente_observer=cli,
-                    medico_observer=int(r['IdMedico']) if r['IdMedico'] is not None else None,
-                    medico_matricula_observer=int(r['IdMedicoMatricula']) if r['IdMedicoMatricula'] is not None else None,
-                    es_venta_particular=bool(r['EsVentaParticular']) if r['EsVentaParticular'] is not None else None,
-                    obra_social_observer=os_id,
-                    plan_principal_observer=plan,
-                    plan_complemento1_observer=int(r['IdPlanComplemento1']) if r['IdPlanComplemento1'] is not None else None,
-                    plan_complemento2_observer=int(r['IdPlanComplemento2']) if r['IdPlanComplemento2'] is not None else None,
-                    plan_complemento3_observer=int(r['IdPlanComplemento3']) if r['IdPlanComplemento3'] is not None else None,
-                    cantidad=r['Cantidad'],
-                    cantidad_reconocida_principal=r['CantidadReconocidaPlanPrincipal'],
-                    importe=r['Importe'],
-                    importe_a_cargo_os=r['ImporteACargoOS'],
-                    a_cargo_plan_principal=r['ACargoPlanPrincipal'],
-                    importe_efectivo=r['ImporteEfectivo'],
-                    importe_tarjeta=r['ImporteTarjeta'],
-                    importe_cheque=r['ImporteCheque'],
-                    importe_cuenta_corriente=r['ImporteCuentaCorriente'],
-                    fecha_operacion=r['FechaDeOperacion'],
-                    fecha_estadistica=r['FechaEstadistica'],
-                    anio=int(r['Anio']) if r['Anio'] is not None else None,
-                    mes=int(r['Mes']) if r['Mes'] is not None else None,
-                    dia=int(r['Dia']) if r['Dia'] is not None else None,
-                    id_farmacia=int(r['IdFarmacia']),
-                    canal_venta_observer=int(r['IdCanalDeVenta']) if r['IdCanalDeVenta'] is not None else None,
-                    tipo_operacion=r.get('IdTipoOperacion'),
-                    sync_en=now_ar(),
-                )
-                n += 1
-                if n % 5000 == 0:
-                    session.flush()
+                    buffer.append({
+                        'id_producto_vendido': int(r['IdProductoVendido']),
+                        'id_operacion': int(r['IdOperacion']) if r['IdOperacion'] is not None else None,
+                        'numero_renglon': int(r['NumeroRenglon']) if r['NumeroRenglon'] is not None else None,
+                        'producto_observer': pid,
+                        'cliente_observer': cli,
+                        'medico_observer': int(r['IdMedico']) if r['IdMedico'] is not None else None,
+                        'medico_matricula_observer': int(r['IdMedicoMatricula']) if r['IdMedicoMatricula'] is not None else None,
+                        'es_venta_particular': bool(r['EsVentaParticular']) if r['EsVentaParticular'] is not None else None,
+                        'obra_social_observer': os_id,
+                        'plan_principal_observer': plan,
+                        'plan_complemento1_observer': int(r['IdPlanComplemento1']) if r['IdPlanComplemento1'] is not None else None,
+                        'plan_complemento2_observer': int(r['IdPlanComplemento2']) if r['IdPlanComplemento2'] is not None else None,
+                        'plan_complemento3_observer': int(r['IdPlanComplemento3']) if r['IdPlanComplemento3'] is not None else None,
+                        'cantidad': r['Cantidad'],
+                        'cantidad_reconocida_principal': r['CantidadReconocidaPlanPrincipal'],
+                        'importe': r['Importe'],
+                        'importe_a_cargo_os': r['ImporteACargoOS'],
+                        'a_cargo_plan_principal': r['ACargoPlanPrincipal'],
+                        'importe_efectivo': r['ImporteEfectivo'],
+                        'importe_tarjeta': r['ImporteTarjeta'],
+                        'importe_cheque': r['ImporteCheque'],
+                        'importe_cuenta_corriente': r['ImporteCuentaCorriente'],
+                        'fecha_operacion': r['FechaDeOperacion'],
+                        'fecha_estadistica': r['FechaEstadistica'],
+                        'anio': int(r['Anio']) if r['Anio'] is not None else None,
+                        'mes': int(r['Mes']) if r['Mes'] is not None else None,
+                        'dia': int(r['Dia']) if r['Dia'] is not None else None,
+                        'id_farmacia': int(r['IdFarmacia']),
+                        'canal_venta_observer': int(r['IdCanalDeVenta']) if r['IdCanalDeVenta'] is not None else None,
+                        'tipo_operacion': r.get('IdTipoOperacion'),
+                        'operador_observer': str(r['IdOperador']) if r.get('IdOperador') is not None else None,
+                        'sync_en': ts,
+                    })
+                    n += 1
+                    if len(buffer) >= BATCH:
+                        _flush(buffer)
+                        buffer = []
+            _flush(buffer)
     finally:
         conn.close()
     duracion = int((time.time() - t0) * 1000)
@@ -639,6 +1064,37 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
         'desde': desde_fecha.isoformat(),
         'skipped_fk': skipped,
     }
+
+
+def sync_operadores(session):
+    """Espejo de DW.OperadoresVenta (vendedores/operadores del POS).
+
+    `observer_id` = IdUsuario (UUID) = el `IdOperador` de DW.ProductosVendidos.
+    Habilita las estadísticas de ventas por vendedor (obs_ventas_detalle.operador_observer)."""
+    from database import ObsOperador, now_ar
+    t0 = time.time()
+    conn = _connect()
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    n = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("SELECT IdUsuario, Vendedor FROM DW.OperadoresVenta")
+            for r in cur.fetchall():
+                uid = r['IdUsuario']
+                if uid is None:
+                    continue
+                _upsert_obs(
+                    session, ObsOperador, 'observer_id', str(uid),
+                    nombre=(r['Vendedor'] or '').strip() or '(sin nombre)',
+                    sync_en=now_ar(),
+                )
+                n += 1
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'operadores', n, duracion)
+    return {'upsert': n, 'duracion_ms': duracion}
 
 
 def sync_grupos_clientes(session):
@@ -865,7 +1321,7 @@ def sync_stock(session, id_farmacia=None):
     try:
         with conn.cursor(as_dict=True) as cur:
             cur.execute("""
-                SELECT IdProducto, StockActual, Maximo, Minimo
+                SELECT IdProducto, StockActual, Maximo, Minimo, Fraccionado
                 FROM DW.StockFarmaciasProductos
                 WHERE IdFarmacia = %d
             """, (int(id_farmacia),))
@@ -882,6 +1338,7 @@ def sync_stock(session, id_farmacia=None):
                 obj.stock_actual = int(r['StockActual'] or 0)
                 obj.maximo = int(r['Maximo']) if r['Maximo'] is not None else None
                 obj.minimo = int(r['Minimo']) if r['Minimo'] is not None else None
+                obj.fraccionado = bool(r['Fraccionado']) if r['Fraccionado'] is not None else False
                 obj.sync_en = now_ar()
                 n += 1
                 if n % 5000 == 0:
@@ -1009,7 +1466,7 @@ def sync_ventas_mensuales(session, meses=None, id_farmacia=None):
     extra = f'{meses} meses · {desde_key}-{hasta_key}'
     if skipped:
         extra += f' · {skipped} huerfanos'
-    _log_sync(session, 'ventas_mensuales', n, duracion, extra)
+    _log_sync(session, 'ventas_mensuales', n, duracion, info=extra)
     return {'upsert': n, 'duracion_ms': duracion, 'meses': meses, 'skipped': skipped}
 
 
@@ -1121,12 +1578,16 @@ def estado_ventas_mensuales(session, dias_fresco=7):
     sub_v = _sub('ventas_mensuales')
     sub_s = _sub('stock')
 
-    # Si ninguno tiene log (datos importados por pull desde otra máquina):
-    # consideramos frescos pero sin medir días.
+    # Si ninguno tiene log (datos importados por pull/push desde otra máquina —
+    # típico en Render donde push_obs_to_render copia stock+ventas pero no
+    # obs_sync_log): consideramos frescos pero sin medir días. Los sub-estados
+    # también van a 'fresco' — si no, el template muestra "⛔ Stock: sin sync"
+    # aunque el estado global sea 'fresco'.
     if sub_v['estado'] == 'nunca' and sub_s['estado'] == 'nunca':
+        externo = {'estado': 'fresco', 'ultimo_sync': None, 'dias': None}
         return {'estado': 'fresco', 'ultimo_sync': None, 'dias': 0, 'filas': filas,
                 'mensaje': f'{filas} filas de ventas disponibles (origen externo).',
-                'stock': sub_s, 'ventas': sub_v}
+                'stock': externo, 'ventas': externo}
 
     # Global = peor de los dos (ignorando 'nunca' si el otro tiene dato).
     ranking = {'fresco': 0, 'viejo': 1, 'nunca': 2}
@@ -1711,3 +2172,246 @@ def get_laboratorios_disponibles():
                  'observer_id': l.observer_id}
                 for l in labs
                 if conteo.get(l.observer_id, 0) > 0]
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Pedidos a droguería (DW.Pedidos) — lectura directa, no se espeja en obs_*.
+# Usado por routes/filtro_drogueria.py para separar un pedido por la matriz
+# lab×droguería. DW.Pedidos es a nivel renglón (un row por producto).
+# ──────────────────────────────────────────────────────────────────────────
+
+def get_pedidos_recientes(limit=10):
+    """Últimos pedidos de DW.Pedidos agrupados por IdPedido, con nombre de proveedor.
+
+    Devuelve [{'id_pedido', 'fecha' (iso), 'proveedor_id', 'proveedor', 'items'}].
+    """
+    import re
+    conn = _connect(timeout=30)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute(f"""
+                SELECT TOP {int(limit)} p.IdPedido, MIN(p.FechaPedido) AS fecha,
+                       p.IdProveedor, COUNT(*) AS items, MAX(p.Comprobante) AS comprobante,
+                       MAX(u.Nombre) AS usuario
+                FROM DW.Pedidos p
+                LEFT JOIN DW.Usuarios u ON u.IdUsuario = p.SolicitadoPor
+                GROUP BY p.IdPedido, p.IdProveedor
+                ORDER BY MIN(p.FechaPedido) DESC
+            """)
+            peds = cur.fetchall()
+            ids = {p['IdProveedor'] for p in peds if p['IdProveedor'] is not None}
+            nombres = {}
+            if ids:
+                inlist = ','.join(str(int(x)) for x in ids)
+                cur.execute(f"SELECT IdProveedor, RazonSocial FROM DW.Proveedores "
+                            f"WHERE IdProveedor IN ({inlist})")
+                nombres = {r['IdProveedor']: r['RazonSocial'] for r in cur.fetchall()}
+            out = []
+            for p in peds:
+                comp = p['comprobante'] or ''
+                nums = re.findall(r'\d+', comp)
+                nro = str(int(nums[-1])) if nums else str(p['IdPedido'])
+                out.append({
+                    'id_pedido':    p['IdPedido'],
+                    'nro':          nro,                 # nº de comprobante (lo que se ve en ObServer)
+                    'comprobante':  comp,
+                    'usuario':      (p['usuario'] or '').strip(),   # "Creado por" en ObServer
+                    'fecha':        p['fecha'].isoformat() if p['fecha'] else None,
+                    'proveedor_id': p['IdProveedor'],
+                    'proveedor':    nombres.get(p['IdProveedor'], '?'),
+                    'n_items':      p['items'],
+                })
+            return out
+    finally:
+        conn.close()
+
+
+def get_pedido_items(id_pedido):
+    """Renglones de un pedido: DW.Pedidos + DW.Productos + DW.Laboratorios.
+
+    Devuelve [{'cantidad', 'encargada', 'comprobante', 'id_producto', 'producto',
+               'troquel', 'alfabeta', 'id_laboratorio', 'laboratorio'}].
+    """
+    conn = _connect(timeout=30)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("""
+                SELECT p.CantidadPedida, p.CantidadEncargada, p.Comprobante,
+                       pr.IdProducto, pr.Producto, pr.Troquel, pr.CodigoAlfabeta,
+                       pr.IdLaboratorio, l.Descripcion AS Laboratorio
+                FROM DW.Pedidos p
+                JOIN DW.Productos pr ON pr.IdProducto = p.IdProducto
+                LEFT JOIN DW.Laboratorios l ON l.IdLaboratorio = pr.IdLaboratorio
+                WHERE p.IdPedido = %s
+                ORDER BY pr.Producto
+            """, (int(id_pedido),))
+            out = []
+            for r in cur.fetchall():
+                out.append({
+                    'cantidad':       int(r['CantidadPedida'] or 0),
+                    'encargada':      int(r['CantidadEncargada'] or 0),
+                    'comprobante':    r['Comprobante'],
+                    'id_producto':    r['IdProducto'],
+                    'producto':       (r['Producto'] or '').strip(),
+                    'troquel':        str(r['Troquel']) if r['Troquel'] is not None else '',
+                    'alfabeta':       str(r['CodigoAlfabeta']) if r['CodigoAlfabeta'] is not None else '',
+                    'id_laboratorio': r['IdLaboratorio'],
+                    'laboratorio':    (r['Laboratorio'] or '').strip(),
+                })
+            return out
+    finally:
+        conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Consulta de recetas por afiliado — Gestion.Recetas (schema premium)
+#
+# A diferencia de `buscar_recetas*` (arriba) que agregan desde `DW.ProductosVendidos`
+# (1 fila por producto vendido), esta función lee `Gestion.Recetas` que tiene
+# 1 fila por RECETA con campos únicos: OPF, NumeroReceta, NumeroAfiliado,
+# MatriculaMedico, TotalReceta, TotalACargoOS, estado de Trazabilidad, etc.
+#
+# Es la fuente correcta para reproducir la vista "recetas por afiliado" del PDV
+# (screenshot Diego 2026-07-11).
+#
+# Requiere acceso al schema Gestion (user sa). Ver docs/observer_gestion_recetas.md.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TRAZ_MAP = {'N': 'No requerido', 'P': 'Trazabilidad pendiente',
+             'A': 'Asociada', 'X': 'Excluida'}
+
+
+def buscar_recetas_por_afiliado(numero_afiliado, desde=None, hasta=None,
+                                 id_farmacia=None, incluir_anuladas=False,
+                                 incluir_productos=True, limit=500):
+    """Devuelve las recetas de un afiliado desde `Gestion.Recetas`, opcionalmente
+    con el detalle de productos (renglones).
+
+    Args:
+        numero_afiliado: str o int — NumeroAfiliado exacto (ej. '14004503970600').
+        desde, hasta: date/datetime opcionales — filtra por FechaDeOperacion.
+        id_farmacia: int opcional (default OBSERVER_ID_FARMACIA).
+        incluir_anuladas: bool — si False (default), excluye Anulada=1.
+        incluir_productos: bool — si True (default), incluye el detalle de
+            productos (una query extra por lote a `Gestion.RecetasRenglones`).
+        limit: int — tope de recetas (default 500).
+
+    Returns:
+        list[dict] ordenado por FechaDeOperacion DESC:
+            id_receta, opf, numero_receta, numero_afiliado, nombre_afiliado,
+            matricula_medico, plan_descripcion, plan_id,
+            fecha_operacion, fecha_autorizacion, fecha_venta,
+            total_receta, total_a_cargo_os, total_afiliado,
+            trazabilidad_estado (código), trazabilidad_desc (texto),
+            anulada, autorizada, rendida,
+            productos: list[{id_producto, producto, cantidad, precio_pvp,
+                             importe_renglon, importe_a_cargo_os, rechazado}]
+                (vacío si incluir_productos=False).
+
+    Requiere user con acceso a schema `Gestion` (sa en Badia).
+    """
+    from datetime import datetime, time, timedelta
+    cfg = _config()
+    if not cfg:
+        raise RuntimeError('ObServer no configurado')
+    if id_farmacia is None:
+        id_farmacia = cfg['id_farmacia']
+
+    filtro_fecha = ''
+    params = [str(numero_afiliado), int(id_farmacia)]
+    if desde is not None:
+        desde_dt = desde if hasattr(desde, 'hour') else datetime.combine(desde, time(0, 0))
+        filtro_fecha += ' AND r.FechaDeOperacion >= %s'
+        params.append(desde_dt)
+    if hasta is not None:
+        if hasattr(hasta, 'hour'):
+            hasta_dt = hasta
+        else:
+            hasta_dt = datetime.combine(hasta, time(0, 0)) + timedelta(days=1)
+        filtro_fecha += ' AND r.FechaDeOperacion < %s'
+        params.append(hasta_dt)
+    filtro_anul = '' if incluir_anuladas else ' AND r.Anulada = 0'
+
+    conn = _connect(timeout=60)
+    if conn is None:
+        raise RuntimeError('ObServer no disponible')
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            sql = f"""
+                SELECT TOP {int(limit)}
+                    r.IdReceta, r.OPF, r.NumeroReceta, r.NumeroAfiliado,
+                    r.NombreAfiliado, r.MatriculaMedico,
+                    r.IdPlan, p.Descripcion AS PlanDescripcion,
+                    r.FechaDeOperacion, r.FechaAutorizacionOnLine, r.FechaDeVenta,
+                    r.TotalReceta, r.TotalACargoOS, r.TotalAfiliado,
+                    r.IdEstadoAsociacionTrazabilidad AS TrazEstado,
+                    r.Anulada, r.Autorizada, r.Rendida
+                  FROM Gestion.Recetas r
+                  LEFT JOIN DW.Planes p ON p.IdPlan = r.IdPlan
+                 WHERE r.NumeroAfiliado = %s
+                   AND r.IdFarmacia = %d
+                   {filtro_fecha}
+                   {filtro_anul}
+                 ORDER BY r.FechaDeOperacion DESC
+            """
+            cur.execute(sql, tuple(params))
+            recetas = cur.fetchall()
+
+            productos_por_receta = {}
+            if incluir_productos and recetas:
+                ids = [r['IdReceta'] for r in recetas]
+                # pymssql no soporta expansión de lista → armo placeholders.
+                placeholders = ','.join(['%d'] * len(ids))
+                cur.execute(f"""
+                    SELECT rr.IdReceta, rr.IdProducto, rr.Cantidad,
+                           rr.PrecioPVP, rr.ImporteRenglon,
+                           rr.ImporteACargoOS, rr.Rechazado,
+                           pr.Producto
+                      FROM Gestion.RecetasRenglones rr
+                      LEFT JOIN DW.Productos pr ON pr.IdProducto = rr.IdProducto
+                     WHERE rr.IdReceta IN ({placeholders})
+                     ORDER BY rr.IdReceta, rr.NumeroRenglon
+                """, tuple(ids))
+                for rr in cur.fetchall():
+                    productos_por_receta.setdefault(rr['IdReceta'], []).append({
+                        'id_producto':        rr['IdProducto'],
+                        'producto':           (rr['Producto'] or '').strip() or f"prod#{rr['IdProducto']}",
+                        'cantidad':           int(rr['Cantidad'] or 0),
+                        'precio_pvp':         float(rr['PrecioPVP'] or 0),
+                        'importe_renglon':    float(rr['ImporteRenglon'] or 0),
+                        'importe_a_cargo_os': float(rr['ImporteACargoOS'] or 0),
+                        'rechazado':          bool(rr['Rechazado']),
+                    })
+    finally:
+        conn.close()
+
+    out = []
+    for r in recetas:
+        traz = (r['TrazEstado'] or '').strip()
+        out.append({
+            'id_receta':            r['IdReceta'],
+            'opf':                  r['OPF'],
+            'numero_receta':        r['NumeroReceta'],
+            'numero_afiliado':      r['NumeroAfiliado'],
+            'nombre_afiliado':      (r['NombreAfiliado'] or '').strip(),
+            'matricula_medico':     r['MatriculaMedico'],
+            'plan_id':              r['IdPlan'],
+            'plan_descripcion':     (r['PlanDescripcion'] or '').strip(),
+            'fecha_operacion':      r['FechaDeOperacion'],
+            'fecha_autorizacion':   r['FechaAutorizacionOnLine'],
+            'fecha_venta':          r['FechaDeVenta'],
+            'total_receta':         float(r['TotalReceta'] or 0),
+            'total_a_cargo_os':     float(r['TotalACargoOS'] or 0),
+            'total_afiliado':       float(r['TotalAfiliado'] or 0),
+            'trazabilidad_estado':  traz or None,
+            'trazabilidad_desc':    _TRAZ_MAP.get(traz, traz) if traz else None,
+            'anulada':              bool(r['Anulada']),
+            'autorizada':           bool(r['Autorizada']),
+            'rendida':              bool(r['Rendida']),
+            'productos':            productos_por_receta.get(r['IdReceta'], []),
+        })
+    return out

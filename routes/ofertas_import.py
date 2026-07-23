@@ -1,13 +1,17 @@
-"""Importador unificado de docs de ofertas (Fase B del roadmap).
+"""Importador unificado de docs de ofertas.
 
-Soporta XLSX hoy. PDF/OCR a futuro (Fase B Parte 2).
+Soporta XLSX, XLS, PDF y fotos (JPG/PNG/WEBP/…). Dos caminos de extracción
+intercambiables (mismo shape de salida → resto del wizard no cambia):
+- regex/OCR (carriles `_previsualizar_*` con pdfplumber + field_inference).
+- IA: Claude (services.ofertas_ia) — toggle "Usar IA" en la UI.
 
 Flujo:
-1. POST /api/ofertas/import-preview — sube archivo, parsea, devuelve preview JSON.
-2. POST /api/ofertas/import-validar — valida items contra catálogo via producto_matcher.
-3. POST /api/ofertas/import-candidatos — buscar productos similares para match manual.
-4. POST /api/ofertas/import-guardar — recibe items mapeados + lab_id, upsertea en OfertaMinimo.
-5. GET /ofertas/import — pantalla del wizard.
+1.  POST /api/ofertas/import-preview — sube archivo, parsea, devuelve preview JSON.
+1b. POST /api/ofertas/import-ia      — idem pero via Claude. 503 si falta ANTHROPIC_API_KEY.
+2.  POST /api/ofertas/import-validar — valida items contra catálogo via producto_matcher.
+3.  POST /api/ofertas/import-candidatos — buscar productos similares para match manual.
+4.  POST /api/ofertas/import-guardar — recibe items mapeados + lab_id, upsertea en OfertaMinimo.
+5.  GET  /ofertas/import — pantalla del wizard.
 """
 import os
 import tempfile
@@ -117,7 +121,9 @@ def _guardar_modo_drog(data):
                 saltados += 1
                 continue
             um = normalizar_unidades_minima(it.get('unidades_minima'))
-            tipo_desc = 'con_minimo' if um > 1 else 'simple'
+            # Una sola categoría: toda oferta es "con_minimo". Si no vino mín.
+            # importado, normalizar_unidades_minima ya coerciona a 1.
+            tipo_desc = 'con_minimo'
             lab_id_item = ean_to_lab.get(ean) if ean else None
             if not lab_id_item:
                 sin_lab += 1
@@ -572,6 +578,9 @@ def init_app(app):
     @app.route('/ofertas/import', methods=['GET'])
     @login_required
     def ofertas_import_page():  # type: ignore[reportUnusedFunction]
+        from sqlalchemy import func as _func
+
+        from database import ObsProducto as _ObsProd
         from database import Provider
         from helpers import get_config
         cfg = get_config()
@@ -579,7 +588,18 @@ def init_app(app):
             labs = (session.query(Laboratorio)
                     .filter(Laboratorio.activo == True)  # noqa: E712
                     .order_by(Laboratorio.nombre).all())
-            labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
+            # Conteo de productos por lab desde ObServer (laboratorio_observer
+            # → Laboratorio.observer_id). La tabla local Producto está casi
+            # vacía para la mayoría de labs.
+            n_por_observer = dict(
+                session.query(_ObsProd.laboratorio_observer,
+                              _func.count(_ObsProd.observer_id))
+                .filter(_ObsProd.fecha_baja.is_(None))
+                .group_by(_ObsProd.laboratorio_observer).all())
+            labs_data = [{'id': l.id, 'nombre': l.nombre,
+                          'n_productos': int(n_por_observer.get(l.observer_id, 0))
+                                         if l.observer_id else 0}
+                         for l in labs]
             drogs = (session.query(Provider)
                      .filter(Provider.tipo == 'drogueria',
                              Provider.activo == True)  # noqa: E712
@@ -599,6 +619,42 @@ def init_app(app):
                                lab_preseleccionado=lab_preseleccionado,
                                lab_nombre_preseleccionado=lab_nombre_preseleccionado,
                                ruta_excels=cfg.get('ruta_excels', ''))
+
+    @app.route('/api/ofertas/import/lab/<int:lab_id>/productos')
+    @login_required
+    def api_ofertas_lab_productos(lab_id):  # type: ignore[reportUnusedFunction]
+        """Lista de productos del catálogo asociados a un lab. Para que el
+        operador verifique que eligió el lab correcto antes de importar.
+
+        Fuente: ObServer (ObsProducto + ObsCodigoBarras). La tabla local
+        Producto está casi vacía para la mayoría de labs.
+        """
+        from database import ObsCodigoBarras, ObsProducto
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            obs_id = lab.observer_id if lab else None
+            if not obs_id:
+                return jsonify({'lab_id': lab_id, 'n': 0, 'productos': [],
+                                'aviso': 'El laboratorio no está linkeado a ObServer.'})
+            prods = (session.query(ObsProducto.observer_id,
+                                   ObsProducto.descripcion)
+                     .filter(ObsProducto.laboratorio_observer == obs_id,
+                             ObsProducto.fecha_baja.is_(None))
+                     .order_by(ObsProducto.descripcion).all())
+            pids = [p[0] for p in prods]
+            ean_by_pid = {}
+            if pids:
+                for cb in (session.query(ObsCodigoBarras.producto_observer,
+                                         ObsCodigoBarras.codigo_barras)
+                           .filter(ObsCodigoBarras.producto_observer.in_(pids),
+                                   ObsCodigoBarras.fecha_baja.is_(None),
+                                   ObsCodigoBarras.orden == 1).all()):
+                    ean_by_pid[cb.producto_observer] = cb.codigo_barras
+        return jsonify({
+            'lab_id': lab_id, 'n': len(prods),
+            'productos': [{'ean': ean_by_pid.get(pid, '') or '',
+                           'desc': desc or ''} for pid, desc in prods],
+        })
 
     @app.route('/api/ofertas/import-preview', methods=['POST'])
     @login_required
@@ -630,6 +686,52 @@ def init_app(app):
                 preview = _previsualizar_xlsx(tmp_path)
         except Exception as e:
             return jsonify({'error': f'Error al parsear: {e}'}), 500
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+        return jsonify({**preview, 'filename': f.filename})
+
+    @app.route('/api/ofertas/import-ia', methods=['POST'])
+    @login_required
+    def api_ofertas_import_ia():
+        """Sube archivo, lo manda a Claude (services.ofertas_ia) y devuelve el
+        mismo shape que /import-preview → la UI y validación no cambian.
+
+        503 si no hay ANTHROPIC_API_KEY; 400 si formato no soportado o archivo
+        inválido; 500 si la API falla o la respuesta no es JSON.
+        """
+        if not os.environ.get('ANTHROPIC_API_KEY', '').strip():
+            return jsonify({'error': 'IA no disponible: falta ANTHROPIC_API_KEY '
+                                     'en el servidor.'}), 503
+        if 'archivo' not in request.files:
+            return jsonify({'error': 'Falta archivo'}), 400
+        f = request.files['archivo']
+        if not f.filename:
+            return jsonify({'error': 'Archivo sin nombre'}), 400
+
+        ext = os.path.splitext(f.filename)[1].lower()
+        IMG_EXTS = ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif')
+        if ext not in ('.xlsx', '.xls', '.pdf', *IMG_EXTS):
+            return jsonify({
+                'error': f'Formato {ext} no soportado. Aceptamos XLSX, XLS, PDF '
+                         'y fotos (JPG, PNG, WEBP).'
+            }), 400
+
+        from services import ofertas_ia
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            f.save(tmp.name)
+            tmp_path = tmp.name
+        try:
+            preview = ofertas_ia.extraer(tmp_path, ext)
+        except RuntimeError as e:
+            return jsonify({'error': str(e)}), 503
+        except ValueError as e:
+            return jsonify({'error': f'IA: {e}'}), 500
+        except Exception as e:  # noqa: BLE001 — API/red/SDK
+            return jsonify({'error': f'IA: error al extraer — {e}'}), 500
         finally:
             try:
                 os.unlink(tmp_path)
@@ -730,11 +832,6 @@ def init_app(app):
                 'precio': it.get('precio'),
             })
 
-        # Timing instrumentation — para diagnosticar dónde se cuelga.
-        import time as _t
-        _t0 = _t.time()
-        print(f'[ofertas-validar] start: {len(items_para_match)} items, modo={modo}, lab_id={lab_id}', flush=True)
-
         with database.get_db() as session:
             # match_productos_bulk hace el flujo completo (EAN → alfa → fuzzy
             # descripción → fallback observer) reusando una sola precarga de
@@ -746,7 +843,6 @@ def init_app(app):
                 drogueria_id=drog_id_validar,    # para lookup en EquivalenciaProveedor
                 session=session,
             )
-            print(f'[ofertas-validar] match_productos_bulk: {_t.time() - _t0:.2f}s', flush=True)
 
             # Capa 2 — match dimensional para los no encontrados.
             # Extrae atributos (droga, concentración, forma, cantidad) de la descripción
@@ -922,78 +1018,10 @@ def init_app(app):
             validados.append(entry)
 
         # Encolar items not_found al queue de revisión (decisión diferida).
-        # Cada item lleva snapshot de su oferta_data + top candidatos del bulk
-        # pass. Al resolver el queue, la oferta se aplica como OfertaMinimo
-        # sobre el producto creado/vinculado (cierra el loop import → queue
-        # → oferta). No bloquea el flujo: si falla, la validación sigue OK.
-        try:
-            from database import Laboratorio as _Lab
-            from database import get_db as _get_db
-            from routes.productos_pendientes import enqueue_pendiente
-            supplier_nombre = None
-            if lab_id:
-                with _get_db() as _s:
-                    _l = _s.get(_Lab, lab_id)
-                    if _l:
-                        supplier_nombre = _l.nombre
-
-            # Pre-fetch candidatos para los not_found (un solo bulk call). Sin
-            # esto, el queue queda con top_candidatos vacíos. Como el frontend
-            # YA hace prefetchCandidatosBulk independiente, podríamos
-            # deduplicar — pero ese costo es chico vs. el beneficio de tener
-            # data útil al revisar la queue después.
-            not_found_items = [(i, e) for i, e in enumerate(validados)
-                               if e.get('_status') == 'not_found' and
-                               (e.get('_descripcion_original') or e.get('descripcion'))]
-            cands_por_idx = {}
-            if not_found_items:
-                items_for_search = [
-                    {'idx': i, 'descripcion': e.get('_descripcion_original') or e.get('descripcion'),
-                     'ean': e.get('ean'), 'codigo': e.get('codigo')}
-                    for i, e in not_found_items
-                ]
-                with database.get_db() as _s_search:
-                    cands_por_idx = pm.buscar_candidatos_bulk(
-                        items_for_search, laboratorio_id=lab_id, top=5,
-                        session=_s_search,
-                    )
-
-            with database.get_db() as _s2:
-                for i, entry in not_found_items:
-                    desc = entry.get('_descripcion_original') or entry.get('descripcion') or ''
-                    raw_cands = cands_por_idx.get(i, [])
-                    cands_payload = [
-                        {'producto_id': c.get('producto_id'),
-                         'observer_id': c.get('observer_id'),
-                         'descripcion': c.get('descripcion') or '',
-                         'codigo_alfabeta': c.get('codigo_alfabeta') or '',
-                         'score': round(float(c.get('score') or 0), 3)}
-                        for c in (raw_cands[:5] if isinstance(raw_cands, list) else [])
-                    ]
-                    score_top = cands_payload[0]['score'] if cands_payload else None
-                    oferta_data = {
-                        'laboratorio_id': lab_id,
-                        'drogueria_id': drog_id_validar,
-                        'codigo_supplier': entry.get('codigo'),
-                        'descuento_psl': entry.get('descuento_psl'),
-                        'unidades_minima': entry.get('unidades_minima'),
-                        'plazo_pago': entry.get('plazo_pago'),
-                        'rentabilidad': entry.get('rentabilidad'),
-                    }
-                    enqueue_pendiente(_s2,
-                        descripcion=desc,
-                        supplier_id=lab_id,
-                        supplier_nombre=supplier_nombre,
-                        archivo_origen='ofertas_import',
-                        score_top=score_top,
-                        top_candidatos=cands_payload,
-                        oferta_data=oferta_data,
-                    )
-                _s2.commit()
-        except Exception as _e:
-            import logging as _logging
-            _logging.getLogger(__name__).warning(
-                'enqueue_pendiente falló (no bloquea el flujo): %s', _e)
+        # Nota: el enqueue de not_found al queue de pendientes se movió a
+        # `import-guardar` (antes corría acá, contaminaba el queue cada vez que
+        # se validaba y no se cerraba el loop con los matches manuales/IA del
+        # wizard). Ahora `validar` es preview puro sin side-effects.
 
         return jsonify({
             'items': validados,
@@ -1034,6 +1062,115 @@ def init_app(app):
         return jsonify({
             'candidatos_por_idx': {str(k): v for k, v in resultado.items()},
             'total_items': len(resultado),
+        })
+
+    @app.route('/api/ofertas/import-match-ia', methods=['POST'])
+    @login_required
+    def api_ofertas_import_match_ia():
+        """Fase 3: sugerencias de match con IA para los not_found del wizard.
+
+        Reusa services.llm_matcher (mismo motor que usa la queue de pendientes,
+        Claude Haiku 4.5). Hace 1 sola query bulk de candidatos + N llamadas
+        seriales al LLM (una por item).
+
+        Body JSON: { items: [{idx, descripcion, ean?, codigo?}, ...],
+                     laboratorio_id? }
+        Returns:   { sugerencias: [{idx, ok, pick_producto_id, confidence,
+                                    action, reasoning, pick_descripcion, ...}],
+                     stats: {ok, error, costo_total_usd} }
+        503 si falta ANTHROPIC_API_KEY.
+        """
+        if not os.environ.get('ANTHROPIC_API_KEY', '').strip():
+            return jsonify({'error': 'IA no disponible: falta '
+                                     'ANTHROPIC_API_KEY en el servidor.'}), 503
+
+        data = request.get_json(silent=True) or {}
+        items = data.get('items') or []
+        if not items:
+            return jsonify({'sugerencias': [],
+                            'stats': {'ok': 0, 'error': 0, 'costo_total_usd': 0}})
+        try:
+            lab_id = int(data.get('laboratorio_id')) if data.get('laboratorio_id') else None
+        except (TypeError, ValueError):
+            lab_id = None
+
+        import producto_matcher as pm_ia
+        from services import llm_matcher
+
+        supplier_nombre = None
+        if lab_id:
+            with database.get_db() as _s:
+                _l = _s.get(Laboratorio, lab_id)
+                if _l:
+                    supplier_nombre = _l.nombre
+
+        # candidatos en 1 sola query DB
+        items_for_search = [
+            {'idx': it.get('idx', i),
+             'descripcion': it.get('descripcion', ''),
+             'ean': it.get('ean'), 'codigo': it.get('codigo')}
+            for i, it in enumerate(items)
+        ]
+        with database.get_db() as _s_search:
+            cands_por_idx = pm_ia.buscar_candidatos_bulk(
+                items_for_search, laboratorio_id=lab_id, top=8,
+                session=_s_search,
+            )
+
+        sugerencias = []
+        n_ok = n_err = 0
+        costo_total = 0.0
+        for it in items:
+            idx = it.get('idx')
+            desc = (it.get('descripcion') or '').strip()
+            if not desc:
+                sugerencias.append({'idx': idx, 'ok': False,
+                                    'error': 'sin descripción'})
+                n_err += 1
+                continue
+            raw_cands = cands_por_idx.get(it.get('idx', 0), []) or []
+            cands_for_llm = [
+                {'producto_id': c.get('producto_id'),
+                 'observer_id': c.get('observer_id'),
+                 'descripcion': c.get('descripcion') or '',
+                 'codigo_barra': c.get('codigo_alfabeta') or ''}
+                for c in raw_cands[:8]
+            ]
+            try:
+                res = llm_matcher.analizar_pendiente(
+                    desc, supplier_nombre, cands_for_llm,
+                )
+            except Exception as e:   # noqa: BLE001
+                sugerencias.append({'idx': idx, 'ok': False,
+                                    'error': str(e)[:200]})
+                n_err += 1
+                continue
+            if not res.get('ok'):
+                sugerencias.append({'idx': idx, 'ok': False,
+                                    'error': (res.get('error') or 'IA falló')[:200]})
+                n_err += 1
+                continue
+            pick_idx = res.get('pick_idx')
+            pick = (cands_for_llm[pick_idx]
+                    if (pick_idx is not None and 0 <= pick_idx < len(cands_for_llm))
+                    else None)
+            sugerencias.append({
+                'idx': idx, 'ok': True,
+                'pick_idx': pick_idx,
+                'pick_producto_id': pick.get('producto_id') if pick else None,
+                'pick_descripcion': pick.get('descripcion') if pick else None,
+                'pick_codigo_barra': pick.get('codigo_barra') if pick else None,
+                'confidence': res.get('confidence'),
+                'action': res.get('action'),
+                'reasoning': res.get('reasoning'),
+            })
+            n_ok += 1
+            costo_total += float(res.get('costo_usd') or 0)
+
+        return jsonify({
+            'sugerencias': sugerencias,
+            'stats': {'ok': n_ok, 'error': n_err,
+                      'costo_total_usd': round(costo_total, 6)},
         })
 
     @app.route('/api/ofertas/import-candidatos', methods=['POST'])
@@ -1187,7 +1324,9 @@ def init_app(app):
 
                 # Toda oferta importada tiene mínimo >= 1 (simple = mínimo 1).
                 um = normalizar_unidades_minima(it.get('unidades_minima'))
-                tipo_desc = 'con_minimo' if um > 1 else 'simple'
+                # Una sola categoría: toda oferta es "con_minimo". Si no vino
+                # mín. importado, normalizar_unidades_minima ya coerciona a 1.
+                tipo_desc = 'con_minimo'
 
                 if existing:
                     if it.get('descripcion'):
@@ -1248,11 +1387,76 @@ def init_app(app):
                                                  it.get('descripcion'),
                                                  drog_id=drog_id)
 
+            lab_nombre_cached = lab.nombre   # antes de cerrar la session
             session.commit()
+
+        # Encolar al queue de revisión SOLO los items que llegaron acá como
+        # not_found y NO fueron resueltos en el wizard (ni manual ni IA). Antes
+        # esto corría en `validar`, contaminando el queue cada vez que se
+        # previsualizaba. La oferta ya quedó guardada arriba — el pending sirve
+        # para limpiar el catálogo después desde /productos/pendientes-revision.
+        try:
+            import producto_matcher as pm_enq
+            from routes.productos_pendientes import enqueue_pendiente
+            not_found_items = [
+                (i, e) for i, e in enumerate(items)
+                if e.get('_status') == 'not_found'
+                and not e.get('producto_id')
+                and not e.get('_resuelto_manual')
+                and (e.get('_descripcion_original') or e.get('descripcion'))
+            ]
+            if not_found_items:
+                items_for_search = [
+                    {'idx': i,
+                     'descripcion': e.get('_descripcion_original') or e.get('descripcion'),
+                     'ean': e.get('ean'), 'codigo': e.get('codigo')}
+                    for i, e in not_found_items
+                ]
+                with database.get_db() as _s_search:
+                    cands_por_idx = pm_enq.buscar_candidatos_bulk(
+                        items_for_search, laboratorio_id=lab_id, top=5,
+                        session=_s_search,
+                    )
+                with database.get_db() as _s_q:
+                    for i, entry in not_found_items:
+                        desc = entry.get('_descripcion_original') or entry.get('descripcion') or ''
+                        raw_cands = cands_por_idx.get(i, [])
+                        cands_payload = [
+                            {'producto_id': c.get('producto_id'),
+                             'observer_id': c.get('observer_id'),
+                             'descripcion': c.get('descripcion') or '',
+                             'codigo_alfabeta': c.get('codigo_alfabeta') or '',
+                             'score': round(float(c.get('score') or 0), 3)}
+                            for c in (raw_cands[:5] if isinstance(raw_cands, list) else [])
+                        ]
+                        score_top = cands_payload[0]['score'] if cands_payload else None
+                        oferta_data = {
+                            'laboratorio_id': lab_id,
+                            'drogueria_id': drog_id,
+                            'codigo_supplier': entry.get('codigo'),
+                            'descuento_psl': entry.get('descuento_psl'),
+                            'unidades_minima': entry.get('unidades_minima'),
+                            'plazo_pago': entry.get('plazo_pago'),
+                            'rentabilidad': entry.get('rentabilidad'),
+                        }
+                        enqueue_pendiente(_s_q,
+                            descripcion=desc,
+                            supplier_id=lab_id,
+                            supplier_nombre=lab_nombre_cached,
+                            archivo_origen='ofertas_import',
+                            score_top=score_top,
+                            top_candidatos=cands_payload,
+                            oferta_data=oferta_data,
+                        )
+                    _s_q.commit()
+        except Exception as _e:   # noqa: BLE001 — no bloquear la respuesta
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                'enqueue_pendiente post-guardar falló: %s', _e)
 
         return jsonify({
             'ok': True,
-            'laboratorio': lab.nombre,
+            'laboratorio': lab_nombre_cached,
             'insertados': insertados,
             'actualizados': actualizados,
             'saltados': saltados,

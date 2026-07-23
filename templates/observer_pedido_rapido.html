@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% set nav_active = "observer" %}
+{% block title %}Pedido rápido desde ObServer{% endblock %}
+{% block main %}
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    {% if proceso_id %}
+    <a href="{{ url_for('proceso_detail', proceso_id=proceso_id) }}"
+       class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Proceso #{{ proceso_id }}</a>
+    {% endif %}
+    <h1 class="text-base font-bold text-[#1e1e1e]">Pedido rápido</h1>
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-violet-100 text-violet-800">ONLINE</span>
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">⚡ EXPRESS</span>
+    <a href="{{ url_for('observer_analizar', lab=lab_preseleccionado or '', proceso=proceso_id or '') }}"
+       class="ml-auto text-[10px] text-[#6f6f6f] hover:text-[#1e1e1e] underline"
+       title="Versión clásica: analiza y abre la grilla editable">
+        ¿Querés revisar antes de crear el pedido? Ir al análisis clásico →
+    </a>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-xl mx-auto bg-white border border-surface-border rounded-xl p-6">
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+        <div class="mb-4 px-3 py-2 rounded-lg text-xs border
+            {% if cat == 'error' %}bg-red-50 text-red-800 border-red-200
+            {% elif cat == 'warning' %}bg-amber-50 text-amber-800 border-amber-200
+            {% elif cat == 'success' %}bg-emerald-50 text-emerald-800 border-emerald-200
+            {% else %}bg-sky-50 text-sky-800 border-sky-200{% endif %}">{{ msg }}</div>
+        {% endfor %}
+        {% endwith %}
+
+        <p class="text-xs text-[#6f6f6f] mb-4 leading-snug">
+            Calculamos el sugerido y <strong>creamos el pedido directo</strong> — sin pantalla de revisión intermedia.
+            Si necesitás ajustar cantidades, lo hacés en la pantalla del pedido (<code class="font-mono">/order/&lt;id&gt;</code>).
+        </p>
+
+        <form method="post" class="space-y-4">
+            {% if proceso_id %}<input type="hidden" name="proceso_id" value="{{ proceso_id }}">{% endif %}
+
+            <div>
+                <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Laboratorio</label>
+                <select name="laboratorio" required
+                    class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                    <option value="">— seleccionar —</option>
+                    {% for l in laboratorios %}
+                    <option value="{{ l.nombre }}"
+                            {% if lab_preseleccionado and l.nombre|lower == lab_preseleccionado|lower %}selected{% endif %}>
+                        {{ l.nombre }} ({{ l.n_articulos }} productos)
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">
+                    Días a cubrir
+                </label>
+                <input type="number" name="n_days" value="{{ n_days_default }}" min="1" max="365" required
+                    class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                <p class="text-[10px] text-[#888] mt-1">
+                    Horizonte del sugerido. Default 35.
+                </p>
+            </div>
+
+            <button type="submit"
+                class="w-full bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2.5 rounded-lg text-sm">
+                ⚡ Crear pedido y abrir
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

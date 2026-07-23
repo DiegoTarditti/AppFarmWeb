@@ -22,8 +22,11 @@
     </script>
     <style>
         body { background-color: #f3f3f3; color: #1e1e1e; }
-        ::-webkit-scrollbar { width: 5px; }
-        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
+        * { scrollbar-width: auto; scrollbar-color: #6b7280 #e5e7eb; }
+        ::-webkit-scrollbar { width: 14px; height: 14px; }
+        ::-webkit-scrollbar-track { background: #e5e7eb; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 4px; border: 2px solid #e5e7eb; }
+        ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
     </style>
 </head>
 <body class="min-h-screen font-sans">
@@ -79,6 +82,13 @@
                        placeholder="Farmacia San Martín"
                        class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
                 <p class="text-xs text-[#999] mt-1.5">Se muestra en el inicio y en el encabezado de los PDF de reclamos y análisis de compra.</p>
+                <label class="block text-xs font-medium text-[#6f6f6f] mb-2 mt-4 uppercase tracking-wide">
+                    CUIT de la farmacia
+                </label>
+                <input type="text" name="farmacia_cuit" value="{{ config.farmacia_cuit }}"
+                       placeholder="20-12345678-3"
+                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand" style="font-family:ui-monospace,monospace;">
+                <p class="text-xs text-[#999] mt-1.5">Se usa en los archivos de pedido del filtro droguería (encabezado de 20 de Junio).</p>
             </div>
         </div>
 
@@ -247,6 +257,31 @@
                             <p class="text-xs text-[#999] mt-1">Stock de seguridad extra en u/mes</p>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transferencias entre sucursales -->
+        <div class="bg-surface rounded-xl border border-surface-border p-6">
+            <h2 class="text-sm font-semibold text-[#1e1e1e] mb-1">Transferencias entre sucursales</h2>
+            <p class="text-xs text-[#6f6f6f] mb-4">
+                Umbrales para sugerir transferencias entre Pieri y Badia (pantalla <code>/transferencias</code>),
+                en meses de cobertura (stock ÷ venta mensual promedio).
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-medium text-[#6f6f6f] mb-1">Excedente si cobertura &gt; (meses)</label>
+                    <input type="number" name="transfer_excedente_meses" value="{{ config.transfer_excedente_meses or 6 }}"
+                           min="1" max="60" step="0.5"
+                           class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand">
+                    <p class="text-xs text-[#999] mt-1">Una sucursal "tiene de sobra" si su stock cubre más de N meses de su propia venta.</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-[#6f6f6f] mb-1">Necesita si cobertura &lt; (meses)</label>
+                    <input type="number" name="transfer_necesita_meses" value="{{ config.transfer_necesita_meses or 2 }}"
+                           min="0" max="12" step="0.5"
+                           class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand">
+                    <p class="text-xs text-[#999] mt-1">La otra sucursal "pide" si vende el producto y su stock cubre menos de M meses.</p>
                 </div>
             </div>
         </div>

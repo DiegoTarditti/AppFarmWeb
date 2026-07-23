@@ -62,13 +62,12 @@ def init_app(app):
             flash('El nombre es obligatorio.')
             return redirect(next_url)
         with database.get_db() as session:
-            from helpers import _normalizar_nombre_entidad, get_or_create_laboratorio
+            from helpers import buscar_laboratorio_por_nombre, get_or_create_laboratorio
             # Detectar duplicado por nombre normalizado (no solo case-insensitive)
-            norm_nuevo = _normalizar_nombre_entidad(nombre)
-            for c in session.query(Laboratorio).all():
-                if _normalizar_nombre_entidad(c.nombre) == norm_nuevo:
-                    flash(f'Ya existe un laboratorio: "{c.nombre}". No se creó duplicado.')
-                    return redirect(next_url)
+            existente = buscar_laboratorio_por_nombre(session, nombre)
+            if existente:
+                flash(f'Ya existe un laboratorio: "{existente.nombre}". No se creó duplicado.')
+                return redirect(next_url)
             get_or_create_laboratorio(session, nombre)
             session.commit()
         return redirect(next_url)
@@ -88,6 +87,17 @@ def init_app(app):
             session.commit()
         return jsonify({'ok': True, 'usa_packs': valor})
 
+    @app.route('/laboratorio/<int:lab_id>/pedido', methods=['GET'])
+    @login_required
+    def laboratorio_pedido(lab_id):
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+            nombre = lab.nombre
+        return redirect(url_for('observer_pedido_rapido', lab=nombre))
+
     @app.route('/laboratorio/<int:lab_id>/edit', methods=['POST'])
     @login_required
     def laboratorio_edit(lab_id):
@@ -96,16 +106,15 @@ def init_app(app):
             flash('El nombre es obligatorio.')
             return redirect(url_for('laboratorios_list'))
         with database.get_db() as session:
-            from helpers import _normalizar_nombre_entidad
+            from helpers import buscar_laboratorio_por_nombre
             lab = session.get(Laboratorio, lab_id)
             if not lab:
                 return redirect(url_for('laboratorios_list'))
             # Si el nombre nuevo colisiona con OTRO lab (normalizado), avisar.
-            norm_nuevo = _normalizar_nombre_entidad(nombre)
-            for c in session.query(Laboratorio).filter(Laboratorio.id != lab_id).all():
-                if _normalizar_nombre_entidad(c.nombre) == norm_nuevo:
-                    flash(f'Ya existe otro laboratorio: "{c.nombre}". No se renombró para evitar duplicado.')
-                    return redirect(url_for('laboratorios_list'))
+            otro = buscar_laboratorio_por_nombre(session, nombre, excluir_id=lab_id)
+            if otro:
+                flash(f'Ya existe otro laboratorio: "{otro.nombre}". No se renombró para evitar duplicado.')
+                return redirect(url_for('laboratorios_list'))
             lab.nombre = nombre
             lab.usa_packs = request.form.get('usa_packs') == '1'
             session.commit()
@@ -458,6 +467,285 @@ def init_app(app):
         flash(', '.join(partes) or 'Sin cambios.', 'success' if creadas or actualizadas else 'info')
         return redirect(url_for('lab_equivalencias', lab_id=lab_id))
 
+    # ───────────────────────────────────────────────────────────────────
+    # Pack equivalencias por laboratorio (ean_pack → ean_unidad)
+    # Botón "📦 Packs Equiv." visible solo si lab.usa_packs.
+    # ───────────────────────────────────────────────────────────────────
+
+    @app.route('/laboratorio/<int:lab_id>/pack-equivalencias', methods=['GET'])
+    def lab_pack_equivalencias(lab_id):
+        from database import PackEquivalencia
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+            rows = (session.query(PackEquivalencia)
+                    .filter(PackEquivalencia.laboratorio_id == lab_id)
+                    .order_by(PackEquivalencia.ean_pack)
+                    .all())
+            equiv = [{
+                'id': r.id,
+                'ean_pack': r.ean_pack,
+                'ean_unidad': r.ean_unidad,
+                'cantidad': r.cantidad or 1,
+                'desc_pack': r.desc_pack or '',
+                'desc_unidad': r.desc_unidad or '',
+                'fuente': r.fuente,
+                'actualizado_en': r.actualizado_en.strftime('%d/%m/%Y %H:%M') if r.actualizado_en else '',
+            } for r in rows]
+        return render_template('lab_pack_equivalencias.html',
+                               lab=lab, equiv=equiv, total=len(equiv))
+
+    @app.route('/laboratorio/<int:lab_id>/pack-equivalencias/upload', methods=['POST'])
+    def lab_pack_equivalencias_upload(lab_id):
+        """Carga masiva desde Excel. Columnas aceptadas (case-insensitive):
+          - ean_pack            (obligatorio)
+          - ean_unidad          (obligatorio)
+          - cantidad            (opcional, default 1)
+          - desc_pack           (opcional)
+          - desc_unidad         (opcional)
+
+        Upsert por ean_pack (UNIQUE). Las filas existentes se actualizan,
+        las nuevas se crean con fuente='excel' y laboratorio_id=lab_id.
+        """
+        from database import PackEquivalencia
+        f = request.files.get('archivo')
+        if not f or not f.filename:
+            flash('Seleccioná un archivo Excel.', 'error')
+            return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+        ext = f.filename.rsplit('.', 1)[-1].lower()
+        if ext not in ('xlsx', 'xls'):
+            flash('Solo se aceptan archivos .xlsx / .xls.', 'error')
+            return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+
+        import os
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from helpers import UPLOAD_FOLDER
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{ext}', dir=UPLOAD_FOLDER)
+        f.save(tmp.name)
+        tmp.close()
+
+        try:
+            wb = load_workbook(tmp.name, data_only=True, read_only=True)
+            ws = wb.active
+            rows = list(ws.iter_rows(values_only=True))
+        finally:
+            try: os.unlink(tmp.name)
+            except OSError: pass
+
+        if not rows:
+            flash('El archivo está vacío.', 'error')
+            return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+
+        # Resolver header (case-insensitive)
+        header = [str(c or '').strip().lower() for c in rows[0]]
+        col = {name: header.index(name) for name in
+               ('ean_pack', 'ean_unidad', 'cantidad', 'desc_pack', 'desc_unidad')
+               if name in header}
+        # Sinónimos: aceptamos "ean" para ean_pack, "ean unidad" / "ean_observer" para ean_unidad
+        for syn, real in (('ean', 'ean_pack'), ('ean observer', 'ean_unidad'),
+                          ('ean_observer', 'ean_unidad'), ('descripcion', 'desc_pack'),
+                          ('descripción', 'desc_pack')):
+            if real not in col and syn in header:
+                col[real] = header.index(syn)
+        if 'ean_pack' not in col or 'ean_unidad' not in col:
+            flash('Faltan columnas obligatorias: ean_pack y ean_unidad.', 'error')
+            return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+
+        creadas = actualizadas = sin_cambio = vacias = 0
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+            for r in rows[1:]:
+                if not r:
+                    continue
+                def _cell(name, _r=r):
+                    if name not in col:
+                        return None
+                    v = _r[col[name]] if col[name] < len(_r) else None
+                    return str(v).strip() if v is not None and str(v).strip() else None
+                ep = _cell('ean_pack')
+                eu = _cell('ean_unidad')
+                if not ep or not eu:
+                    vacias += 1
+                    continue
+                try:
+                    cant = int(float(_cell('cantidad'))) if _cell('cantidad') else 1
+                except (TypeError, ValueError):
+                    cant = 1
+                dp = _cell('desc_pack')
+                du = _cell('desc_unidad')
+
+                existente = session.query(PackEquivalencia).filter_by(ean_pack=ep).first()
+                if existente:
+                    cambio = False
+                    if existente.ean_unidad != eu:
+                        existente.ean_unidad = eu; cambio = True
+                    if cant and existente.cantidad != cant:
+                        existente.cantidad = cant; cambio = True
+                    if dp and existente.desc_pack != dp:
+                        existente.desc_pack = dp; cambio = True
+                    if du and existente.desc_unidad != du:
+                        existente.desc_unidad = du; cambio = True
+                    if existente.laboratorio_id != lab_id:
+                        existente.laboratorio_id = lab_id; cambio = True
+                    if existente.fuente != 'excel':
+                        existente.fuente = 'excel'; cambio = True
+                    if cambio:
+                        actualizadas += 1
+                    else:
+                        sin_cambio += 1
+                else:
+                    session.add(PackEquivalencia(
+                        ean_pack=ep, ean_unidad=eu, cantidad=cant,
+                        desc_pack=dp, desc_unidad=du,
+                        laboratorio_id=lab_id, fuente='excel',
+                    ))
+                    creadas += 1
+            session.commit()
+
+            # Sync masivo a modulo_packs: pisar ean_unidad/cantidad de las
+            # filas existentes con el nuevo estado de pack_equivalencias.
+            # Sin esto, los módulos viejos quedan apuntando a las equivalencias
+            # anteriores hasta que se re-importen.
+            from sqlalchemy import text as _text
+            sync_res = session.execute(_text("""
+                UPDATE modulo_packs mp
+                SET ean_unidad = pe.ean_unidad,
+                    cantidad = pe.cantidad
+                FROM pack_equivalencias pe
+                WHERE mp.ean_pack = pe.ean_pack
+                  AND pe.laboratorio_id = :lab_id
+                  AND (mp.ean_unidad IS DISTINCT FROM pe.ean_unidad
+                       OR mp.cantidad IS DISTINCT FROM pe.cantidad)
+            """), {'lab_id': lab_id})
+            sincronizadas = sync_res.rowcount or 0
+            session.commit()
+
+        partes = []
+        if creadas: partes.append(f'{creadas} creadas')
+        if actualizadas: partes.append(f'{actualizadas} actualizadas')
+        if sin_cambio: partes.append(f'{sin_cambio} sin cambios')
+        if vacias: partes.append(f'{vacias} filas vacías ignoradas')
+        if sincronizadas: partes.append(f'{sincronizadas} modulo_packs sincronizados')
+        flash(', '.join(partes) or 'Sin cambios.',
+              'success' if creadas or actualizadas else 'info')
+        return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+
+    @app.route('/laboratorio/<int:lab_id>/pack-equivalencias/crear', methods=['POST'])
+    def lab_pack_equivalencia_crear(lab_id):
+        """Alta manual de una equivalencia (una fila, sin Excel).
+        Form: ean_pack* , ean_unidad* , cantidad (default 1), desc_pack, desc_unidad.
+        Upsert por ean_pack (UNIQUE global): si ya existe, se actualiza y se
+        reasigna al lab con fuente='manual' (mismo criterio que el upload)."""
+        from database import PackEquivalencia
+        lab = None
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+            ean_pack = (request.form.get('ean_pack') or '').strip()
+            ean_unidad = (request.form.get('ean_unidad') or '').strip()
+            if not ean_pack or not ean_unidad:
+                flash('EAN pack y EAN unidad son obligatorios.', 'error')
+                return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+            try:
+                cantidad = max(1, int(float(request.form.get('cantidad') or 1)))
+            except (TypeError, ValueError):
+                cantidad = 1
+            desc_pack = (request.form.get('desc_pack') or '').strip() or None
+            desc_unidad = (request.form.get('desc_unidad') or '').strip() or None
+
+            existente = session.query(PackEquivalencia).filter_by(ean_pack=ean_pack).first()
+            if existente:
+                existente.ean_unidad = ean_unidad
+                existente.cantidad = cantidad
+                existente.desc_pack = desc_pack
+                existente.desc_unidad = desc_unidad
+                existente.laboratorio_id = lab_id
+                existente.fuente = 'manual'
+                session.commit()
+                flash(f'El EAN pack {ean_pack} ya existía — se actualizó.', 'info')
+            else:
+                session.add(PackEquivalencia(
+                    ean_pack=ean_pack, ean_unidad=ean_unidad, cantidad=cantidad,
+                    desc_pack=desc_pack, desc_unidad=desc_unidad,
+                    laboratorio_id=lab_id, fuente='manual',
+                ))
+                session.commit()
+                flash(f'Equivalencia {ean_pack} → {ean_unidad} creada.', 'success')
+        return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+
+    @app.route('/laboratorio/<int:lab_id>/pack-equivalencias/<int:eq_id>/borrar', methods=['POST'])
+    def lab_pack_equivalencia_borrar(lab_id, eq_id):
+        from database import PackEquivalencia
+        with database.get_db() as session:
+            eq = session.get(PackEquivalencia, eq_id)
+            if eq and eq.laboratorio_id == lab_id:
+                session.delete(eq)
+                session.commit()
+        return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+
+    def _sync_modulo_packs_desde_equivalencia(session, eq):
+        """Sincroniza las filas ModuloPack con el mismo ean_pack al estado de
+        la equivalencia (ean_unidad + cantidad). Sin esto, editar la tabla de
+        pack_equivalencias dejaba modulo_packs desfasado: /modulo-packs y
+        /order/<id> seguían mostrando la equivalencia vieja. Idempotente.
+
+        Solo sincroniza campos que viven en ambas tablas (ean_unidad, cantidad).
+        Las descripciones se resuelven al render (no se duplican en modulo_packs).
+        """
+        from database import ModuloPack
+        if eq is None or not eq.ean_pack:
+            return 0
+        return (session.query(ModuloPack)
+                .filter(ModuloPack.ean_pack == eq.ean_pack)
+                .update({
+                    'ean_unidad': eq.ean_unidad,
+                    'cantidad': eq.cantidad,
+                }, synchronize_session=False))
+
+    @app.route('/laboratorio/<int:lab_id>/pack-equivalencias/edit', methods=['POST'])
+    def lab_pack_equivalencia_edit(lab_id):
+        """Edición inline. Body JSON: {id, field, value}.
+        field ∈ {ean_unidad, cantidad, desc_pack, desc_unidad}."""
+        from database import PackEquivalencia
+        data = request.get_json(silent=True) or {}
+        try:
+            eq_id = int(data.get('id'))
+        except (TypeError, ValueError):
+            return {'error': 'id inválido'}, 400
+        field = data.get('field')
+        if field not in ('ean_unidad', 'cantidad', 'desc_pack', 'desc_unidad'):
+            return {'error': 'field inválido'}, 400
+        value = data.get('value')
+        with database.get_db() as session:
+            eq = session.get(PackEquivalencia, eq_id)
+            if not eq or eq.laboratorio_id != lab_id:
+                return {'error': 'no encontrado'}, 404
+            if field == 'cantidad':
+                try:
+                    eq.cantidad = max(1, int(value))
+                except (TypeError, ValueError):
+                    return {'error': 'cantidad inválida'}, 400
+            else:
+                setattr(eq, field, (str(value).strip() or None) if value is not None else None)
+            # Propagar a las filas ModuloPack existentes para mantener
+            # /modulo-packs y /order/<id> consistentes con la tabla maestra.
+            synced = 0
+            if field in ('ean_unidad', 'cantidad'):
+                synced = _sync_modulo_packs_desde_equivalencia(session, eq)
+            session.commit()
+        return {'ok': True, 'synced_modulo_packs': synced}
+
     @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/borrar-todas', methods=['POST'])
     def lab_ofertas_minimo_borrar_todas(lab_id):
         with database.get_db() as session:
@@ -538,7 +826,13 @@ def init_app(app):
     @app.route('/api/laboratorio/<int:lab_id>/ofertas-minimo', methods=['GET'])
     def api_ofertas_minimo_get(lab_id):
         with database.get_db() as session:
-            rows = session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id).order_by(OfertaMinimo.grupo_id.nullslast(), OfertaMinimo.id).all()
+            # Solo las ofertas marcadas como ACTIVAS (toggle en
+            # /informes/ofertas-activas). Si el operador dejó solo 1 batch
+            # activo por lab, ese es el que entra al order Stage 2.
+            rows = (session.query(OfertaMinimo)
+                    .filter_by(laboratorio_id=lab_id)
+                    .filter(OfertaMinimo.activo.is_(True))
+                    .order_by(OfertaMinimo.grupo_id.nullslast(), OfertaMinimo.id).all())
             return jsonify({
                 'items': [{
                     'ean': r.ean, 'descripcion': r.descripcion, 'codigo': r.codigo,
@@ -546,6 +840,7 @@ def init_app(app):
                     'descuento_psl': float(r.descuento_psl) if r.descuento_psl is not None else None,
                     'rentabilidad': float(r.rentabilidad) if r.rentabilidad is not None else None,
                     'plazo_pago': r.plazo_pago, 'grupo_id': r.grupo_id,
+                    'observacion': r.observacion,
                 } for r in rows],
                 'count': len(rows),
             })
@@ -575,6 +870,73 @@ def init_app(app):
                 ))
             session.commit()
             return jsonify({'ok': True, 'guardados': len(items)})
+
+    # ─── Parser de import de ofertas POR LABORATORIO ──────────────────────
+    # El wizard /ofertas/import recuerda, por lab, qué columna es cada campo,
+    # para no re-mapear al re-importar ese lab. Mapeo guardado por NOMBRE de
+    # header (no índice) → sobrevive reordenamientos.
+
+    @app.route('/api/laboratorio/<int:lab_id>/parser-ofertas', methods=['GET'])
+    def api_parser_ofertas_get(lab_id):
+        """Parser/mapeo de ofertas guardado para este lab (o {exists:false})."""
+        from database import ParserOfertasLab
+        with database.get_db() as session:
+            p = session.get(ParserOfertasLab, lab_id)
+            if not p:
+                return jsonify({'exists': False})
+            return jsonify({
+                'exists': True,
+                'column_mapping': json.loads(p.column_mapping or '{}'),
+                'formato': p.formato or 'plano',
+                'header_row': p.header_row,
+                'actualizado_en': (p.actualizado_en.strftime('%d/%m/%Y %H:%M')
+                                   if p.actualizado_en else None),
+            })
+
+    @app.route('/api/laboratorio/<int:lab_id>/parser-ofertas', methods=['POST'])
+    def api_parser_ofertas_save(lab_id):
+        """Guarda/actualiza el parser de ofertas del lab (upsert).
+
+        Body JSON: {column_mapping: {campo: nombre_header}, formato?, header_row?}.
+        """
+        from flask_login import current_user
+
+        from database import ParserOfertasLab
+        body = request.get_json(silent=True) or {}
+        column_mapping = body.get('column_mapping')
+        if not isinstance(column_mapping, dict) or not column_mapping:
+            return jsonify({'ok': False, 'error': 'column_mapping vacío'}), 400
+        formato = (body.get('formato') or 'plano').strip() or 'plano'
+        header_row = body.get('header_row')
+        try:
+            header_row = int(header_row) if header_row is not None else None
+        except (TypeError, ValueError):
+            header_row = None
+        with database.get_db() as session:
+            if not session.get(Laboratorio, lab_id):
+                return jsonify({'ok': False, 'error': 'Laboratorio no encontrado'}), 404
+            p = session.get(ParserOfertasLab, lab_id)
+            if not p:
+                p = ParserOfertasLab(laboratorio_id=lab_id)
+                session.add(p)
+            p.column_mapping = json.dumps(column_mapping, ensure_ascii=False)
+            p.formato = formato
+            p.header_row = header_row
+            p.creado_por = getattr(current_user, 'username', None)
+            p.actualizado_en = now_ar()
+            session.commit()
+            return jsonify({'ok': True, 'campos': len(column_mapping), 'formato': formato})
+
+    @app.route('/api/laboratorio/<int:lab_id>/parser-ofertas', methods=['DELETE'])
+    def api_parser_ofertas_delete(lab_id):
+        """Borra el parser de ofertas guardado de este lab (si existe)."""
+        from database import ParserOfertasLab
+        with database.get_db() as session:
+            p = session.get(ParserOfertasLab, lab_id)
+            if p:
+                session.delete(p)
+                session.commit()
+            return jsonify({'ok': True, 'borrado': bool(p)})
 
     # ─── Sync local → Render ──────────────────────────────────────────────
     #
@@ -665,7 +1027,7 @@ def init_app(app):
         if not lab_nombre or not ofertas:
             return jsonify({'ok': False, 'error': 'Faltan laboratorio_nombre u ofertas'}), 400
 
-        from helpers import _normalizar_nombre_entidad
+        from helpers import buscar_laboratorio_por_nombre
         creadas = 0
         actualizadas = 0
         skip_sin_ean = 0
@@ -673,12 +1035,7 @@ def init_app(app):
 
         with database.get_db() as session:
             # Resolver laboratorio por nombre (normalizado). Si no existe, crearlo.
-            norm = _normalizar_nombre_entidad(lab_nombre)
-            lab = None
-            for c in session.query(Laboratorio).all():
-                if _normalizar_nombre_entidad(c.nombre) == norm:
-                    lab = c
-                    break
+            lab = buscar_laboratorio_por_nombre(session, lab_nombre)
             if lab is None:
                 lab = Laboratorio(nombre=lab_nombre, activo=True)
                 session.add(lab)
@@ -781,12 +1138,8 @@ def init_app(app):
                     return jsonify({'ok': False, 'error': 'Laboratorio no encontrado'}), 404
                 q = q.filter_by(laboratorio_id=lab.id)
             elif lab_nombre_q:
-                from helpers import _normalizar_nombre_entidad
-                norm = _normalizar_nombre_entidad(lab_nombre_q)
-                for c in session.query(Laboratorio).all():
-                    if _normalizar_nombre_entidad(c.nombre) == norm:
-                        lab = c
-                        break
+                from helpers import buscar_laboratorio_por_nombre
+                lab = buscar_laboratorio_por_nombre(session, lab_nombre_q)
                 if not lab:
                     return jsonify({'ok': False, 'error': f'Laboratorio "{lab_nombre_q}" no encontrado'}), 404
                 q = q.filter_by(laboratorio_id=lab.id)

@@ -17,8 +17,8 @@ from sqlalchemy import or_, text
 
 import database
 from database import ProveedorHorarioReparto, Provider, get_db
-from purchase_engine import AVG_DAYS_PER_MONTH
-from purchase_helpers import calcular_min_sugerido, clasificar_min
+from purchase_engine import AVG_DAYS_PER_MONTH, rotation_index
+from purchase_helpers import calcular_min_sugerido, clasificar_min, pvp_reciente
 from services.horarios import horarios_por_dia, proximo_cierre, urgencia_cierre
 
 DIAS_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -343,11 +343,30 @@ def init_app(app):
             for _s in slots_hoy:
                 _s.pop('dt', None)  # no serializable / no se usa en template
 
+            # ── Frescura de datos para el banner "Sincronizar todo" ──
+            # Tomamos la MÁS VIEJA de las max(sync_en) de las tablas críticas para
+            # el armado (stock + ventas). Así el "hace Xh" garantiza que TODO lo
+            # que alimenta el pedido está al menos así de fresco. /pedidos/dia es
+            # local-only → siempre hay ObServer, no hace falta gatear.
+            from sqlalchemy import func as _func_sync
+
+            from database import ObsStock, ObsVentaMensual
+            _maxes = []
+            for _modelo in (ObsStock, ObsVentaMensual):
+                _mx = session.query(_func_sync.max(_modelo.sync_en)).scalar()
+                if _mx is not None:
+                    _maxes.append(_mx)
+            sync_age_min = None
+            if _maxes:
+                _viejo = min(_maxes)  # la tabla menos fresca manda
+                sync_age_min = int((datetime.now() - _viejo).total_seconds() // 60)
+
         return render_template('compras_dia.html',
                                proveedores=proveedores,
                                slots_hoy=slots_hoy,
                                sin_horarios=sin_horarios,
                                dias=DIAS_LABELS,
+                               sync_age_min=sync_age_min,
                                comportamientos=comportamientos,
                                comportamientos_total=comportamientos_total)
 
@@ -966,36 +985,49 @@ def init_app(app):
                         .filter(ObsProducto.observer_id.in_(obs_pids)).all())
                 sub_de_prod = dict(rows)
 
-            # Cargar ventas mes-a-mes para los productos en juego.
+            # Cargar ventas mes-a-mes para los productos en juego. Unidades para
+            # rotación/forecast; montos para derivar el PVP del último mes con
+            # ventas (más fiel que el promedio 12m bajo inflación).
             ventas_por_pid = {pid: [0]*12 for pid in [r.pid for r in base]}
+            montos_por_pid = {pid: [0.0]*12 for pid in ventas_por_pid}
             if ventas_por_pid:
                 rows_vm = (session.query(ObsVentaMensual.producto_observer,
                                           ObsVentaMensual.anio,
                                           ObsVentaMensual.mes,
-                                          func.sum(ObsVentaMensual.unidades))
+                                          func.sum(ObsVentaMensual.unidades),
+                                          func.sum(ObsVentaMensual.monto))
                            .filter(ObsVentaMensual.producto_observer.in_(list(ventas_por_pid.keys())))
                            .group_by(ObsVentaMensual.producto_observer,
                                      ObsVentaMensual.anio, ObsVentaMensual.mes)
                            .all())
-                for pid_v, anio, mes, uds in rows_vm:
+                for pid_v, anio, mes, uds, mto in rows_vm:
                     # Slot 0..11: ventas[0]=start_month, ventas[11]=end_month
                     offset = (anio - start_year) * 12 + (mes - start_month)
                     if 0 <= offset <= 11 and pid_v in ventas_por_pid:
                         ventas_por_pid[pid_v][offset] += int(uds or 0)
+                        montos_por_pid[pid_v][offset] += float(mto or 0)
 
             # Resolver Producto local + flags excluido / no_pedir +
             # cantidad_reposicion_fija (override del cálculo dinámico).
             local_por_obs = {}
             if obs_pids:
+                # fraccionado (master) + cantidad_envase (ProductoAtributo, lo que
+                # se carga en Presentación) → para mostrar la equivalencia en cajas.
                 rows = (session.query(Producto.observer_id, Producto.id,
                                        Producto.excluido_armado_actual,
                                        Producto.no_pedir, Producto.laboratorio_id,
-                                       Producto.cantidad_reposicion_fija)
+                                       Producto.cantidad_reposicion_fija,
+                                       Producto.fraccionado,
+                                       database.ProductoAtributo.cantidad_envase)
+                        .outerjoin(database.ProductoAtributo,
+                                   database.ProductoAtributo.producto_id == Producto.id)
                         .filter(Producto.observer_id.in_(obs_pids)).all())
                 local_por_obs = {r[0]: {
                     'id': r[1], 'excluido': r[2], 'no_pedir': r[3],
                     'lab_local_id': r[4],
                     'cantidad_reposicion_fija': r[5],
+                    'fraccionado': bool(r[6]),
+                    'cantidad_envase': int(r[7]) if r[7] else None,
                 } for r in rows}
 
             # Modo multi-drog: necesitamos saber qué drog(s) cubre cada lab.
@@ -1083,6 +1115,12 @@ def init_app(app):
                     if not prev or dto > prev['oferta_dto']:
                         ofertas_por_ean[of.ean] = {'oferta_dto': dto, 'oferta_min': um}
 
+            # Umbrales de rotación (Settings → Config singleton) para clasificar
+            # A/M/B. Se usan para la regla "caro + rotación baja" del motor.
+            _rcfg = session.get(database.Config, 1)
+            _rot_alta = float(getattr(_rcfg, 'rot_alta_min', 20.0) or 20.0) if _rcfg else 20.0
+            _rot_media = float(getattr(_rcfg, 'rot_media_min', 5.0) or 5.0) if _rcfg else 5.0
+
             items = []
             for r in base:
                 # Filtro rubro: aplica el set elegido vía ?rubros=… (default 12 Medicamentos).
@@ -1101,21 +1139,22 @@ def init_app(app):
                                 or local_lab_por_norm.get(obs_lab_norm.get(r.lab_obs_id, ''))
                 cubre_lab = lab_local_id in labs_cubiertos
                 u12m_int = int(r.u12m or 0)
-                m12m_val = float(r.m12m or 0)
-                # PVP estimado = monto/unidades sobre 12 meses. Aproxima el
-                # precio efectivo de venta. 0 si nunca se vendió.
-                pvp_est  = (m12m_val / u12m_int) if u12m_int else 0.0
                 u24h_val = int(v24h_rows.get(r.pid, 0) or 0)
                 u7d_val  = int(v7d_rows.get(r.pid, 0) or 0)
                 min_actual = int(r.minimo or 0)
                 stock_actual = int(r.stock or 0)
                 ventas_arr = ventas_por_pid.get(r.pid, [0]*12)
+                montos_arr = montos_por_pid.get(r.pid, [0.0]*12)
+                # PVP del ÚLTIMO MES con ventas (monto/unidades de ese mes).
+                # Más fiel que el promedio 12m bajo inflación. 0 si nunca vendió.
+                pvp_est = pvp_reciente(ventas_arr, montos_arr)
 
                 # Forecast a 7 días + promedio mensual con prorrateo.
                 min_sugerido, avg_m, sin_mov, tipo = calcular_min_sugerido(
                     ventas_arr, stock_actual, start_month, end_month,
                 )
                 avg_diario = avg_m / AVG_DAYS_PER_MONTH if avg_m else 0
+                rotacion_cls = rotation_index(avg_m, _rot_alta, _rot_media)
                 cobertura_d = (round(min_actual / avg_diario)
                                if avg_diario > 0 and min_actual > 0 else None)
                 # Sugerencia up/down/ok comparando contra el forecast 7d.
@@ -1176,6 +1215,9 @@ def init_app(app):
                     'cantidad_reposicion_fija': cant_fija,
                     'u12m': u12m_int,
                     'sin_mov': sin_mov,
+                    'pvp': pvp_est,
+                    'rotacion': rotacion_cls,
+                    'ventas_mensuales': ventas_arr,
                 }
                 _result = calcular_a_pedir(_cfg, _ctx_base)
                 a_pedir = _result['a_pedir']
@@ -1205,6 +1247,10 @@ def init_app(app):
                     'no_pedir': no_pedir_flag,
                     'pid': r.pid,
                     'producto_id_local': local['id'] if local else None,
+                    # Presentación: para mostrar equivalencia en cajas (sin tocar
+                    # la cantidad en unidades). Solo si fraccionado + envase>1.
+                    'fraccionado': bool(local and local.get('fraccionado')),
+                    'cantidad_envase': (local.get('cantidad_envase') if local else None),
                     'desc': r.desc,
                     'droga_nombre': r.droga_nombre or '',
                     'lab_nombre': r.lab_nombre or '—',
@@ -1223,6 +1269,8 @@ def init_app(app):
                     'u7d': u7d_val,
                     'u12m': u12m_int,
                     'pvp': round(pvp_est, 2),
+                    'rotacion': rotacion_cls,            # 'A'|'M'|'B' (alta/media/baja)
+                    'ventas_arr': ventas_arr,            # 12 meses, [11]=mes actual parcial
                     'sin_mov_60d': bool(sin_mov),
                     'a_pedir': a_pedir,
                     'factor_h': round(factor_h, 2),          # multiplicador aplicado
@@ -1265,11 +1313,16 @@ def init_app(app):
                 it['pendientes_count'] = pendientes_por_obs.get(it['pid'], 0)
 
             # ── Flags (Comportamientos excepcionales) por EAN ──
-            # Cualquier EAN del producto (principal o alt en obs_codigos_barras)
-            # cuenta para encontrar el flag. Adjunta it['flag'] con dict {slug,
-            # nombre, icono, color_clases, nota, ean_reemplazo} o None.
+            # Cualquier EAN del producto (principal o alt) cuenta. El display del
+            # chip lo arma services.flags (dedup); acá aplicamos el efecto sobre la
+            # cantidad:
+            #   tope_uno       → a_pedir máx 1.
+            #   agotar_todo    → bloquear reposición mientras quede stock (>0).
+            #   agotar_hasta_1 → bloquear reposición mientras stock > 1.
+            # Los "agotar" se apoyan SOLO en el stock real de ObServer (se liberan
+            # solos al bajar al umbral; no dependen de marcar recepción).
             if obs_ids_items:
-                from database import ProductoFlag, TipoPedidoConfig
+                from services.flags import flags_display_por_producto
                 eans_completos_por_pid = {}
                 for ecb in (session.query(ObsCodigoBarras.producto_observer,
                                           ObsCodigoBarras.codigo_barras)
@@ -1277,54 +1330,30 @@ def init_app(app):
                             .filter(ObsCodigoBarras.fecha_baja.is_(None))
                             .all()):
                     eans_completos_por_pid.setdefault(ecb.producto_observer, []).append(ecb.codigo_barras)
-                todos_eans_flag = list({e for lst in eans_completos_por_pid.values() for e in lst})
-                flag_por_ean = {}
-                cfg_por_slug = {}
-                if todos_eans_flag:
-                    pf_rows = (session.query(ProductoFlag)
-                               .filter(ProductoFlag.ean.in_(todos_eans_flag)).all())
-                    for f in pf_rows:
-                        flag_por_ean[f.ean] = f
-                    if pf_rows:
-                        slugs = list({f.flag_slug for f in pf_rows})
-                        cfg_por_slug = {c.slug: c for c in (
-                            session.query(TipoPedidoConfig)
-                            .filter(TipoPedidoConfig.slug.in_(slugs),
-                                    TipoPedidoConfig.categoria == 'flag').all())}
-                _flag_color_clases = {
-                    'red':    'bg-red-100 text-red-800 border-red-300',
-                    'violet': 'bg-violet-100 text-violet-800 border-violet-300',
-                    'amber':  'bg-amber-100 text-amber-800 border-amber-300',
-                    'sky':    'bg-sky-100 text-sky-800 border-sky-300',
-                }
-                import json as _json_flag
+                flag_por_pid = flags_display_por_producto(session, eans_completos_por_pid)
                 for it in items:
-                    it['flag'] = None
-                    for ean in eans_completos_por_pid.get(it['pid'], []):
-                        fobj = flag_por_ean.get(ean)
-                        if not fobj:
-                            continue
-                        cfg = cfg_por_slug.get(fobj.flag_slug)
-                        cfg_d = {}
-                        if cfg and cfg.config_json:
-                            try:
-                                cfg_d = _json_flag.loads(cfg.config_json)
-                            except Exception:
-                                cfg_d = {}
-                        color = cfg_d.get('color', 'sky')
-                        it['flag'] = {
-                            'slug': fobj.flag_slug,
-                            'nombre': cfg.nombre if cfg else fobj.flag_slug,
-                            'icono': cfg_d.get('icono', '🚩'),
-                            'color_clases': _flag_color_clases.get(
-                                color, _flag_color_clases['sky']),
-                            'nota': fobj.nota or '',
-                            'ean_reemplazo': fobj.ean_reemplazo or '',
-                        }
-                        break
+                    it['flag'] = flag_por_pid.get(it['pid'])
+                    _ef = it['flag'].get('efecto_armado') if it['flag'] else None
+                    if _ef == 'tope_uno' and it.get('a_pedir', 0) > 1:
+                        it['a_pedir'] = 1
+                        it['tope_uno'] = True
+                    elif _ef == 'agotar_todo':
+                        # Nunca repone (discontinuar / agotar a 0).
+                        it['a_pedir'] = 0
+                        it['agotar'] = True
+                    elif _ef == 'agotar_hasta_1':
+                        # No repone mientras tenga stock; repone 1 al llegar a 0
+                        # (mantiene 1 unidad). Usa el stock real de ObServer.
+                        it['a_pedir'] = 1 if (it.get('stock') or 0) == 0 else 0
+                        it['agotar'] = True
             else:
                 for it in items:
                     it['flag'] = None
+
+            # Los "agotar" con a_pedir 0 ni se traen al armado (no se van a pedir):
+            # "Agotar stock" desaparece siempre; "Agotar hasta 1" solo aparece
+            # cuando llega a 0 y repone 1.
+            items = [it for it in items if not (it.get('agotar') and not it.get('a_pedir'))]
 
             cierre = proximo_cierre(session, prov_id) if prov_id else None
 
@@ -1520,9 +1549,16 @@ def init_app(app):
                 droguerias_canal = [{'id': p.id, 'nombre': p.razon_social}
                                     for p in provs_drog]
 
+            # Valor piso ("productos caros $") desde la config del pedido, para
+            # pre-cargar el filtro de PVP en el header (editable por el operador).
+            from services.calculo_pedido import cargar_config as _cargar_cfg_vp
+            _cfg_vp = _cargar_cfg_vp('COMPRA_LAB' if lab_id else 'REPOSICION') or {}
+            valor_piso = float(_cfg_vp.get('valor_piso') or 0)
+
             return render_template('compras_dia_armar.html',
                                    prov=prov, items=items,
                                    total_items=len(items),
+                                   valor_piso=valor_piso,
                                    cubre=sum(1 for i in items if i['cubre_lab']),
                                    pendientes=sum(1 for i in items if not i['cubre_lab']),
                                    cierre=cierre,
@@ -2162,9 +2198,24 @@ def init_app(app):
         except (TypeError, ValueError):
             return jsonify({'ok': False, 'error': 'prov_id inválido'}), 400
         items = data.get('items') or []
-        if not prov_id or not items:
+        # Canal "Directo al lab" (modo lab): no viene prov_id sino lab_nombre.
+        # Resolvemos/creamos un Provider tipo 'laboratorio' para colgar el pedido.
+        lab_nombre_in = (data.get('lab_nombre') or '').strip()
+        if not items:
+            return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
+        if not prov_id and not lab_nombre_in:
             return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
         with get_db() as session:
+            if not prov_id and lab_nombre_in:
+                lab_prov = (session.query(Provider)
+                            .filter(Provider.razon_social == lab_nombre_in,
+                                    Provider.tipo == 'laboratorio').first())
+                if not lab_prov:
+                    lab_prov = Provider(razon_social=lab_nombre_in,
+                                        tipo='laboratorio', activo=True)
+                    session.add(lab_prov)
+                    session.flush()
+                prov_id = lab_prov.id
             # Pre-cargar observer_ids de los productos locales para auto-bridging
             prod_ids = [int(it['producto_id_local']) for it in items
                         if it.get('producto_id_local') and not it.get('observer_id')]
@@ -2546,6 +2597,18 @@ def init_app(app):
                     if oid not in ean_map and cb:
                         ean_map[oid] = cb
 
+            # Fallback al master local: donde viven los EANs backfilleados
+            # (Kellerhoff / farmacia hermana) cuando ObServer no tiene
+            # obs_codigos_barras cargado. ObServer tiene precedencia (se cargó arriba).
+            faltan = [o for o in obs_ids if o not in ean_map]
+            if faltan:
+                from database import Producto
+                for oid, cb in (session.query(Producto.observer_id, Producto.codigo_barra)
+                                .filter(Producto.observer_id.in_(faltan),
+                                        Producto.codigo_barra.isnot(None))):
+                    if cb and not str(cb).startswith('OBS-') and oid not in ean_map:
+                        ean_map[oid] = cb
+
             rows = [{
                 'ean': ean_map.get(it.observer_id, it.observer_id or ''),
                 'codigo_barra': ean_map.get(it.observer_id, it.observer_id or ''),
@@ -2717,6 +2780,78 @@ def init_app(app):
             content = '\r\n'.join(lines)
             return Response(content, mimetype='text/plain',
                             headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+
+    @app.route('/api/pedido-emitido/<int:pedido_id>/export-xls')
+    @login_required
+    def api_pedido_emitido_export_xls(pedido_id):
+        """Export XLSX simple del pedido (no depende de plantilla de droguería).
+
+        Columnas fijas: EAN, Descripción, Laboratorio, Cant. pedida,
+        Cant. recibida, Estado.
+        """
+        import unicodedata as _ud
+        from io import BytesIO
+
+        from flask import send_file
+
+        from database import ObsCodigoBarras, PedidoEmitido, Producto, ProductoCodigoBarra
+
+        with get_db() as session:
+            ped = session.get(PedidoEmitido, pedido_id)
+            if not ped:
+                return jsonify({'ok': False, 'error': 'Pedido no encontrado'}), 404
+            items = sorted(ped.items, key=lambda i: (i.descripcion or '').lower())
+
+            # Resolver EAN: ObServer (obs_codigos_barras) → master local.
+            obs_ids = [it.observer_id for it in items if it.observer_id]
+            ean_map = {}
+            if obs_ids:
+                for oid, cb in (session.query(ObsCodigoBarras.producto_observer,
+                                              ObsCodigoBarras.codigo_barras)
+                                .filter(ObsCodigoBarras.producto_observer.in_(obs_ids),
+                                        ObsCodigoBarras.fecha_baja.is_(None))
+                                .order_by(ObsCodigoBarras.orden.asc()).all()):
+                    if oid not in ean_map and cb:
+                        ean_map[oid] = cb
+            prod_ids = [it.producto_id_local for it in items if it.producto_id_local]
+            local_ean = {}
+            if prod_ids:
+                for pid, cb in (session.query(Producto.id, Producto.codigo_barra)
+                                .filter(Producto.id.in_(prod_ids)).all()):
+                    if cb and not str(cb).startswith('OBS-'):
+                        local_ean[pid] = cb
+                for pid, cb in (session.query(ProductoCodigoBarra.producto_id,
+                                              ProductoCodigoBarra.codigo_barra)
+                                .filter(ProductoCodigoBarra.producto_id.in_(prod_ids)).all()):
+                    if pid not in local_ean and cb:
+                        local_ean[pid] = cb
+
+            import openpyxl
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = f'Pedido {ped.id}'
+            ws.append(['EAN', 'Descripción', 'Laboratorio',
+                       'Cant. pedida', 'Cant. recibida', 'Estado'])
+            for it in items:
+                ean = ean_map.get(it.observer_id) or local_ean.get(it.producto_id_local) or ''
+                try:
+                    ean = int(str(ean).strip()) if ean else ''
+                except (ValueError, TypeError):
+                    pass
+                ws.append([ean, it.descripcion or '', it.lab_nombre or '',
+                           it.cantidad_pedida or 0, it.cantidad_recibida or 0,
+                           it.estado or ''])
+                ws.cell(row=ws.max_row, column=1).number_format = '0'
+
+            _drog_raw = ped.drogueria.razon_social if ped.drogueria else 'drog'
+            drog = (_ud.normalize('NFKD', _drog_raw).encode('ascii', 'ignore')
+                    .decode().replace(' ', '_').strip('_')) or 'drog'
+            fname = f'Pedido_{ped.id}_{drog}.xlsx'
+            buf = BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            return send_file(buf, as_attachment=True, download_name=fname,
+                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
     # ── Usuarios de pedidos (operadores) ──────────────────────────────────
     @app.route('/api/usuarios-pedidos', methods=['GET', 'POST'])

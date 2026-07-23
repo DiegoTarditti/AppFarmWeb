@@ -31,6 +31,7 @@ from database import (
     get_db,
 )
 from helpers import aplicar_overrides_planificador, calcular_metricas_pedido_auto
+from services.farmacia import farmacia_operativa
 from services.pedido_estacional import (
     LIMITES,
     MESES_ES,
@@ -98,7 +99,7 @@ def init_app(app):
     @login_required
     def api_pedido_prueba_historico(producto_id):
         """Serie mensual de ventas del producto por anio, para chart del drawer."""
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         from collections import defaultdict
         with get_db() as session:
             rows = (session.query(
@@ -150,7 +151,7 @@ def init_app(app):
             )
         except (TypeError, ValueError):
             cob_default = LIMITES['cob_dias_default']
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
 
         with get_db() as session:
             productos = (session.query(ObsProducto)
@@ -188,6 +189,23 @@ def init_app(app):
             escenarios_bulk = obtener_escenarios_bulk(session, drogas_ids, producto_ids)
             flags_bulk = obtener_flags_bulk(session, todos_eans, lab_id=lab_id)
             ventas_arr_bulk = obtener_ventas_arr_bulk(session, producto_ids, id_farmacia)
+
+            # Política de overrides: la define el TipoPedidoConfig 'PRUEBA'
+            # (configurable desde /config/tipos-pedido). Si no existe, defaults
+            # = comportamiento histórico (cant_fija override, oferta_min piso).
+            import json as _json_tp
+
+            from database import TipoPedidoConfig as _TPC
+            _tp_prueba = (session.query(_TPC)
+                          .filter_by(slug='PRUEBA', categoria='pedido').first())
+            _cfg_prueba = {}
+            if _tp_prueba and _tp_prueba.config_json:
+                try:
+                    _cfg_prueba = _json_tp.loads(_tp_prueba.config_json)
+                except (ValueError, TypeError):
+                    _cfg_prueba = {}
+            _cant_fija_efecto = _cfg_prueba.get('cant_fija_efecto', 'override')
+            _oferta_min_efecto = _cfg_prueba.get('oferta_min_efecto', 'piso')
 
             # Overrides operativos del catálogo (cant_fija + oferta_min).
             # Sirven para que el planificador no diverja de /compras/dia/armar
@@ -294,11 +312,15 @@ def init_app(app):
                 sug_prueba_final, ov_slug, ov_valor = aplicar_overrides_planificador(
                     sugerido=sug_prueba_original,
                     stock=st['stock'], minimo=st['minimo'],
-                    cant_fija=cant_fija_p, oferta_min=oferta_min_p)
+                    cant_fija=cant_fija_p, oferta_min=oferta_min_p,
+                    cant_fija_efecto=_cant_fija_efecto,
+                    oferta_min_efecto=_oferta_min_efecto)
                 if sug_dia is not None:
                     sug_dia_final, _, _ = aplicar_overrides_planificador(
                         sugerido=sug_dia, stock=st['stock'], minimo=st['minimo'],
-                        cant_fija=cant_fija_p, oferta_min=oferta_min_p)
+                        cant_fija=cant_fija_p, oferta_min=oferta_min_p,
+                        cant_fija_efecto=_cant_fija_efecto,
+                        oferta_min_efecto=_oferta_min_efecto)
                 else:
                     sug_dia_final = None
                 # Reemplazo el estacional con el final (overrides aplicados)

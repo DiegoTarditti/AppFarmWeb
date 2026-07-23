@@ -2,6 +2,429 @@
 
 Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo se hace, se marca ✅ y se agrega fecha.
 
+> ⚠️ **Lo URGENTE vive en [`docs/backlog_urgente.md`](backlog_urgente.md)** — lista corta priorizada (P0/P1/P2). Este doc es el backlog general (features + mejoras no urgentes).
+
+> 🗺️ **¿Buscás dónde está algo? Mirá [`docs/MAPA.generado.md`](MAPA.generado.md) antes de grepear.**
+> Índice de las **767 rutas, 122 modelos, 21 syncs, 26 services y 11 parsers**, con
+> archivo:línea. Sale del código (`python scripts/mapa.py`), así que no miente — el CI
+> falla si queda desactualizado. La tabla de syncs muestra de qué vista de ObServer lee
+> cada uno y marca las 2 premium (⭐ = schema `Gestion` = requiere SA).
+>
+> Las **trampas del dominio** (que `observer_id` es por farmacia, que la capa `DW.*` la
+> arma Praxis y no viene con ObServer, que el precio uniforme es solo el de medicamentos)
+> están en [`CLAUDE.md`](../CLAUDE.md) → *"Trampas de ObServer"*. **Leerlas antes de tocar
+> syncs o catálogo**: la doc vieja afirmaba lo contrario y costó rediseñar (2026-07-16).
+
+---
+
+## ✅ Componente reusable `cliente_picker` (2026-05-28 → 2026-06-10)
+
+**Origen**: la sección "👤 Cliente + Dirección" de `/pedido/nuevo` está
+bien armada y ya funciona (buscador multi-palabra, dropdown de domicilios
+guardados, geocoder de dirección nueva, modales de alta/edición). Diego
+propuso extraerla como **componente reusable** para usarla desde varias
+pantallas en vez de duplicar HTML/JS.
+
+**Casos de uso identificados**:
+- `/atencion` — al atender un chat, botón "→ Crear pedido" que abre el
+  picker con teléfono del cliente precargado.
+- `/caja` — buscar cliente para refacturar / vincular ticket.
+- Futuras pantallas — anulación por DNI, histórico por cliente, etc.
+
+**Implementado (2026-06-10)** — commits `53bf194`, `f0eca4e`, `ed7c0fb`, `f94d915`:
+
+1. ✅ **Macro Jinja** en `templates/_cliente_picker.html` (`cliente_picker()`
+   y `cliente_picker_modales()`).
+2. ✅ **Módulo JS** en `static/js/cliente_picker.js`. API pública:
+   `ClientePicker.init({onAddressChange, onClienteSelected, onClear})`,
+   `.getValues()`, `.clear()`, `.loadCliente({cliente_id, observer_id})`,
+   `.pickCli()`, etc.
+   - **Limitación actual**: una sola instancia por página (IDs fijos
+     `pCliente`, `pDir`, etc.). Multi-instancia requiere namespacing —
+     ver entry "Namespacing multi-instancia" más abajo.
+3. ✅ **Endpoints `/api/clientes/*`** en `routes/clientes.py` (8 endpoints):
+   `/buscar`, `/ficha`, `POST /` (crear), `POST /<cid>` (editar),
+   `/observer/<oid>/domicilios`, `/geocodificar`, `/separar-direccion`,
+   `POST /domicilios/<dom_id>/geo`. Los viejos `/reparto/api/*` y
+   `/reparto/cliente*` se borraron una sesión después de la migración
+   completa de callers (commit `ed7c0fb`).
+4. ✅ **Migración de pantallas**:
+   - `/pedido/nuevo` — usa el macro. Bajó de 787 → 366 líneas.
+   - `/atencion` — botón "📝 Pedido" en toolbar de conversación que abre
+     `/pedido/nuevo?observer_id=X`. Receiver: `pedido_nuevo.html` detecta
+     query param y llama `ClientePicker.loadCliente()`.
+   - `/reparto` — sigue con su buscador embebido propio (layout muy
+     distinto al picker, no es swap directo, ver entry "Aplicar a /reparto"
+     abajo).
+
+**Lecciones de la implementación**:
+- El "modo modal" del plan original NO se hizo. Hoy solo hay modo
+  embedded (`{{ cliente_picker() }}` se incrusta en un `<div>`). Si
+  aparece caso de uso del modal, se agrega.
+- El "namespacing por prefix" se simplificó a IDs fijos. Una sola
+  instancia por página alcanza para todo lo que tenemos hoy.
+
+---
+
+## ✅ Aplicar `cliente_picker` a `/reparto` — opción 3 (2026-06-10)
+
+Migrado el JS sin tocar el HTML del layout. Se borraron las 7 funciones
+duplicadas (`buscarCli`, `pickCli`, `abrirNuevoCliente`, `cerrarModal`,
+`guardarNuevoCliente`, `abrirEditarCliente`, `guardarEditarCliente`) y
+los onclicks ahora apuntan a `ClientePicker.X()`. El módulo se hizo
+defensivo (chequea `if(!el)` antes de tocar `pPiso`, `pDepto`, `pRef`,
+`pDomWrap`, `pDomSingle`, `pDomCount`) y se le sumó soporte para los
+campos extra del modal de `/reparto` (`ncDom`, `ncCiudad`) — son
+opcionales: si están, se mandan al POST de crear cliente.
+
+Resultado: `reparto.html` baja de 509 → 413 líneas. Tests siguen
+verdes (20/20 en test_clientes_api.py).
+
+**Pendientes opciones 1 y 2** (unificar layout o parametrizar macro):
+no urgentes, se hace cuando vos quieras unificar visual entre las dos
+pantallas.
+
+---
+
+## ⏳ Pendiente — Namespacing multi-instancia del `cliente_picker` (2026-06-10)
+
+**Caso de uso**: si en alguna pantalla quisieras 2 buscadores de cliente
+(ej. cliente comprador + cliente destinatario en envíos a terceros), el
+módulo actual no lo soporta porque usa IDs fijos.
+
+**Plan**:
+- `cliente_picker(prefix='pedido')` macro recibe prefix para IDs.
+- `ClientePicker(prefix, opts)` factory devuelve instancia con
+  `.getValues()`, `.clear()`, etc.
+- Document-click listener acepta múltiples prefijos.
+
+**Cuándo**: cuando aparezca el primer caso real de 2 instancias.
+No anticipar.
+
+---
+
+### Justificación histórica del `cliente_picker` (mayo 2026)
+
+**Por qué SÍ valía la pena**:
+- Reuso real concreto (2-3 lugares ya identificados, más a futuro).
+- Mejoras al picker (mostrar último pedido, marcar VIP, etc.) propagan
+  a todas las pantallas que lo usen.
+- Riesgo bajo: componente acotado, si falla solo rompe donde se usa.
+- Replaza el 80% del valor que tendría una "abstracción de Flow" con 20%
+  del riesgo (ver descarte abajo).
+
+**Lo que NO vamos a hacer** (descartado 2026-05-28): construir una
+abstracción genérica de **Flow/state-machine** que reúna las 6 pantallas
+(`/atencion`, `/pedido/nuevo`, `/caja`, `/reparto`, `/reparto/planilla`,
+`/envio`) bajo un mismo motor de transiciones. Razones del descarte:
+- Las rutas actuales son simples; la abstracción las haría más complejas.
+- Regla del 3: hoy hay 1 flujo claro (pedido), no 3 repetidos. El shape
+  del Flow se diseña SOLO con info real de producción.
+- Flow engines genéricos tienen tasa de fracaso alta — son
+  desproporcionados para 1 farmacia con 4-state machine.
+
+**Camino intermedio adoptado** (en su lugar):
+- Botones de transición explícitos pantalla-a-pantalla cuando se necesite
+  ("→ Crear pedido", "→ Enviar a caja", "→ Marcar para reparto").
+- Componentes reusables como `cliente_picker` para puntos de fricción
+  concretos.
+- Si dentro de 1-2 meses operando aparecen 3 flujos genuinos repetidos,
+  recién ahí evaluar un Flow engine.
+
+---
+
+## ✅ Pantalla `/clientes` + parser de localidad + auto-presetear ciudad (2026-06-15)
+
+Las 3 mejoras anotadas en este bloque ya están implementadas:
+- Pantalla `/clientes` (commit `6c5f2bd`).
+- Parser de localidad en `separar_direccion` (commit `44ad2d0`).
+- Auto-presetear ciudad y geocoder en `cliente_picker` (commit `44ad2d0`).
+
+---
+
+## ⏳ Pendiente — Cola de "Manuales / Retiros" en la bandeja de /atencion (2026-06-15)
+
+**Origen**: Diego, durante el refactor C de unificación de `/pedido/nuevo` con
+`/atencion`. Las convs creadas con `canal='manual'` (walk-in / mostrador) pueden
+servir como una **cola viva de pedidos manuales pendientes de retiro**.
+
+**Qué hacer**:
+- Pestaña nueva en la barra "Cola | Mías | Bot | Todas | **Manuales**".
+- Muestra convs `canal='manual'` con `estado_atencion != 'cerrada'`.
+- Botón "✓ Retirado" en la conv → cierra (`estado_atencion='cerrada'` o
+  similar) → desaparece de la cola.
+- Se conecta con el flujo "Retiro" del item anterior — cuando alguien arma un
+  pedido manual con destino=retiro, queda esperando en esta cola.
+
+**Side note**: cuando se implemente, NO filtrar `canal='manual'` de la bandeja
+sino agregar esta pestaña dedicada.
+
+---
+
+## ⏳ Pendiente — Flujo "Retiro" sin pasar por planilla de reparto (2026-06-14)
+
+**Origen**: Diego, mientras planificábamos consolidar `/pedido/nuevo` y `/atencion`
+en una sola pantalla (opción C). Observó que hoy cuando "Sale por" = **Retiro**
+(cliente vendrá a la farmacia a buscar), el pedido igual se vuelca en la planilla
+de reparto, donde no aporta — los cadetes no lo levantan, queda como "ruido".
+
+**Qué hacer**:
+- Si `destino == 'retiro'` → el pedido va a caja igual (para emisión fiscal),
+  pero NO aparece en `/reparto/planilla`.
+- Pantalla / sección nueva: **"Retiros pendientes"** donde el operador del
+  mostrador ve qué tiene que preparar.
+- Cuando el cliente llega, click en "Entregado" cierra el pedido.
+- Filtros sugeridos: por estado (preparado / esperando), por día.
+
+**Side note**: queda fuera del refactor C (consolidación de `/pedido/nuevo` →
+`/atencion`). Ese refactor preserva el campo "Sale por" tal cual está hoy.
+
+---
+
+## 🤖 Bot asistente / Atención / Caja — pendientes (2026-06-05)
+
+Hecho: bot Telegram, handoff/panel `/atencion`, ficha cliente, alta lead, UI
+Helpdesk aislada, buscador de productos, card de pedido, presencia de agentes,
+ciudades, **caja + cajero + formas de pago**, re-enganche con Sí/No, derivar por
+texto libre. Lo que falta:
+
+- [ ] **Visibilidad total en el panel** (EN CURSO): ver TODAS las conversaciones,
+  incluidas las que maneja **solo el bot** (hoy el panel solo muestra cola/humano)
+  + poder **intervenir** una charla del bot aunque el cliente no lo haya pedido.
+- [ ] **Resumen del día**: embudo (consultas → pedido → caja → cobro, $ total) +
+  resumen con IA de los chats. (Viene después de caja.)
+- [ ] **⚠️ Valores de PROD en el `.env` de la LAN antes de salir en serio**: hoy en
+  local están en testing → `ATENCION_AUTO_BOT_MINUTOS=30` (prod ~180) y
+  `ATENCION_REENGANCHE_MINUTOS=1` (prod ~5). El default del código/compose ya es
+  prod (180/5); el override de pruebas vive solo en el `.env` local.
+- [ ] **Ficha real de Badia**: `bot/info.py` tiene DATOS DE PRUEBA → cargar
+  horarios, servicios, obras sociales, formas de pago, delivery reales.
+- [ ] **Regenerar token de Telegram** (quedó expuesto en el chat de desarrollo).
+- [ ] **WhatsApp (Fase 2)**: número dedicado + verificación Meta + adaptador Cloud
+  API + webhook expuesto (túnel Cloudflare/Tailscale o relay). Ver
+  `docs/asistente_whatsapp.md` §10-13. El cerebro NO cambia, solo el adaptador.
+- [ ] **Datos de droga/presentación incompletos**: `productos.monodroga` +
+  `producto_atributos` no están cargados para todos → el buscador muestra solo el
+  nombre en muchos. Poblar (backfill).
+- [ ] **Caja → contabilidad**: enganchar los cobros con `flujo_fondos`/`cuentas`
+  (hoy el ticket queda en `tickets_caja`, aislado).
+- [ ] **Encargo**: capturar datos del cliente + enganchar con el módulo de pedidos
+  (hoy el encargo solo deriva a la bandeja).
+- [ ] **Búsqueda por síntoma/droga** (mejorar el matcher; la IA ya ayuda parcial).
+- [ ] **Derivar por IA con tool**: darle a la IA una herramienta `derivar_a_humano`
+  para los casos que el matcher por keywords no capta.
+- [ ] **UI de flujos** (Fase 3): editor del menú del bot sin tocar código.
+- [ ] **Migración**: cuando funcione, bajar Trii y subir esto al número principal.
+
+---
+
+## ⏳ Pendiente — Seguimiento del pedido para el cliente ("posición X de N en reparto") (2026-06-07)
+
+**Idea**: que el cliente que hizo el pedido pueda ver en qué estado está su reparto
+(en ruta, posición X de N, entregado) sin tener usuario en el sistema.
+
+**Lo que ya existe** (no hay que inventar el dato):
+- `PedidoReparto` (database.py:574) tiene `estado` (pendiente → en_ruta → entregado
+  → anulado), `orden_en_ruta` (posición en la ruta, la calcula `reparto_optimizar`
+  por vecino más cercano), `cliente_observer_id`, `ruta_id`, `cadete_id`, `canal`.
+- "Posición X de N" = rank de `orden_en_ruta` del pedido entre las paradas todavía
+  `pendiente`/`en_ruta` de su ruta. Calculable hoy.
+
+**Lo que falta**:
+1. **Acceso sin login** — hoy todo `/reparto/*` está cerrado a admin/dev/farmacia
+   (`_ROLES_OK` en routes/reparto.py:17). Dos caminos:
+   - **Link con token (recomendado)**: agregar columna `token` (uuid corto) a
+     `PedidoReparto` + ruta pública `GET /seguimiento/<token>` SIN `@login_required`
+     que devuelva estado + posición. Se manda por WhatsApp/Telegram al confirmar el
+     pedido. Funciona venga el pedido del canal que venga.
+   - **Por el bot**: el cliente pregunta "¿dónde está mi pedido?" y el bot responde.
+     ⚠ Solo sirve si la conversación está linkeada a `cliente_observer_id`. OJO: el
+     autovínculo por teléfono (bot/store.py:25-26) **solo aplica a WhatsApp** (ahí
+     `canal_user_id` ES el teléfono). En **Telegram** (bot actual) `canal_user_id` NO
+     es el teléfono → el link no es automático, hay que resolverlo aparte.
+2. **BLOCKER real — que el estado avance en vivo**: hoy el estado lo cambia el operador
+   a mano desde el panel (`reparto_estado`). El cadete en la calle no marca nada. Si
+   nadie va marcando `entregado` parada por parada, "posición 3 de 7" queda congelada
+   y miente. **Esto depende directo de la task pendiente "vista del cadete"** (el cadete
+   marca entregado/no vino desde el celu): esa vista es la fuente que hace el seguimiento
+   real-time. Sin ella, el seguimiento es estático.
+3. **Puente bot→reparto**: hoy los `PedidoReparto` se crean solo manualmente por el
+   operador; el bot no inserta en `PedidoReparto` (el campo `canal` lo soporta pero
+   nadie lo usa). Si se quiere que el pedido hecho por el bot se auto-siga, falta ese
+   puente también.
+
+**Esfuerzo / orden**:
+- Versión mínima (link público + estado + posición X de N): ~medio día. Útil, pero la
+  posición solo se mueve si el operador marca entregas.
+- Versión que vale la pena: **hacerla DESPUÉS de "vista del cadete"**, porque ahí el
+  estado avanza solo desde la calle y la posición es genuina.
+
+**Recomendación**: armar encima de "vista del cadete", no antes. Relacionado:
+memoria `reparto-planilla-real` y `bot-asistente-estado`.
+
+---
+
+## ✅ HECHO — Adoptar Alembic para migraciones (2026-05-28 → completado 2026-06-02)
+
+> **HECHO** (PRs #145-147): baseline `alembic/versions/ae43763059ec_baseline_schema.py` con las 93 tablas (review 93/93 ✅ en `docs/alembic_baseline_review.md`), `init_db` adoptó Alembic vía `_alembic_sync()` (bootstrap stamp/upgrade), `stamp head` aplicado en Local + Render, drift reconciliado en ambas. Pendiente gradual (no urgente): migrar los `_pg_add_columns` inline a revisiones dedicadas y borrar el zombie handler cuando haya confianza.
+
+**Contexto / por qué**: el approach actual de migraciones (`Base.metadata.create_all` + `_pg_add_columns` con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` inline) es la causa raíz del wipe del 2026-05-28: una columna NOT NULL agregada al `configuracion` perdió su DEFAULT en algún punto, el INSERT inicial empezó a fallar, el "zombie pg_type handler" lo intentaba arreglar con `DROP TABLE ... CASCADE` y arrastró todos los masters. Mitigado en PR #131 con guard + `RESTRICT`, pero la fragilidad de fondo queda.
+
+**Limitaciones del approach actual**:
+- No hay versionado / historial de migraciones — todo es un pile idempotente.
+- No hay rollback (`alembic downgrade -1` no existe).
+- No hay detección de drift entre instancias (Render perdió DEFAULTs de `transfer_excedente_meses/necesita_meses` sin avisarnos).
+- El zombie handler existe **solo** por la fragilidad de mezclar `create_all` con inline DDL. Con Alembic no se necesita.
+- Auto-generación de migraciones desde modelos: no.
+
+**Plan de adopción** (1 sesión enfocada 4-6 h + gradual):
+1. `alembic init` + config apuntando a `DATABASE_URL`. (~30 min)
+2. **Baseline migration** que represente el schema actual completo (`alembic revision --autogenerate` desde una DB sana + revisión manual línea por línea). (~2-3 h, lo más delicado)
+3. **`alembic stamp head`** en cada instancia (local Badia, Render, Pieri si aplica). Marca cada DB como "ya estás al día". (~30 min)
+4. Cambiar `init_db` para que corra `alembic upgrade head` en vez de `create_all + _pg_add_columns`. (~1 h)
+5. **Gradual**: migrar `_pg_add_columns` a revisiones Alembic dedicadas (las inline ALTERs son idempotentes, no estorban si conviven con Alembic durante la transición). (~1 sesión por mes)
+6. **Borrar el zombie handler** después de tener confianza. (~5 min)
+
+**Riesgos a manejar**:
+- Drift entre instancias (Render vs local). Antes del paso 2, hacer un diff de schemas para reconciliar y arrancar Alembic con baseline limpio en todos.
+- Si el baseline está mal, las migraciones siguientes lo arrastran. La revisión manual del paso 2 es crítica.
+- Adoptar en medio de un sprint de features puede chocar con PRs que agregan columnas. Mejor en una semana tranquila o coordinando.
+
+**No urgente**: el PR #131 ya cortó la sangría (guard + RESTRICT impiden el wipe). Se puede deployar y operar tranquilo con el approach actual. Pero conviene agendar la adopción para no perder este punto.
+
+---
+
+## 🟢 AppNúcleo — dashboard de grupo (read-only, app separada) (2026-05-27)
+
+**Qué es**: UX separada que consolida las farmacias del grupo (Badia, Pieri; vienen **Grassi** y **Cappone**) **sin** multi-tenant in-DB. Cada farmacia sigue siendo su instancia; el Núcleo solo **lee y agrega**. Vive en `appnucleo/` (app Flask standalone). Detalle en `appnucleo/README.md`.
+
+**Decisión de arquitectura**: "datos ya masticados" en el edge. El Núcleo lee la tabla `product_analytics` de cada farmacia (snapshot chico ya pre-agregado por su propio sync: stock+precio+ventas12m+lab+rubro) por **fan-out read-only**. Nunca toca `obs_ventas_detalle` crudo (OOM). Clave cross-instancia = `codigo_alfabeta` (producto) y `matrícula` (médico); `observer_id` difiere entre ObServers.
+
+### ✅ Fase 0 — HECHO (PR #122, 2026-05-27)
+- Landing: KPIs (ventas/unidades/stock valorizado/sin movimiento), tendencia 12m apilada por farmacia, participación, top labs, rotación, tabla por farmacia con salud del feed (🟢/🔴).
+- Ventas-multi: pivot por lab/producto/rubro con columna por farmacia + consolidado (responsive PC+mobile).
+- `data.py` con fan-out + caché TTL 5min + degradación por instancia + modo DEMO sintético. Logo + splash. 5 smoke tests. Validado contra Badia+Pieri reales (28k SKUs).
+- Config por env `NUCLEO_FARMACIAS` (JSON, **rol read-only por farmacia**, URLs no commiteadas) / carga `appnucleo/.env` si hay python-dotenv.
+
+### ✅ Hecho (2026-06-02/03)
+1. **Deploy**: ✅ servicio Render **manual** (fuera del Blueprint — ver `docs/lecciones_deploy_render.md` #9). Registro desde tabla `sucursales` (no env). En prod con Badia+Pieri reales.
+4. **Fase 3 — scoping por dueño**: ✅ login con usuarios (`NUCLEO_USERS`) + scoping por farmacia (PR #143).
+5. **Visual ("caer los calzones")**: ✅ count-up, mapa de calor, drill-down, comparativa A vs B, animaciones de entrada (PR #142).
+
+### ⏳ Pendiente — cómo sigue
+2. **Fase 1 — dims médico (matrícula) + obra social**: no salen de `product_analytics` (necesitan `obs_ventas_detalle`). Resolverlas con **edge-ETL**: cada localhost prepara un feed normalizado (claves naturales) y lo pushea a un **warehouse propio del Núcleo** → el Núcleo consulta local, sin fan-out en vivo. (OS/droga necesitan tabla de normalización de nombres.)
+3. **Fase 2 — pedidos grupales**: se crean en las apps locales (tabla `pedido_grupal` taggeable) y el Núcleo los **consolida** (mantiene al Núcleo read-only).
+- **Endurecer**: rol Postgres read-only por farmacia (hoy las url_externa usan owner). Sumar Grassi + Cappone al registro `sucursales` cuando estén.
+
+**Audiencia**: Diego + dueños (por ahora pocos). Ver memoria `project_appnucleo`.
+
+---
+
+## ⏳ Pendiente — Deduplicar modal de gráfico en order_detail.html (2026-06-03)
+
+**Detectado** en auditoría de calidad. `templates/order_detail.html` (líneas ~2630-2797) tiene su **propia copia inline** del modal de gráfico histórico (`openChart` + `renderHistChart` + `closeHistChart` + HTML del modal), ~90 líneas que duplican el partial `templates/_grafico_historico.html` (que ya usan 10+ pantallas vía `{% include %}`).
+
+**Por qué NO se hizo en el quality pass**: la copia de order_detail NO es idéntica, tiene 2 variantes a preservar:
+1. `CHART_BTN` con **resolución de pack EAN** (`MODULO_PACKS[ean] → ean_unidad`): grafica el EAN unidad, no el pack.
+2. **Botón extra de historial de precios** (`/precios/${ean}`).
+Además la versión inline de `renderHistChart` es light-hardcoded (el partial es theme-aware, funcionaría igual en light). El modal usa `z-50` vs `z-[100]` del partial.
+
+**Cómo hacerlo seguro**: extender el partial para parametrizar CHART_BTN (ej. `window.CHART_EAN_RESOLVER` para el pack + flag de botón de precios) y reemplazar el inline por el include. Como el partial lo usan 10+ pantallas y NO hay tests de frontend, requiere **sesión dedicada con la app corriendo** y verificación manual del gráfico en order_detail + las otras pantallas. order_detail es del módulo OS (premium) → cuidado.
+
+---
+
+## ⏳ Pendiente — Seguimiento de pedidos: etapa "Factura" sin implementar (2026-06-03)
+
+**Detectado** en auditoría de calidad. En `routes/compras_dia.py` (líneas ~2279, 2348, 2358) el pipeline de seguimiento de pedidos tiene la etapa **Factura hardcodeada a `False`** con 3 `TODO`:
+- `etapa_factura` siempre `False` (nunca se marca como facturado).
+- Falta **vincular el pedido con `Invoice`** y cruzar con `InvoiceItem` por droguería + fecha.
+
+**Qué falta**: implementar el cruce pedido↔factura (por droguería + fecha + ítems) para que la etapa Factura refleje la realidad. Hoy la UI muestra esa etapa siempre incompleta sin indicador de que es una feature a medio hacer.
+
+---
+
+## ⏳ Pendiente — Gap de marcas: streaming real del web search (2026-06-03)
+
+El informe `/informes/lab-gap-marcas` (web search de Claude) tiene hoy un **teatro animado** (pasos simulados + fuentes reales en stagger) mientras procesa. Pendiente: **streaming real** (SSE) que muestre EN VIVO lo que Claude hace — cada `server_tool_use` (query que busca) y `web_search_tool_result` (página que lee) a medida que ocurren, fuente por fuente. Es el efecto "esto es una locura" porque es genuino.
+
+Implementación: convertir `POST /informes/lab-gap-marcas/recopilar` a `Response(generator, mimetype='text/event-stream')` usando `client.messages.stream()` con la web_search tool; el generator emite eventos (`🔍 buscó: <query>`, `📄 leyó: <url>`) que el front consume con fetch+ReadableStream y pinta en el modal. Caveats: SSE ocupa un worker gunicorn durante el stream (OK para uso interno); solo aplica en la 1ª búsqueda de cada lab (las siguientes vienen del caché, instantáneas).
+
+---
+
+## ⏳ Pendiente — Transferencias: calcular según presentación (unidades vs cajas) (2026-05-23)
+
+**Problema**: en `/transferencias` las cantidades (stock, venta, sugerido) están en
+**unidades de venta**, no en envases. Ej. GENIOL PLUS mostró Pieri stock = **1216**,
+que son **tabletas sueltas, no cajas**. Una transferencia entre sucursales normalmente
+se mueve por **caja/envase**. Hoy el sugerido "← Badia 179" son 179 unidades sueltas;
+habría que expresarlo/redondearlo en **cajas** (ej. si la caja trae 12 → ~15 cajas).
+
+**Qué falta**:
+- Traer `cantidad_envase` del producto (ya existe en `ProductoAtributo.cantidad_envase`
+  / `ObsProducto.cantidad_envase`) y, cuando esté cargado, mostrar el sugerido también
+  en **cajas** (unidades ÷ cantidad_envase, redondeo a múltiplos del envase).
+- El cruce es cross-DB por alfabeta; el `cantidad_envase` puede salir de cualquiera de
+  las dos farmacias (mismo producto → mismo envase).
+- **Revisar caso por caso**: confirmar que stock/venta de ObServer vienen en unidades
+  de venta y no ya en cajas (varía por producto / presentación).
+
+**Relacionado**: item "Unidad de venta vs unidad de pedido (fraccionados)" más abajo —
+misma necesidad de `cantidad_envase`. Si se resuelve la conversión ahí, reusarla acá.
+
+**Trigger**: cuando se quiera que las transferencias se expresen/redondeen en cajas.
+
+---
+
+## ⏳ Pendiente — Factor de cálculo por horas hasta el próximo pedido (cadencia de reparto) (2026-05-23)
+
+**Idea**: cuando la droguería tiene cargada su **lista de horarios de reparto**
+(matriz semanal en `/compras/dia` — modelo de horarios + countdown a la próxima
+ventana, ya existente), usar las **horas/días hasta el próximo pedido/reparto**
+como **factor de cálculo adicional** del sugerido.
+
+**Lógica**: hoy el "a pedir" cubre un horizonte fijo de N días. Si el próximo
+pedido a esa droguería cae dentro de muchas horas (ventana larga sin reposición),
+hay que pedir **más** para cubrir el gap; si el próximo reparto es pronto, **menos**.
+O sea: escalar el sugerido por la **cobertura real hasta la próxima ventana de
+reparto** en vez de un horizonte fijo.
+
+**Qué ya existe**:
+- Matriz de horarios de reparto por droguería + countdown a la próxima ventana
+  (`routes/compras_dia.py` / `/compras/dia`).
+- Cálculo del sugerido en `services/calculo_pedido.py` y `compras_dia_armar`.
+
+**Qué falta**: derivar "horas/días hasta el próximo reparto" del horario de la
+droguería y meterlo como horizonte dinámico / multiplicador en el `a_pedir`
+(solo cuando el horario está cargado; si no, fallback al horizonte fijo actual).
+
+**Trigger**: cuando los horarios de droguería estén cargados y se quiera afinar
+el sugerido por la cadencia real de reparto.
+
+---
+
+## ⏳ Pendiente — Precio de última compra (para valorizar) (2026-05-22)
+
+**Contexto**: en el informe de cadencias, el "Catálogo dormido" valoriza el stock
+parado. Se pidió valorizar **a precio actual si tiene, sino al precio de última
+compra**.
+
+**Problema de datos**: ambos campos del master están **vacíos**:
+- `Producto.precio_pvp`: 0 de 60.211 poblados.
+- `Producto.ultima_compra`: 0 poblados.
+- Facturas cargadas: solo 3 (23 productos) → no sirve como fuente general.
+
+**Workaround actual (a26ffd0)**: se valoriza al **precio actual =
+`ProductAnalytics.precio_pvp`** (snapshot, el que usa el dashboard; cubre ~70%);
+fallback al **último precio de venta** histórico (monto/unidades de ObsVentaMensual),
+marcado con `*`. NO se usa última compra porque no existe.
+
+**Qué falta para "precio de última compra" de verdad**:
+- Poblar `Producto.ultima_compra` (+ precio) desde una fuente real. Opciones:
+  (a) cargar las compras como facturas (hoy casi no se hace), o
+  (b) ver si ObServer expone una vista de compras (`DW.Compras` / similar) para
+  sincronizar y derivar última compra + precio por producto.
+- Una vez que exista, sumar como fallback intermedio: actual → última compra → venta.
+
 ---
 
 ## ⏳ Pendiente — Unidad de venta vs unidad de pedido (fraccionados) (2026-05-21)
@@ -611,10 +1034,9 @@ una tarea aparte.
 ### ~~Branch protection en `main`~~ ✅ HECHO 2026-05-01
 - Repo hecho público + ruleset via API (id=15842390): require `Syntax check` + `Pytest`, no force-push, no delete. Rama `dev` para trabajo diario, `main` solo para bloques listos.
 
-### Migrar a Alembic
-- **Trigger**: pasamos las ~30 tablas en `database.py` o aparece una migración compleja (renombre, mover datos).
-- **Esfuerzo**: 1-2 días.
-- **Cómo**: instalar Alembic, generar baseline desde la DB actual. Convertir cada `ALTER TABLE IF NOT EXISTS` inline en una migración versionada.
+### ~~Migrar a Alembic~~ ✅ HECHO 2026-06-02 (PRs #145-147)
+- Baseline en `alembic/versions/ae43763059ec_baseline_schema.py`. Ver
+  entrada "HECHO — Adoptar Alembic" arriba en este mismo doc para detalle.
 
 ### Docstrings consistentes
 - **Trigger**: cuando un nuevo dev se sume al proyecto.
@@ -941,7 +1363,303 @@ una tarea aparte.
 
 ---
 
+## ⏳ Pendiente — Precio actual desde `DW.ProductosVendidos` (2026-06-19)
+
+**Trigger**: el buscador de productos en /atencion muestra el "precio
+histórico promedio" del último mes con ventas (`product_analytics.precio_pvp`,
+calculado por `pvp_reciente()`). Eso queda desactualizado vs el precio
+"lista actual" que Observer muestra en su UI propia. Ejemplo concreto
+2026-06-19: Buscapina Compositum x 60 mostraba **$76.670** en el buscador
+pero Observer decía **$61.200**.
+
+**Diagnóstico** (vía exploración con `scripts/observer_buscar_precio.py`):
+- `DW.Productos` **NO expone** el precio lista actual. Solo trae catálogo
+  (descripción, lab, droga, fraccionable, troquel, alfabeta).
+- `DW.ProductosHistorico` (kardex) tampoco — solo metadatos del producto.
+- `DW.ProductosVendidos.Precio` (money) SÍ tiene el precio unitario por
+  venta. Y `FechaDeOperacion` (datetime) permite ordenar por última venta.
+
+**Caveat (fraccionados)**: `Precio` es por **unidad vendida**, no por envase.
+Para Buscapina (fraccionable, envase=60): última venta `Precio=$1.122`,
+`Cantidad=0.167` (= 10 unidades), `Importe=$11.220`. El precio del envase
+sería $1.122 × 60 = $67.320 (cerca del $61.200 que ve Diego, capaz hay
+un descuento o diferencia IVA).
+
+**Cómo**:
+1. ALTER TABLE `obs_productos` ADD COLUMN `precio_ultima_venta DECIMAL(14,2)`.
+2. Nuevo paso de sync (`sync_precios_ultima_venta`):
+   ```sql
+   SELECT IdProducto, Precio, FechaDeOperacion
+     FROM DW.ProductosVendidos pv
+    WHERE FechaDeOperacion = (SELECT MAX(pv2.FechaDeOperacion)
+                                FROM DW.ProductosVendidos pv2
+                               WHERE pv2.IdProducto = pv.IdProducto)
+   ```
+   (o `ROW_NUMBER() OVER (PARTITION BY IdProducto ORDER BY FechaDeOperacion DESC)`
+   si lo anterior es lento sobre 66k productos.)
+3. Persistir en `obs_productos.precio_ultima_venta`.
+4. Modificar `buscar_productos_detalle` en `bot/store.py`: prioridad nueva
+   ```sql
+   COALESCE(pr.precio_pvp,
+            CASE WHEN op.es_fraccionable AND op.cantidad_envase
+                 THEN op.precio_ultima_venta * op.cantidad_envase
+                 ELSE op.precio_ultima_venta END,
+            (SELECT pa.precio_pvp FROM product_analytics pa
+              WHERE pa.codigo_barra = pr.codigo_barra LIMIT 1))
+   ```
+
+**Esfuerzo**: ~2hs (sync + columna + buscador + test smoke).
+
+**Pendiente de decisión**: el gap $67.320 (calculado) vs $61.200 (Observer UI)
+todavía no está cerrado — capaz hay descuento, IVA, o markup farmacia.
+Antes de implementar, validar 2-3 productos más comparando con Observer UI
+para ver si la fórmula `precio_ultima_venta × cantidad_envase` es robusta.
+
+---
+
+## ⏳ Pendiente — Mejorar detalle del DM al cadete (2026-06-19)
+
+**Trigger**: Diego pidió originalmente que el DM al cadete (post-TOMAR)
+incluya "copia del mensaje tomado + datos adicionales (nombre, importe,
+cobrar, etc)". La versión actual de `_telegram_armar_detalle_pedido` en
+`routes/reparto.py` ya muestra: cliente, teléfono, dirección, mapa,
+total/envío/forma de pago, cobrar/pagado, paga_con, vuelto, dato_pago,
+producto, observación, OS, prioridad, receta, firma. Diego dijo
+"después lo mejoramos" — anota lo que faltaría:
+
+- Mostrar **monto a cobrar destacado** si forma=efectivo (ya está pero
+  podría ser más visual: caja grande tipo header).
+- Si forma=link_mp o transferencia y NO está pagado: incluir el link MP
+  copiable o el alias.
+- Mostrar **Pedido #X** en el header con timestamp de cuándo se publicó
+  (útil para saber cuánto tiempo lleva).
+- Si OS=PAMI: badge especial (tipo cobertura).
+- Tarifa de envío del cadete (lo que la farmacia le debe pagar) — útil
+  para que el cadete sepa cuánto liquida al final del turno.
+
+**Esfuerzo**: ~30 min de UX, sin cambios de modelo.
+
+---
+
+## ⏳ Pendiente — Cerrar contraste/legibilidad del buscador en /atencion (2026-06-19)
+
+Pasos de UX del buscador del 💊 que quedaron pendientes después de los
+ajustes del 2026-06-19:
+- ✅ Contraste mejorado (12px + colores explícitos sobre fondo verde).
+- ✅ Badge `FR` para fraccionables.
+- ✅ Stock por envase (24/1450 · x60).
+- ✅ Input de cantidad fraccionada al lado del `+`.
+- ⏳ **Mostrar precio fraccionado en vivo** (ej. al cambiar el input de
+  cantidad de 1 a 5, debajo del precio del envase mostrar "× 5u =
+  $X.XXX"). Hoy se ve solo después de agregar.
+- ⏳ **Recordar última cantidad fraccionada** por producto (si el
+  operador agregó 10u de Buscapina antes, al volver a buscarlo que el
+  input ya esté en 10).
+
+**Esfuerzo**: ~30 min en `templates/atencion.html` (rowProducto + el
+onchange del input).
+
+---
+
+## 🛡 Audit /atencion + /reparto (2026-06-24)
+
+Quality auditor pasado al cierre del día sobre `feat/condiciones-comerciales` (commit `a286c14`). Items priorizados:
+
+### Críticos (afectan dinero o data)
+
+- [ ] **`vNum` en `reparto_control.html:123` rechaza vuelto con punto de miles.** El regex `/^\d+$/` no matchea `"3.000"` → devuelve 0 → `montoCobro` muestra menos del que el cadete realmente debe rendir. Mismo bug afecta `pagaConCell`. Fix: aceptar `"3.000"` / `"3,000"` quitando puntos y comas antes de parsear. ~10 min.
+
+- [ ] **Mejor descuento no gana en `bot/store.py:898-901`.** El match por `conj_productos` (aunque sea 5%) bloquea al de `conj_laboratorios` (aunque sea 20%) porque hay `if not d and r.lab_id`. Debería elegir el % mayor entre ambos en vez de hacer fallback. ~20 min.
+
+- [ ] **Bypass server-side de `esperando_drog`.** El botón "Rendido" está oculto en UI cuando `estado=esperando_drog`, pero `POST /reparto/pedido/<id>/estado` con `entregado` pasa igual sin validación. Cerrar en el endpoint (`routes/reparto.py`, `actualizar_pedido` y `estado`). ~30 min.
+
+### Importantes (atomicidad / seguridad)
+
+- [ ] **Domicilio huérfano en `atencion_cerrar_transaccion` (routes/atencion.py:465-500).** Hay dos `with database.get_db() as s` independientes antes del bloque principal: si el commit del pedido falla, el domicilio creado queda sin pedido asociado. Unificar en una sola sesión.
+
+- [ ] **f-string SQL en `bot/store.py:157-160` (`listar_conversaciones`).** Hoy los IDs son ints (inofensivo), pero rompe la convención `:param` del resto del código. Si alguien copia el patrón, es una inyección. Reemplazar por bind params.
+
+- [ ] **Webhook WhatsApp sin auth (`routes/reparto.py:673`).** A diferencia del de Telegram que valida `X-Telegram-Bot-Api-Secret-Token`, este endpoint acepta cualquier POST. Riesgo: inyección de mensajes falsos al panel, incluyendo frases de "toma" de pedidos. Agregar verificación de firma/header WAHA.
+
+- [ ] **`_pend_rendir` vs `montoCobro` desalineados respecto a `prepagado_cadete`.** Planilla considera el prepago para no marcar pendiente, pero control sigue mostrando `pendiente $X` aunque el cadete haya prepagado. Decidir si control también debe respetarlo (probablemente sí).
+
+### Higiene de código y logs
+
+- [ ] **`print` de diagnóstico en `routes/reparto.py:688`.** Cada webhook WAHA escribe 1.5 KB a stdout — satura logs de Render. Sacarlo o bajarlo a `log.debug`.
+
+- [ ] **`log.warning` usado como traza normal** en handlers de webhook Telegram (`routes/reparto.py:826-847, 930, 1161`). En producción WARNING es el mínimo de alerta — degradado a `log.info`/`log.debug`.
+
+- [ ] **`print('registrar_interaccion error:', e)` en `bot/store.py:1163`.** Inconsistente con el resto del código que usa `log.exception`. Cambiar.
+
+### Inconsistencias entre pantallas
+
+- [ ] **`vNum` duplicado** en JS (`reparto_control.html:123`) y Jinja (`reparto_planilla.html:374-376`) con lógica distinta. La de Jinja sí acepta "3.000", la JS no. Mismo pedido se ve distinto en planilla y control. Solución: unificar (idealmente en un endpoint que devuelva el monto computado).
+
+- [ ] **`operacionCell` en control no respeta `envio_sin_cargo`.** `reparto_control.html:124` hace `importe - envio_costo` siempre; planilla sí chequea el flag. Si `envio_sin_cargo=True` y `envio_costo > 0`, control muestra un negativo.
+
+### Notas (no son issues, solo dejar registro)
+
+- Filtro `VigenciaHasta IS NULL OR >= GETDATE` en sync de condiciones es correcto: deja entrar las futuras (vigencia_desde > hoy) y el helper `_cargar_descuentos_vigentes` las filtra en runtime. Documentar.
+
+---
+
+## 🖥️ Migración a server local `192.168.1.220` (2026-07-20)
+
+Server nuevo `debian13-IA` (Debian 13, 4 vCPU, 18 GB RAM, 93 GB disco, LAN
+`192.168.1.220`). App corriendo con Docker Compose. Reemplaza el hosting
+de la PC de oficina (que hoy corre el DockerPanel tkinter).
+
+### ✅ Hecho
+- App web + gunicorn arriba en `http://192.168.1.220:5000`
+- DB `farmacia` migrada desde local (691 MB, 122 tablas, PG 17→18, en 28 s)
+- Sync inicial ObServer completo (23 pasos, 7m30s)
+- Portainer CE en `https://192.168.1.220:9443` (reemplaza DockerPanel para
+  admin visual de containers)
+- Cron `/etc/cron.d/appfarmweb`:
+  - Auto-sync ObServer→Render 14x/día (00, 06-18 en punto) — mismo schedule
+    que `DockerPanel/agente_config.txt` tenía en la PC local
+  - Backup diario 03:00 → `/root/backups/farmacia_<fecha>.dump` (rotación
+    14 días). Primer dump = 39 MB comprimido
+- SSH key ed25519 instalada para admin remoto sin password
+
+### ⏳ Pendiente
+
+- [ ] **Portar HTTP helper local** (`docker_panel.py` bloque
+  `# === BEGIN HELPER HTTP ===`) al server como servicio systemd o
+  container. Expone `/ping`, `/folder-files`, `/read-pdf` para que Render
+  lea PDFs de la farmacia. **Bloqueado**: definir dónde viven los PDFs
+  cuando el server no tenga acceso al `C:/DocumentosApp/` de la PC de
+  oficina. Opciones:
+  - Compartir la carpeta de PDFs por SMB desde Windows → mount CIFS en el
+    server
+  - Migrar los PDFs a `/root/pdfs/` del server y cambiar el flujo que los
+    genera para escribir directo ahí
+  - Mantener helper en la PC de oficina solo para esto (rompe el objetivo
+    "no depender de otra PC")
+
+- [x] ~~**Decidir qué hace con el DockerPanel local**~~ **RETIRADO 2026-07-21.**
+  Diego ya no ejecuta el DockerPanel local. Los 5 containers de `c:/AppFarmWeb`
+  quedan apagados y con `restart: no` (no arrancan solos cuando Docker Desktop
+  se prende). Volúmenes intactos (data no se pierde). El `docker-compose.yml`
+  sigue con `restart: unless-stopped` — si algún día se hace `docker compose up`,
+  Docker sobreescribe el `restart: no` que se seteó a mano; recordar volver a
+  bajarlos.
+- [x] **Backup pull a esta PC (2026-07-21).** Task Windows "AppFarmWeb - Bajar
+  backup diario" corre 12:00 diarios `scp` del dump del server a
+  `C:\backups\appfarmweb\`. Retención local 30d. Log en `pull.log`. Corre
+  como usuario Lisandro en modo interactivo (requiere sesión loggeada).
+
+- [ ] **Bot Telegram — resolver el conflict**. Hoy corre en tu PC y en el
+  server con el mismo token → Telegram devuelve `Conflict: terminated by
+  other getUpdates`. Cuando el server sea el único, apagar el bot de local.
+
+- [ ] **Backup diario a share externo** (opcional). Hoy el dump queda solo
+  en `/root/backups/` del server. Si el server se rompe, se pierde. Agregar
+  `rsync` a share Windows o cloud (S3, Backblaze, Drive) en el mismo cron.
+
+- [ ] **Keepalive Render** — hoy `keepalive=false` en `agente_config.txt`
+  (Diego lo tenía apagado). Si mantenés Render como respaldo público y no
+  querés que se duerma en el free plan, agregar 1 línea al cron:
+  `*/10 * * * * root curl -s -o /dev/null $RENDER_URL/health_web`.
+
+- [x] ~~**Bind de puertos**~~ **HECHO 2026-07-21.** UFW activo con reglas:
+  SSH/web/Portainer permitidos desde toda la LAN `192.168.1.0/24` (cubre
+  OpenVPN site-to-site que asigna IPs `192.168.1.x`). Postgres (5433/5435)
+  solo desde `192.168.1.161` (PC de Lisandro para queries con
+  DBeaver/pgAdmin). Docker NO bypassea UFW en este server (verificado: el
+  puerto 8000 que Docker publica pero UFW no allowlisteó queda bloqueado).
+
+- [ ] **Verificar/mover panel remoto** (`docker_panel.py:_panel_remoto_loop`).
+  Hoy tu PC polea un buzón de comandos en Render. En el server LAN no hace
+  falta (tenés SSH + Portainer directo), pero si querés poder ejecutar
+  comandos desde Render (ej. desde el navegador móvil sin VPN), hay que
+  portar el loop como systemd al server.
+
+---
+
 **Cómo mantener este doc:**
 - Cuando agregues una idea, ponela en la sección que corresponda.
 - Cuando completes algo, movelo a "Hechos recientes" con la fecha.
 - Si una idea cambia de prioridad, actualizá el trigger.
+
+---
+
+## 🔄 Unificación Cuentas corrientes ↔ Contabilidad (2026-07-21, EN CURSO)
+
+**Decisión de Diego**: unificar los dos módulos bajo el nombre **"Cuentas
+corrientes"**, quedándose con lo que hace Contabilidad (más completo) sin perder
+el import ARCA de Cuentas corrientes.
+
+Ojo con el punto de partida, que confunde: **no eran dos módulos rivales**.
+`/contabilidad` ya contenía a `/cuentas-corrientes` en su menú
+(`base_contab.html`), y la pantalla de extracto ya era compartida. La
+duplicación real era el *cálculo* y el *alta de proveedor*.
+
+### ✅ Hecho — rama `feat/cc-unificacion-saldo` (commit a2d550e)
+
+- **`services/cuenta_corriente.py`**: cálculo único de movimientos y saldo.
+  Entran por ahí el extracto y el listado. Toda pantalla nueva que muestre
+  saldo de proveedor tiene que usarlo.
+- **Bug PREFAC**: el extracto la metía en el haber y el listado en el debe →
+  dos saldos distintos para el mismo proveedor. Ahora no suma (no es
+  comprobante fiscal), se muestra marcada y se totaliza aparte.
+- **Bug CUIT**: extracto por igualdad de string, listado por dígitos. Una
+  factura podía verse en una pantalla y no en la otra. Ahora ambos normalizan.
+- **`PagoAjusteCC` restringido a ajustes**: el alta ya no acepta PAGO ni NCR
+  (entraban dos veces al saldo, junto al pago estructurado). Las filas viejas
+  se siguen leyendo.
+- 19 tests nuevos en `tests/test_cuenta_corriente.py`, incluidos los de
+  **paridad extracto ↔ listado**. Suite completa verde (980).
+
+### ⏳ Pendiente de la Fase A
+
+- **Formulario de proveedor unificado**: hoy hay dos altas del mismo `Provider`
+  — `/providers` (operativa: parser, match_strategy) y
+  `/contabilidad/proveedores` (contable: condición IVA). Diego eligió **una
+  sola pantalla con todos los campos**.
+- **Rename del módulo a "Cuentas corrientes"**: URLs `/cuentas-corrientes/*`
+  con **redirect 301** desde `/contabilidad/*`. Ojo con dos cosas:
+  1. los **prefijos del perfil** en `auth.py` (~línea 134) hay que actualizarlos
+     o el gating deja afuera a los operadores de contabilidad;
+  2. el landing del módulo y el extracto se pelean por `/cuentas-corrientes`.
+     Plan: la raíz es el landing, el extracto pasa a
+     `/cuentas-corrientes/extracto`, y si llega `?proveedor=N` a la raíz se
+     redirige al extracto (así sigue andando el link del sidebar en
+     `base.html:955` y los favoritos viejos).
+
+### ✅ Decidido: la PREFAC no suma al saldo (Diego, 2026-07-21)
+
+La prefactura es "documento no válido como factura": la mercadería entró pero
+no hay comprobante fiscal. Queda en `TIPOS_INFORMATIVOS` — se muestra en el
+extracto marcada y se totaliza aparte, **fuera del saldo**. No moverla a
+`TIPOS_DEBE` sin volver a preguntar.
+
+### 📋 Fases B/C/D — lo que falta en la tabla (auditado 2026-07-21)
+
+De 8 temas de un circuito de CC argentino, **6 no existen y 2 están a medias**:
+
+| # | Tema | Estado | Nota |
+|---|---|---|---|
+| 1 | **Retenciones** (Gan. RG830, IVA RG2854, SUSS, IIBB) | no existe | Pedido explícito de Diego. Ver diseño abajo |
+| 2 | **Vencimiento / aging** | no existe | `Invoice` no tiene `fecha_vencimiento`; el único `vencimiento` del schema es el del **lote** en `InvoiceItem`. Sin esto no se sabe a quién pagar |
+| 3 | **NC imputada a factura puntual** | no existe | `_facturas_pendientes` filtra `== 'FAC'`: la NC ni aparece en la pantalla de pago |
+| 4 | **Saldo inicial de apertura** | workaround | Se carga como AJUSTE_POS, indistinguible de un ajuste real |
+| 5 | **Orden de pago** | no existe | `nro_comprobante` es texto libre, sin numeración ni PDF |
+| 6 | **Libro IVA compras** | placeholder | Los datos ya están (desglose por alícuota); falta la vista |
+| 7 | **Percepciones desde ARCA** | parcial | Columna existe y la llenan converter/IA, pero el import ARCA no. Ganancia chica: el CSV las mete dentro de *Otros Tributos* |
+| 8 | **Moneda extranjera** | columnas muertas | `moneda`/`tipo_cambio` se escriben y **nunca se leen**: una factura en USD suma su nominal como si fueran pesos |
+
+**Diseño de retenciones** (Fase B). La regla: *la retención cancela deuda pero
+no sale plata*. Si le debés 100.000 y retenés 6.000 de Ganancias, transferís
+94.000 pero la factura queda cancelada por 100.000 y le das el certificado.
+Eso choca con la validación de `routes/contabilidad.py` (~línea 296):
+
+```python
+if suma_apps - monto_total > 0.005:
+    flash('La suma aplicada a facturas supera el monto del pago.')
+```
+
+Con retenciones esa suma **tiene que poder superar** el monto pagado. Pasa a
+ser `suma_apps <= monto_pagado + retenciones`. Modelo nuevo `PagoRetencion`
+(pago_id, régimen, jurisdicción para IIBB, base imponible, alícuota, importe,
+nro. certificado).

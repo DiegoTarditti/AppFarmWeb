@@ -5,6 +5,14 @@
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+<script>
+// El plugin se auto-registra global; lo apagamos por default para que NO afecte
+// al chart de precios. Cada chart lo activa explícitamente si lo necesita.
+if (window.ChartDataLabels) {
+    Chart.defaults.set('plugins.datalabels', { display: false });
+}
+</script>
 {% endblock %}
 
 {% block main %}
@@ -26,51 +34,102 @@
                 <span class="font-mono text-xs">EAN {{ producto.codigo_barra }}</span>
                 {% if producto.laboratorio %}<span class="ml-2 inline-block px-2 py-0.5 rounded bg-sky-100 text-sky-800 text-xs font-semibold">{{ producto.laboratorio }}</span>{% endif %}
                 {% if producto.es_pack %}<span class="ml-2 inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-semibold">PACK</span>{% endif %}
+                {% if producto.fraccionado %}<span class="ml-2 inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-semibold">FRACCIONADO</span>{% endif %}
             </p>
         </div>
         <a href="{{ url_for('productos_list') }}" class="text-xs text-sky-600 hover:underline">← Productos</a>
     </div>
 </div>
 
-<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
+<div class="flex-1 overflow-auto p-3 sm:p-4 space-y-3">
 
-    <!-- Identificación -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div class="bg-white rounded-xl border border-surface-border p-5">
-            <p class="font-semibold text-sm mb-3">📋 Identificación</p>
-            <dl class="text-sm space-y-2">
+    {% if producto.observer_id %}
+    <!-- Movimientos 30 días + Histórico 12m en grid 2 cols -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <!-- Izq: Movimientos 30d -->
+        <div class="bg-white rounded-xl border border-surface-border p-4 flex flex-col">
+            <div class="flex items-center justify-between mb-2">
+                <p class="font-semibold text-sm">📊 Movimientos 30 días</p>
+                <span id="mov-stats" class="text-xs text-[#888]"></span>
+            </div>
+            <div id="mov-loading" class="text-center text-sm text-[#999] py-4">Cargando…</div>
+            <div id="mov-empty" class="hidden text-center text-sm text-[#999] py-4">Sin movimientos en los últimos 30 días.</div>
+            <div id="mov-content" class="hidden flex-1 flex flex-col">
+                <div class="flex-1" style="min-height:320px"><canvas id="chart-movs"></canvas></div>
+            </div>
+        </div>
+        <!-- Der: Año 12m (mismo gráfico que /productos botón 📊) -->
+        {% include '_grafico_anio.html' %}
+    </div>
+    <!-- KPIs (full width debajo del grid) -->
+    <div id="mov-kpis" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        <div class="bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+            <p class="text-[10px] uppercase tracking-wide text-emerald-700 font-bold">Ingresos (facturas)</p>
+            <p id="kpi-ingresos" class="font-mono font-bold text-emerald-900 text-sm mt-0.5">—</p>
+        </div>
+        <div class="bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-1.5">
+            <p class="text-[10px] uppercase tracking-wide text-sky-700 font-bold">Pedidos emitidos</p>
+            <p id="kpi-pedidos" class="font-mono font-bold text-sky-900 text-sm mt-0.5">—</p>
+        </div>
+        <div class="bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
+            <p class="text-[10px] uppercase tracking-wide text-rose-700 font-bold">Ventas</p>
+            <p id="kpi-ventas" class="font-mono font-bold text-rose-900 text-sm mt-0.5">—</p>
+        </div>
+        <div class="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+            <p class="text-[10px] uppercase tracking-wide text-amber-700 font-bold">Pendiente proveedor</p>
+            <p id="kpi-pendiente" class="font-mono font-bold text-amber-900 text-sm mt-0.5">—</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Identificación + Datos ObServer (fusionados) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="bg-white rounded-xl border border-surface-border p-4">
+            <p class="font-semibold text-sm mb-2.5">📋 Identificación</p>
+            <dl class="text-xs grid grid-cols-2 gap-x-3 gap-y-1.5">
                 {% if producto.codigo_alfabeta %}
-                <div class="flex justify-between gap-3"><dt class="text-[#888]">Cód. Alfabeta</dt><dd class="font-mono">{{ producto.codigo_alfabeta }}</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Cód. Alfabeta</dt><dd class="font-mono">{{ producto.codigo_alfabeta }}</dd></div>
                 {% endif %}
                 {% if producto.observer_id %}
-                <div class="flex justify-between gap-3"><dt class="text-[#888]">Observer ID</dt><dd class="font-mono">{{ producto.observer_id }}</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Observer ID</dt><dd class="font-mono">{{ producto.observer_id }}</dd></div>
                 {% endif %}
-                <div class="flex justify-between gap-3"><dt class="text-[#888]">PVP</dt><dd class="font-mono font-semibold">{{ '$' + ('{:,.2f}'.format(producto.precio_pvp)|replace(',','X')|replace('.',',')|replace('X','.')) if producto.precio_pvp else '—' }}</dd></div>
-                <div class="flex justify-between gap-3"><dt class="text-[#888]">Última compra</dt><dd>{{ producto.ultima_compra or '—' }}</dd></div>
-                <div class="flex justify-between gap-3"><dt class="text-[#888]">Actualizado</dt><dd class="text-[#888]">{{ producto.actualizado_en or '—' }}</dd></div>
-                {% if producto.fuente_creacion %}
-                <div class="flex justify-between gap-3">
-                    <dt class="text-[#888]">Origen</dt>
-                    <dd>
-                        {% if producto.fuente_creacion == 'oferta_import' %}
-                        <span class="inline-flex items-center gap-1 text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded font-semibold">
-                            ⚠ Creado desde oferta — catalogar
-                        </span>
-                        {% else %}
-                        <span class="text-[11px] text-[#888]">{{ producto.fuente_creacion }}</span>
-                        {% endif %}
-                    </dd>
+                {% if obs and obs.troquel %}
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Troquel</dt><dd class="font-mono">{{ obs.troquel }}</dd></div>
+                {% endif %}
+                {% if obs and obs.tvc %}
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Tipo venta</dt><dd class="font-mono">{{ obs.tvc }}</dd></div>
+                {% endif %}
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">PVP</dt><dd class="font-mono font-semibold">{{ '$' + ('{:,.2f}'.format(producto.precio_pvp)|replace(',','X')|replace('.',',')|replace('X','.')) if producto.precio_pvp else '—' }}</dd></div>
+                {% if obs and obs.stock_actual is not none %}
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Stock{% if obs.es_fraccionable %} (u){% endif %}</dt><dd class="font-mono font-semibold">{{ obs.stock_actual }}</dd></div>
+                {% endif %}
+                {% if obs and obs.cantidad_envase %}
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Cant. envase</dt><dd class="font-mono">{{ obs.cantidad_envase }}</dd></div>
+                {% endif %}
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Última compra</dt><dd>{{ producto.ultima_compra or '—' }}</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Actualizado</dt><dd class="text-[#888]">{{ producto.actualizado_en or '—' }}</dd></div>
+                {% if obs and obs.cadena_frio %}
+                <div class="col-span-2 flex justify-between gap-2"><dt class="text-rose-700 font-semibold">⚠ Cadena frío</dt><dd class="text-rose-700 font-bold">SÍ</dd></div>
+                {% endif %}
+                {% if obs and obs.baja %}
+                <div class="col-span-2 flex justify-between gap-2"><dt class="text-rose-700 font-semibold">Baja</dt><dd class="text-rose-700">{{ obs.baja.strftime('%d/%m/%Y') }}</dd></div>
+                {% endif %}
+                {% if producto.fuente_creacion and producto.fuente_creacion == 'oferta_import' %}
+                <div class="col-span-2 mt-1">
+                    <span class="inline-flex items-center gap-1 text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded font-semibold">
+                        ⚠ Creado desde oferta — catalogar
+                    </span>
                 </div>
                 {% endif %}
             </dl>
             <!-- EANs (1-a-N) -->
-            <div class="mt-4 pt-4 border-t border-[#eee]">
-                <div class="flex items-center justify-between mb-2">
-                    <p class="text-xs uppercase tracking-wide text-[#6f6f6f] font-bold">📦 Códigos de barra</p>
+            <div class="mt-3 pt-3 border-t border-[#eee]">
+                <div class="flex items-center justify-between mb-1.5">
+                    <p class="text-[11px] uppercase tracking-wide text-[#6f6f6f] font-bold">📦 Códigos de barra</p>
                     <button type="button" onclick="document.getElementById('add-cb-form').classList.toggle('hidden')"
-                            class="text-[11px] px-2 py-1 rounded bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 font-semibold">+ Agregar</button>
+                            class="text-[11px] px-2 py-0.5 rounded bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 font-semibold">+ Agregar</button>
                 </div>
-                <ul id="cb-list" class="space-y-1.5 text-xs">
+                <ul id="cb-list" class="space-y-1 text-xs">
                     <li class="text-[#bbb]">Cargando…</li>
                 </ul>
                 <form id="add-cb-form" class="hidden mt-2 flex gap-2 items-center">
@@ -80,21 +139,20 @@
                     <button type="button" onclick="agregarCB()" class="bg-brand hover:bg-brand-hover text-brand-dark text-xs font-semibold px-2.5 py-1 rounded">✓</button>
                     <button type="button" onclick="document.getElementById('add-cb-form').classList.add('hidden')" class="text-xs text-[#888] hover:text-[#1e1e1e]">✕</button>
                 </form>
-                <p class="text-[10px] text-[#aaa] mt-2">Sin límite de cantidad. El marcado como <strong>principal</strong> se sincroniza con <code>productos.codigo_barra</code>.</p>
             </div>
         </div>
 
         <!-- Atributos catalogados -->
-        <div class="bg-white rounded-xl border border-surface-border p-5">
-            <div class="flex items-center justify-between mb-3">
+        <div class="bg-white rounded-xl border border-surface-border p-4">
+            <div class="flex items-center justify-between mb-2">
                 <p class="font-semibold text-sm">🧬 Atributos estructurados</p>
                 <button type="button" onclick="reExtraer()" id="btn-reextraer"
-                        class="text-[11px] px-2 py-1 rounded bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold">
+                        class="text-[11px] px-2 py-0.5 rounded bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold">
                     🔄 Re-extraer
                 </button>
             </div>
             {% if atributos %}
-            <div class="mb-3 flex items-center gap-2 text-[10px]">
+            <div class="mb-2 flex items-center gap-2 text-[10px]">
                 {% set fuente_color = {'observer':'emerald','mixto':'violet','regex':'sky','manual':'rose','llm':'amber'} %}
                 {% set c = fuente_color.get(atributos.fuente, 'slate') %}
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-{{ c }}-100 text-{{ c }}-800 border border-{{ c }}-200 font-bold uppercase">{{ atributos.fuente }}</span>
@@ -102,7 +160,7 @@
                 {% if atributos.extraido_en %}<span class="text-[#aaa]">· {{ atributos.extraido_en }}</span>{% endif %}
             </div>
             {% endif %}
-            <form id="form-atributos" class="text-sm space-y-2.5">
+            <form id="form-atributos" class="text-xs space-y-1.5">
                 <div class="grid grid-cols-3 gap-2 items-center">
                     <label for="atr-monodroga" class="text-[#888]">Monodroga</label>
                     <input type="text" id="atr-monodroga" name="monodroga" value="{{ atributos.monodroga_display if atributos else '' }}"
@@ -146,22 +204,6 @@
         </div>
     </div>
 
-    {% if obs %}
-    <div class="bg-white rounded-xl border border-surface-border p-5">
-        <p class="font-semibold text-sm mb-3">🔗 Datos de ObServer</p>
-        <dl class="text-sm grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Descripción ObServer</dt><dd class="text-[#1e1e1e]">{{ obs.descripcion }}</dd></div>
-            {% if obs.monodroga %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Monodroga</dt><dd class="text-[#1e1e1e]">{{ obs.monodroga }}</dd></div>{% endif %}
-            {% if obs.cantidad_envase %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Cant. envase</dt><dd class="font-mono">{{ obs.cantidad_envase }}</dd></div>{% endif %}
-            {% if obs.troquel %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Troquel</dt><dd class="font-mono">{{ obs.troquel }}</dd></div>{% endif %}
-            {% if obs.codigo_alfabeta %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Cód. Alfabeta</dt><dd class="font-mono">{{ obs.codigo_alfabeta }}</dd></div>{% endif %}
-            {% if obs.tvc %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Tipo venta</dt><dd class="font-mono">{{ obs.tvc }}</dd></div>{% endif %}
-            {% if obs.cadena_frio %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">⚠ Cadena frío</dt><dd class="text-rose-700 font-bold">SÍ</dd></div>{% endif %}
-            {% if obs.baja %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Baja</dt><dd class="text-rose-700">{{ obs.baja.strftime('%d/%m/%Y') }}</dd></div>{% endif %}
-        </dl>
-    </div>
-    {% endif %}
-
     <!-- Histórico de precios embebido -->
     <div class="bg-white rounded-xl border border-surface-border p-5">
         <div class="flex items-center justify-between mb-3">
@@ -192,6 +234,8 @@
 <script>
 const PROD_ID = {{ producto.id }};
 const EAN = {{ producto.codigo_barra|tojson }};
+const OBSERVER_ID = {{ producto.observer_id|tojson if producto.observer_id else 'null' }};
+const STOCK_ACTUAL = {{ obs.stock_actual if obs and obs.stock_actual is not none else 'null' }};
 
 function fmtMoney(v) {
     if (v === null || v === undefined) return '<span class="text-[#bbb]">—</span>';
@@ -282,6 +326,157 @@ async function reExtraer() {
 }
 
 cargarPrecios();
+
+// ─── Movimientos 30 días ─────────────────────────────────────────────────
+async function cargarMovimientos() {
+    if (!OBSERVER_ID) return;  // sin observer_id no hay datos del POS
+    let ventasR, ingresosR, snapR;
+    try {
+        [ventasR, ingresosR, snapR] = await Promise.all([
+            fetch(`/api/observer-product/${OBSERVER_ID}/chart-mes`).then(r => r.json()),
+            fetch(`/api/observer-product/${OBSERVER_ID}/ingresos-mes`).then(r => r.json()),
+            // Snapshots reales — endpoint Fase 2, devuelve [] si no hay datos
+            // (ej. Render sin STOCK_SNAPSHOT_ENABLED, o farmacia sin DockerPanel corriendo).
+            fetch(`/api/observer-product/${OBSERVER_ID}/stock-snapshot?dias=30`)
+                .then(r => r.json()).catch(() => ({ok: false, snapshots: []})),
+        ]);
+    } catch (e) {
+        document.getElementById('mov-loading').classList.add('hidden');
+        document.getElementById('mov-empty').textContent = 'Error cargando movimientos: ' + e.message;
+        document.getElementById('mov-empty').classList.remove('hidden');
+        return;
+    }
+    document.getElementById('mov-loading').classList.add('hidden');
+    const totalVentas = (ventasR && ventasR.ok) ? (ventasR.total_30d || 0) : 0;
+    const totalIngresos = (ingresosR && ingresosR.ok) ? (ingresosR.total_30d || 0) : 0;
+    const totalPedidos = (ingresosR && ingresosR.ok) ? (ingresosR.pedido_total_30d || 0) : 0;
+    const pendiente = (ingresosR && ingresosR.ok) ? (ingresosR.pendiente_total || 0) : 0;
+    if (totalVentas === 0 && totalIngresos === 0 && totalPedidos === 0 && pendiente === 0) {
+        document.getElementById('mov-empty').classList.remove('hidden');
+        return;
+    }
+    document.getElementById('mov-content').classList.remove('hidden');
+    document.getElementById('mov-kpis').classList.remove('hidden');
+    document.getElementById('kpi-ventas').textContent = totalVentas.toLocaleString('es-AR');
+    document.getElementById('kpi-ingresos').textContent = totalIngresos.toLocaleString('es-AR');
+    document.getElementById('kpi-pedidos').textContent = totalPedidos.toLocaleString('es-AR');
+    document.getElementById('kpi-pendiente').textContent = pendiente.toLocaleString('es-AR');
+    document.getElementById('mov-stats').textContent =
+        `+${totalIngresos} ingresos · −${totalVentas} ventas`;
+    const labels = (ventasR && ventasR.labels) || (ingresosR && ingresosR.labels) || [];
+    const ventasData = (ventasR && ventasR.data) || labels.map(() => 0);
+    const ingresosData = (ingresosR && ingresosR.data) || labels.map(() => 0);
+    const pedidosData = (ingresosR && ingresosR.pedido_data) || labels.map(() => 0);
+    // Egresos mostrados como negativos para apilar arriba/abajo del eje 0.
+    const ventasNeg = ventasData.map(v => -v);
+    // Stock implícito por día: backwards desde STOCK_ACTUAL (cierre de hoy).
+    // stock(d-1) = stock(d) + ventas(d) - ingresos(d). Pedidos NO se suman
+    // (son pedidos al proveedor, no entrada real al stock).
+    let stockSerie = null;
+    if (STOCK_ACTUAL !== null) {
+        stockSerie = new Array(labels.length);
+        let s = STOCK_ACTUAL;
+        for (let i = labels.length - 1; i >= 0; i--) {
+            stockSerie[i] = s;
+            s = s + (ventasData[i] || 0) - (ingresosData[i] || 0);
+        }
+    }
+    const avgDiario = (ventasR && ventasR.avg_diario) || (totalVentas / Math.max(1, labels.length));
+    const datasets = [
+        { label: 'Ingresos (facturas)', data: ingresosData,
+          backgroundColor: '#10b98199', borderColor: '#059669', borderWidth: 1, stack: 'mov' },
+        { label: 'Pedidos emitidos',    data: pedidosData,
+          backgroundColor: '#3b82f699', borderColor: '#2563eb', borderWidth: 1, stack: 'mov', hidden: true },
+        { label: 'Ventas',              data: ventasNeg,
+          backgroundColor: '#ef444499', borderColor: '#dc2626', borderWidth: 1, stack: 'mov' },
+        // Línea de promedio de ventas (negativa para coincidir con el eje de egresos).
+        { type: 'line', label: `Prom. ${avgDiario.toFixed(1)}/día`,
+          data: Array(labels.length).fill(-avgDiario),
+          borderColor: '#EAB308', borderWidth: 2, borderDash: [6, 3],
+          pointRadius: 0, tension: 0, fill: false, yAxisID: 'y',
+          datalabels: { display: false } },
+    ];
+    if (stockSerie) {
+        datasets.push({
+            type: 'line', label: 'Stock implícito', data: stockSerie,
+            borderColor: '#94a3b8', backgroundColor: '#94a3b822',
+            borderWidth: 1.5, pointRadius: 1.5, borderDash: [4, 3],
+            pointBackgroundColor: ctx => (stockSerie[ctx.dataIndex] < 0) ? '#dc2626' : '#94a3b8',
+            segment: {
+                borderColor: ctx =>
+                    (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? '#dc2626' : '#94a3b8',
+            },
+            tension: 0.2, yAxisID: 'y1',
+            datalabels: { display: false },
+        });
+    }
+    // Stock real desde snapshots (Fase 2). Si hay datos, se superpone como
+    // línea sólida — la diferencia con la línea de implícito = movimientos
+    // no documentados (compras al contado, ajustes, mermas, etc.).
+    if (snapR && snapR.ok && snapR.snapshots && snapR.snapshots.length > 0) {
+        const snapMap = new Map();
+        for (const s of snapR.snapshots) {
+            const [, mm, dd] = s.fecha.split('-');
+            snapMap.set(`${dd}/${mm}`, s.stock_actual);
+        }
+        const stockReal = labels.map(l => snapMap.has(l) ? snapMap.get(l) : null);
+        datasets.push({
+            type: 'line', label: 'Stock real', data: stockReal,
+            borderColor: '#0d9488', backgroundColor: '#0d948822',
+            borderWidth: 2.5, pointRadius: 3, pointBackgroundColor: '#0d9488',
+            tension: 0.2, spanGaps: true, yAxisID: 'y1',
+            datalabels: { display: false },
+        });
+    }
+    new Chart(document.getElementById('chart-movs').getContext('2d'), {
+        type: 'bar',
+        data: { labels, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { stacked: true, grid: { color: '#f0f0f0' }, ticks: { font: { size: 10 } } },
+                y: { stacked: true, grid: { color: '#f0f0f0' },
+                     ticks: { font: { size: 10 } } },
+                y1: stockSerie ? {
+                    position: 'right', beginAtZero: false,
+                    grid: { display: false },
+                    ticks: { font: { size: 10 }, color: '#475569' },
+                    title: { display: true, text: 'Stock', font: { size: 10 }, color: '#475569' },
+                } : { display: false },
+            },
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { size: 11 } } },
+                tooltip: { callbacks: {
+                    label: ctx => {
+                        const v = ctx.raw;
+                        if (v === null || v === undefined) return null;
+                        // Las líneas de stock (eje y1) mantienen su signo real;
+                        // las barras de ventas (que guardé negativas) se muestran positivas.
+                        const shown = (ctx.dataset.yAxisID === 'y1')
+                            ? v : Math.abs(v);
+                        return `${ctx.dataset.label}: ${shown.toLocaleString('es-AR')}`;
+                    },
+                }},
+                datalabels: {
+                    display: ctx => ctx.dataset.data[ctx.dataIndex] !== 0,
+                    anchor: 'end',
+                    align: 'end',
+                    offset: 1,
+                    formatter: v => v === 0 ? '' : Math.abs(v).toLocaleString('es-AR'),
+                    font: { size: 9, weight: '700' },
+                    color: ctx => ctx.dataset.borderColor,
+                },
+            },
+        },
+    });
+}
+cargarMovimientos();
+
+// Histórico anual (12m) en la columna derecha — mismo chart que /productos botón 📊.
+if (OBSERVER_ID && typeof cargarGraficoAnio === 'function') {
+    cargarGraficoAnio(OBSERVER_ID, {{ producto.descripcion|tojson }});
+}
 
 // ─── EANs (1-a-N) ────────────────────────────────────────────────────────
 const FUENTE_BADGE = {

@@ -1,0 +1,316 @@
+{% extends "base.html" %}
+{% set nav_active = "laboratorios" %}
+{% block title %}Pack equivalencias — {{ lab.nombre }}{% endblock %}
+
+{% block main %}
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
+    <div>
+        <h1 class="text-base font-bold text-[#1e1e1e]">📦 Pack equivalencias — {{ lab.nombre }}</h1>
+        <p class="text-xs text-[#888] mt-0.5">EAN pack del módulo → EAN unidad equivalente (ObServer). Usadas auto al importar nuevos módulos.</p>
+    </div>
+    <div class="flex gap-2 items-center">
+        <span class="text-xs text-[#888]">{{ total }} registros</span>
+        <button type="button" onclick="document.getElementById('nueva-modal').classList.remove('hidden')"
+                class="text-xs bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg">
+            ➕ Nueva fila
+        </button>
+        <button type="button" onclick="document.getElementById('upload-modal').classList.remove('hidden')"
+                class="text-xs bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 font-semibold px-3 py-1.5 rounded-lg">
+            ⬆ Subir Excel
+        </button>
+        <a href="{{ url_for('laboratorios_list') }}" class="text-xs text-sky-600 hover:underline">← Laboratorios</a>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+    <div class="rounded-lg px-4 py-3 text-sm border mb-4
+        {% if cat == 'error' %}bg-red-50 text-red-800 border-red-200
+        {% elif cat == 'success' %}bg-emerald-50 text-emerald-800 border-emerald-200
+        {% else %}bg-sky-50 text-sky-800 border-sky-200{% endif %}">{{ msg }}</div>
+    {% endfor %}
+    {% endwith %}
+
+    {% if equiv %}
+    <div class="bg-white border border-[#e0e0e0] rounded-xl overflow-hidden">
+        <table class="w-full text-xs">
+            <thead class="bg-[#fafafa] text-[10px] uppercase text-[#888] sticky top-0">
+                <tr>
+                    <th class="px-3 py-2 text-left">EAN pack</th>
+                    <th class="px-3 py-2 text-left">Desc. pack</th>
+                    <th class="px-3 py-2 text-left">EAN unidad (ObServer)</th>
+                    <th class="px-3 py-2 text-left">Desc. unidad</th>
+                    <th class="px-3 py-2 text-center">Cant.</th>
+                    <th class="px-3 py-2 text-center">Fuente</th>
+                    <th class="px-3 py-2 text-center">Actualizado</th>
+                    <th class="px-3 py-2"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in equiv %}
+                <tr class="border-t border-[#f0f0f0] hover:bg-[#fafafa]" data-id="{{ e.id }}">
+                    <td class="px-3 py-1.5 font-mono text-[#555]">{{ e.ean_pack }}</td>
+                    <td class="px-3 py-1.5 text-[#666] truncate max-w-[260px]" title="{{ e.desc_pack }}">{{ e.desc_pack or '—' }}</td>
+                    <td class="px-3 py-1.5 font-mono relative">
+                        <input type="text" id="ean-{{ e.id }}" value="{{ e.ean_unidad }}"
+                               data-eq-id="{{ e.id }}"
+                               oninput="onEanSearch({{ e.id }}, this.value)"
+                               onfocus="onEanSearch({{ e.id }}, this.value)"
+                               onblur="onEanBlur({{ e.id }}, this.value)"
+                               autocomplete="off"
+                               class="font-mono text-xs bg-transparent border border-transparent hover:border-[#e0e0e0] focus:border-amber-400 rounded px-1 py-0.5 w-44 focus:outline-none">
+                    </td>
+                    <td class="px-3 py-1.5 text-[#666] truncate max-w-[260px]">
+                        <input type="text" id="desc-{{ e.id }}" value="{{ e.desc_unidad }}"
+                               onblur="editEquiv({{ e.id }}, 'desc_unidad', this.value)"
+                               class="text-xs bg-transparent border border-transparent hover:border-[#e0e0e0] focus:border-amber-400 rounded px-1 py-0.5 w-full focus:outline-none">
+                    </td>
+                    <td class="px-3 py-1.5 text-center">
+                        <input type="number" min="1" value="{{ e.cantidad }}"
+                               onblur="editEquiv({{ e.id }}, 'cantidad', this.value)"
+                               class="text-xs bg-transparent border border-transparent hover:border-[#e0e0e0] focus:border-amber-400 rounded px-1 py-0.5 w-14 text-center focus:outline-none">
+                    </td>
+                    <td class="px-3 py-1.5 text-center">
+                        {% if e.fuente == 'excel' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">EXCEL</span>
+                        {% elif e.fuente == 'manual' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">MANUAL</span>
+                        {% else %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">APREND.</span>{% endif %}
+                    </td>
+                    <td class="px-3 py-1.5 text-center text-[10px] text-[#888]">{{ e.actualizado_en }}</td>
+                    <td class="px-3 py-1.5 text-center">
+                        <form method="POST" action="{{ url_for('lab_pack_equivalencia_borrar', lab_id=lab.id, eq_id=e.id) }}"
+                              onsubmit="return confirm('¿Borrar la equivalencia del EAN {{ e.ean_pack }}?')" class="inline">
+                            <button type="submit" class="text-xs text-red-600 hover:text-red-800" title="Borrar">🗑</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="bg-white border border-[#e0e0e0] rounded-xl p-12 text-center">
+        <p class="text-sm text-[#888] mb-2">No hay pack equivalencias cargadas para este laboratorio todavía.</p>
+        <p class="text-xs text-[#aaa]">Subí un Excel para cargarlas, o se irán aprendiendo automáticamente al importar módulos.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal de upload -->
+<div id="upload-modal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
+        <div class="flex items-start justify-between mb-3">
+            <h2 class="text-base font-bold text-[#1e1e1e]">Subir Excel de equivalencias</h2>
+            <button type="button" onclick="document.getElementById('upload-modal').classList.add('hidden')"
+                    class="text-[#999] hover:text-[#333]">✕</button>
+        </div>
+        <div class="text-xs text-[#666] mb-4 space-y-2">
+            <p>Columnas reconocidas (no importa el orden, case-insensitive):</p>
+            <ul class="list-disc list-inside text-[11px] space-y-0.5 ml-2">
+                <li><code class="bg-[#f5f5f5] px-1 rounded">ean_pack</code> (o <code class="bg-[#f5f5f5] px-1 rounded">ean</code>) — <strong>obligatorio</strong></li>
+                <li><code class="bg-[#f5f5f5] px-1 rounded">ean_unidad</code> (o <code class="bg-[#f5f5f5] px-1 rounded">ean_observer</code>) — <strong>obligatorio</strong></li>
+                <li><code class="bg-[#f5f5f5] px-1 rounded">cantidad</code> — opcional (default 1)</li>
+                <li><code class="bg-[#f5f5f5] px-1 rounded">desc_pack</code> (o <code class="bg-[#f5f5f5] px-1 rounded">descripcion</code>) — opcional</li>
+                <li><code class="bg-[#f5f5f5] px-1 rounded">desc_unidad</code> — opcional</li>
+            </ul>
+            <p class="text-[11px] text-[#888]">Los EANs que ya existen se actualizan (upsert por <code>ean_pack</code>).</p>
+        </div>
+        <form method="POST" action="{{ url_for('lab_pack_equivalencias_upload', lab_id=lab.id) }}"
+              enctype="multipart/form-data" class="space-y-3">
+            <input type="file" name="archivo" accept=".xlsx,.xls" required
+                   class="text-xs w-full border border-[#e0e0e0] rounded-lg p-2">
+            <div class="flex justify-end gap-2 mt-4">
+                <button type="button" onclick="document.getElementById('upload-modal').classList.add('hidden')"
+                        class="text-xs px-3 py-1.5 rounded-lg border border-[#e0e0e0] text-[#666] hover:bg-[#f5f5f5]">Cancelar</button>
+                <button type="submit"
+                        class="text-xs bg-amber-500 hover:bg-amber-600 text-white font-semibold px-4 py-1.5 rounded-lg">
+                    Procesar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal de alta manual (una fila) -->
+<div id="nueva-modal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
+        <div class="flex items-start justify-between mb-3">
+            <h2 class="text-base font-bold text-[#1e1e1e]">➕ Nueva pack equivalencia</h2>
+            <button type="button" onclick="document.getElementById('nueva-modal').classList.add('hidden')"
+                    class="text-[#999] hover:text-[#333]">✕</button>
+        </div>
+        <form method="POST" action="{{ url_for('lab_pack_equivalencia_crear', lab_id=lab.id) }}" class="space-y-3">
+            <div>
+                <label class="block text-[11px] uppercase font-semibold text-[#888] mb-1">EAN pack <span class="text-red-500">*</span></label>
+                <input type="text" name="ean_pack" required autocomplete="off" inputmode="numeric"
+                       class="font-mono text-sm w-full border border-[#e0e0e0] rounded-lg px-2 py-1.5 focus:border-emerald-400 focus:outline-none">
+            </div>
+            <div>
+                <label class="block text-[11px] uppercase font-semibold text-[#888] mb-1">EAN unidad (ObServer) <span class="text-red-500">*</span></label>
+                <input type="text" name="ean_unidad" required autocomplete="off" inputmode="numeric"
+                       class="font-mono text-sm w-full border border-[#e0e0e0] rounded-lg px-2 py-1.5 focus:border-emerald-400 focus:outline-none">
+            </div>
+            <div class="flex gap-3">
+                <div class="w-24">
+                    <label class="block text-[11px] uppercase font-semibold text-[#888] mb-1">Cant.</label>
+                    <input type="number" name="cantidad" min="1" value="1"
+                           class="text-sm w-full border border-[#e0e0e0] rounded-lg px-2 py-1.5 text-center focus:border-emerald-400 focus:outline-none">
+                </div>
+                <div class="flex-1">
+                    <label class="block text-[11px] uppercase font-semibold text-[#888] mb-1">Desc. pack</label>
+                    <input type="text" name="desc_pack"
+                           class="text-sm w-full border border-[#e0e0e0] rounded-lg px-2 py-1.5 focus:border-emerald-400 focus:outline-none">
+                </div>
+            </div>
+            <div>
+                <label class="block text-[11px] uppercase font-semibold text-[#888] mb-1">Desc. unidad</label>
+                <input type="text" name="desc_unidad"
+                       class="text-sm w-full border border-[#e0e0e0] rounded-lg px-2 py-1.5 focus:border-emerald-400 focus:outline-none">
+            </div>
+            <p class="text-[11px] text-[#aaa]">Si el EAN pack ya existe, se actualiza (upsert por <code>ean_pack</code>).</p>
+            <div class="flex justify-end gap-2 mt-4">
+                <button type="button" onclick="document.getElementById('nueva-modal').classList.add('hidden')"
+                        class="text-xs px-3 py-1.5 rounded-lg border border-[#e0e0e0] text-[#666] hover:bg-[#f5f5f5]">Cancelar</button>
+                <button type="submit"
+                        class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-1.5 rounded-lg">
+                    Crear
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Dropdown único compartido por todas las filas — fixed positioning para que no
+     lo clipee el contenedor con overflow. Se reposiciona al input activo. -->
+<div id="ean-dd"
+     class="hidden fixed z-50 bg-white border border-[#e0e0e0] rounded-lg shadow-xl text-xs overflow-y-auto"
+     style="min-width:380px; max-height:260px;"></div>
+
+<script>
+const EDIT_URL = '{{ url_for("lab_pack_equivalencia_edit", lab_id=lab.id) }}';
+
+async function editEquiv(id, field, value) {
+    try {
+        const r = await fetch(EDIT_URL, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id, field, value}),
+        });
+        if (!r.ok) {
+            const d = await r.json().catch(() => ({}));
+            alert('Error: ' + (d.error || r.status));
+        }
+    } catch (e) { alert('Error de red: ' + e); }
+}
+
+// ── Buscador EAN unidad con dropdown multi-token ───────────────────────────
+let _eanSearchTimers = {};
+let _eanLastValue   = {};   // id → último valor confirmado (para saber si cambió en blur)
+
+// Multi-token: divide el query en palabras y exige que TODAS aparezcan en el
+// EAN o la descripción del candidato. Fallback simple si no hay window.MultiTokenFilter.
+function _matchAllTokens(q) {
+    const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+    return (fields) => {
+        const hay = fields.join(' ').toLowerCase();
+        return tokens.every(t => hay.includes(t));
+    };
+}
+
+function _posicionarDD(input) {
+    const dd = document.getElementById('ean-dd');
+    const rect = input.getBoundingClientRect();
+    dd.style.top  = (rect.bottom + 4) + 'px';
+    dd.style.left = rect.left + 'px';
+}
+
+function onEanSearch(eqId, q) {
+    const input = document.getElementById('ean-' + eqId);
+    const dd = document.getElementById('ean-dd');
+    if (!input || !dd) return;
+    q = (q || '').trim();
+    dd.dataset.eqId = eqId;
+    _posicionarDD(input);
+    dd.classList.remove('hidden');
+    if (q.length < 2) {
+        dd.innerHTML = '<div class="px-3 py-2 text-[#bbb]">Escribí al menos 2 letras (o el EAN exacto)…</div>';
+        return;
+    }
+    clearTimeout(_eanSearchTimers[eqId]);
+    _eanSearchTimers[eqId] = setTimeout(() => {
+        fetch('/api/packs/buscar-unidad?q=' + encodeURIComponent(q))
+            .then(r => r.json())
+            .then(data => _renderEanDD(eqId, data.results || [], q))
+            .catch(() => { dd.innerHTML = '<div class="px-3 py-2 text-red-600">Error de red</div>'; });
+    }, 220);
+}
+
+function _renderEanDD(eqId, results, q) {
+    const dd = document.getElementById('ean-dd');
+    // Filtro multi-token en cliente sobre lo que vino del server (server hace
+    // un ILIKE simple; client recorta con todos los tokens).
+    const matchFn = _matchAllTokens(q);
+    const filtered = results.filter(r => matchFn([r.ean, r.desc]));
+    if (!filtered.length) {
+        dd.innerHTML = '<div class="px-3 py-2 text-[#bbb]">Sin resultados.</div>';
+        return;
+    }
+    dd.innerHTML = filtered.slice(0, 30).map(p => {
+        const safeDesc = (p.desc || '').replace(/'/g, "\\'").replace(/</g, '&lt;');
+        const safeEan  = (p.ean  || '').replace(/'/g, "\\'");
+        const badge = p.fuente === 'observer'
+            ? '<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 flex-shrink-0">OBS</span>'
+            : '<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 flex-shrink-0">LOCAL</span>';
+        return `<div class="px-3 py-1.5 cursor-pointer hover:bg-amber-50 flex items-center gap-2 border-b border-[#f5f5f5] last:border-0"
+                     onmousedown="event.preventDefault(); selectEan(${eqId}, '${safeEan}', '${safeDesc}')">
+                    ${badge}
+                    <span class="font-mono text-[#555] flex-shrink-0 text-[11px]">${p.ean}</span>
+                    <span class="text-[#555] truncate flex-1">${p.desc}</span>
+                </div>`;
+    }).join('');
+}
+
+async function selectEan(eqId, ean, desc) {
+    document.getElementById('ean-dd').classList.add('hidden');
+    const inputEan  = document.getElementById('ean-'  + eqId);
+    const inputDesc = document.getElementById('desc-' + eqId);
+    if (inputEan)  inputEan.value  = ean;
+    if (inputDesc) inputDesc.value = desc.replace(/&lt;/g, '<');
+    _eanLastValue[eqId] = ean;
+    // Persistir ambos cambios. Roundtrips paralelos.
+    await Promise.all([
+        editEquiv(eqId, 'ean_unidad',  ean),
+        editEquiv(eqId, 'desc_unidad', desc.replace(/&lt;/g, '<')),
+    ]);
+}
+
+function onEanBlur(eqId, value) {
+    // Pequeño delay para permitir que onmousedown del item dispare antes del blur.
+    setTimeout(() => {
+        document.getElementById('ean-dd').classList.add('hidden');
+        const last = _eanLastValue[eqId];
+        if (last !== undefined && last === value) return;  // ya guardado vía selectEan
+        // Cambio manual sin elegir del dropdown (typed EAN directo). Solo persistir el EAN.
+        editEquiv(eqId, 'ean_unidad', value);
+        _eanLastValue[eqId] = value;
+    }, 150);
+}
+
+// Cerrar dropdown al click afuera
+document.addEventListener('click', (e) => {
+    const dd = document.getElementById('ean-dd');
+    if (!dd) return;
+    if (dd.contains(e.target)) return;
+    if (e.target.id && e.target.id.startsWith('ean-')) return;
+    dd.classList.add('hidden');
+});
+// Reposicionar al scrollear
+document.addEventListener('scroll', () => {
+    const dd = document.getElementById('ean-dd');
+    if (!dd || dd.classList.contains('hidden')) return;
+    const eqId = dd.dataset.eqId;
+    const input = document.getElementById('ean-' + eqId);
+    if (input) _posicionarDD(input);
+}, true);
+</script>
+{% endblock %}

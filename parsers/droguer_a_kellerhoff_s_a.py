@@ -1,5 +1,5 @@
-"""Parser auto-generado para: DROGUERÍA KELLERHOFF S.A.
-CUIT: —
+"""Parser auto-generado para: DROGUERÍA KELLERHOFF S.A
+CUIT: 30-53975649-0
 
 Creado desde el modo aprendizaje del conversor.
 Si el layout del proveedor cambia, reentrenar el patrón desde /converter.
@@ -13,15 +13,6 @@ from helpers import _normalize_quadrupled, extract_text_with_ocr_fallback
 
 PATTERN = r"""^([\d.,]+)\s+([\d.,]+)\s+(.+?)\s*([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$"""
 FIELDS = ['codigo_barra', 'cantidad', 'descripcion', 'precio_publico', 'dto', 'precio_unitario', 'importe']
-
-# Patrón secundario para la sección "PRODUCTOS GRAVADOS" (5 columnas: sin pub/dto)
-#   ean  cant  descripcion  precio_unit  importe
-PATTERN_GRAVADOS = r"""^(\d{7,14})\s+(\d+)\s+(.+?)\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s*$"""
-
-# Marcadores de sección a cortar
-SECTION_CUT_MARKERS = [
-    r'\*\*\*\s*PRODUCTOS\s+EN\s+FALTA',     # sin stock — NO son items reales
-]
 
 
 def _to_float(s):
@@ -55,90 +46,62 @@ def parse_invoice_pdf(pdf_path):
     fecha = (datetime.strptime(fecha_m.group(1), '%d/%m/%Y').date()
              if fecha_m else datetime.today().date())
 
-    # Cortar el texto en el primer marcador de sección "sin stock / faltantes"
-    # para que esas líneas no se parseen como items reales.
-    items_text = full_text
-    for marker in SECTION_CUT_MARKERS:
-        m = re.search(marker, items_text)
-        if m:
-            items_text = items_text[:m.start()]
-
-    # Ítems desde el patrón aprendido (7 columnas con pub/dto)
+    # Ítems desde el patrón aprendido (7 columnas: barcode, cant, desc,
+    # precio_publico, dto, precio_unitario, importe).
     rx = re.compile(PATTERN, re.MULTILINE)
     items = []
-    matched_spans = set()
-    for m in rx.finditer(items_text):
-        matched_spans.add(m.start())
+    seen_barcodes = set()
+    for m in rx.finditer(full_text):
         row = {}
         for i, f in enumerate(FIELDS):
             base = f.rstrip('0123456789_')
             val = m.group(i + 1) or ''
             row.setdefault(base, []).append(val)
         joined = {b: re.sub(r'\s+', ' ', ' '.join(v).strip()) for b, v in row.items()}
+        bc = joined.get('codigo_barra', '')
+        seen_barcodes.add(bc)
         items.append({
-            'codigo_barra': joined.get('codigo_barra', ''),
+            'codigo_barra': bc,
             'cantidad': _to_int(joined.get('cantidad', 0)),
             'descripcion': joined.get('descripcion', ''),
-            'precio_publico': _to_float(joined.get('precio_publico')),
-            'dto': _to_float(joined.get('dto')),
             'precio_unitario': _to_float(joined.get('precio_unitario')),
             'importe': _to_float(joined.get('importe')) or 0,
         })
 
-    # Ítems de la sección "PRODUCTOS GRAVADOS" (5 columnas, sin pub/dto)
-    rx_grav = re.compile(PATTERN_GRAVADOS, re.MULTILINE)
-    for m in rx_grav.finditer(items_text):
-        if m.start() in matched_spans:
-            continue
-        items.append({
-            'codigo_barra':    m.group(1),
-            'cantidad':        _to_int(m.group(2)),
-            'descripcion':     re.sub(r'\s+(WEB|TRZ)\s*$', '', m.group(3)).strip(),
-            'precio_publico':  None,
-            'dto':             None,
-            'precio_unitario': _to_float(m.group(4)),
-            'importe':         _to_float(m.group(5)) or 0,
-        })
+    # Segunda pasada: sección "PRODUCTOS GRAVADOS". Esos ítems traen solo 5
+    # columnas (barcode, cant, desc, precio_unitario, importe) — sin Precio
+    # Público ni % Dto — así que el patrón de 7 columnas no los toma. Acotada
+    # a partir del marcador y con dedup por barcode para no re-capturar filas
+    # del cuerpo principal.
+    gravados_idx = full_text.upper().find('PRODUCTOS GRAVADOS')
+    if gravados_idx != -1:
+        rx5 = re.compile(
+            r'^([\d.,]+)\s+([\d.,]+)\s+(.+?)\s*([\d.,]+)\s+([\d.,]+)\s*$',
+            re.MULTILINE)
+        for m in rx5.finditer(full_text[gravados_idx:]):
+            bc = m.group(1)
+            if bc in seen_barcodes:
+                continue
+            seen_barcodes.add(bc)
+            items.append({
+                'codigo_barra': bc,
+                'cantidad': _to_int(m.group(2)),
+                'descripcion': re.sub(r'\s+', ' ', m.group(3).strip()),
+                'precio_unitario': _to_float(m.group(4)),
+                'importe': _to_float(m.group(5)) or 0,
+            })
 
-    total_items = sum((it.get('importe') or 0) for it in items)
-
-    # Pie: "Hoja  Cant  Exento  Gravado  IVA_Inscrip  [Percep_IVA]  Percepciones  TOTAL"
-    # Percep_IVA es opcional — pdfplumber colapsa la columna si está vacía.
-    footer_m = re.search(
-        r'^\d+/\d+\s+(\d+)'                  # 1: cant un
-        r'\s+([\d.,]+)'                      # 2: monto exento
-        r'\s+([\d.,]+)'                      # 3: monto gravado
-        r'\s+([\d.,]+)'                      # 4: iva inscrip (10,5 o 21)
-        r'(?:\s+([\d.,]+))?'                 # 5: percepción iva (opcional)
-        r'\s+([\d.,]+)'                      # 6: percepciones
-        r'\s+([\d.,]+)\s*$',                 # 7: TOTAL
-        full_text, re.MULTILINE
-    )
-    total_unidades = monto_exento = monto_gravado = iva = percepciones = None
-    total = total_items
-    if footer_m:
-        total_unidades = int(footer_m.group(1))
-        monto_exento   = _to_float(footer_m.group(2))
-        monto_gravado  = _to_float(footer_m.group(3))
-        iva            = _to_float(footer_m.group(4))
-        perc_iva       = _to_float(footer_m.group(5)) or 0
-        percepciones   = (_to_float(footer_m.group(6)) or 0) + perc_iva
-        total          = _to_float(footer_m.group(7)) or total_items
+    total = sum((it.get('importe') or 0) for it in items)
 
     return {
         'numero_factura': numero_factura,
         'fecha': fecha,
-        'proveedor_razon': 'DROGUERÍA KELLERHOFF S.A.',
-        'proveedor_cuit': None,
+        'proveedor_razon': 'DROGUERÍA KELLERHOFF S.A',
+        'proveedor_cuit': '30-53975649-0',
         'proveedor_domicilio': None,
         'cliente_codigo': None,
         'cliente_razon': None,
         'total': total,
         'total_articulos': len(items),
-        'total_unidades': total_unidades,
-        'monto_exento': monto_exento,
-        'monto_gravado': monto_gravado,
-        'iva': iva,
-        'percepciones': percepciones,
         'items': items,
     }

@@ -23,7 +23,11 @@
         <span class="text-xs text-[#6f6f6f]">{% if provider.cuit %}CUIT {{ provider.cuit }}{% endif %}</span>
         {% endif %}
 
-        <div class="sm:ml-auto">
+        <div class="sm:ml-auto flex items-center gap-2">
+            <a href="{{ url_for('comprobantes_importar') }}" title="Importar comprobantes de ARCA"
+               class="text-xs font-medium text-[#1e1e1e] bg-black/[0.04] hover:bg-black/[0.08] rounded-lg px-3 py-1.5 transition-colors">
+                ↓ Importar ARCA
+            </a>
             <a href="{{ url_for('index') }}" title="Inicio"
                class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -60,26 +64,34 @@
                     ${{ '{:,.2f}'.format(saldo_total).replace(',', 'X').replace('.', ',').replace('X', '.') }}
                 </p>
                 <p class="text-xs text-[#999] mt-1">{% if saldo_total > 0 %}Deuda a favor del proveedor{% elif saldo_total < 0 %}Saldo a favor{% else %}Sin saldo{% endif %}</p>
+                {% if total_prefac %}
+                <p class="text-xs text-amber-700 mt-1.5" title="Una prefactura no es comprobante fiscal, así que no entra en el saldo.">
+                    + ${{ '{:,.2f}'.format(total_prefac).replace(',', 'X').replace('.', ',').replace('X', '.') }} en prefacturas (fuera del saldo)
+                </p>
+                {% endif %}
             </div>
             <button onclick="document.getElementById('form-nuevo').classList.toggle('hidden')"
                     class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-xl transition-colors text-sm">
-                + Nuevo movimiento
+                + Nuevo ajuste
             </button>
         </div>
 
         <!-- Formulario nuevo movimiento -->
         <div id="form-nuevo" class="hidden bg-surface border border-surface-border rounded-2xl p-5">
-            <h3 class="text-sm font-bold text-[#1e1e1e] mb-3">Registrar pago / ajuste</h3>
+            <h3 class="text-sm font-bold text-[#1e1e1e] mb-1">Registrar ajuste</h3>
+            <p class="text-xs text-[#999] mb-3">
+                Para cargar un pago us&aacute;
+                <a href="{{ url_for('contabilidad_pago_nuevo', proveedor=provider.id) }}"
+                   class="text-brand-dark underline">Pagos</a>, que lo imputa a facturas y lo descuenta de una cuenta.
+            </p>
             <form method="POST" action="{{ url_for('cuenta_corriente_add', provider_id=provider.id) }}"
                   class="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
                 <div>
                     <label class="block text-[10px] text-[#999] uppercase tracking-wide mb-1">Tipo</label>
                     <select name="tipo" required
                             class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-                        <option value="PAGO">Pago</option>
-                        <option value="NCR">Nota de cr&eacute;dito</option>
-                        <option value="AJUSTE_NEG">Ajuste negativo</option>
-                        <option value="AJUSTE_POS">Ajuste positivo</option>
+                        <option value="AJUSTE_NEG">Ajuste negativo (a favor nuestro)</option>
+                        <option value="AJUSTE_POS">Ajuste positivo (m&aacute;s deuda)</option>
                     </select>
                 </div>
                 <div>
@@ -149,12 +161,15 @@
                             <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">AJ+</span>
                             {% elif m.tipo == 'AJUSTE_NEG' %}
                             <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">AJ−</span>
+                            {% elif m.tipo == 'PREFAC' %}
+                            <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700"
+                                  title="Documento no válido como factura: no suma al saldo">PREFAC</span>
                             {% endif %}
                         </td>
                         <td class="py-2 px-2 text-[#6f6f6f] font-mono">{{ m.comprobante }}</td>
                         <td class="py-2 px-2 text-center">
                             {% if m.ingresada == true %}
-                            <a href="{{ url_for('results', invoice_id=m.id) }}" title="Ver ingreso"
+                            <a href="{{ url_for('show_results', invoice_id=m.id) }}" title="Ver ingreso"
                                class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700 hover:bg-green-200 transition-colors">
                                 Si
                             </a>
@@ -174,7 +189,9 @@
                             </form>
                         </td>
                         <td class="py-2 px-2 text-right font-mono {% if m.debe %}text-red-600{% else %}text-[#ccc]{% endif %}">
-                            {% if m.debe %}${{ '{:,.2f}'.format(m.debe).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% else %}—{% endif %}
+                            {% if m.debe %}${{ '{:,.2f}'.format(m.debe).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+                            {%- elif m.informativo %}<span class="text-amber-600/70 italic" title="No suma al saldo">(${{ '{:,.2f}'.format(m.informativo).replace(',', 'X').replace('.', ',').replace('X', '.') }})</span>
+                            {%- else %}—{% endif %}
                         </td>
                         <td class="py-2 px-2 text-right font-mono {% if m.haber %}text-green-600{% else %}text-[#ccc]{% endif %}">
                             {% if m.haber %}${{ '{:,.2f}'.format(m.haber).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% else %}—{% endif %}

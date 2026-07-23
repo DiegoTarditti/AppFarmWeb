@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ingresar · AppNúcleo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,3 28,10 28,22 16,29 4,22 4,10' fill='%2310b981'/%3E%3Ccircle cx='16' cy='16' r='4.5' fill='%23fff'/%3E%3C/svg%3E">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{ --bg:#0b1411; --surface:#10201a; --surface2:#152a22; --line:#1e3a30;
+         --mint:#34d399; --mint2:#10b981; --text:#e6f2ec; --mute:#7fa394; }
+  body{ background:radial-gradient(circle at 50% 35%,#102a22,#08100d 70%); color:var(--text);
+        font-family:'Inter',system-ui,sans-serif; }
+  .card{ background:linear-gradient(150deg,var(--surface2),var(--surface));
+         border:1px solid var(--line); border-radius:20px;
+         box-shadow:0 0 0 1px rgba(52,211,153,.10), 0 24px 60px -20px rgba(16,185,129,.4); }
+  .fld{ background:#0b1411; border:1px solid var(--line); border-radius:12px; }
+  .fld:focus{ outline:none; border-color:var(--mint); box-shadow:0 0 0 2px rgba(52,211,153,.25); }
+</style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+  <div class="card w-full max-w-sm p-7">
+    <div class="flex flex-col items-center mb-6">
+      {% with logo_class='w-20 h-20' %}{% include "_logo.html" %}{% endwith %}
+      <div class="text-center mt-3 leading-none">
+        <div class="text-3xl font-extrabold tracking-tight">núcleo</div>
+        <div class="text-[10px] tracking-[.35em] uppercase text-[color:var(--mute)] mt-2">Pharma Stock</div>
+      </div>
+    </div>
+
+    {% if error %}
+    <div class="mb-4 text-sm text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2 text-center">
+      {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="post" class="space-y-3">
+      <div>
+        <label class="block text-[10px] uppercase tracking-wide text-[color:var(--mute)] mb-1">Usuario</label>
+        <input name="usuario" autofocus required autocomplete="username"
+               class="fld w-full px-3 py-2.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-[10px] uppercase tracking-wide text-[color:var(--mute)] mb-1">Contraseña</label>
+        <input name="password" type="password" required autocomplete="current-password"
+               class="fld w-full px-3 py-2.5 text-sm">
+      </div>
+      <button type="submit"
+              class="w-full bg-[color:var(--mint2)] hover:brightness-110 text-[#062018] font-bold py-2.5 rounded-xl text-sm mt-2">
+        Ingresar
+      </button>
+    </form>
+
+    <p class="text-center text-[11px] text-[color:var(--mute)] mt-5">dashboard de grupo · acceso restringido</p>
+  </div>
+</body>
+</html>

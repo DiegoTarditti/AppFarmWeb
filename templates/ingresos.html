@@ -132,7 +132,7 @@
                 <p class="text-[11px] text-[#888] mt-1 ml-1">📁 Buscá el PDF en <code class="font-mono bg-[#f5f5f5] px-1 rounded">{{ config.ruta_facturas }}</code></p>
                 {% endif %}
                 <button type="button" id="btn-probar-existing" disabled onclick="probarParserExistente()"
-                        class="mt-2 w-full border border-surface-border text-xs text-[#d1d5db] hover:text-white hover:bg-white/[0.06] disabled:opacity-40 disabled:cursor-not-allowed py-1.5 rounded-lg transition-colors">
+                        class="mt-2 w-full border border-surface-border text-xs text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] disabled:opacity-40 disabled:cursor-not-allowed py-1.5 rounded-lg transition-colors">
                     Probar parser con este PDF
                 </button>
             </div>
@@ -300,6 +300,8 @@
 {% block after_main %}
 <script>
 const select = document.getElementById('provider-select');
+// PDF pre-cargado (docs pendientes): ya está en uploads, no pasa por el <input file>.
+const PDF_PENDIENTE = {{ pdf_pendiente|tojson }};
 
 select.addEventListener('change', function () {
     hide('upload-section');
@@ -326,6 +328,10 @@ select.addEventListener('change', function () {
         show('provider-info');
         show('upload-section');
         cargarArchivosCarpeta(this.value, !!ruta);
+        // Con PDF pre-cargado no existe el <input file>, así que no hay change que
+        // habilite el botón: ya tenemos el PDF, alcanza con haber elegido proveedor.
+        const btnProbar = document.getElementById('btn-probar-existing');
+        if (btnProbar && PDF_PENDIENTE) btnProbar.disabled = false;
     }
 });
 
@@ -403,32 +409,52 @@ let _identifiedProviderId = null;
 let _identifiedPdfFilename = null;
 let _showStep2AfterModal = false;
 
-async function probarParserExistente() {
+// El PDF a probar puede venir de 3 lados y sólo uno pasa por <input type=file>:
+// pre-cargado (ya está en uploads), elegido de la carpeta del proveedor (hay que
+// copiarlo a uploads) o subido desde el equipo. El preview siempre lee de uploads.
+// Devuelve el nombre del archivo en uploads, o null si no hay ningún PDF elegido.
+async function _pdfEnUploads(providerId) {
+    if (PDF_PENDIENTE) return PDF_PENDIENTE;
+
+    const desdeCarpeta = (document.getElementById('pdf_from_folder') || {}).value || '';
+    if (desdeCarpeta) {
+        const res = await fetch(`/api/provider/${providerId}/folder-file/stage`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: desdeCarpeta})
+        });
+        const data = await res.json();
+        if (!res.ok || !data.pdf_filename) throw new Error(data.error || 'No se pudo leer el PDF de la carpeta.');
+        return data.pdf_filename;
+    }
+
     const input = document.getElementById('pdf-input');
-    if (!input.files.length) return;
-    const providerId   = document.getElementById('proveedor_id').value;
-    const providerName = select.options[select.selectedIndex].textContent.trim();
+    if (!input || !input.files.length) return null;
+    const fd = new FormData();
+    fd.append('invoice_pdf', input.files[0]);
+    const res  = await fetch('/provider/peek', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok || !data.pdf_filename) throw new Error(data.error || 'Error al subir el PDF.');
+    return data.pdf_filename;
+}
+
+async function probarParserExistente() {
+    const providerId = document.getElementById('proveedor_id').value;
     if (!providerId) return;
+    const providerName = select.options[select.selectedIndex].textContent.trim();
 
     const btn = document.getElementById('btn-probar-existing');
     const prev = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Subiendo PDF\u2026';
-
-    const fd = new FormData();
-    fd.append('invoice_pdf', input.files[0]);
     try {
-        const res  = await fetch('/provider/peek', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (!res.ok || !data.pdf_filename) {
-            alert(data.error || 'Error al subir el PDF.');
-            return;
-        }
+        const pdfFilename = await _pdfEnUploads(providerId);
+        if (!pdfFilename) { alert('Elegí un PDF primero.'); return; }
         _identifiedProviderId  = providerId;
-        _identifiedPdfFilename = data.pdf_filename;
-        openParserPreviewSaved(providerId, providerName, data.pdf_filename);
+        _identifiedPdfFilename = pdfFilename;
+        openParserPreviewSaved(providerId, providerName, pdfFilename);
     } catch (e) {
-        alert('Error de conexión al servidor.');
+        alert(e.message || 'Error de conexión al servidor.');
     } finally {
         btn.textContent = prev;
         btn.disabled = false;

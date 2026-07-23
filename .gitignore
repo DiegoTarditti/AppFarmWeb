@@ -48,6 +48,9 @@ EstadVentas/
 fc-kel.*
 image.*
 
+# Corpus de prueba de facturas (datos reales del cliente — local only)
+samples/
+
 # Memoria local de Claude (ruta alterna si existiese)
 memory/
 
@@ -59,3 +62,12 @@ desktop.ini
 # Windows reserved names (creados por MSYS al traducir /dev/null en docker exec)
 nul
 NUL
+
+# DB dumps (backups y pulls puntuales — no van al repo)
+*.dump
+
+# Snapshots de schema diff (artifacts puntuales)
+schema_diff_*.md
+
+# Modelos de Whisper local (se bajan en runtime)
+.whisper_cache/

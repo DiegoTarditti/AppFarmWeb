@@ -1,351 +1,261 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <style>body { background:#edeae3; color:#1e1e1e; font-family:'Inter',sans-serif; }</style>
-</head>
-<body class="min-h-screen">
+{% extends "base.html" %}
+{% set nav_active = "dashboard" %}
+{% block title %}Dashboard{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
 
-<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
-    <div class="max-w-7xl mx-auto flex items-center justify-between">
-        <span class="font-bold text-sm">Dashboard · control de stock</span>
-        <div class="flex items-center gap-3">
-            <a href="{{ url_for('purchase_suggest') }}" class="text-xs bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3 py-1.5 rounded-lg">
-                💡 Sugerir pedido
-            </a>
-            <a href="{{ url_for('dashboard_help') }}" class="text-xs text-amber-700 hover:text-amber-800 font-semibold flex items-center gap-1">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                </svg>
-                Ayuda
-            </a>
-            <a href="{{ url_for('index') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Inicio</a>
-        </div>
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  .db-card { background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+             border: 1px solid var(--ds-line); border-radius: 14px; }
+  .db-kpi { background: var(--ds-surface); border: 1px solid var(--ds-line);
+            border-radius: 10px; padding: 8px 12px; }
+  .db-kpi .lbl { font-size: 9px; text-transform: uppercase; letter-spacing: .06em;
+                 color: var(--ds-text-mute); font-weight: 700; }
+  .db-kpi .val { font-size: 18px; font-weight: 800; line-height: 1.1; }
+  .db-kpi .sub { font-size: 10px; color: var(--ds-text-mute); }
+  .db-chart { height: 172px; }
+  .db-input { background: var(--ds-surface-2); border: 1px solid var(--ds-line);
+              border-radius: 8px; padding: 5px 8px; font-size: 13px; color: var(--ds-text); }
+  .db-th { font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+           color: var(--ds-text-mute); }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="px-4 sm:px-6 py-4" style="color: var(--ds-text);">
+
+  <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
+    <div>
+      <h1 class="font-bold text-lg" style="color: var(--ds-text);">📊 Dashboard — control de stock</h1>
+      <p class="text-xs" style="color: var(--ds-text-mute);">
+        {% if ultima_act %}Datos al {{ ultima_act.strftime('%d/%m/%Y %H:%M') }}{% else %}Sin snapshot — recalculá{% endif %}
+        · {{ lab_filter or 'Todos los laboratorios' }}
+      </p>
     </div>
-</header>
-
-<div class="max-w-7xl mx-auto px-6 py-6 space-y-6">
-
-    <!-- KPIs compactos -->
-    <div class="grid grid-cols-3 md:grid-cols-7 gap-2">
-        <div class="bg-white rounded-lg border-2 border-emerald-300 px-3 py-2">
-            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Capital inmovilizado</p>
-            <p class="text-lg font-bold text-emerald-700 leading-tight">${{ '{:,.0f}'.format(capital_total).replace(',','.') }}</p>
-            <p class="text-[10px] text-[#6f6f6f]">stock × PVP</p>
-        </div>
-        <div class="bg-white rounded-lg border-2 border-orange-300 px-3 py-2">
-            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Stock muerto</p>
-            <p class="text-lg font-bold text-orange-700 leading-tight">${{ '{:,.0f}'.format(stock_muerto_total).replace(',','.') }}</p>
-            <p class="text-[10px] text-[#6f6f6f]">
-                {% if capital_total > 0 %}{{ '%.0f'|format(stock_muerto_total/capital_total*100) }}% del total{% else %}sin mov 60d{% endif %}
-            </p>
-        </div>
-        <div class="bg-white rounded-lg border border-[#e0e0e0] px-3 py-2">
-            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Alertas cobertura</p>
-            <p class="text-lg font-bold text-red-600 leading-tight">{{ alerts_count }}</p>
-            <p class="text-[10px] text-[#6f6f6f]">&lt; {{ n_days }}d</p>
-        </div>
-        <div class="bg-white rounded-lg border border-[#e0e0e0] px-3 py-2">
-            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Sin mov 60d</p>
-            <p class="text-lg font-bold text-amber-600 leading-tight">{{ sin_mov_count }}</p>
-            <p class="text-[10px] text-[#6f6f6f]">de {{ total_products }}</p>
-        </div>
-        <div class="bg-white rounded-lg border border-[#e0e0e0] px-3 py-2">
-            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Reclamos abiertos</p>
-            <p class="text-lg font-bold text-sky-600 leading-tight">{{ claims_open }}</p>
-            <a href="{{ url_for('claims_list') }}" class="text-[10px] text-sky-600 hover:underline">ver →</a>
-        </div>
-        <div class="bg-white rounded-lg border border-[#e0e0e0] px-3 py-2">
-            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Facturas del mes</p>
-            <p class="text-lg font-bold text-emerald-600 leading-tight">{{ invoices_month }}</p>
-        </div>
-        <div class="bg-white rounded-lg border border-[#e0e0e0] px-3 py-2">
-            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Analizados</p>
-            <p class="text-lg font-bold leading-tight">{{ total_products }}</p>
-            {% if ultima_act %}<p class="text-[10px] text-[#6f6f6f]">{{ ultima_act.strftime('%d/%m %H:%M') }}</p>{% endif %}
-        </div>
+    <div class="flex items-center gap-2">
+      <button type="button" id="btn-recalcular" onclick="recalcular()"
+              class="text-xs font-semibold px-3 py-1.5 rounded-lg"
+              style="background: var(--ds-mint); color: #06281e;">↻ Recalcular datos</button>
+      <a href="{{ url_for('dashboard_help') }}" class="text-xs px-2 py-1.5" style="color: var(--ds-mint);">Ayuda</a>
     </div>
+  </div>
+  <div id="recalc-status" class="text-[11px] mb-3" style="color: var(--ds-text-mute);"></div>
 
-    <!-- Carousel de gráficos -->
-    <div class="bg-white rounded-xl border border-[#e0e0e0] p-4 relative">
-        <div class="flex items-center justify-between mb-2">
-            <div>
-                <p id="slide-title" class="font-semibold text-sm"></p>
-                <p class="text-[11px] text-[#6f6f6f]">{{ lab_filter or 'Todos los laboratorios' }}</p>
-            </div>
-            <div class="flex items-center gap-2">
-                <button onclick="prevSlide()" class="w-8 h-8 rounded-full bg-[#f0f0f0] hover:bg-[#e0e0e0] flex items-center justify-center font-bold">‹</button>
-                <div id="slide-dots" class="flex gap-1"></div>
-                <button onclick="nextSlide()" class="w-8 h-8 rounded-full bg-[#f0f0f0] hover:bg-[#e0e0e0] flex items-center justify-center font-bold">›</button>
-            </div>
-        </div>
-        <div class="slide" data-title="🏆 Top 10 más vendidos (unidades/mes)"><div style="height:360px"><canvas id="chart-qty"></canvas></div></div>
-        <div class="slide hidden" data-title="💰 Top 10 que más facturan (prom/mes × PVP)"><div style="height:360px"><canvas id="chart-val"></canvas></div></div>
-        <div class="slide hidden" data-title="🔻 Top 10 pérdida diaria por falta de stock"><div style="height:360px"><canvas id="chart-loss"></canvas></div></div>
-        <div class="slide hidden" data-title="🪦 Top 10 stock muerto valorizado (sin mov 60d)"><div style="height:360px"><canvas id="chart-muerto"></canvas></div></div>
+  {# ── KPIs ── #}
+  <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
+    <div class="db-kpi"><p class="lbl">Capital inmovilizado</p>
+      <p class="val" style="color: var(--ds-mint-bright);">${{ '{:,.0f}'.format(capital_total).replace(',','.') }}</p>
+      <p class="sub">stock × PVP</p></div>
+    <div class="db-kpi"><p class="lbl">Stock muerto</p>
+      <p class="val" style="color: #fb923c;">${{ '{:,.0f}'.format(stock_muerto_total).replace(',','.') }}</p>
+      <p class="sub">{% if capital_total > 0 %}{{ '%.0f'|format(stock_muerto_total/capital_total*100) }}% del total{% else %}sin mov 60d{% endif %}</p></div>
+    <div class="db-kpi"><p class="lbl">Alertas cobertura</p>
+      <p class="val" style="color: #f87171;">{{ alerts_count }}</p><p class="sub">&lt; {{ n_days }}d</p></div>
+    <div class="db-kpi"><p class="lbl">Sin mov 60d</p>
+      <p class="val" style="color: #fbbf24;">{{ sin_mov_count }}</p><p class="sub">de {{ total_products }}</p></div>
+    <div class="db-kpi"><p class="lbl">Reclamos abiertos</p>
+      <p class="val" style="color: #38bdf8;">{{ claims_open }}</p>
+      <a href="{{ url_for('claims_list') }}" class="sub" style="color:#38bdf8;">ver →</a></div>
+    <div class="db-kpi"><p class="lbl">Facturas del mes</p>
+      <p class="val" style="color: var(--ds-mint-bright);">{{ invoices_month }}</p></div>
+    <div class="db-kpi"><p class="lbl">Productos</p>
+      <p class="val" style="color: var(--ds-text);">{{ total_products }}</p></div>
+  </div>
+
+  {# ── Gráficos: 3 por fila (1/3), compactos ── #}
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+    <div class="db-card p-3">
+      <p class="text-xs font-semibold mb-1" style="color: var(--ds-text-soft);">🏆 Top vendidos <span style="color:var(--ds-text-mute)">(u/mes)</span></p>
+      <div class="db-chart"><canvas id="chart-qty"></canvas></div>
     </div>
-
-    <!-- Filtros -->
-    <form method="get" class="bg-white rounded-xl border border-[#e0e0e0] p-4 flex flex-wrap items-center gap-3">
-        <label class="text-xs font-semibold text-[#6f6f6f]">Buscar</label>
-        <input type="text" name="q" value="{{ q_text }}" placeholder="Producto o código…"
-               class="w-56 px-2 py-1 text-sm border border-[#e0e0e0] rounded-lg">
-
-        <label class="text-xs font-semibold text-[#6f6f6f] ml-2">Analizar para</label>
-        <input type="number" name="n_days" value="{{ n_days }}" min="1" max="365"
-               class="w-20 px-2 py-1 text-sm border border-[#e0e0e0] rounded-lg">
-        <span class="text-xs text-[#6f6f6f]">días</span>
-
-        <label class="text-xs font-semibold text-[#6f6f6f] ml-4">Laboratorio</label>
-        <select name="laboratorio" class="px-2 py-1 text-sm border border-[#e0e0e0] rounded-lg">
-            <option value="">Todos</option>
-            {% for l in labs %}
-            <option value="{{ l }}" {% if l == lab_filter %}selected{% endif %}>{{ l }}</option>
-            {% endfor %}
-        </select>
-
-        <label class="text-xs font-semibold text-[#6f6f6f] ml-4">Rotación</label>
-        <select name="rotacion" class="px-2 py-1 text-sm border border-[#e0e0e0] rounded-lg">
-            <option value="">Todas</option>
-            <option value="A" {% if rot_filter == 'A' %}selected{% endif %}>Alta</option>
-            <option value="M" {% if rot_filter == 'M' %}selected{% endif %}>Media</option>
-            <option value="B" {% if rot_filter == 'B' %}selected{% endif %}>Baja</option>
-        </select>
-
-        <label class="flex items-center gap-1.5 ml-4 cursor-pointer">
-            <input type="checkbox" name="sin_mov" value="1" {% if only_sin_mov %}checked{% endif %} class="accent-amber-500">
-            <span class="text-xs font-semibold text-[#6f6f6f]">Solo sin movimiento 60d</span>
-        </label>
-
-        <button type="submit" class="ml-auto px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold">Aplicar</button>
-    </form>
-
-    <!-- Alertas de cobertura -->
-    <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
-        <div class="px-5 py-3 border-b border-[#e0e0e0] bg-[#f0f0f0] flex items-center justify-between">
-            <div>
-                <p class="font-semibold text-sm">
-                    {% if only_sin_mov %}Productos sin movimiento en los últimos 60 días
-                    {% else %}Productos con riesgo de quiebre{% endif %}
-                </p>
-                <p class="text-xs text-[#6f6f6f]">
-                    {% if only_sin_mov %}ordenados alfabéticamente
-                    {% else %}Cobertura &lt; {{ n_days }} días · ordenados por urgencia{% endif %}
-                </p>
-            </div>
-            <p class="text-xs text-[#6f6f6f]">{{ alerts|length }} mostrados</p>
-        </div>
-        {% if alerts %}
-        <div class="overflow-x-auto max-h-[60vh] overflow-y-auto">
-            <table class="w-full text-sm">
-                <thead class="bg-[#fafafa] sticky top-0">
-                    <tr class="text-xs text-[#6f6f6f] uppercase tracking-widest">
-                        <th class="text-left px-3 py-2">Producto</th>
-                        <th class="text-left px-3 py-2">Laboratorio</th>
-                        <th class="text-right px-3 py-2">Stock</th>
-                        <th class="text-right px-3 py-2">Prom/mes</th>
-                        <th class="text-center px-3 py-2">Rot.</th>
-                        <th class="text-right px-3 py-2">Cobertura</th>
-                        <th class="text-right px-3 py-2">Últ. compra</th>
-                        <th class="text-right px-3 py-2">P.PVP</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for a in alerts %}
-                    <tr class="border-t border-[#e0e0e0] {% if a.cobertura is not none and a.cobertura < 3 %}bg-red-50{% elif a.cobertura is not none and a.cobertura < 7 %}bg-amber-50{% endif %}">
-                        <td class="px-3 py-2">
-                            <div class="flex items-center gap-2">
-                                <button onclick="openChart('{{ a.codigo_barra }}')" title="Ver gráfico de ventas"
-                                    class="text-[#ccc] hover:text-amber-500 transition-colors flex-shrink-0">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                                    </svg>
-                                </button>
-                                <p class="font-medium">{{ a.descripcion }}</p>
-                                {% if a.sin_mov_60d %}
-                                <span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 font-bold">SIN MOV 60d</span>
-                                {% endif %}
-                            </div>
-                            <p class="text-xs font-mono text-[#9ca3af]">{{ a.codigo_barra }}</p>
-                        </td>
-                        <td class="px-3 py-2 text-xs">{{ a.laboratorio or '—' }}</td>
-                        <td class="px-3 py-2 text-right font-mono">{{ a.stock }}</td>
-                        <td class="px-3 py-2 text-right font-mono">{{ a.avg_monthly }}</td>
-                        <td class="px-3 py-2 text-center">
-                            {% if a.rotacion == 'A' %}<span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">A</span>
-                            {% elif a.rotacion == 'M' %}<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-bold">M</span>
-                            {% elif a.rotacion == 'B' %}<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-xs font-bold">B</span>
-                            {% else %}—{% endif %}
-                        </td>
-                        <td class="px-3 py-2 text-right font-bold">
-                            {% if a.cobertura is none %}—{% else %}{{ a.cobertura }} d{% endif %}
-                        </td>
-                        <td class="px-3 py-2 text-right text-xs">
-                            {% if a.ultima_compra %}{{ a.ultima_compra.strftime('%d/%m/%y') }}{% else %}<span class="text-[#9ca3af]">—</span>{% endif %}
-                        </td>
-                        <td class="px-3 py-2 text-right font-mono text-xs">${{ '%.0f'|format(a.precio_pvp) }}</td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <div class="p-8 text-center text-sm text-[#6f6f6f]">
-            {% if total_products == 0 %}
-                No hay datos de analytics. Procesá una estadística de venta en <a href="{{ url_for('purchase_index') }}" class="text-amber-600 hover:underline">Compras</a>.
-            {% else %}
-                No hay productos con cobertura &lt; {{ n_days }} días. Todo bajo control.
-            {% endif %}
-        </div>
-        {% endif %}
+    <div class="db-card p-3">
+      <p class="text-xs font-semibold mb-1" style="color: var(--ds-text-soft);">💰 Top facturan <span style="color:var(--ds-text-mute)">(prom × PVP)</span></p>
+      <div class="db-chart"><canvas id="chart-val"></canvas></div>
     </div>
+    <div class="db-card p-3">
+      <p class="text-xs font-semibold mb-1" style="color: var(--ds-text-soft);">🔻 Pérdida/día <span style="color:var(--ds-text-mute)">(sin stock)</span></p>
+      <div class="db-chart"><canvas id="chart-loss"></canvas></div>
+    </div>
+    <div class="db-card p-3">
+      <p class="text-xs font-semibold mb-1" style="color: var(--ds-text-soft);">🪦 Stock muerto <span style="color:var(--ds-text-mute)">(sin mov 60d)</span></p>
+      <div class="db-chart"><canvas id="chart-muerto"></canvas></div>
+    </div>
+  </div>
 
+  {# ── Filtros ── #}
+  <form method="get" class="db-card p-3 flex flex-wrap items-center gap-2 mb-4">
+    <input type="text" name="q" value="{{ q_text }}" placeholder="Producto o código…" class="db-input" style="width:200px;">
+    <input type="number" name="n_days" value="{{ n_days }}" min="1" max="365" class="db-input" style="width:64px;" title="Días de cobertura objetivo">
+    <span class="text-xs" style="color: var(--ds-text-mute);">días</span>
+    <select name="rubro_cat" class="db-input" title="Rubro (default Medicamentos — saca servicios/accesorios)">
+      <option value="Medicamentos" {% if rubro_cat == 'Medicamentos' %}selected{% endif %}>Medicamentos</option>
+      {% for r in rubros_cat %}{% if r != 'Medicamentos' %}
+      <option value="{{ r }}" {% if r == rubro_cat %}selected{% endif %}>{{ r }}</option>
+      {% endif %}{% endfor %}
+      <option value="todos" {% if rubro_cat == 'todos' %}selected{% endif %}>— Todos los rubros —</option>
+    </select>
+    <select name="laboratorio" class="db-input">
+      <option value="">Todos los labs</option>
+      {% for l in labs %}<option value="{{ l }}" {% if l == lab_filter %}selected{% endif %}>{{ l }}</option>{% endfor %}
+    </select>
+    <select name="rotacion" class="db-input">
+      <option value="">Rotación: todas</option>
+      <option value="A" {% if rot_filter == 'A' %}selected{% endif %}>Alta</option>
+      <option value="M" {% if rot_filter == 'M' %}selected{% endif %}>Media</option>
+      <option value="B" {% if rot_filter == 'B' %}selected{% endif %}>Baja</option>
+    </select>
+    <label class="flex items-center gap-1.5 cursor-pointer text-xs" style="color: var(--ds-text-soft);">
+      <input type="checkbox" name="sin_mov" value="1" {% if only_sin_mov %}checked{% endif %}> Solo sin movimiento 60d
+    </label>
+    <button type="submit" class="ml-auto text-xs font-semibold px-4 py-1.5 rounded-lg" style="background: var(--ds-mint); color: #06281e;">Aplicar</button>
+  </form>
+
+  {# ── Alertas ── #}
+  <div class="db-card overflow-hidden">
+    <div class="px-4 py-2.5 flex items-center justify-between" style="border-bottom: 1px solid var(--ds-line); background: var(--ds-surface);">
+      <p class="font-semibold text-sm" style="color: var(--ds-text);">
+        {% if only_sin_mov %}Sin movimiento en 60 días{% else %}Riesgo de quiebre{% endif %}
+        <span class="text-xs font-normal" style="color: var(--ds-text-mute);">
+          {% if only_sin_mov %}· alfabético{% else %}· cobertura &lt; {{ n_days }}d, por urgencia{% endif %}
+        </span>
+      </p>
+      <p class="text-xs" style="color: var(--ds-text-mute);">{{ alerts|length }} mostrados</p>
+    </div>
+    {% if alerts %}
+    <div class="overflow-x-auto" style="max-height: 56vh; overflow-y: auto;">
+      <table class="w-full text-sm">
+        <thead class="sticky top-0" style="background: var(--ds-surface);">
+          <tr class="db-th">
+            <th class="text-left px-3 py-2">Producto</th>
+            <th class="text-left px-3 py-2">Lab</th>
+            <th class="text-right px-3 py-2">Stock</th>
+            <th class="text-right px-3 py-2">Prom/mes</th>
+            <th class="text-center px-3 py-2">Rot.</th>
+            <th class="text-right px-3 py-2">Cobertura</th>
+            <th class="text-right px-3 py-2">Últ. compra</th>
+            <th class="text-right px-3 py-2">PVP</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for a in alerts %}
+          <tr style="border-top: 1px solid var(--ds-line);">
+            <td class="px-3 py-1.5">
+              <div class="flex items-center gap-2">
+                <button onclick="openChart('{{ a.codigo_barra }}')" title="Ver ventas" style="color: var(--ds-text-mute);" class="hover:opacity-70 flex-shrink-0">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                </button>
+                <span class="font-medium" style="color: var(--ds-text);">{{ a.descripcion }}</span>
+                {% if a.sin_mov_60d %}<span class="text-[10px] px-1.5 py-0.5 rounded font-bold" style="background: rgba(251,146,60,.18); color:#fb923c;">SIN MOV 60d</span>{% endif %}
+              </div>
+              <p class="text-xs font-mono" style="color: var(--ds-text-mute);">{{ a.codigo_barra }}</p>
+            </td>
+            <td class="px-3 py-1.5 text-xs" style="color: var(--ds-text-soft);">{{ a.laboratorio or '—' }}</td>
+            <td class="px-3 py-1.5 text-right font-mono" style="color: var(--ds-text);">{{ a.stock }}</td>
+            <td class="px-3 py-1.5 text-right font-mono" style="color: var(--ds-text);">{{ a.avg_monthly }}</td>
+            <td class="px-3 py-1.5 text-center">
+              {% if a.rotacion == 'A' %}<span class="px-1.5 py-0.5 rounded text-xs font-bold" style="background:rgba(95,230,188,.18); color:var(--ds-mint-bright);">A</span>
+              {% elif a.rotacion == 'M' %}<span class="px-1.5 py-0.5 rounded text-xs font-bold" style="background:rgba(251,191,36,.18); color:#fbbf24;">M</span>
+              {% elif a.rotacion == 'B' %}<span class="px-1.5 py-0.5 rounded text-xs font-bold" style="background:rgba(148,163,184,.18); color:#cbd5e1;">B</span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-right font-bold" style="color: {% if a.cobertura is not none and a.cobertura < 3 %}#f87171{% elif a.cobertura is not none and a.cobertura < 7 %}#fbbf24{% else %}var(--ds-text){% endif %};">
+              {% if a.cobertura is none %}—{% else %}{{ a.cobertura }} d{% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-right text-xs" style="color: var(--ds-text-mute);">
+              {% if a.ultima_compra %}{{ a.ultima_compra.strftime('%d/%m/%y') }}{% else %}—{% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-right font-mono text-xs" style="color: var(--ds-text-soft);">${{ '%.0f'|format(a.precio_pvp) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-8 text-center text-sm" style="color: var(--ds-text-mute);">
+      {% if total_products == 0 %}
+        No hay datos. Tocá <b>↻ Recalcular datos</b> arriba para traer el snapshot desde Observer.
+      {% else %}
+        No hay productos con cobertura &lt; {{ n_days }} días. Todo bajo control.
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
 </div>
 
-<!-- Modal gráfico producto -->
-<div id="chart-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm"
+{# ── Modal gráfico por producto ── #}
+<div id="chart-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background: rgba(0,0,0,.7);"
      onclick="if(event.target===this) closeChart()">
-    <div class="bg-[#f3f3f3] border border-[#e0e0e0] rounded-2xl shadow-2xl w-[700px] max-w-[96vw] p-6 max-h-[92vh] overflow-y-auto">
-        <div class="flex items-start justify-between mb-4">
-            <div>
-                <p class="font-bold text-[#1e1e1e] text-sm leading-tight" id="chart-title"></p>
-                <p class="text-xs text-[#999] font-mono mt-0.5" id="chart-barcode"></p>
-                <p class="text-[10px] text-[#bbb] mt-0.5 hidden" id="chart-fecha">Datos al <span></span></p>
-            </div>
-            <button onclick="closeChart()"
-                class="w-7 h-7 flex items-center justify-center rounded-lg text-[#888] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors flex-shrink-0 ml-4 text-lg leading-none">
-                ✕
-            </button>
-        </div>
-        <div class="bg-white rounded-xl border border-[#e0e0e0] p-4" style="height:300px">
-            <canvas id="product-chart"></canvas>
-        </div>
-        <div class="grid grid-cols-5 gap-2 mt-4" id="chart-stats"></div>
-        <p id="chart-note" class="hidden text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3"></p>
-        <p id="chart-loading" class="text-center text-sm text-[#888] py-4 hidden">Cargando datos…</p>
-        <p id="chart-error" class="hidden text-center text-sm text-red-600 py-4"></p>
+  <div class="db-card shadow-2xl w-[700px] max-w-[96vw] p-6 max-h-[92vh] overflow-y-auto">
+    <div class="flex items-start justify-between mb-4">
+      <div>
+        <p class="font-bold text-sm leading-tight" id="chart-title" style="color: var(--ds-text);"></p>
+        <p class="text-xs font-mono mt-0.5" id="chart-barcode" style="color: var(--ds-text-mute);"></p>
+        <p class="text-[10px] mt-0.5 hidden" id="chart-fecha" style="color: var(--ds-text-mute);">Datos al <span></span></p>
+      </div>
+      <button onclick="closeChart()" class="w-7 h-7 flex items-center justify-center rounded-lg text-lg leading-none flex-shrink-0 ml-4" style="color: var(--ds-text-mute);">✕</button>
     </div>
+    <div style="height:300px; background: var(--ds-surface); border-radius:12px; padding:12px; border:1px solid var(--ds-line);">
+      <canvas id="product-chart"></canvas>
+    </div>
+    <div class="grid grid-cols-5 gap-2 mt-4" id="chart-stats"></div>
+    <p id="chart-note" class="hidden text-[11px] rounded-lg px-3 py-2 mt-3" style="color:#fbbf24; background:rgba(251,191,36,.12); border:1px solid rgba(251,191,36,.3);"></p>
+    <p id="chart-loading" class="text-center text-sm py-4 hidden" style="color: var(--ds-text-mute);">Cargando datos…</p>
+    <p id="chart-error" class="hidden text-center text-sm py-4" style="color:#f87171;"></p>
+  </div>
 </div>
 
 <script>
-const PALETTE = [
-    '#ef4444','#f97316','#f59e0b','#eab308','#84cc16',
-    '#22c55e','#10b981','#14b8a6','#06b6d4','#3b82f6'
-];
+const PALETTE = ['#5FE6BC','#34D399','#10B981','#22d3ee','#38bdf8','#a3e635','#fbbf24','#fb923c','#f87171','#c084fc'];
 const TOP_QTY = {{ top_qty|tojson }};
 const TOP_VAL = {{ top_val|tojson }};
 const TOP_LOSS = {{ top_loss|tojson }};
 const TOP_MUERTO = {{ top_muerto|tojson }};
+const TICK = '#86A89C', GRID = 'rgba(95,230,188,.10)';
 
-function fmtMiles(v, isCurrency) {
-    if (isCurrency) {
-        if (v >= 1000) return '$' + (v/1000).toFixed(v >= 10000 ? 0 : 1) + 'k';
-        return '$' + v.toFixed(0);
-    }
-    return v.toLocaleString('es-AR', {maximumFractionDigits: 1});
+async function recalcular() {
+    const btn = document.getElementById('btn-recalcular');
+    const st = document.getElementById('recalc-status');
+    btn.disabled = true; st.textContent = 'Recalculando desde Observer…';
+    try {
+        const r = await fetch('/dashboard/recalcular', {method:'POST', credentials:'same-origin'});
+        const d = await r.json();
+        if (!d.ok) { st.textContent = 'Error: ' + (d.error || '?'); btn.disabled = false; return; }
+        st.textContent = `✓ ${d.filas} productos (${d.con_stock} con stock, ${d.sin_mov} sin mov). Recargando…`;
+        setTimeout(() => location.reload(), 700);
+    } catch (e) { st.textContent = 'Error de red'; btn.disabled = false; }
 }
 
-const tipLabelPlugin = {
-    id: 'tipLabel',
-    afterDatasetsDraw(chart, args, opts) {
-        const {ctx} = chart;
-        const meta = chart.getDatasetMeta(0);
-        const isCurrency = opts.isCurrency;
-        ctx.save();
-        ctx.font = 'bold 11px Inter, sans-serif';
-        ctx.fillStyle = '#1e1e1e';
-        ctx.textBaseline = 'middle';
-        meta.data.forEach((bar, i) => {
-            const v = chart.data.datasets[0].data[i];
-            if (!v) return;
-            ctx.fillText(' ' + fmtMiles(v, isCurrency), bar.x + 4, bar.y);
-        });
-        ctx.restore();
-    }
-};
-
+function fmtMiles(v, isCurrency) {
+    if (isCurrency) { if (v >= 1000) return '$' + (v/1000).toFixed(v >= 10000 ? 0 : 1) + 'k'; return '$' + v.toFixed(0); }
+    return v.toLocaleString('es-AR', {maximumFractionDigits: 1});
+}
 function mkBar(ctxId, data, isCurrency, unitLabel) {
     const ctx = document.getElementById(ctxId);
     if (!ctx || !data.length) return;
     new Chart(ctx, {
         type: 'bar',
-        plugins: [tipLabelPlugin],
-        data: {
-            labels: data.map(d => d.nombre),
-            datasets: [{
-                label: unitLabel,
-                data: data.map(d => d.valor),
-                backgroundColor: data.map((_,i) => PALETTE[i % PALETTE.length]),
-                borderRadius: 6,
-                borderSkipped: false,
-            }]
-        },
+        data: { labels: data.map(d => (d.nombre||'').slice(0,22)),
+                datasets: [{ label: unitLabel, data: data.map(d => d.valor),
+                    backgroundColor: data.map((_,i) => PALETTE[i % PALETTE.length]),
+                    borderRadius: 4, borderSkipped: false }] },
         options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            layout: { padding: { right: 60 } },
-            plugins: {
-                legend: { display: false },
-                tipLabel: { isCurrency: isCurrency },
-                tooltip: {
-                    callbacks: {
-                        label: (c) => isCurrency
-                            ? '$ ' + c.parsed.x.toLocaleString('es-AR', {maximumFractionDigits:0})
-                            : c.parsed.x.toLocaleString('es-AR', {maximumFractionDigits:1}) + ' ' + unitLabel
-                    }
-                }
-            },
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false },
+                tooltip: { callbacks: { label: (c) => isCurrency
+                    ? '$ ' + c.parsed.x.toLocaleString('es-AR', {maximumFractionDigits:0})
+                    : c.parsed.x.toLocaleString('es-AR', {maximumFractionDigits:1}) + ' ' + unitLabel } } },
             scales: {
-                x: {
-                    beginAtZero: true,
-                    ticks: { callback: v => fmtMiles(v, isCurrency) },
-                    grid: { color: '#f0f0f0' }
-                },
-                y: {
-                    ticks: { font: { size: 10 } },
-                    grid: { display: false }
-                }
+                x: { beginAtZero: true, ticks: { color: TICK, font:{size:9}, callback: v => fmtMiles(v, isCurrency) }, grid: { color: GRID } },
+                y: { ticks: { color: TICK, font: { size: 9 } }, grid: { display: false } }
             }
         }
     });
 }
-
 mkBar('chart-qty', TOP_QTY, false, 'u/mes');
 mkBar('chart-val', TOP_VAL, true, 'Facturación');
 mkBar('chart-loss', TOP_LOSS, true, 'Pérdida/día');
 mkBar('chart-muerto', TOP_MUERTO, true, 'Stock muerto');
-
-// Carousel
-const slides = document.querySelectorAll('.slide');
-const titleEl = document.getElementById('slide-title');
-const dotsEl = document.getElementById('slide-dots');
-let currentSlide = 0;
-
-slides.forEach((_, i) => {
-    const dot = document.createElement('button');
-    dot.className = 'w-2 h-2 rounded-full bg-[#d0d0d0]';
-    dot.onclick = () => showSlide(i);
-    dotsEl.appendChild(dot);
-});
-
-function showSlide(i) {
-    currentSlide = (i + slides.length) % slides.length;
-    slides.forEach((s, idx) => s.classList.toggle('hidden', idx !== currentSlide));
-    titleEl.textContent = slides[currentSlide].dataset.title;
-    dotsEl.querySelectorAll('button').forEach((d, idx) => {
-        d.className = 'w-2 h-2 rounded-full ' + (idx === currentSlide ? 'bg-amber-500' : 'bg-[#d0d0d0]');
-    });
-}
-function prevSlide() { showSlide(currentSlide - 1); }
-function nextSlide() { showSlide(currentSlide + 1); }
-showSlide(0);
 
 // ─── Gráfico por producto (AJAX) ───
 const _MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -357,196 +267,110 @@ function openChart(barcode) {
     const errorEl = document.getElementById('chart-error');
     const statsEl = document.getElementById('chart-stats');
     const noteEl = document.getElementById('chart-note');
-
     document.getElementById('chart-title').textContent = '';
     document.getElementById('chart-barcode').textContent = barcode;
     document.getElementById('chart-fecha').classList.add('hidden');
-    statsEl.innerHTML = '';
-    noteEl.classList.add('hidden');
-    errorEl.classList.add('hidden');
-    loading.classList.remove('hidden');
-    modal.classList.remove('hidden');
-
+    statsEl.innerHTML = ''; noteEl.classList.add('hidden'); errorEl.classList.add('hidden');
+    loading.classList.remove('hidden'); modal.classList.remove('hidden');
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    fetch('/api/product/' + barcode + '/chart').then(r => r.json()).then(data => {
+        loading.classList.add('hidden');
+        if (!data.ok) { errorEl.textContent = data.error || 'Sin datos'; errorEl.classList.remove('hidden'); return; }
+        document.getElementById('chart-title').textContent = data.nombre;
+        const fechaEl = document.getElementById('chart-fecha');
+        if (data.analizado_en) { fechaEl.querySelector('span').textContent = data.analizado_en; fechaEl.classList.remove('hidden'); }
+        else { fechaEl.classList.add('hidden'); }
+        renderProductChart(data);
+    }).catch(err => { loading.classList.add('hidden'); errorEl.textContent = 'Error: ' + err; errorEl.classList.remove('hidden'); });
+}
 
-    fetch('/api/product/' + barcode + '/chart')
-        .then(r => r.json())
-        .then(data => {
-            loading.classList.add('hidden');
-            if (!data.ok) {
-                errorEl.textContent = data.error || 'Sin datos';
-                errorEl.classList.remove('hidden');
-                return;
-            }
-            document.getElementById('chart-title').textContent = data.nombre;
-            const fechaEl = document.getElementById('chart-fecha');
-            if (data.analizado_en) {
-                fechaEl.querySelector('span').textContent = data.analizado_en;
-                fechaEl.classList.remove('hidden');
-            } else {
-                fechaEl.classList.add('hidden');
-            }
-            renderProductChart(data);
-        })
-        .catch(err => {
-            loading.classList.add('hidden');
-            errorEl.textContent = 'Error al cargar datos: ' + err;
-            errorEl.classList.remove('hidden');
-        });
+function _statCard(s) {
+    return `<div style="background:var(--ds-surface-2); border:1px solid var(--ds-line); border-radius:8px;" class="px-3 py-2.5 text-center">
+        <p class="text-[10px] uppercase tracking-wide mb-1" style="color:var(--ds-text-mute);">${s.l}</p>
+        <p class="text-sm font-bold" style="color:${s.c}">${s.v}</p></div>`;
 }
 
 function renderProductChart(p) {
     if (p.sin_historial || !p.ventas || p.ventas.length === 0) {
-        const avg = p.avg_monthly || 0;
-        const rot = p.rotacion || 'B';
-        const rotC = { A:'#15803d', M:'#b45309', B:'#dc2626' };
-        const rotL = { A:'Alta', M:'Media', B:'Baja' };
+        const avg = p.avg_monthly || 0, rot = p.rotacion || 'B';
+        const rotC = { A:'#34D399', M:'#fbbf24', B:'#f87171' }, rotL = { A:'Alta', M:'Media', B:'Baja' };
         const sd = avg > 0 && p.stock > 0 ? Math.round(p.stock/(avg/30.4))+'d' : p.stock<=0 ? 'agotado' : '—';
         document.getElementById('chart-stats').innerHTML = [
-            {l:'Prom/mes', v:Math.round(avg), c:'#1e1e1e'},
+            {l:'Prom/mes', v:Math.round(avg), c:'var(--ds-text)'},
             {l:'Rotación', v:rotL[rot]||rot, c:rotC[rot]||'#888'},
-            {l:'Stock', v:p.stock<=0?'agotado':p.stock, c:p.stock<=0?'#f87171':'#1e1e1e'},
-            {l:'Cobertura', v:sd, c:'#888'},
-            {l:'Tipo', v:p.tipo==='C'?'Prom.Vtas':'Normal', c:p.tipo==='C'?'#7c3aed':'#888'},
-        ].map(s => `<div class="bg-white rounded-lg px-3 py-2.5 text-center">
-            <p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.l}</p>
-            <p class="text-sm font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
+            {l:'Stock', v:p.stock<=0?'agotado':p.stock, c:p.stock<=0?'#f87171':'var(--ds-text)'},
+            {l:'Cobertura', v:sd, c:'var(--ds-text-mute)'},
+            {l:'Tipo', v:p.tipo==='C'?'Prom.Vtas':'Normal', c:p.tipo==='C'?'#c084fc':'var(--ds-text-mute)'},
+        ].map(_statCard).join('');
         const n = document.getElementById('chart-note');
-        n.textContent = 'Sin historial mensual. Procesá un análisis de ventas para ver el gráfico.';
-        n.classList.remove('hidden');
+        n.textContent = 'Sin historial mensual para este producto.'; n.classList.remove('hidden');
         return;
     }
-
     const ventas = p.ventas, sm = p.start_month||4, FM = 11;
-    const avg = p.avg_monthly||0, slope = p.slope||0;
-    const N_D = p.n_days||35;
+    const avg = p.avg_monthly||0, slope = p.slope||0, N_D = p.n_days||35;
     const monthLabels = Array.from({length:12}, (_,i) => _MES[(sm-1+i)%12]);
-
-    const today = new Date();
-    const de = today.getDate();
+    const today = new Date(); const de = today.getDate();
     const dim = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate();
     const ps = ventas[11]||0;
-    // Blend: actual sold + historical avg rate for remaining days (avoids front-loading distortion)
     const pf = (avg>0&&de>0) ? Math.round(ps + (avg/dim)*(dim-de)) : (ps>0&&de>0 ? Math.round(ps*dim/de) : 0);
     const pr = Math.max(0, pf-ps);
-
     const vals = ventas.slice(0, FM);
     const mx = (FM-1)/2, my = vals.reduce((a,b)=>a+b,0)/FM;
-
-    const nF = N_D>=35?2:1;
-    const fv = [];
-    for (let o=0;o<nF;o++){
-        const si = (avg>0&&ventas[o]>0) ? ventas[o]/avg : 1.0;
-        const th = Math.min(FM+o-mx, 2.0);
-        fv.push(Math.max(0, Math.round(avg*si+slope*th)));
-    }
-    const fl = fv.map((_,i)=>_MES[(sm-1+i)%12]+'→');
-    const tc = 12+nF;
-
+    const nF = N_D>=35?2:1; const fv = [];
+    for (let o=0;o<nF;o++){ const si=(avg>0&&ventas[o]>0)?ventas[o]/avg:1.0; const th=Math.min(FM+o-mx,2.0); fv.push(Math.max(0,Math.round(avg*si+slope*th))); }
+    const fl = fv.map((_,i)=>_MES[(sm-1+i)%12]+'→'); const tc = 12+nF;
     const tC = avg>0?avg*0.6:Infinity;
-    const tL = Array.from({length:tc}, (_,i)=>{
-        const r=my+slope*(i-mx);
-        return Math.max(0, avg>0?Math.min(Math.max(r,avg-tC),avg+tC):r);
-    });
-
+    const tL = Array.from({length:tc}, (_,i)=>{ const r=my+slope*(i-mx); return Math.max(0, avg>0?Math.min(Math.max(r,avg-tC),avg+tC):r); });
     const labels = [...monthLabels.map((m,i)=>i===11?m+'*':m), ...fl];
-    const hd = [...ventas, ...Array(nF).fill(null)];
-    const fd = [...Array(12).fill(null), ...fv];
-
+    const hd = [...ventas, ...Array(nF).fill(null)]; const fd = [...Array(12).fill(null), ...fv];
     const ds = [
-        {label:'Ventas',data:hd,type:'bar',backgroundColor:'rgba(56,189,248,0.45)',borderColor:'rgba(56,189,248,0.75)',borderWidth:1,borderRadius:3,order:3},
-        {label:'Proyección',data:fd,type:'bar',backgroundColor:'rgba(34,197,94,0.35)',borderColor:'rgba(34,197,94,0.85)',borderWidth:1,borderRadius:3,order:3},
-        {label:'Tendencia',data:tL,type:'line',borderColor:'#f97316',borderWidth:2,pointRadius:0,tension:0,fill:false,order:1},
-        {label:'Prom. pond.',data:Array(tc).fill(avg),type:'line',borderColor:'#EAB308',borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2},
+        {label:'Ventas',data:hd,type:'bar',backgroundColor:'rgba(56,189,248,0.5)',borderColor:'rgba(56,189,248,0.85)',borderWidth:1,borderRadius:3,order:3},
+        {label:'Proyección',data:fd,type:'bar',backgroundColor:'rgba(52,211,153,0.4)',borderColor:'rgba(52,211,153,0.9)',borderWidth:1,borderRadius:3,order:3},
+        {label:'Tendencia',data:tL,type:'line',borderColor:'#fb923c',borderWidth:2,pointRadius:0,tension:0,fill:false,order:1},
+        {label:'Prom. pond.',data:Array(tc).fill(avg),type:'line',borderColor:'#5FE6BC',borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2},
     ];
-    if (p.stock>0) ds.push({label:'Stock actual',data:Array(tc).fill(p.stock),type:'line',borderColor:'#ef4444',borderWidth:1.5,borderDash:[3,3],pointRadius:0,tension:0,fill:false,order:2});
-
-    const blp = {
-        id:'barLabels',
-        afterDraw(chart){
-            const ctx2=chart.ctx, yS=chart.scales.y;
-            chart.data.datasets.forEach((d,di)=>{
-                const meta=chart.getDatasetMeta(di);
-                if(meta.type!=='bar') return;
-                meta.data.forEach((bar,i)=>{
-                    const v=d.data[i]; if(v==null||v<=0) return;
-                    if(di===0&&i===11&&pr>0){
-                        const yt=yS.getPixelForValue(pf), hw=bar.width/2;
-                        ctx2.save(); ctx2.fillStyle='rgba(234,179,8,0.22)';
-                        ctx2.fillRect(bar.x-hw,yt,bar.width,bar.y-yt);
-                        ctx2.strokeStyle='rgba(234,179,8,0.7)'; ctx2.lineWidth=1; ctx2.setLineDash([3,2]);
-                        ctx2.strokeRect(bar.x-hw,yt,bar.width,bar.y-yt); ctx2.restore();
-                        ctx2.save(); ctx2.font='8px sans-serif'; ctx2.fillStyle='#64748b';
-                        ctx2.textAlign='center'; ctx2.textBaseline='bottom';
-                        ctx2.fillText(ps,bar.x,bar.y-2); ctx2.restore();
-                        ctx2.save(); ctx2.font='bold 8px sans-serif'; ctx2.fillStyle='#b45309';
-                        ctx2.textAlign='center'; ctx2.textBaseline='bottom';
-                        ctx2.fillText('~'+pf,bar.x,yt-2); ctx2.restore();
-                        return;
-                    }
-                    ctx2.save(); ctx2.font='8px sans-serif';
-                    ctx2.fillStyle=di===1?'rgba(34,197,94,0.9)':'#888';
-                    ctx2.textAlign='center'; ctx2.textBaseline='bottom';
-                    ctx2.fillText(Math.round(v),bar.x,bar.y-2); ctx2.restore();
-                });
+    if (p.stock>0) ds.push({label:'Stock',data:Array(tc).fill(p.stock),type:'line',borderColor:'#f87171',borderWidth:1.5,borderDash:[3,3],pointRadius:0,tension:0,fill:false,order:2});
+    const blp = { id:'barLabels', afterDraw(chart){
+        const ctx2=chart.ctx, yS=chart.scales.y;
+        chart.data.datasets.forEach((d,di)=>{ const meta=chart.getDatasetMeta(di);
+            if(meta.type!=='bar') return;
+            meta.data.forEach((bar,i)=>{ const v=d.data[i]; if(v==null||v<=0) return;
+                if(di===0&&i===11&&pr>0){ const yt=yS.getPixelForValue(pf), hw=bar.width/2;
+                    ctx2.save(); ctx2.fillStyle='rgba(95,230,188,0.18)'; ctx2.fillRect(bar.x-hw,yt,bar.width,bar.y-yt);
+                    ctx2.strokeStyle='rgba(95,230,188,0.6)'; ctx2.lineWidth=1; ctx2.setLineDash([3,2]); ctx2.strokeRect(bar.x-hw,yt,bar.width,bar.y-yt); ctx2.restore();
+                    ctx2.save(); ctx2.font='8px sans-serif'; ctx2.fillStyle='#86A89C'; ctx2.textAlign='center'; ctx2.textBaseline='bottom'; ctx2.fillText(ps,bar.x,bar.y-2); ctx2.restore();
+                    ctx2.save(); ctx2.font='bold 8px sans-serif'; ctx2.fillStyle='#5FE6BC'; ctx2.textAlign='center'; ctx2.textBaseline='bottom'; ctx2.fillText('~'+pf,bar.x,yt-2); ctx2.restore();
+                    return; }
+                ctx2.save(); ctx2.font='8px sans-serif'; ctx2.fillStyle=di===1?'rgba(52,211,153,0.95)':'#86A89C'; ctx2.textAlign='center'; ctx2.textBaseline='bottom'; ctx2.fillText(Math.round(v),bar.x,bar.y-2); ctx2.restore();
             });
-        }
-    };
-
+        });
+    }};
     const ctx = document.getElementById('product-chart').getContext('2d');
     if (chartInstance) chartInstance.destroy();
-    chartInstance = new Chart(ctx, {
-        type:'bar', plugins:[blp], data:{labels,datasets:ds},
-        options:{
-            responsive:true, maintainAspectRatio:false,
-            interaction:{mode:'index',intersect:false},
-            plugins:{
-                legend:{labels:{color:'#888',font:{size:10},boxWidth:20,padding:12}},
-                tooltip:{backgroundColor:'#fff',titleColor:'#1e1e1e',bodyColor:'#555',borderColor:'#e0e0e0',borderWidth:1},
-            },
-            scales:{
-                x:{grid:{color:'#e8e8e8'},ticks:{color:'#999',font:{size:10}}},
-                y:{grid:{color:'#e8e8e8'},ticks:{color:'#999',font:{size:10}},beginAtZero:true}
-            }
-        }
-    });
-
-    // Stats
-    const ss = slope>0.05?'↑':slope<-0.05?'↓':'→';
-    const sc = slope>0.05?'#4ade80':slope<-0.05?'#f87171':'#888';
+    chartInstance = new Chart(ctx, { type:'bar', plugins:[blp], data:{labels,datasets:ds},
+        options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+            plugins:{ legend:{labels:{color:'#86A89C',font:{size:10},boxWidth:18,padding:10}},
+                tooltip:{backgroundColor:'#103D31',titleColor:'#ECFDF5',bodyColor:'#B8D4C9',borderColor:'rgba(95,230,188,.2)',borderWidth:1} },
+            scales:{ x:{grid:{color:GRID},ticks:{color:TICK,font:{size:10}}}, y:{grid:{color:GRID},ticks:{color:TICK,font:{size:10}},beginAtZero:true} } } });
+    const ssg = slope>0.05?'↑':slope<-0.05?'↓':'→'; const sc = slope>0.05?'#34D399':slope<-0.05?'#f87171':'#86A89C';
     const sd = avg>0&&p.stock>0 ? Math.round(p.stock/(avg/30.4))+'d' : p.stock<=0?'agotado':'—';
-    const rC = {A:'#15803d',M:'#b45309',B:'#dc2626'};
-    const rL = {A:'Alta',M:'Media',B:'Baja'};
-    const rot = p.rotacion||'B';
+    const rC = {A:'#34D399',M:'#fbbf24',B:'#f87171'}, rL = {A:'Alta',M:'Media',B:'Baja'}; const rot = p.rotacion||'B';
     const stats = [
-        {l:'Prom/mes',v:Math.round(avg),c:'#1e1e1e'},
+        {l:'Prom/mes',v:Math.round(avg),c:'var(--ds-text)'},
         {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||'#888'},
-        {l:'Tendencia',v:`${ss} ${Math.abs(slope).toFixed(1)}/m`,c:sc},
-        {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:p.stock<=0?'#f87171':'#1e1e1e'},
-        {l:'Cobertura',v:sd,c:'#888'},
-        {l:'Tipo',v:p.tipo==='C'?'Prom.Vtas':'Normal',c:p.tipo==='C'?'#7c3aed':'#888'},
+        {l:'Tendencia',v:`${ssg} ${Math.abs(slope).toFixed(1)}/m`,c:sc},
+        {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:p.stock<=0?'#f87171':'var(--ds-text)'},
+        {l:'Cobertura',v:sd,c:'var(--ds-text-mute)'},
+        {l:'Tipo',v:p.tipo==='C'?'Prom.Vtas':'Normal',c:p.tipo==='C'?'#c084fc':'var(--ds-text-mute)'},
     ];
-    if (ps>0) stats.push({l:`Mes actual (${de}/${dim}d)`,v:`${ps} / ~${pf}`,c:'#b45309'});
-    document.getElementById('chart-stats').innerHTML = stats.map(s => `
-        <div class="bg-white rounded-lg px-3 py-2.5 text-center">
-            <p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.l}</p>
-            <p class="text-sm font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
-
-    const zm = vals.filter(v=>v===0).length;
-    const sr = avg>0 ? Math.abs(slope)/avg : 0;
+    if (ps>0) stats.push({l:`Mes actual (${de}/${dim}d)`,v:`${ps} / ~${pf}`,c:'#fbbf24'});
+    document.getElementById('chart-stats').innerHTML = stats.map(_statCard).join('');
+    const zm = vals.filter(v=>v===0).length; const sr = avg>0 ? Math.abs(slope)/avg : 0;
     const ne = document.getElementById('chart-note');
-    if (zm>0&&sr>0.08) {
-        ne.textContent = `${zm} mes${zm>1?'es':''} sin ventas — la tendencia puede estar distorsionada.`;
-        ne.classList.remove('hidden');
-    } else { ne.classList.add('hidden'); }
+    if (zm>0&&sr>0.08) { ne.textContent = `${zm} mes${zm>1?'es':''} sin ventas — la tendencia puede estar distorsionada.`; ne.classList.remove('hidden'); }
+    else { ne.classList.add('hidden'); }
 }
-
-function closeChart() {
-    document.getElementById('chart-modal').classList.add('hidden');
-    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-}
+function closeChart() { document.getElementById('chart-modal').classList.add('hidden'); if (chartInstance) { chartInstance.destroy(); chartInstance = null; } }
 document.addEventListener('keydown', e => { if (e.key==='Escape') closeChart(); });
 </script>
-
-</body>
-</html>
+{% endblock %}

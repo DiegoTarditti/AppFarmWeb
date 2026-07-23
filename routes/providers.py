@@ -14,11 +14,42 @@ from helpers import (
     _ensure_parser_file,
     _make_parser_slug,
     allowed_file,
+    drogueria_defaults,
     get_providers,
+    pdf_de_carpeta_proveedor,
 )
 
 
 def init_app(app):
+
+    @app.route('/api/proveedores/drog-activas')
+    @login_required
+    def api_drog_activas():
+        """Droguerías que el operador activó para aparecer en el dropdown
+        'Pedido a' (modal Cerrar TX en /atencion y /pedido/nuevo).
+        Solo id + nombre, ordenadas alfabéticamente."""
+        with database.get_db() as session:
+            rows = (session.query(database.Provider.id,
+                                  database.Provider.razon_social)
+                    .filter(database.Provider.tipo == 'drogueria',
+                            database.Provider.activo.is_(True),
+                            database.Provider.activa_ped.is_(True))
+                    .order_by(database.Provider.razon_social).all())
+            return jsonify({'drog': [{'id': r[0], 'nombre': r[1]} for r in rows]})
+
+    @app.route('/api/provider/<int:provider_id>/activa-ped', methods=['PATCH'])
+    @login_required
+    def api_provider_activa_ped(provider_id):
+        """Toggle del flag activa_ped. Body JSON {activa: true|false}."""
+        data = request.get_json(silent=True) or {}
+        activa = bool(data.get('activa'))
+        with database.get_db() as session:
+            prov = session.get(database.Provider, provider_id)
+            if not prov:
+                return jsonify({'ok': False, 'error': 'Proveedor no encontrado'}), 404
+            prov.activa_ped = activa
+            session.commit()
+        return jsonify({'ok': True, 'activa_ped': activa})
 
     @app.route('/api/provider/<int:provider_id>/descuento-sin-transfer', methods=['PATCH'])
     @login_required
@@ -198,6 +229,32 @@ def init_app(app):
         resp.headers['Content-Disposition'] = f'attachment; filename="parser_preview_{provider_id}.xlsx"'
         return resp
 
+    @app.route('/api/provider/<int:provider_id>/folder-file/stage', methods=['POST'])
+    def provider_folder_file_stage(provider_id):
+        """Copia a uploads un PDF elegido de la carpeta del proveedor y devuelve su nombre.
+
+        Es lo que le faltaba a "Probar parser" cuando el PDF se elige de la carpeta:
+        el preview (parser-preview-saved) sólo mira uploads, así que el botón quedaba
+        habilitado y no hacía nada.
+        """
+        import shutil
+        data = request.get_json(silent=True) or {}
+        nombre = (data.get('name') or '').strip()
+        with database.get_db() as session:
+            prov = session.get(database.Provider, provider_id)
+            if not prov:
+                return jsonify({'error': 'Proveedor no encontrado.'}), 404
+            ruta = (prov.ruta_facturas or '').strip()
+        src = pdf_de_carpeta_proveedor(ruta, nombre)
+        if not src:
+            return jsonify({'error': 'El PDF elegido no existe en la carpeta del proveedor.'}), 400
+        dest_name = secure_filename(nombre) or 'factura.pdf'
+        try:
+            shutil.copy2(src, os.path.join(UPLOAD_FOLDER, dest_name))
+        except OSError as e:
+            return jsonify({'error': f'No se pudo copiar el PDF: {e}'}), 400
+        return jsonify({'pdf_filename': dest_name})
+
     @app.route('/provider/<int:provider_id>/parser-preview-saved', methods=['POST'])
     def provider_parser_preview_saved(provider_id):
         """Preview del parser usando un PDF ya guardado en uploads."""
@@ -259,6 +316,7 @@ def init_app(app):
                 claim_count = session.query(database.Claim).filter_by(proveedor_id=p.id).count()
                 horario_count = (session.query(database.ProveedorHorarioReparto)
                                  .filter_by(proveedor_id=p.id).count())
+                _dd = drogueria_defaults(p.razon_social) if (p.tipo or 'drogueria') == 'drogueria' else {}
                 provider_data.append({
                     'id': p.id,
                     'razon_social': p.razon_social,
@@ -274,6 +332,11 @@ def init_app(app):
                     'tiene_horarios': horario_count > 0,
                     'horario_count': horario_count,
                     'matriz_visible': p.matriz_visible if p.tipo == 'drogueria' else None,
+                    'codcli': p.codcli or '',
+                    # formato/sufijo: lo guardado o el default por nombre de droguería.
+                    'formato_archivo': p.formato_archivo or _dd.get('formato_archivo', ''),
+                    'sufijo': p.sufijo or _dd.get('sufijo', ''),
+                    'carpeta_filtro': p.carpeta_filtro or '',
                 })
         return render_template('providers.html', providers=provider_data, tipo_filter=tipo_filter)
 
@@ -378,6 +441,12 @@ def init_app(app):
                     setattr(provider, field, float(raw) if raw else None)
                 except ValueError:
                     pass
+            # Filtro droguería: config del archivo de pedido.
+            provider.codcli = (request.form.get('codcli') or '').strip() or None
+            fmt = (request.form.get('formato_archivo') or '').strip().lower()
+            provider.formato_archivo = fmt if fmt in ('ped', 'txt20j') else None
+            provider.sufijo = (request.form.get('sufijo') or '').strip() or None
+            provider.carpeta_filtro = (request.form.get('carpeta_filtro') or '').strip() or None
             session.commit()
         return redirect(url_for('providers_list', tipo=request.form.get('tipo_filter') or None))
 

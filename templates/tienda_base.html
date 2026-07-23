@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ cfg.tienda_titulo or 'Farmacia' }}{% endblock %}</title>
+  <meta name="description" content="{% block description %}{{ cfg.tienda_hero_texto or 'Catálogo de productos con envío a domicilio.' }}{% endblock %}">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E💊%3C/text%3E%3C/svg%3E">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50:  '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              900: '#14532d',
+            },
+          },
+          fontFamily: {
+            sans: ['system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    /* Estilos que Tailwind no cubre limpios */
+    .card-hover { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+    .card-hover:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+    .drawer-open { transform: translateX(0) !important; }
+    .drawer-backdrop.open { display: block !important; }
+    /* Line-clamp fallback (Tailwind CDN a veces no lo incluye) */
+    .clamp-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+               overflow:hidden; }
+  </style>
+</head>
+<body class="min-h-screen {% block body_class %}bg-slate-50{% endblock %} text-slate-800 font-sans flex flex-col">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-4">
+      <a href="{{ url_for('tienda_home') }}" class="flex items-center gap-2 text-brand-700 hover:text-brand-900 transition">
+        <span class="text-2xl">💊</span>
+        <span class="font-bold text-lg leading-tight">
+          {{ cfg.tienda_titulo or 'Farmacia' }}
+        </span>
+      </a>
+
+      <div class="flex-1"></div>
+
+      <!-- Carrito -->
+      <button onclick="abrirCarrito()"
+              class="relative flex items-center gap-1 px-3 py-2 rounded-lg
+                     bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition">
+        <span>🛒</span>
+        <span class="hidden sm:inline">Mi pedido</span>
+        <span id="badgeCarrito"
+              class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold
+                     rounded-full w-5 h-5 flex items-center justify-center hidden">0</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Contenido -->
+  <main class="flex-1 w-full">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-slate-200 mt-12">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-6 text-sm text-slate-600 grid gap-3 sm:grid-cols-2">
+      <div>
+        <div class="font-bold text-slate-800 mb-1">{{ cfg.tienda_titulo or 'Farmacia' }}</div>
+        {% if cfg.tienda_direccion %}<div>📍 {{ cfg.tienda_direccion }}</div>{% endif %}
+        {% if cfg.tienda_horarios %}<div>🕒 {{ cfg.tienda_horarios }}</div>{% endif %}
+      </div>
+      <div class="sm:text-right">
+        <div class="text-xs">Pedidos por WhatsApp — con confirmación por operador.</div>
+        <div class="text-xs mt-1 text-slate-400">Los precios y stock se actualizan cada 5 min.</div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Drawer carrito -->
+  <div id="carritoBackdrop"
+       class="drawer-backdrop hidden fixed inset-0 bg-black/40 z-40"
+       onclick="cerrarCarrito()"></div>
+  <aside id="carritoDrawer"
+         class="fixed right-0 top-0 h-full w-full sm:w-96 bg-white shadow-2xl z-50
+                transform translate-x-full transition-transform duration-200 flex flex-col">
+    <div class="border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+      <div class="font-bold text-lg">🛒 Mi pedido</div>
+      <button onclick="cerrarCarrito()" class="text-slate-500 hover:text-slate-800 text-xl">✕</button>
+    </div>
+    <div id="carritoItems" class="flex-1 overflow-y-auto p-4 space-y-2">
+      <div class="text-center text-slate-400 py-12" id="carritoVacio">
+        Tu pedido está vacío.<br>
+        <span class="text-xs">Agregá productos y confirmá por WhatsApp.</span>
+      </div>
+    </div>
+    <div class="border-t border-slate-200 p-4 space-y-3 bg-slate-50">
+      <div class="flex justify-between font-semibold text-lg">
+        <span>Total aprox</span>
+        <span id="carritoTotal">$0</span>
+      </div>
+      <button onclick="pedirWhatsApp()"
+              id="btnPedir"
+              class="w-full bg-green-500 hover:bg-green-600 text-white font-bold
+                     py-3 rounded-lg transition text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled>
+        📱 Pedir por WhatsApp
+      </button>
+      <div class="text-[10px] text-slate-400 text-center">
+        Podés ajustar cantidades, domicilio y pago en el chat antes de confirmar.
+      </div>
+    </div>
+  </aside>
+
+  <script>
+    // ────────────────────────────────────────────────────────────────
+    // Carrito con localStorage. Formato: {oid: {nombre, precio, cant}}
+    // ────────────────────────────────────────────────────────────────
+    const CARRITO_KEY = 'tienda_farmbadia_carrito_v1';
+
+    function cargarCarrito() {
+      try { return JSON.parse(localStorage.getItem(CARRITO_KEY) || '{}'); }
+      catch(e) { return {}; }
+    }
+    function guardarCarrito(c) {
+      localStorage.setItem(CARRITO_KEY, JSON.stringify(c));
+      renderBadge();
+    }
+    function agregarAlCarrito(oid, nombre, precio, cant) {
+      const c = cargarCarrito();
+      cant = cant || 1;
+      if (c[oid]) c[oid].cant += cant;
+      else c[oid] = {nombre, precio: precio || 0, cant};
+      guardarCarrito(c);
+      abrirCarrito();
+    }
+    function cambiarCantidad(oid, delta) {
+      const c = cargarCarrito();
+      if (!c[oid]) return;
+      c[oid].cant += delta;
+      if (c[oid].cant <= 0) delete c[oid];
+      guardarCarrito(c);
+      renderDrawer();
+    }
+    function quitar(oid) {
+      const c = cargarCarrito();
+      delete c[oid];
+      guardarCarrito(c);
+      renderDrawer();
+    }
+    function vaciarCarrito() {
+      guardarCarrito({});
+      renderDrawer();
+    }
+    function fmtPrecio(n) {
+      if (!n) return '';
+      return '$' + Math.round(n).toLocaleString('es-AR');
+    }
+    function renderBadge() {
+      const c = cargarCarrito();
+      const cant = Object.values(c).reduce((s, it) => s + it.cant, 0);
+      const badge = document.getElementById('badgeCarrito');
+      if (cant > 0) { badge.textContent = cant; badge.classList.remove('hidden'); }
+      else badge.classList.add('hidden');
+    }
+    function renderDrawer() {
+      const c = cargarCarrito();
+      const wrap = document.getElementById('carritoItems');
+      const btnPedir = document.getElementById('btnPedir');
+      const items = Object.entries(c);
+      if (items.length === 0) {
+        wrap.innerHTML = '<div class="text-center text-slate-400 py-12">Tu pedido está vacío.<br><span class="text-xs">Agregá productos y confirmá por WhatsApp.</span></div>';
+        document.getElementById('carritoTotal').textContent = '$0';
+        btnPedir.disabled = true;
+        return;
+      }
+      let total = 0;
+      wrap.innerHTML = items.map(([oid, it]) => {
+        const subtotal = (it.precio || 0) * it.cant;
+        total += subtotal;
+        return `
+          <div class="flex items-center gap-2 border-b border-slate-100 pb-2">
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-slate-800 truncate" title="${it.nombre}">${it.nombre}</div>
+              <div class="text-xs text-slate-500">${it.precio ? fmtPrecio(it.precio) + ' c/u' : 'a consultar'}</div>
+            </div>
+            <div class="flex items-center gap-1">
+              <button onclick="cambiarCantidad(${oid}, -1)" class="w-7 h-7 rounded bg-slate-100 hover:bg-slate-200 text-slate-700">−</button>
+              <span class="w-8 text-center text-sm font-semibold">${it.cant}</span>
+              <button onclick="cambiarCantidad(${oid}, 1)" class="w-7 h-7 rounded bg-slate-100 hover:bg-slate-200 text-slate-700">+</button>
+            </div>
+            <div class="text-right min-w-[70px]">
+              <div class="text-sm font-bold text-brand-700">${fmtPrecio(subtotal) || '—'}</div>
+              <button onclick="quitar(${oid})" class="text-[10px] text-red-500 hover:underline">quitar</button>
+            </div>
+          </div>`;
+      }).join('');
+      document.getElementById('carritoTotal').textContent = fmtPrecio(total) || '—';
+      btnPedir.disabled = false;
+    }
+    function abrirCarrito() {
+      renderDrawer();
+      document.getElementById('carritoDrawer').classList.add('drawer-open');
+      document.getElementById('carritoBackdrop').classList.add('open');
+    }
+    function cerrarCarrito() {
+      document.getElementById('carritoDrawer').classList.remove('drawer-open');
+      document.getElementById('carritoBackdrop').classList.remove('open');
+    }
+    function pedirWhatsApp() {
+      const c = cargarCarrito();
+      const items = Object.entries(c).map(([oid, it]) => `${oid}:${it.cant}`).join(',');
+      if (!items) return;
+      window.location.href = '/tienda/pedir?items=' + encodeURIComponent(items);
+    }
+    // Init
+    document.addEventListener('DOMContentLoaded', renderBadge);
+  </script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,1267 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planilla de reparto · {{ fecha.strftime('%d/%m/%Y') }}</title>
+<style>
+  :root {
+    /* Theme cream-mint (Diego 2026-06-17). Fondo crema-papel + tabla casi blanca
+       + accent menta. Texto oscuro para contraste WCAG AA. */
+    --bg:#EDE6CF; --surface:#FCFBF7; --card:#FFFFFF; --txt:#1C1817; --title:#0A0908;
+    --muted:#4F4A3F; --muted2:#6C6759; --border:#D8D0B6; --accent:#10B981;
+    --accent-ink:#064E3B; --accent-soft:#E8F8EF;
+    --row-bd:#EDE6CF; --hov:#DCFCE7; --zebra:#F5EFD9;
+    --warn:#B45309; --warn-soft:#FCEFCA; --info:#1E40AF; --danger:#B91C1C;
+    --header-bg:#C6F2D9; --header-txt:#064E3B;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  /* height fijo 100vh + overflow hidden: la página nunca scrollea como un todo.
+     El scroll vive dentro de .wrap (las tablas), así el chat-panel lateral
+     y la topbar quedan siempre visibles sin sticky/fixed. Diego 2026-06-19. */
+  html, body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(--txt); font-family:var(--font); }
+  .topbar { height:50px; background:var(--surface); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:12px; padding:0 18px; flex-wrap:wrap; }
+  .logo { font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .logo .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .hbtn { font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--border);
+           background:var(--surface); color:var(--txt); cursor:pointer; text-decoration:none;
+           display:inline-flex; align-items:center; gap:4px; }
+  .hbtn:hover { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+  .input { background:var(--surface); color:var(--txt); border:1px solid var(--border);
+           border-radius:8px; padding:5px 9px; font-size:13px; }
+  .wrap { padding:16px; overflow-x:auto; }
+  .nav-fecha { display:flex; align-items:center; gap:8px; }
+  .nav-fecha button { padding:3px 10px; border-radius:6px; border:1px solid var(--border);
+                      background:var(--surface); color:var(--txt); cursor:pointer; font-size:13px; }
+  .nav-fecha button:hover { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+
+  /* Tabla */
+  /* Botón Maps al lado de la dirección. Píldora chiquita con pin. */
+  .btn-maps { display:inline-block; margin-left:5px; padding:1px 6px; font-size:11px;
+              text-decoration:none; border-radius:999px; background:rgba(29,158,117,.18);
+              color:var(--accent); border:1px solid rgba(29,158,117,.35); cursor:pointer; }
+  .btn-maps:hover { background:var(--accent); color:var(--accent-ink); }
+  /* Botones para asignar turno (al lado del cliente). El activo se ve filled. */
+  /* Pills de turno (M/T/N): círculos chiquitos coloreados por turno cuando activos,
+     gris suave cuando inactivos. Click toggle el turno del pedido. */
+  .turno-switch { display:inline-flex; gap:3px; margin-left:6px; vertical-align:middle; }
+  .btn-turno { width:18px; height:18px; line-height:16px; text-align:center; font-size:10px;
+                font-weight:700; border-radius:50%; cursor:pointer; user-select:none;
+                border:1px solid var(--border); background:var(--surface); color:var(--muted2);
+                transition: all .12s; }
+  .btn-turno:hover { color:var(--title); border-color:var(--muted); }
+  .btn-turno[title="Mañana"].on { background:#DBEAFE; color:#1E40AF; border-color:#3B82F6; }
+  .btn-turno[title="Tarde"].on  { background:#FEE4C7; color:#9A3412; border-color:#F97316; }
+  .btn-turno[title="Noche"].on  { background:#EDE9FE; color:#5B21B6; border-color:#8B5CF6; }
+  .planilla-table { width:100%; border-collapse:collapse; font-size:12px;
+                    background:var(--card); border:1px solid var(--border); }
+  .planilla-table th { background:var(--header-bg); color:var(--header-txt); font-weight:700;
+                       padding:8px 6px; text-align:left; border-bottom:2px solid var(--accent);
+                       white-space:nowrap; font-size:11px; text-transform:uppercase; letter-spacing:.3px;
+                       position:sticky; top:0; z-index:1; }
+  .planilla-table th + th { border-left:1px solid rgba(16,185,129,.25); }
+  .planilla-table td { padding:6px 6px; border-bottom:1px solid var(--row-bd); vertical-align:middle;
+                       color:var(--txt); }
+  .planilla-table td + td { border-left:1px solid var(--row-bd); }
+  /* Zebra: filas pares con tono crema un pelín más oscuro que la tabla base. */
+  .planilla-table tbody tr:nth-child(even) td { background:var(--zebra); }
+  .planilla-table tr:hover td { background:var(--hov); }
+  .planilla-table tr.fila-entregado { opacity:.5; }
+  .planilla-table tr.fila-receta td:first-child { border-left:2px solid var(--danger); }
+  .planilla-table tr.fila-anulado { opacity:.3; text-decoration:line-through; }
+  /* Entregado pero cadete todavía debe rendir efectivo / receta: fila ACTIVA
+     con borde ámbar a la izquierda como señal visual. Diego 2026-06-24. */
+  .planilla-table tr.fila-pend-rendir td:first-child { border-left:2px solid #F8B95E; }
+  .planilla-table tr.fila-pend-rendir { background:rgba(248,185,94,0.05); }
+  .badge-pend-rendir {
+    font-size:8px; padding:1px 5px; border-radius:6px; margin-left:4px;
+    background:rgba(248,185,94,0.18); color:#F8B95E;
+    border:1px solid rgba(248,185,94,0.45); font-weight:600;
+    white-space:nowrap;
+  }
+
+  /* Animación blink para alertas de cadetes sin responder (banner + modal). */
+  @keyframes blinker { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .blink { animation: blinker 1s ease-in-out infinite; }
+
+  /* Arqueo: total por columna (bajo el título) + check de selección */
+  .col-sum { font-size:10px; color:var(--accent); font-weight:700; margin-top:2px; min-height:12px; }
+  .chk-sum { transform:scale(0.8); cursor:pointer; vertical-align:middle; margin-right:2px; accent-color:var(--accent); }
+  /* Celdas editables */
+  .celda-editable { cursor:pointer; min-width:50px; border-radius:3px; padding:2px 4px; }
+  .celda-editable:hover { background:var(--hov); }
+  .celda-editable input, .celda-editable select {
+    width:100%; padding:2px 4px; border:1px solid var(--accent); border-radius:4px;
+    font-size:12px; background:var(--card); color:var(--txt); }
+
+  /* Badges de estado */
+  .badge-estado { cursor:pointer; font-size:9px; padding:1px 7px; border-radius:999px; font-weight:700; border:none; }
+  .badge-pendiente { background:var(--hov); color:var(--muted); }
+  .badge-en_ruta   { background:#185FA5; color:#fff; }
+  .badge-entregado { background:var(--accent); color:var(--accent-ink); }
+  .badge-anulado   { background:#5a2a2a; color:#F09595; }
+  .badge-no_atiende{ background:#C03434; color:#fff; animation:pulse-warn 1.6s infinite; }
+  @keyframes pulse-warn {
+    0%,100% { box-shadow:0 0 0 0 rgba(192,52,52,0.55); }
+    50%     { box-shadow:0 0 0 5px rgba(192,52,52,0); }
+  }
+  /* Fila completa resaltada cuando hay no_atiende — gana atención sin tener que mirar el badge */
+  tr.fila-no_atiende { background:rgba(192,52,52,0.10) !important; }
+  tr.fila-no_atiende td { border-top:1px solid rgba(192,52,52,0.45); border-bottom:1px solid rgba(192,52,52,0.45); }
+
+  /* ── Barra de progreso de estado (P-L-U-T-R-E) ────────────────────────── */
+  .estado-bar { display:inline-flex; flex-direction:column; align-items:flex-start;
+                 gap:2px; cursor:pointer; padding:2px 0; background:none; border:none; }
+  .estado-bar .nombre { font-size:10px; color:var(--muted); font-weight:600;
+                         letter-spacing:0.3px; text-transform:lowercase; }
+  .estado-bar .pasos { display:inline-flex; gap:2px; }
+  .estado-paso { display:inline-block; min-width:16px; height:18px; line-height:18px;
+                 text-align:center; font-size:10px; font-weight:700; padding:0 3px;
+                 background:var(--row-bd); color:var(--muted2); border-radius:3px;
+                 transition:background 0.15s; }
+  .estado-paso.done { background:rgba(16,185,129,.28); color:var(--accent-ink); }
+  .estado-paso.actual { background:var(--accent); color:#fff;
+                         box-shadow:0 0 0 2px rgba(16,185,129,.25); }
+  /* Override por paso: Pendiente actual va azul (Diego: para diferenciar
+     a primera vista los pedidos que todavia no salieron del flujo). */
+  .estado-paso.actual.paso-pendiente { background:#185FA5;
+                                         box-shadow:0 0 6px rgba(24,95,165,.6); }
+  .estado-paso.alt-anulado { background:#FEE2E2; color:#991B1B; }
+  .estado-paso.alt-drog { background:#F97316; color:#fff; }
+  .estado-paso.alt-caja { background:var(--info); color:#fff; }
+
+  /* Encabezados de turno */
+  .turno-header { background:var(--header-bg); color:var(--header-txt); padding:9px 13px;
+                  border-radius:8px 8px 0 0; font-weight:700; font-size:13px;
+                  margin-top:16px; border:1px solid var(--accent); border-bottom:none;
+                  letter-spacing:.2px; }
+
+  .muted { color:var(--muted); }
+  .sin-pedidos { text-align:center; padding:40px; color:var(--muted); }
+
+  /* ── Panel colapsable de chat de reparto (Grupo cadetes + DMs) ────────── */
+  /* Shell: ocupa exactamente el viewport menos la topbar y NO crece. Las tablas
+     scrollean dentro de .wrap. El chat-panel a la derecha siempre visible. */
+  .planilla-shell { display:flex; align-items:stretch; height:calc(100vh - 50px); }
+  .wrap { flex:1; min-width:0; overflow-y:auto; padding-bottom:20px; }   /* scroll interno */
+  /* Chat panel: queda en dark mode dentro del shell claro (las burbujas se leen
+     mejor sobre fondo oscuro, patrón WhatsApp/Telegram). Override scoped de
+     variables — los hijos del panel heredan estos valores en vez de los del tema. */
+  .chat-panel {
+    --surface:#22222d; --card:#272732; --border:rgba(255,255,255,.14);
+    --row-bd:rgba(255,255,255,.10); --hov:#3a3a47;
+    --txt:#ececf0; --title:#fafafc; --muted:#9c9ca4; --muted2:#7a7a82;
+    flex:0 0 360px; background:var(--surface); color:var(--txt);
+    border-left:1px solid var(--border);
+    display:flex; flex-direction:column; transition:flex-basis 0.18s ease;
+    overflow:hidden;
+  }
+  .chat-panel.is-collapsed { flex:0 0 40px; }
+  .chat-head { display:flex; align-items:center; gap:8px; padding:8px 10px;
+               border-bottom:1px solid var(--border); cursor:pointer; user-select:none; }
+  .chat-head .chev { transition:transform 0.18s ease; font-size:13px; color:var(--muted); }
+  .chat-panel.is-collapsed .chat-head .chev { transform:rotate(180deg); }
+  .chat-panel.is-collapsed .chat-head-text { display:none; }
+  .chat-panel.is-collapsed .chat-body { display:none; }
+  .chat-head-text { font-size:12px; font-weight:600; color:var(--title); }
+  .chat-body { display:flex; flex-direction:column; flex:1; min-height:0; }
+  .chat-section { display:flex; flex-direction:column; min-height:0; }
+  .chat-section.grupo { flex:0 0 40%; border-bottom:1px solid var(--border); }
+  .chat-section.dms { flex:1; min-height:0; }
+  .chat-section-head { padding:5px 10px; font-size:10px; color:var(--muted); font-weight:700;
+                       background:rgba(0,0,0,0.18); display:flex; justify-content:space-between;
+                       align-items:center; text-transform:uppercase; letter-spacing:0.4px; }
+  .chat-section-head .dot-on { display:inline-block; width:6px; height:6px; border-radius:50%;
+                                background:var(--accent); margin-right:5px; }
+  .chat-msgs { flex:1; overflow-y:auto; padding:6px 10px; display:flex; flex-direction:column; gap:4px; }
+  .chat-msg { font-size:11.5px; padding:5px 8px; border-radius:7px; max-width:88%; word-break:break-word; line-height:1.3; }
+  .chat-msg .meta { display:block; font-size:9px; color:var(--muted2); margin-bottom:2px; }
+  .chat-msg.cliente { background:var(--card); align-self:flex-start; }
+  .chat-msg.operador { background:var(--accent); color:var(--accent-ink); align-self:flex-end; }
+  .chat-msg.sistema { background:transparent; color:var(--muted2); align-self:center;
+                       font-size:10px; font-style:italic; }
+  .chat-input-row { display:flex; gap:5px; padding:6px 8px; border-top:1px solid var(--border); }
+  .chat-input-row input { flex:1; font-size:12px; }
+  .chat-input-row button { font-size:11px; padding:5px 10px; }
+  .dm-list { overflow-y:auto; flex:1; }
+  .dm-item { padding:7px 10px; border-bottom:1px solid var(--row-bd); cursor:pointer;
+              display:flex; justify-content:space-between; align-items:flex-start; gap:6px; }
+  .dm-item:hover { background:var(--hov); }
+  .dm-item .name { font-weight:600; font-size:12px; color:var(--title); }
+  .dm-item .last { font-size:10px; color:var(--muted); margin-top:2px; overflow:hidden;
+                   text-overflow:ellipsis; white-space:nowrap; max-width:200px; }
+  .dm-item .time { font-size:10px; color:var(--muted2); white-space:nowrap; }
+  .dm-detail-back { padding:6px 10px; font-size:11px; cursor:pointer; border-bottom:1px solid var(--border);
+                    color:var(--muted); }
+  .dm-detail-back:hover { color:var(--title); }
+  .dm-empty { padding:20px; text-align:center; color:var(--muted); font-size:11px; }
+
+  /* ── Modal genérico (cadetes) ────────────────────────────────────────── */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:100;
+                    align-items:center; justify-content:center; }
+  .modal-overlay.open { display:flex; }
+  .modal-card { background:var(--card); border:1px solid var(--border); border-radius:12px;
+                 padding:16px; min-width:420px; max-width:90vw; max-height:85vh; overflow:auto; }
+  .modal-card h3 { margin:0 0 12px; font-size:14px; color:var(--title); display:flex;
+                    justify-content:space-between; align-items:center; }
+  .modal-card .close { cursor:pointer; font-size:18px; color:var(--muted); }
+  .modal-card .close:hover { color:var(--title); }
+  .cad-row { display:flex; gap:8px; align-items:center; padding:6px 8px; border-bottom:1px solid var(--row-bd);
+              font-size:12px; }
+  .cad-row:last-child { border-bottom:none; }
+  .cad-row .nombre { flex:1; color:var(--txt); }
+  .cad-row.inactivo .nombre { color:var(--muted2); text-decoration:line-through; }
+  .cad-row .tel { color:var(--muted); font-size:10px; }
+  .cad-form { display:flex; gap:6px; margin-top:14px; padding-top:12px; border-top:1px solid var(--border); }
+  .cad-form input { flex:1; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><span class="dot"></span>📋 Planilla de reparto</div>
+  <span class="muted" style="font-size:12px;">{{ fecha.strftime('%d/%m/%Y') }}</span>
+  <div class="nav-fecha">
+    <button onclick="cambiarDia(-1)">◀</button>
+    <input type="date" id="fechaInput" class="input" value="{{ fecha.strftime('%Y-%m-%d') }}" onchange="cambiarDia(0, this.value)" style="padding:3px 8px;">
+    <button onclick="cambiarDia(1)">▶</button>
+    <button onclick="cambiarDia(0, '{{ hoy.strftime('%Y-%m-%d') }}')" style="font-weight:600;">Hoy</button>
+  </div>
+  <div style="flex:1"></div>
+  <button onclick="cadModalAbrir()" class="hbtn" title="Gestionar cadetes">🛵 Cadetes</button>
+  <a href="/config/envio" class="hbtn" title="Editar tarifas, zonas y tramos">⚙️ Tarifas de envío</a>
+  <a href="/reparto?fecha={{ fecha.strftime('%Y-%m-%d') }}" class="hbtn">🗺️ Ver en reparto</a>
+  <a href="/reparto" class="hbtn">← Volver</a>
+</div>
+
+{# Banner SLA cadetes sin respuesta (sticky bajo la topbar). Aparece solo si
+   /api/reparto/alertas-cadetes devuelve alertas. El blink visual lo aporta
+   la animación CSS .blink. #}
+<div id="alertCadetesBanner" style="display:none; background:#FEE2E2; border-bottom:2px solid #B91C1C; padding:10px 18px; gap:10px; align-items:center; flex-wrap:wrap;">
+  <span style="font-size:18px;" class="blink">🚨</span>
+  <span style="font-weight:700; color:#B91C1C;" id="alertCadetesTitulo">cadetes esperando respuesta</span>
+  <div id="alertCadetesLista" style="display:flex; gap:14px; flex-wrap:wrap; flex:1;"></div>
+</div>
+
+{# Modal de escalada cuando algún cadete supera el umbral 'modal'. Bloquea
+   el trabajo hasta que el operador abra el chat. #}
+<div id="alertCadetesModal" class="modal-overlay" style="display:none; background:rgba(127,29,29,.7);">
+  <div class="modal-card" style="max-width:500px; border:3px solid #B91C1C;">
+    <h3 style="margin-top:0; color:#B91C1C; display:flex; align-items:center; gap:8px;">
+      <span class="blink" style="font-size:24px;">🚨</span> Cadete esperando hace mucho
+    </h3>
+    <div id="alertCadetesModalLista" style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;"></div>
+    <div style="text-align:right;">
+      <button onclick="document.getElementById('alertCadetesModal').style.display='none';" class="hbtn">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="planilla-shell">
+<div class="wrap">
+
+{% macro render_tabla(pedidos, inicio_num, con_turno_btns=False) %}
+<table class="planilla-table">
+  <thead>
+    <tr>
+      <th style="width:30px;">#</th>
+      <th style="min-width:130px;">Cliente</th>
+      <th style="min-width:160px;">Dirección</th>
+      <th style="width:85px;">Teléfono</th>
+      <th style="width:65px;">Tomó</th>
+      <th style="width:80px;">Forma pago</th>
+      <th style="width:80px;">Operación<div class="col-sum" data-col="operacion"></div></th>
+      <th style="width:70px;">Envío $<div class="col-sum" data-col="envio"></div></th>
+      <th style="width:80px;">Importe<div class="col-sum" data-col="importe"></div></th>
+      <th style="width:62px; white-space:normal;">Paga con</th>
+      <th style="width:68px;">Vuelto</th>
+      <th style="width:170px;">Producto</th>
+      <th style="width:170px;">Observación</th>
+      <th style="width:50px;">Receta</th>
+      <th style="width:130px;" title="Pendiente · pLanilla · pUblicado · Tomado · Ruta · Entregado">Estado</th>
+      <th style="width:75px;">Entregó</th>
+      <th style="width:85px;">Cadete</th>
+      <th style="width:75px;">Recibió</th>
+      <th style="width:50px;">Pagado</th>
+      <th style="width:155px;">WhatsApp</th>
+      <th style="width:30px;" title="Borrar pedido (fase de pruebas)"></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in pedidos %}
+    {# Pendiente de rendir: el cadete entregó pero todavía tiene que volver
+       con efectivo cobrado, receta a recoger, etc. La fila sigue activa
+       (sin opacar) hasta que se resuelva. Diego 2026-06-24.
+       Si prepagado_cadete=True, el cadete ya dejó la plata antes de salir
+       → el efectivo NO es pendiente (no necesita volver por eso). #}
+    {% set _pend_rendir = (p.estado == 'entregado') and (
+        (p.forma_pago == 'efectivo' and not p.pagado and not p.prepagado_cadete)
+        or (p.receta_estado == 'pendiente')
+    ) %}
+    {% set row_class = '' %}
+    {% if p.estado == 'anulado' %}{% set row_class = 'fila-anulado' %}
+    {% elif p.estado == 'no_atiende' %}{% set row_class = 'fila-no_atiende' %}
+    {% elif p.estado == 'entregado' and not _pend_rendir %}{% set row_class = 'fila-entregado' %}
+    {% elif p.estado == 'entregado' and _pend_rendir %}{% set row_class = 'fila-pend-rendir' %}
+    {% elif p.requiere_receta %}{% set row_class = 'fila-receta' %}
+    {% endif %}
+    <tr class="{{ row_class }}" data-pid="{{ p.id }}">
+      <td style="font-weight:700; color:var(--muted2);">{{ inicio_num + loop.index0 + 1 }}</td>
+      <td>
+        <b style="color:var(--title);">{{ p.cliente_nombre or 's/cliente' }}</b>
+        {% if p.creado_en or p.turno %}
+        <div style="color:var(--muted2);">
+          {% if p.creado_en %}{{ p.creado_en.strftime('%H:%M · %d/%m') }}{% endif %}
+          {# Turno de solo lectura, al final de la línea: queda el original. #}
+          {% if p.turno %} · <b style="color:var(--accent);" title="{{ p.turno|capitalize }}">{{ {'mañana':'M','tarde':'T','noche':'N'}.get(p.turno, p.turno[:1]|upper) }}</b>{% endif %}
+        </div>
+        {% endif %}
+      </td>
+      <td style="font-size:11px; color:var(--muted);">
+        {{ p.direccion or '' }}
+        {% if p.direccion %}
+          {# Link a Google Maps: si hay coords usa lat,lng (preciso); si no, busca por dirección. #}
+          {% if p.lat is not none and p.lng is not none %}
+            {% set _maps_url = 'https://www.google.com/maps?q=' ~ p.lat ~ ',' ~ p.lng %}
+          {% else %}
+            {% set _maps_url = 'https://www.google.com/maps/search/?api=1&query=' ~ (p.direccion ~ ' Rosario')|urlencode %}
+          {% endif %}
+          <a href="{{ _maps_url }}" target="_blank" rel="noopener" class="btn-maps"
+             title="Abrir en Google Maps">📍</a>
+        {% endif %}
+        {% if p.zona_externa %}
+          <div style="color:var(--warn); font-size:11px; font-weight:700; margin-top:2px;">
+            ⚠ {{ p.zona_externa }}
+          </div>
+        {% endif %}
+        {# Bandera: el cliente consultó el estado de este pedido por el bot.
+           Se setea desde bot/cerebro._estado_pedido_para_conv.
+           Formato del 'hace N': si <60 min muestra m; si <24h, h; sino, d.
+           Mantenemos todo en una sola línea de Jinja para evitar comparadores
+           sueltos en el HTML (Diego 2026-06-22). #}
+        {% if p.cliente_consulto_en %}
+          {%- set _min = ((ahora - p.cliente_consulto_en).total_seconds() / 60) | int -%}
+          {%- if _min < 60 -%}{% set _hace = (_min ~ 'm') %}
+          {%- elif _min < 1440 -%}{% set _hace = ((_min // 60) ~ 'h') %}
+          {%- else -%}{% set _hace = ((_min // 1440) ~ 'd') %}{%- endif -%}
+          <div style="margin-top:3px; font-size:10px; font-weight:600; display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:999px; background:#DBEAFE; color:#1E40AF; border:1px solid #3B82F6;" title="Cliente consultó el estado: {{ p.cliente_consulto_en.strftime('%d/%m %H:%M') }}">
+            👀 Consultó hace {{ _hace }}
+          </div>
+        {% endif %}
+      </td>
+      <td style="font-size:11px; color:var(--muted);">
+        {% if p.telefono %}<a href="tel:{{ p.telefono }}" style="color:var(--accenttxt);">{{ p.telefono }}</a>{% else %}—{% endif %}
+      </td>
+      <td class="celda-editable" data-campo="tomo" data-tipo="select-usuarios">
+        <span class="celda-valor">{{ p.tomo or '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="forma_pago" data-tipo="select-forma_pago">
+        <span class="celda-valor" style="color:var(--warn); font-weight:600;">{{ p.forma_pago or '—' }}</span>
+      </td>
+      {# Operación = Importe − Envío (lo del producto, sin el envío). Si el
+         envío va sin cargo el operador no lo sumó al importe → operación = importe. #}
+      {% set _op = (p.importe or 0) if p.envio_sin_cargo else ((p.importe or 0) - (p.envio_costo or 0)) %}
+      <td>
+        <input type="checkbox" class="chk-sum" data-col="operacion" data-val="{{ _op }}" onchange="sumarCol(this)">
+        <span>{{ '$ {:,.0f}'.format(_op) if (p.importe is not none or p.envio_costo is not none) else '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="envio_costo" data-tipo="text">
+        {# Sin cargo: la suma del envío cobrable es 0 (la cotización queda como info). #}
+        <input type="checkbox" class="chk-sum" data-col="envio" data-val="{{ 0 if p.envio_sin_cargo else (p.envio_costo or 0) }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
+        {% if p.envio_sin_cargo %}
+          <span class="celda-valor" style="color:var(--accent); font-weight:600;" title="Cotizado: {{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}">SIN CARGO</span>
+        {% else %}
+          <span class="celda-valor">{{ '$ {:,.0f}'.format(p.envio_costo) if p.envio_costo is not none else '—' }}</span>
+        {% endif %}
+        {# Toggle inline: click directo togglea sin_cargo sin abrir el editor de monto. #}
+        <button type="button" class="btn-toggle-sc" onclick="toggleEnvioSinCargo(event, {{ p.id }}, {{ 'true' if p.envio_sin_cargo else 'false' }})"
+                title="{{ 'Cobrar envío (sacar sin cargo)' if p.envio_sin_cargo else 'Marcar envío sin cargo' }}"
+                style="margin-left:4px; font-size:9px; padding:1px 4px; border-radius:4px; border:1px solid var(--border); background:{{ 'var(--accent)' if p.envio_sin_cargo else 'transparent' }}; color:{{ '#06241a' if p.envio_sin_cargo else 'var(--muted)' }}; cursor:pointer;">SC</button>
+      </td>
+      <td class="celda-editable" data-campo="importe" data-tipo="text">
+        <input type="checkbox" class="chk-sum" data-col="importe" data-val="{{ p.importe or 0 }}" onclick="event.stopPropagation()" onchange="sumarCol(this)">
+        <span class="celda-valor">{{ '$ {:,.0f}'.format(p.importe) if p.importe is not none else '—' }}</span>
+      </td>
+      {# Con cuánto paga = Importe (total) + Vuelto. Derivado de lo ya calculado. #}
+      {% set _vstr = (p.vuelto or '').strip() %}
+      {% set _vclean = _vstr.replace('.','').replace(',','').replace('-','').replace(' ','') %}
+      {# AR: sacar puntos de miles, coma→decimal. float("3.000") daría 3.0 (mal). #}
+      {% set _vnum = (_vstr.replace('.','').replace(',','.')|float) if (_vstr and _vclean.isdigit()) else 0 %}
+      {% set _imp = (p.importe|float) if p.importe is not none else 0 %}
+      <td>
+        <span>{{ '$ {:,.0f}'.format(_imp + _vnum) if p.importe is not none else '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="vuelto" data-tipo="text">
+        {# Si el vuelto es numérico, lo formateamos como $ con separador de miles. #}
+        {% set _v = (p.vuelto or '').strip() %}
+        {% set _vn = _v.replace('.','').replace(',','').replace('-','').replace(' ','') %}
+        <span class="celda-valor" style="color:var(--warn); font-weight:600;">
+          {% if _v and _vn.isdigit() %}
+            $ {{ '{:,.0f}'.format(_v.replace('.','').replace(',','.')|float)|replace(',', '.') }}
+          {% else %}
+            {{ p.vuelto or '—' }}
+          {% endif %}
+        </span>
+      </td>
+      <td class="celda-editable" data-campo="producto" data-tipo="text" style="max-width:200px; overflow:hidden; text-overflow:ellipsis;">
+        <span class="celda-valor">{{ p.producto or '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="observacion" data-tipo="text" style="max-width:200px; overflow:hidden; text-overflow:ellipsis;">
+        <span class="celda-valor">{{ p.observacion or '—' }}</span>
+      </td>
+      <td style="text-align:center;">
+        <span style="cursor:pointer; font-size:14px;" onclick="toggleBooleano({{ p.id }}, 'requiere_receta', {{ 'true' if p.requiere_receta else 'false' }})">
+          {% if p.requiere_receta %}📋{% else %}<span style="color:var(--muted2);">—</span>{% endif %}
+        </span>
+      </td>
+      <td>
+        {# Barra de progreso del estado. Flujo principal:
+             Pendiente → en pLanilla → pUblicado → Tomado → en Ruta → Entregado.
+           Estados fuera del flujo principal (anulado, esperando_drog, en_caja)
+           se muestran como un paso extra con icono/letra. Click avanza estado
+           (misma logica que el badge viejo). #}
+        {# 'en_planilla' se quito de la barra (Diego 2026-06-14: redundante, si
+           se ve en la planilla ya está ahí). En DB el estado puede seguir siendo
+           'en_planilla' por compatibilidad; visualmente lo tratamos como
+           'pendiente' (paso P actual). #}
+        {% set _orden = ['pendiente', 'publicado', 'tomado', 'en_ruta', 'entregado'] %}
+        {% set _letras = ['P', 'U', 'T', 'R', 'E'] %}
+        {% set _nombres = ['Pendiente', 'Publicado', 'Tomado', 'En ruta', 'Entregado'] %}
+        {% set _estado_norm = 'pendiente' if p.estado == 'en_planilla' else p.estado %}
+        {% set _idx = _orden.index(_estado_norm) if _estado_norm in _orden else -1 %}
+        {# Si está esperando droguería, el "nombre" del estado se reemplaza por el
+           nombre abreviado de la droguería (primera palabra significativa). Sin
+           "Pedido a" — el ícono D ya transmite el contexto. #}
+        {% set _drog_nombre = droguerias.get(p.drogueria_id) if p.drogueria_id else None %}
+        {% set _drog_abrev = _drog_nombre.replace('DROGUERÍA ', '').replace('DROGUERIA ', '').replace(' S.A.', '').replace(' SA', '').split(' ')[0] if _drog_nombre else None %}
+        <button class="estado-bar" onclick="avanzarEstado({{ p.id }}, '{{ p.estado }}')"
+                title="Click para avanzar al siguiente estado{% if _drog_nombre %} · droguería: {{ _drog_nombre }}{% endif %}">
+          <span class="nombre">
+            {% if p.estado == 'esperando_drog' and _drog_abrev %}{{ _drog_abrev|lower }}{% else %}{{ _estado_norm.replace('_', ' ') }}{% endif %}
+          </span>
+          {% if _pend_rendir %}
+            {# Cadete entregó pero todavía debe volver a rendir (efectivo
+               cobrado o receta a recoger). Diego 2026-06-24. #}
+            {% set _motivos = [] %}
+            {% if p.forma_pago == 'efectivo' and not p.pagado %}{% set _ = _motivos.append('efectivo') %}{% endif %}
+            {% if p.receta_estado == 'pendiente' %}{% set _ = _motivos.append('receta') %}{% endif %}
+            <span class="badge-pend-rendir" title="Pendiente de rendir: {{ _motivos|join(' + ') }}">⏳ {{ _motivos|join('+') }}</span>
+          {% endif %}
+          <span class="pasos">
+            {# esperando_drog va ANTES del flujo: es un estado pre-publicación
+               (el pedido espera que llegue de la droguería para poder salir). #}
+            {% if p.estado == 'esperando_drog' %}
+              <span class="estado-paso alt-drog" title="Esperando droguería">D</span>
+            {% endif %}
+            {% for i in range(_orden|length) %}
+              <span class="estado-paso{% if i < _idx %} done{% elif i == _idx %} actual paso-{{ _orden[i] }}{% endif %}"
+                    title="{{ _nombres[i] }}">{{ _letras[i] }}</span>
+            {% endfor %}
+            {# anulado y en_caja van DESPUÉS: el primero es terminal alternativo,
+               el segundo una bifurcación lateral hacia caja. #}
+            {% if p.estado == 'anulado' %}
+              <span class="estado-paso alt-anulado" title="Anulado">×</span>
+            {% elif p.estado == 'en_caja' %}
+              <span class="estado-paso alt-caja" title="En caja">$</span>
+            {% endif %}
+          </span>
+        </button>
+      </td>
+      <td class="celda-editable" data-campo="entregado_por" data-tipo="select-usuarios">
+        <span class="celda-valor">{{ p.entregado_por or '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="cadete_id" data-tipo="select-cadetes">
+        {# Fallback: si el que tomó por Telegram no es un cadete registrado
+           (sin cadete_id), igual mostramos su nombre (tomado_por_wsap). #}
+        <span class="celda-valor">{{ cadetes.get(p.cadete_id) or p.tomado_por_wsap or '—' }}</span>
+      </td>
+      <td class="celda-editable" data-campo="recibio" data-tipo="select-usuarios">
+        <span class="celda-valor">{{ p.recibio or '—' }}</span>
+      </td>
+      <td style="text-align:center;">
+        <span style="cursor:pointer; font-size:14px;"
+              onclick="toggleBooleano({{ p.id }}, 'pagado', {{ 'true' if p.pagado else 'false' }})"
+              title="Pagado por el cliente (cadete cobró al recibir)">
+          {% if p.pagado %}💲{% else %}<span style="color:var(--muted2);">—</span>{% endif %}
+        </span>
+        {# Prepago del cadete: dejó la plata antes de salir y no necesita
+           volver a rendir. Distinto de "pagado por el cliente" para arqueo.
+           Diego 2026-06-24. #}
+        <span style="cursor:pointer; font-size:14px; margin-left:4px;"
+              onclick="toggleBooleano({{ p.id }}, 'prepagado_cadete', {{ 'true' if p.prepagado_cadete else 'false' }})"
+              title="Prepagó el cadete (dejó la plata antes de salir)">
+          {% if p.prepagado_cadete %}<span style="color:#a78bfa;">💵</span>{% else %}<span style="color:var(--muted2);">·</span>{% endif %}
+        </span>
+        {# Etiqueta libre con color (marcado manual): texto ≤10 + color. #}
+        <div style="display:flex; align-items:center; gap:2px; justify-content:center; margin-top:3px;">
+          <input type="text" class="etq-txt" maxlength="10" value="{{ p.etiqueta or '' }}" placeholder="etiq"
+                 title="Etiqueta (máx 10)" onchange="guardarEtiqueta(this)"
+                 style="width:54px; font-size:10px; padding:1px 3px; border:1px solid var(--row-bd); border-radius:4px;
+                        background:{{ p.etiqueta_color if p.etiqueta else 'transparent' }}; color:{{ '#fff' if p.etiqueta else 'var(--txt)' }};">
+          <input type="color" class="etq-col" value="{{ p.etiqueta_color or '#EF9F27' }}"
+                 title="Color de la etiqueta" onchange="guardarEtiqueta(this)"
+                 style="width:18px; height:18px; padding:0; border:none; background:none; cursor:pointer;">
+        </div>
+      </td>
+      <td style="text-align:center;">
+        {% if p.tomado_por_wsap %}
+          {# Si todavía no retiró de la farmacia (estado='tomado'), mostramos
+             cuenta regresiva al SLA de retiro. A los `sla.retiro_max` min sin
+             retirar, el cron desasigna y el pedido vuelve a publicarse.
+             Diego 2026-06-24. #}
+          {% if p.estado == 'tomado' and p.tomado_en %}
+            {% set _tmin = ((ahora - p.tomado_en).total_seconds() / 60) | int %}
+            {% set _rmax = sla.retiro_max %}
+            {% set _rwarn = (_rmax * 0.6) | int %}
+            {% set _rcol = '#1D9E75' if _tmin < _rwarn else ('#EF9F27' if _tmin < _rmax else '#EF4444') %}
+            {% set _ricon = '🟢' if _tmin < _rwarn else ('🟡' if _tmin < _rmax else '🔴') %}
+            {% if _tmin < 60 %}{% set _rt = _tmin ~ 'm' %}{% else %}{% set _rt = ('%.1f' % (_tmin/60)) ~ 'h' %}{% endif %}
+            <span title="Tomado por {{ p.tomado_por_wsap }} a las {{ p.tomado_en.strftime('%H:%M') }} — {{ _tmin }} min sin retirar (máx {{ _rmax }})"
+                  style="display:block; font-size:12px; color:{{ _rcol }}; font-weight:700;">
+              {{ _ricon }} {{ _rt }}
+            </span>
+            <span style="display:block; font-size:9px; color:var(--muted2); margin-top:1px;">
+              ✓ {{ p.tomado_por_wsap }} · {{ p.tomado_en.strftime('%H:%M') }}
+            </span>
+          {% else %}
+            <span title="Tomado por {{ p.tomado_por_wsap }}{% if p.tomado_en %} a las {{ p.tomado_en.strftime('%H:%M') }}{% endif %}" style="font-size:10px; color:var(--accent);">
+              ✓ {{ p.tomado_por_wsap }}{% if p.tomado_en %} · {{ p.tomado_en.strftime('%H:%M') }}{% endif %}
+            </span>
+          {% endif %}
+        {% elif p.publicado_en %}
+          {# Timer SLA: umbrales configurables en /config/envio (Diego 2026-06-21).
+             - verde:    0  → reaviso
+             - naranja:  reaviso → máximo (acá el cron manda mensaje al grupo)
+             - rojo:     > máximo
+             Urgentes usan reaviso × factor_urgente (default 0.7).
+             Formato del tiempo: <60m → "5m", <24h → "2.5h", sino "3d".
+             #N del pedido siempre visible para matchear con el msg del grupo.
+             nowrap + display:inline-flex para que el ↻ NUNCA salte de linea. #}
+          {% set _min = ((ahora - p.publicado_en).total_seconds() / 60) | int %}
+          {% set _reaviso = (sla.reaviso_min * sla.urg_factor) | int if p.prioridad == 'urgente' else sla.reaviso_min %}
+          {% set _maximo = sla.maximo_min %}
+          {% set _col = '#1D9E75' if _min < _reaviso else ('#EF9F27' if _min < _maximo else '#EF4444') %}
+          {% set _icon = '🟢' if _min < _reaviso else ('🟡' if _min < _maximo else '🔴') %}
+          {% if _min < 60 %}
+            {% set _t = _min ~ 'm' %}
+          {% elif _min < 1440 %}
+            {% set _t = ('%.1f' % (_min/60)) ~ 'h' %}
+          {% else %}
+            {% set _t = (_min // 1440) ~ 'd' %}
+          {% endif %}
+          <span style="display:inline-flex; align-items:center; gap:5px; white-space:nowrap;">
+            <span title="Pedido #{{ p.id }} · publicado {{ p.publicado_en.strftime('%d/%m %H:%M') }} — {{ _min }} min sin tomar" style="font-size:13px; color:{{ _col }}; font-weight:700;">
+              {{ _icon }} #{{ p.id }} · {{ _t }}
+            </span>
+            <button onclick="publicarPedido({{ p.id }}, this)" class="hbtn" style="font-size:13px; padding:2px 6px;" title="Republicar">↻</button>
+          </span>
+        {% elif p.estado == 'esperando_drog' %}
+          {# No publicar mientras esperamos llegada de droguería: el cadete no
+             tiene producto para retirar. Se habilita cuando el operador
+             cambia el estado a 'pendiente' (= producto en farmacia).
+             Restaurado de e00e383 — había sido borrado por un merge mal
+             resuelto que también trajo de vuelta "WhatsApp" en lugar de
+             "Telegram". Diego 2026-06-24. #}
+          <button disabled class="hbtn" style="font-size:10px; padding:2px 6px; opacity:.45; cursor:not-allowed;" title="Esperando llegada de droguería — no se puede publicar todavía">📤 Esperando droguería</button>
+        {% else %}
+          <button onclick="publicarPedido({{ p.id }}, this)" class="hbtn" style="font-size:10px; padding:2px 6px;" title="Publicar en grupo de cadetes (Telegram)">📤 Publicar</button>
+        {% endif %}
+      </td>
+      <td style="text-align:center;">
+        {# Botón de borrar pedido. Pensado para fase de pruebas — el backend
+           ya hace cascade (s.delete(p) borra el pedido entero). #}
+        {# OJO: tojson devuelve string con comillas dobles ("BASA, ROCIO") →
+           tenemos que usar comillas SIMPLES afuera del onclick sino se rompe
+           el HTML (atributo se cierra prematuro → SyntaxError JS y handler
+           no se registra). Diego 2026-06-22 — pasaba con cualquier cliente
+           pero recién lo notamos al tocar borrar y no responder. #}
+        <button onclick='borrarPedido({{ p.id }}, {{ (p.cliente_nombre or "sin cliente")|tojson }})'
+                class="hbtn" style="font-size:11px; padding:2px 5px; opacity:0.6;"
+                title="Borrar pedido (fase de pruebas)">🗑</button>
+      </td>
+    </tr>
+    {% endfor %}
+    {% if not pedidos %}
+    <tr><td colspan="20" class="sin-pedidos">Sin pedidos</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+{% endmacro %}
+
+{% if pedidos_pendientes_previo %}
+<div class="turno-header" style="background:#EF272720; border-left:3px solid var(--warn); padding-left:10px;">
+  📦 Pendientes del turno previo ({{ pedidos_pendientes_previo|length }})
+  <span style="font-size:11px; font-weight:normal; color:var(--muted); margin-left:8px;">
+    — Pedidos de días anteriores sin entregar. Asignalos a un turno de hoy.
+  </span>
+</div>
+{{ render_tabla(pedidos_pendientes_previo, 0, con_turno_btns=True) }}
+{% endif %}
+
+{% set _off_pendientes = pedidos_pendientes_previo|length if pedidos_pendientes_previo else 0 %}
+
+{% if pedidos_sin_asignar %}
+<div class="turno-header" style="background:#7c4dff20; border-left:3px solid #a78bfa; padding-left:10px;">
+  ⚪ Sin asignar ({{ pedidos_sin_asignar|length }} pedido{{ 's' if pedidos_sin_asignar|length != 1 }})
+</div>
+{{ render_tabla(pedidos_sin_asignar, _off_pendientes) }}
+{% endif %}
+
+{% set _off_sa = _off_pendientes + (pedidos_sin_asignar|length if pedidos_sin_asignar else 0) %}
+
+{% if pedidos_manana %}
+<div class="turno-header">🌅 Mañana ({{ pedidos_manana|length }} pedido{{ 's' if pedidos_manana|length != 1 }})</div>
+{{ render_tabla(pedidos_manana, _off_sa) }}
+{% endif %}
+
+{% if pedidos_tarde %}
+<div class="turno-header">🌆 Tarde ({{ pedidos_tarde|length }} pedido{{ 's' if pedidos_tarde|length != 1 }})</div>
+{{ render_tabla(pedidos_tarde, _off_sa + pedidos_manana|length) }}
+{% endif %}
+
+{% if not pedidos_manana and not pedidos_tarde %}
+<div class="sin-pedidos">Sin pedidos para esta fecha.</div>
+{% endif %}
+
+</div><!-- wrap -->
+
+{# ── Panel colapsable de chat de reparto ─────────────────────────────
+   Stack vertical: arriba caja del grupo de cadetes (input + mensajes),
+   abajo lista de DMs por cadete con vista detalle al hacer click.
+   Polling cada 3s mientras el panel esté abierto. #}
+<aside id="chatPanel" class="chat-panel">
+  <div class="chat-head" onclick="chatToggle()">
+    <span class="chev">▶</span>
+    <span class="chat-head-text">💬 Chats reparto</span>
+  </div>
+  <div class="chat-body">
+    <!-- Grupo cadetes (siempre visible arriba) -->
+    <div class="chat-section grupo">
+      <div class="chat-section-head">
+        <span><span class="dot-on"></span>🚚 Grupo cadetes</span>
+        <span class="muted" style="font-weight:400; text-transform:none; font-size:9px;"
+              id="chatGrupoUlt">—</span>
+      </div>
+      <div class="chat-msgs" id="chatGrupoMsgs">
+        <div class="dm-empty">cargando…</div>
+      </div>
+      <div class="chat-input-row">
+        <input id="chatGrupoInput" class="input" placeholder="Mensaje al grupo…"
+               onkeydown="if(event.key==='Enter')chatGrupoEnviar()">
+        <button class="hbtn" onclick="chatGrupoEnviar()">▶</button>
+      </div>
+    </div>
+    <!-- DMs cadetes (lista + vista detalle de la conv abierta) -->
+    <div class="chat-section dms" id="chatDmsSection">
+      <div class="chat-section-head">
+        <span>💬 DMs cadetes</span>
+        <span class="muted" style="font-weight:400; text-transform:none; font-size:9px;"
+              id="chatDmsCount">0</span>
+      </div>
+      <div class="dm-list" id="chatDmList">
+        <div class="dm-empty">sin chats todavía.</div>
+      </div>
+      <!-- Vista detalle (se muestra cuando el operador entra a un DM) -->
+      <div id="chatDmDetail" style="display:none; flex:1; min-height:0; flex-direction:column;">
+        <div class="dm-detail-back" onclick="chatVolverDMs()">◀ volver a la lista</div>
+        <div class="chat-msgs" id="chatDmMsgs"></div>
+        <div class="chat-input-row">
+          <input id="chatDmInput" class="input" placeholder="Mensaje al cadete…"
+                 onkeydown="if(event.key==='Enter')chatDmEnviar()">
+          <button class="hbtn" onclick="chatDmEnviar()">▶</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</aside>
+</div><!-- planilla-shell -->
+
+<!-- Modal: gestión de cadetes (alta/baja). Consume /cadetes/api, POST /cadetes, POST /cadetes/<id>/delete. -->
+<div id="cadModal" class="modal-overlay" onclick="if(event.target===this)cadModalCerrar()">
+  <div class="modal-card">
+    <h3>🛵 Cadetes <span class="close" onclick="cadModalCerrar()">✕</span></h3>
+    <div id="cadList"><div class="muted" style="font-size:11px; padding:8px;">cargando…</div></div>
+    <div class="cad-form">
+      <input id="cadNombre" class="input" placeholder="Nombre" onkeydown="if(event.key==='Enter')cadAgregar()">
+      <input id="cadTel" class="input" placeholder="Teléfono (opcional)" style="max-width:150px;" onkeydown="if(event.key==='Enter')cadAgregar()">
+      <button onclick="cadAgregar()" class="hbtn" style="font-weight:600;">＋ Agregar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function cambiarDia(delta, fechaStr) {
+  let d;
+  if (fechaStr) {
+    d = new Date(fechaStr + 'T00:00:00');
+  } else {
+    d = new Date(document.getElementById('fechaInput').value + 'T00:00:00');
+    d.setDate(d.getDate() + delta);
+  }
+  const iso = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  window.location = '/reparto/planilla?fecha=' + iso;
+}
+
+const CADETES = {{ cadetes | tojson }};
+const CADETE_OPTS = '<option value="">—</option>' + Object.entries(CADETES).map(([id,n])=>`<option value="${id}">${esc(n)}</option>`).join('');
+const USUARIOS = {{ usuarios | tojson }};
+const USUARIO_OPTS = '<option value="">—</option>' + USUARIOS.map(u=>`<option value="${esc(u.nombre)}">${esc(u.nombre)}</option>`).join('');
+const FORMA_PAGO_OPTS = '<option value="">—</option>' + ['efectivo','transfer','link','sc','debito','credito','sin_cargo'].map(v=>`<option value="${v}">${v}</option>`).join('');
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function actualizarCampo(pid, campo, valor) {
+  const r = await fetch('/api/reparto/pedido/' + pid + '/actualizar', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({campo, valor})
+  });
+  return r.json();
+}
+
+// Toggle inline del flag 'envio_sin_cargo' desde la planilla. El botón vive en
+// la celda Envío y solo togglea (no abre el editor de monto). Recargamos la
+// página para resincronizar la celda Operación y los chequeos de suma.
+async function toggleEnvioSinCargo(ev, pid, actual) {
+  ev.stopPropagation();
+  ev.preventDefault();
+  const nuevo = !actual;
+  const d = await actualizarCampo(pid, 'envio_sin_cargo', nuevo);
+  if (!d.ok) { alert('Error: ' + (d.error || 'no se pudo guardar')); return; }
+  location.reload();
+}
+
+// Arqueo de caja: suma los valores marcados de una columna DENTRO de su tabla
+// (cada sección suma lo suyo) y lo muestra bajo el título de la columna.
+function sumarCol(chk) {
+  const tabla = chk.closest('table');
+  const col = chk.dataset.col;
+  let total = 0;
+  tabla.querySelectorAll('.chk-sum[data-col="' + col + '"]:checked')
+       .forEach(c => { total += parseFloat(c.dataset.val) || 0; });
+  const out = tabla.querySelector('.col-sum[data-col="' + col + '"]');
+  if (out) out.textContent = total
+    ? '$ ' + total.toLocaleString('es-AR', {maximumFractionDigits: 0})
+    : '';
+}
+
+// Etiqueta libre con color: guarda texto + color y pinta el campo en vivo.
+async function guardarEtiqueta(el) {
+  const td = el.closest('td');
+  const pid = el.closest('tr').dataset.pid;
+  const txt = td.querySelector('.etq-txt');
+  const col = td.querySelector('.etq-col');
+  const valor = txt.value.trim();
+  const color = col.value;
+  txt.style.background = valor ? color : 'transparent';
+  txt.style.color = valor ? '#fff' : 'var(--txt)';
+  await actualizarCampo(pid, 'etiqueta', valor || null);
+  await actualizarCampo(pid, 'etiqueta_color', valor ? color : null);
+}
+
+document.querySelectorAll('.celda-editable').forEach(td => {
+  td.addEventListener('click', function() {
+    if (td.querySelector('input:not(.chk-sum)') || td.querySelector('select')) return;
+    const span  = td.querySelector('.celda-valor');
+    const campo = td.dataset.campo;
+    const tipo  = td.dataset.tipo;
+    const pid   = td.closest('tr').dataset.pid;
+    const valorActual = span.textContent.trim();
+
+    let input;
+    if (tipo === 'select-usuarios') {
+      input = document.createElement('select');
+      input.innerHTML = USUARIO_OPTS;
+      input.value = valorActual === '—' ? '' : valorActual;
+    } else if (tipo === 'select-forma_pago') {
+      input = document.createElement('select');
+      input.innerHTML = FORMA_PAGO_OPTS;
+      input.value = valorActual === '—' ? '' : valorActual;
+    } else if (tipo === 'select-cadetes') {
+      input = document.createElement('select');
+      input.innerHTML = CADETE_OPTS;
+      const match = Object.entries(CADETES).find(([,n]) => n === valorActual);
+      input.value = match ? match[0] : '';
+    } else {
+      input = document.createElement('input');
+      input.type  = campo === 'importe' ? 'number' : 'text';
+      input.step  = '0.01';
+      input.value = valorActual === '—' ? '' : (campo === 'importe' ? valorActual.replace(/[^0-9,.]/g,'') : valorActual);
+    }
+
+    span.style.display = 'none';
+    td.appendChild(input);
+    input.focus();
+    if (input.select) input.select();
+
+    async function guardar() {
+      let val = input.tagName === 'SELECT' ? input.value : input.value.trim();
+      if (campo === 'importe' && val) {
+        span.textContent = '$ ' + Number(val.replace(',','.')).toLocaleString('es-AR', {maximumFractionDigits:0});
+      } else if (campo === 'cadete_id') {
+        span.textContent = val ? (CADETES[val] || val) : '—';
+      } else {
+        span.textContent = val || '—';
+      }
+      span.style.display = '';
+      input.remove();
+      const res = await actualizarCampo(pid, campo, val || null);
+      if (!res.ok) { span.textContent = '⚠️'; span.style.color = 'var(--warn)'; }
+    }
+
+    input.addEventListener('blur', guardar);
+    input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); guardar(); } });
+    if (input.tagName === 'SELECT') input.addEventListener('change', guardar);
+  });
+});
+
+async function toggleBooleano(pid, campo, actual) {
+  const res = await actualizarCampo(pid, campo, !actual);
+  if (res.ok) location.reload();
+}
+
+async function avanzarEstado(pid, actual) {
+  const orden = ['pendiente', 'en_ruta', 'entregado'];
+  const idx = orden.indexOf(actual);
+  const siguiente = idx >= 0 && idx < orden.length - 1 ? orden[idx + 1] : 'pendiente';
+  const res = await actualizarCampo(pid, 'estado', siguiente);
+  if (res.ok) location.reload();
+}
+
+// Asignar / cambiar turno desde la planilla. POST al endpoint genérico de
+// actualización por campo. Refresca al instante.
+async function setTurno(pid, valor) {
+  try {
+    const r = await fetch(`/api/reparto/pedido/${pid}/actualizar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campo: 'turno', valor }),
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo cambiar turno')); return; }
+    location.reload();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function borrarPedido(pid, nombre) {
+  if (!confirm(`Borrar pedido #${pid} (${nombre || 'sin cliente'})?\n\nEsto es irreversible.`)) return;
+  try {
+    const r = await fetch(`/reparto/pedido/${pid}/delete`, {method:'POST'});
+    const d = await r.json().catch(()=>({ok:false, error:`HTTP ${r.status}`}));
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo borrar')); return; }
+    // Quito todas las filas con ese pid (puede aparecer en varias tablas/secciones).
+    document.querySelectorAll(`tr[data-pid="${pid}"]`).forEach(tr => tr.remove());
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function publicarPedido(pid, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try {
+    const r = await fetch(`/reparto/pedido/${pid}/publicar`, {method:'POST'});
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo publicar')); if (btn) { btn.disabled = false; btn.textContent = '📤 Publicar'; } return; }
+    location.reload();
+  } catch (e) {
+    alert('Error: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '📤 Publicar'; }
+  }
+}
+
+/* ── Panel de chat de reparto ──────────────────────────────────────────
+   Estado en memoria: último id de mensaje visto en grupo y en cada DM
+   (para que el polling solo traiga lo nuevo). */
+const chatState = { grupoUltId: 0, dmActivo: null, dmUltIds: {}, pollHandle: null };
+
+function chatToggle(){
+  const p = document.getElementById('chatPanel');
+  p.classList.toggle('is-collapsed');
+  const colapsado = p.classList.contains('is-collapsed') ? '1' : '0';
+  localStorage.setItem('planillaChatCollapsed', colapsado);
+  if (colapsado === '0' && !chatState.pollHandle) chatIniciarPolling();
+  if (colapsado === '1' && chatState.pollHandle){ clearInterval(chatState.pollHandle); chatState.pollHandle = null; }
+}
+
+function chatHora(iso){
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'});
+}
+
+function chatRenderMsg(m){
+  const cls = m.origen === 'operador' ? 'operador' :
+              (m.origen === 'sistema' ? 'sistema' : 'cliente');
+  return `<div class="chat-msg ${cls}" data-id="${m.id}">
+    <span class="meta">${chatHora(m.creado_en)}</span>${esc(m.texto || '')}
+  </div>`;
+}
+
+function chatScrollFondo(elId){
+  const c = document.getElementById(elId);
+  if (c) c.scrollTop = c.scrollHeight;
+}
+
+async function chatGrupoCargarPrimero(){
+  const r = await fetch('/api/reparto/chat/grupo/mensajes');
+  const d = await r.json();
+  if (!d.ok) return;
+  const cont = document.getElementById('chatGrupoMsgs');
+  if (!d.mensajes.length) {
+    cont.innerHTML = '<div class="dm-empty">sin mensajes todavía.</div>';
+    return;
+  }
+  cont.innerHTML = d.mensajes.map(chatRenderMsg).join('');
+  chatState.grupoUltId = d.mensajes[d.mensajes.length - 1].id;
+  chatScrollFondo('chatGrupoMsgs');
+}
+
+async function chatGrupoEnviar(){
+  const inp = document.getElementById('chatGrupoInput');
+  const t = (inp.value || '').trim();
+  if (!t) return;
+  inp.disabled = true;
+  try {
+    const r = await fetch('/api/reparto/chat/grupo/responder', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({texto: t})
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se envió')); inp.disabled = false; return; }
+    inp.value = '';
+    inp.disabled = false;
+    // Append local sin esperar polling
+    const cont = document.getElementById('chatGrupoMsgs');
+    if (cont.querySelector('.dm-empty')) cont.innerHTML = '';
+    cont.insertAdjacentHTML('beforeend', chatRenderMsg(d.mensaje));
+    chatState.grupoUltId = d.mensaje.id;
+    chatScrollFondo('chatGrupoMsgs');
+    inp.focus();
+  } catch (e) { alert('Error: ' + e.message); inp.disabled = false; }
+}
+
+async function chatRefrescar(){
+  // 1) Resumen (lista DMs + badge grupo)
+  try {
+    const r = await fetch('/api/reparto/chat/resumen');
+    const d = await r.json();
+    if (d.ok){
+      // Badge grupo
+      const ul = document.getElementById('chatGrupoUlt');
+      if (ul) ul.textContent = d.grupo && d.grupo.ultimo
+        ? `${chatHora(d.grupo.ultimo_en)} · ${d.grupo.ultimo}` : '—';
+      // Lista DMs
+      const lst = document.getElementById('chatDmList');
+      const cnt = document.getElementById('chatDmsCount');
+      cnt.textContent = d.dms.length;
+      if (!d.dms.length) {
+        lst.innerHTML = '<div class="dm-empty">sin chats todavía.</div>';
+      } else {
+        lst.innerHTML = d.dms.map(it => {
+          const badge = it.sin_vincular
+            ? `<span class="badge" style="background:#a78bfa; color:#1e1238; font-size:8px; padding:1px 5px; border-radius:6px;">sin vincular</span>` : '';
+          const tgId = it.sin_vincular && it.tg_user_id
+            ? `<span class="muted2" style="font-size:9px;">tg:${it.tg_user_id}</span>` : '';
+          return `
+          <div class="dm-item" onclick="chatAbrirDm(${it.conv_id}, '${esc(it.nombre)}', ${it.sin_vincular ? 'true' : 'false'}, '${esc(String(it.tg_user_id || ''))}')">
+            <div style="flex:1; min-width:0;">
+              <div class="name">${esc(it.nombre)} ${badge}</div>
+              <div class="last">${esc(it.ultimo || '')} ${tgId}</div>
+            </div>
+            <div class="time">${chatHora(it.ultimo_en)}</div>
+          </div>`;
+        }).join('');
+      }
+    }
+  } catch (e) { /* polling silencioso */ }
+  // 2) Mensajes nuevos del grupo (solo lo posterior al último visto)
+  if (chatState.grupoUltId){
+    try {
+      const r = await fetch('/api/reparto/chat/grupo/mensajes?desde_id=' + chatState.grupoUltId);
+      const d = await r.json();
+      if (d.ok && d.mensajes && d.mensajes.length){
+        const cont = document.getElementById('chatGrupoMsgs');
+        if (cont.querySelector('.dm-empty')) cont.innerHTML = '';
+        d.mensajes.forEach(m => cont.insertAdjacentHTML('beforeend', chatRenderMsg(m)));
+        chatState.grupoUltId = d.mensajes[d.mensajes.length - 1].id;
+        chatScrollFondo('chatGrupoMsgs');
+      }
+    } catch (e) {}
+  }
+  // 3) Mensajes nuevos del DM activo
+  if (chatState.dmActivo){
+    const cid = chatState.dmActivo;
+    const desde = chatState.dmUltIds[cid] || 0;
+    if (desde){
+      try {
+        const r = await fetch(`/api/reparto/chat/dm/${cid}/mensajes?desde_id=${desde}`);
+        const d = await r.json();
+        if (d.ok && d.mensajes && d.mensajes.length){
+          const cont = document.getElementById('chatDmMsgs');
+          d.mensajes.forEach(m => cont.insertAdjacentHTML('beforeend', chatRenderMsg(m)));
+          chatState.dmUltIds[cid] = d.mensajes[d.mensajes.length - 1].id;
+          chatScrollFondo('chatDmMsgs');
+        }
+      } catch (e) {}
+    }
+  }
+}
+
+async function chatAbrirDm(conv_id, nombre, sinVincular, tgUserId){
+  chatState.dmActivo = conv_id;
+  chatState.dmSinVincular = !!sinVincular;
+  chatState.dmTgUserId = tgUserId || '';
+  document.getElementById('chatDmList').style.display = 'none';
+  const det = document.getElementById('chatDmDetail');
+  det.style.display = 'flex';
+  const back = det.querySelector('.dm-detail-back');
+  back.textContent = '◀ volver — ' + nombre + (sinVincular ? '  ⚠ sin vincular' : '');
+  // Bandeja "dar de alta": botón rápido si la conv es huérfana.
+  let banner = document.getElementById('chatDmVincularBanner');
+  if (sinVincular){
+    if (!banner){
+      banner = document.createElement('div');
+      banner.id = 'chatDmVincularBanner';
+      banner.style.cssText = 'background:#a78bfa22; border:1px solid #a78bfa; padding:8px 10px; border-radius:8px; margin:6px 0; display:flex; gap:8px; align-items:center; font-size:11px;';
+      document.getElementById('chatDmMsgs').parentNode.insertBefore(banner, document.getElementById('chatDmMsgs'));
+    }
+    banner.innerHTML = `
+      <span>Conv sin cadete vinculado. tg_user_id: <b>${esc(String(tgUserId))}</b></span>
+      <button class="hbtn hbtn-ok" onclick="vincularConvACadete(${conv_id})">✅ Dar de alta como cadete</button>`;
+  } else if (banner){
+    banner.remove();
+  }
+  const cont = document.getElementById('chatDmMsgs');
+  cont.innerHTML = '<div class="dm-empty">cargando…</div>';
+  try {
+    const r = await fetch(`/api/reparto/chat/dm/${conv_id}/mensajes`);
+    const d = await r.json();
+    if (!d.ok) { cont.innerHTML = '<div class="dm-empty">error</div>'; return; }
+    if (!d.mensajes.length) { cont.innerHTML = '<div class="dm-empty">sin mensajes.</div>'; return; }
+    cont.innerHTML = d.mensajes.map(chatRenderMsg).join('');
+    chatState.dmUltIds[conv_id] = d.mensajes[d.mensajes.length - 1].id;
+    chatScrollFondo('chatDmMsgs');
+    document.getElementById('chatDmInput').focus();
+  } catch (e) { cont.innerHTML = '<div class="dm-empty">error</div>'; }
+}
+
+async function vincularConvACadete(conv_id){
+  const nombre = prompt('Nombre del cadete (podés editarlo después en /cadetes):');
+  if (!nombre) return;
+  try {
+    const r = await fetch(`/api/reparto/chat/dm/${conv_id}/vincular-cadete`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({nombre: nombre.trim()})
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo vincular')); return; }
+    alert(`✅ Cadete creado (id ${d.cadete_id}). Andá a /cadetes para completar teléfono / tarifa.`);
+    location.reload();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+function chatVolverDMs(){
+  chatState.dmActivo = null;
+  document.getElementById('chatDmDetail').style.display = 'none';
+  document.getElementById('chatDmList').style.display = '';
+}
+
+async function chatDmEnviar(){
+  if (!chatState.dmActivo) return;
+  const inp = document.getElementById('chatDmInput');
+  const t = (inp.value || '').trim();
+  if (!t) return;
+  inp.disabled = true;
+  try {
+    const r = await fetch(`/api/reparto/chat/dm/${chatState.dmActivo}/responder`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({texto: t})
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se envió')); inp.disabled = false; return; }
+    inp.value = '';
+    inp.disabled = false;
+    const cont = document.getElementById('chatDmMsgs');
+    if (cont.querySelector('.dm-empty')) cont.innerHTML = '';
+    cont.insertAdjacentHTML('beforeend', chatRenderMsg(d.mensaje));
+    chatState.dmUltIds[chatState.dmActivo] = d.mensaje.id;
+    chatScrollFondo('chatDmMsgs');
+    inp.focus();
+  } catch (e) { alert('Error: ' + e.message); inp.disabled = false; }
+}
+
+function chatIniciarPolling(){
+  if (chatState.pollHandle) return;
+  chatGrupoCargarPrimero();
+  chatRefrescar();
+  chatState.pollHandle = setInterval(chatRefrescar, 3000);
+}
+
+/* ── Modal gestión de cadetes ────────────────────────────────────────── */
+function cadModalAbrir(){
+  document.getElementById('cadModal').classList.add('open');
+  cadCargar();
+  setTimeout(()=>document.getElementById('cadNombre').focus(), 50);
+}
+function cadModalCerrar(){
+  document.getElementById('cadModal').classList.remove('open');
+}
+async function cadCargar(){
+  const cont = document.getElementById('cadList');
+  try {
+    const r = await fetch('/cadetes/api');
+    const d = await r.json();
+    const cs = d.cadetes || [];
+    if (!cs.length){ cont.innerHTML = '<div class="muted" style="font-size:11px; padding:8px;">sin cadetes.</div>'; return; }
+    cont.innerHTML = cs.map(c => `
+      <div class="cad-row ${c.activo ? '' : 'inactivo'}">
+        <span class="nombre">${esc(c.nombre)}${c.telefono ? ` <span class="tel">· ${esc(c.telefono)}</span>` : ''}</span>
+        ${c.zonas ? `<span class="muted2" style="font-size:9px;">${c.zonas} ruta${c.zonas>1?'s':''}</span>` : ''}
+        ${c.wa_id
+          ? `<button onclick="cadChat(${c.id}, '${esc(c.nombre)}')" class="hbtn" style="font-size:11px; padding:2px 6px;" title="Abrir chat con ${esc(c.nombre)}">💬</button>`
+          : `<span class="muted2" style="font-size:9px;" title="Sin wa_id — cargá un teléfono o esperá que escriba al grupo">sin chat</span>`}
+        <button onclick="cadToggle(${c.id}, ${c.activo ? 'false' : 'true'})" class="hbtn" style="font-size:10px; padding:2px 7px;"
+                title="${c.activo ? 'Desactivar' : 'Reactivar'}">${c.activo ? '⏸' : '▶'}</button>
+        <button onclick="cadBorrar(${c.id}, '${esc(c.nombre)}')" class="hbtn" style="font-size:11px; padding:2px 6px; opacity:0.7;"
+                title="Borrar definitivamente">🗑</button>
+      </div>`).join('');
+  } catch (e) { cont.innerHTML = '<div class="muted">error: ' + e.message + '</div>'; }
+}
+async function cadAgregar(){
+  const nombre = document.getElementById('cadNombre').value.trim();
+  if (!nombre) { alert('Poné un nombre.'); return; }
+  const tel = document.getElementById('cadTel').value.trim() || null;
+  try {
+    const r = await fetch('/cadetes', {method:'POST', headers:{'Content-Type':'application/json'},
+                                       body: JSON.stringify({nombre, telefono: tel, activo: true})});
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo agregar')); return; }
+    document.getElementById('cadNombre').value = '';
+    document.getElementById('cadTel').value = '';
+    cadCargar();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+async function cadToggle(id, activo){
+  try {
+    await fetch('/cadetes', {method:'POST', headers:{'Content-Type':'application/json'},
+                              body: JSON.stringify({id, activo})});
+    cadCargar();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+function cadChat(id, nombre){
+  // Cierra el modal de cadetes y abre el DM en el panel de chat de la derecha.
+  // Si el panel está colapsado, lo abre. Si la conversación no existe todavía,
+  // chatAbrirDm la crea visualmente (queda vacía) y al primer mensaje saliente
+  // el endpoint /responder crea la BotConversacion en DB.
+  cadModalCerrar();
+  const panel = document.getElementById('chatPanel');
+  if (panel.classList.contains('is-collapsed')) chatToggle();
+  // pequeño delay para asegurar que el panel ya está abierto antes de pintar
+  setTimeout(() => chatAbrirDm(id, nombre), 100);
+}
+
+async function cadBorrar(id, nombre){
+  if (!confirm(`Borrar cadete "${nombre}"?\n\nSe desvincula de sus rutas. Pedidos viejos que ya lo tenían asignado conservan el nombre pero pierden el link.`)) return;
+  try {
+    const r = await fetch(`/cadetes/${id}/delete`, {method:'POST'});
+    const d = await r.json();
+    if (!d.ok) { alert('⚠️ ' + (d.error || 'no se pudo borrar')); return; }
+    cadCargar();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+// Restaurar estado colapsado y arrancar polling si está abierto.
+(function chatInit(){
+  if (localStorage.getItem('planillaChatCollapsed') === '1'){
+    document.getElementById('chatPanel').classList.add('is-collapsed');
+  } else {
+    chatIniciarPolling();
+  }
+})();
+
+// Auto-refresh de la tabla principal cada 30 seg. Salta si:
+//   - hay un INPUT/SELECT/TEXTAREA en foco (estás editando una celda)
+//   - hay un modal abierto (creando cadete, viendo cadetes, etc.)
+//   - hay un chat o composer abierto con texto sin enviar
+// Sino, los cambios desde el grupo (TOMAR via Telegram) no se ven hasta F5.
+function _autorefreshOk(){
+  const ae = document.activeElement;
+  if (ae && ['INPUT','SELECT','TEXTAREA'].includes(ae.tagName)) return false;
+  // modal del overlay (cadetes / tarifas) abierto
+  const ovs = document.querySelectorAll('.modal-overlay');
+  for (const o of ovs){
+    const style = getComputedStyle(o);
+    if (style.display !== 'none' && style.visibility !== 'hidden') return false;
+  }
+  // composer del chat con texto sin enviar
+  const composers = document.querySelectorAll('textarea, [contenteditable=true]');
+  for (const c of composers){
+    if ((c.value || c.textContent || '').trim()) return false;
+  }
+  return true;
+}
+setInterval(() => {
+  if (_autorefreshOk()) location.reload();
+}, 30000);
+
+// ── Alertas de DMs de cadetes sin responder ──
+// Polling cada 30s a /api/reparto/alertas-cadetes. Si hay items: pinta banner
+// sticky. Si hay items en nivel 'modal': abre modal bloqueante.
+// El click en cualquier item abre el chat lateral del cadete (chatAbrirDm).
+async function _alertasCadetesTick(){
+  try {
+    const r = await fetch('/api/reparto/alertas-cadetes', {cache:'no-store'});
+    if (!r.ok) return;
+    const d = await r.json();
+    _pintarAlertasCadetes(d.alertas || []);
+  } catch(e){ /* silencioso */ }
+}
+function _pintarAlertasCadetes(alertas){
+  const banner = document.getElementById('alertCadetesBanner');
+  const modal = document.getElementById('alertCadetesModal');
+  if (!alertas.length){
+    banner.style.display = 'none';
+    // No cerramos el modal automáticamente: el operador lo cierra manual.
+    return;
+  }
+  const titulo = document.getElementById('alertCadetesTitulo');
+  titulo.textContent = `${alertas.length} cadete${alertas.length>1?'s':''} esperando respuesta`;
+  const lista = document.getElementById('alertCadetesLista');
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  lista.innerHTML = alertas.map(a => `
+    <span style="display:inline-flex; align-items:center; gap:6px; font-size:12px;">
+      <b style="color:#7F1D1D;">${esc(a.cadete_nombre)}</b>
+      <span style="color:#991B1B;">· hace ${a.minutos} min</span>
+      <span style="color:#7F1D1D; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${esc(a.ultimo_texto)}"</span>
+      <button onclick="_abrirChatDesdeAlerta(${a.conv_id}, ${JSON.stringify(a.cadete_nombre).replace(/"/g,'&quot;')})" class="hbtn" style="background:#B91C1C; color:#fff; border-color:#B91C1C; padding:3px 9px; font-size:11px;">Abrir chat</button>
+    </span>
+  `).join('');
+  banner.style.display = 'flex';
+
+  // Modal: solo si hay items en nivel 'modal' Y el operador no lo dismissó
+  // recientemente para esta lista (re-abrir cada vez sería molesto).
+  const modalItems = alertas.filter(a => a.nivel === 'modal');
+  if (modalItems.length){
+    const modalLista = document.getElementById('alertCadetesModalLista');
+    modalLista.innerHTML = modalItems.map(a => `
+      <div style="border-left:3px solid #B91C1C; padding:8px 11px; background:#FEF2F2; border-radius:6px;">
+        <div style="font-weight:700; color:#7F1D1D;">${esc(a.cadete_nombre)} · hace ${a.minutos} min</div>
+        <div style="font-size:12px; color:#991B1B; margin-top:4px;">"${esc(a.ultimo_texto)}"</div>
+        <button onclick="_abrirChatDesdeAlerta(${a.conv_id}, ${JSON.stringify(a.cadete_nombre).replace(/"/g,'&quot;')}); document.getElementById('alertCadetesModal').style.display='none';" class="hbtn hbtn-ok" style="margin-top:8px; padding:5px 12px;">Abrir chat</button>
+      </div>
+    `).join('');
+    modal.style.display = 'flex';
+  }
+}
+function _abrirChatDesdeAlerta(conv_id, nombre){
+  // Abrir el panel lateral del chat si está colapsado y entrar al DM.
+  const panel = document.getElementById('chatPanel');
+  if (panel && panel.classList.contains('is-collapsed')){
+    if (typeof chatToggle === 'function') chatToggle();
+  }
+  if (typeof chatAbrirDm === 'function') chatAbrirDm(conv_id, nombre, false, '');
+}
+_alertasCadetesTick();             // primer tick inmediato
+setInterval(_alertasCadetesTick, 30000);
+</script>
+</body>
+</html>

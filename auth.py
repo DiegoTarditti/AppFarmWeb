@@ -51,6 +51,185 @@ PERMISOS_POR_ROL = {
 }
 
 
+# ── Perfiles de operador ─────────────────────────────────────────────────────
+# Modelo nuevo: un operador (rol='operador') tiene una LISTA de perfiles
+# (Usuario.perfiles_json). Cada perfil define su botón en el home y los prefijos
+# de path que habilita. Algunos heredan acceso a otra área (ej. caja).
+# Única fuente de verdad: de acá salen el home, el gating y los checks de /usuarios.
+PERFILES = {
+    'rendicion': {
+        'label': 'Rendición de Recetas', 'icono': '📋',
+        'url': '/rend-recetas?perfil=rendicion',
+        'prefijos': ['/rend-recetas', '/devoluciones'],
+    },
+    'chat_clientes': {
+        'label': 'Chat Clientes', 'icono': '💬',
+        'url': '/atencion',
+        # hereda caja; '/api/clientes' y '/config/envio' los usa el cliente_picker
+        # embebido en /atencion (buscar cliente, ficha, cotizar envío).
+        # '/clientes' = pantalla maestra de listado/detalle de clientes (Diego 2026-06-15).
+        # '/api/proveedores' = dropdown de droguerías en el modal Cerrar TX.
+        'prefijos': ['/atencion', '/caja', '/clientes', '/api/clientes',
+                     '/api/proveedores', '/config/envio'],
+    },
+    'pedido_manual': {
+        'label': 'Pedido Manual', 'icono': '🛒',
+        'url': '/pedido/nuevo',
+        # hereda caja; '/api/clientes' y '/config/envio' los usa el cliente_picker
+        # embebido en /pedido/nuevo (buscar cliente, ficha, cotizar envío).
+        # '/api/pedido/' incluye obs-presets (datalist + dropdown de Observación).
+        # '/clientes' = pantalla maestra de listado/detalle de clientes (Diego 2026-06-15).
+        # '/api/proveedores' = dropdown de droguerías en el modal Cerrar TX.
+        # '/atencion' = /pedido/nuevo ahora redirige a /atencion?modo=manual
+        # (refactor C); el operador necesita acceso a todos los endpoints de
+        # esa pantalla (cerrar-transaccion, vincular-cliente, etc.).
+        'prefijos': ['/pedido/', '/api/pedido/', '/reparto', '/api/reparto',
+                     '/atencion',
+                     '/caja', '/clientes', '/api/clientes', '/api/proveedores',
+                     '/config/envio'],
+    },
+    'planilla_envios': {
+        'label': 'Planilla Envíos', 'icono': '🛵',
+        'url': '/reparto/planilla',
+        # '/rutas' y '/cadetes' = definir zonas/cadetes desde el panel de reparto.
+        # '/api/clientes' y '/config/envio' los usa el cliente_picker si edita
+        # un pedido desde la planilla; el cotizador también.
+        'prefijos': ['/reparto', '/api/reparto', '/rutas', '/cadetes',
+                     '/api/clientes', '/config/envio'],
+    },
+    'filtro_drogueria': {
+        'label': 'Filtro Droguería', 'icono': '⊞',
+        'url': '/filtro-drogueria',
+        'prefijos': ['/filtro-drogueria', '/filtro_drogueria'],
+    },
+    'audit_recetas': {
+        'label': 'Auditoría Recetas', 'icono': '✅',
+        'url': '/rend-recetas/por-vendedor?perfil=auditor',
+        'prefijos': ['/rend-recetas', '/devoluciones'],
+    },
+    'pedidos_drog': {
+        'label': 'Pedidos a Droguerías', 'icono': '📦',
+        'url': '/compras/dia',
+        'prefijos': ['/compras/', '/pedidos/', '/api/compras/', '/api/pedidos/',
+                     '/pedidos-emitidos', '/api/pedido-emitido/', '/api/producto/',
+                     '/api/observer-product/', '/api/lab-drog/'],
+    },
+    # Control de Ingreso: subir facturas, cruzar con ERP y generar reclamos.
+    'control_ingreso': {
+        'label': 'Control de Ingreso', 'icono': '📥',
+        'url': '/ingresos',
+        # Flujo completo: /ingresos (form) → /upload → /invoice/<id>/compare,
+        # apply-mapping, items, header, pick-fields, parse-helper, delete →
+        # /results/<id>. El form también consulta proveedores y previsualiza
+        # parser (/provider/peek, parser-preview-saved, folder-files, probe-create).
+        'prefijos': ['/ingresos', '/upload', '/invoice/', '/results',
+                     '/uploads/', '/provider/', '/api/provider/',
+                     '/api/invoice/'],
+    },
+    # Módulo de contabilidad standalone: proveedores, cuentas corrientes,
+    # importar comprobantes ARCA y (pronto) rubros / pagos / libro de IVA.
+    'contabilidad': {
+        'label': 'Contabilidad', 'icono': '📊',
+        'url': '/contabilidad',
+        'prefijos': ['/contabilidad', '/cuentas-corrientes', '/comprobantes',
+                     '/providers', '/provider/', '/api/proveedores'],
+    },
+}
+
+# Paths comunes a todo operador (siempre permitidos).
+PERFILES_PATHS_COMUNES = ('/home', '/login', '/logout', '/cambiar-password',
+                          '/health', '/static/', '/api/notifications',
+                          '/api/sync-status', '/api/presencia')
+
+# Migración de roles viejos (uno por usuario) → lista de perfiles equivalente.
+# IMPORTANTE: NO incluir 'operador' acá. 'operador' es el rol canónico actual
+# de todos los operadores; si entra en este dict, migrar_roles_a_perfiles() lo
+# pisa en cada restart con ["chat_clientes"] y borra los perfiles reales.
+# 'cajero' se deprecó el 2026-06-19 (/caja sin uso); su migración a operador
+# se hace por SQL inline en database.init_db (UPDATE usuarios).
+ROL_LEGACY_A_PERFILES = {
+    'rendicion': ['rendicion'],
+    'auditor': ['audit_recetas'],
+    'pedidos': ['pedidos_drog'],
+}
+
+
+def perfiles_de_usuario(user):
+    """Lista de slugs de perfil del usuario (desde Usuario.perfiles_json)."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return []
+    try:
+        data = json.loads(user.perfiles_json or '[]')
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return [p for p in data if p in PERFILES]
+
+
+def tiene_perfil(user, slug):
+    return slug in perfiles_de_usuario(user)
+
+
+def es_operador(user):
+    """True si el usuario es de tipo operador (no admin/farmacia/dev/remoto)."""
+    return getattr(user, 'rol', None) == 'operador'
+
+
+def prefijos_permitidos(user):
+    """Unión de los prefijos de todos los perfiles del usuario."""
+    pref = set()
+    for slug in perfiles_de_usuario(user):
+        pref.update(PERFILES[slug]['prefijos'])
+    return pref
+
+
+def _filtro_drogueria_url():
+    """URL del botón 'Filtro Droguería' según la sucursal local.
+
+    Badia (y cualquier farmacia sin las vistas DW.Pedidos expuestas) usa
+    el filtro por archivo subido; Pieri y similares usan el filtro por SQL.
+    Resuelve via services.transferencias._local_slug (tabla `sucursales`).
+    Si no se puede determinar, default al filtro por archivo (más conservador:
+    siempre funciona, no depende del DW).
+    """
+    try:
+        from services.transferencias import _local_slug, listar_sucursales
+        slug = _local_slug(listar_sucursales())
+    except Exception:
+        slug = None
+    # Sucursales con SQL Pedidos funcional → SQL. Resto → archivo.
+    return '/filtro-drogueria' if slug == 'pieri' else '/filtro-drogueria/archivo'
+
+
+def botones_home(user):
+    """Botones del home para el usuario: [{slug, label, icono, url}] en el orden
+    del registro PERFILES."""
+    mis = set(perfiles_de_usuario(user))
+    out = []
+    for s in PERFILES:
+        if s not in mis:
+            continue
+        url = PERFILES[s]['url']
+        if s == 'filtro_drogueria':
+            url = _filtro_drogueria_url()
+        out.append({'slug': s, 'label': PERFILES[s]['label'],
+                    'icono': PERFILES[s]['icono'], 'url': url})
+    return out
+
+
+def migrar_roles_a_perfiles():
+    """One-time: convierte los roles single-screen viejos a rol='operador' +
+    perfiles_json. Idempotente (tras convertir, esos roles ya no existen)."""
+    with database.get_db() as session:
+        legacy = session.query(Usuario).filter(
+            Usuario.rol.in_(list(ROL_LEGACY_A_PERFILES))).all()
+        for u in legacy:
+            u.perfiles_json = json.dumps(ROL_LEGACY_A_PERFILES.get(u.rol, []))
+            u.rol = 'operador'
+        if legacy:
+            session.commit()
+        return len(legacy)
+
+
 login_manager = LoginManager()
 login_manager.login_view = 'auth_login'
 login_manager.login_message = 'Iniciá sesión para continuar.'
@@ -134,57 +313,6 @@ def seed_admin_si_falta():
             session.commit()
         except IntegrityError:
             # Otro worker ganó la carrera — el admin ya existe.
-            session.rollback()
-
-
-def seed_rendicion_si_falta():
-    """Crea usuario `rendicion` (pass `rendicion123`, debe cambiar) si no existe.
-    Rol acotado: solo /devoluciones/*. Para operadores que solo registran
-    devoluciones de rendiciones."""
-    from sqlalchemy.exc import IntegrityError
-    with database.get_db() as session:
-        ya = session.query(Usuario).filter_by(username='rendicion').first()
-        if ya:
-            return
-        u = Usuario(
-            username='rendicion',
-            email=None,
-            password_hash=hash_password('rendicion123'),
-            nombre_completo='Operador de rendiciones',
-            rol='rendicion',
-            permisos_json=json.dumps(permisos_default_rol('rendicion')),
-            activo=True,
-            debe_cambiar_password=True,
-        )
-        session.add(u)
-        try:
-            session.commit()
-        except IntegrityError:
-            session.rollback()
-
-
-def seed_pedidos_si_falta():
-    """Crea usuario `pedidos` (pass `pedidos123`, debe cambiar) si no existe.
-    Rol acotado: solo /compras/dia. Llamar después de seed_admin_si_falta."""
-    from sqlalchemy.exc import IntegrityError
-    with database.get_db() as session:
-        ya = session.query(Usuario).filter_by(username='pedidos').first()
-        if ya:
-            return
-        u = Usuario(
-            username='pedidos',
-            email=None,
-            password_hash=hash_password('pedidos123'),
-            nombre_completo='Operador de pedidos',
-            rol='pedidos',
-            permisos_json=json.dumps(permisos_default_rol('pedidos')),
-            activo=True,
-            debe_cambiar_password=True,
-        )
-        session.add(u)
-        try:
-            session.commit()
-        except IntegrityError:
             session.rollback()
 
 

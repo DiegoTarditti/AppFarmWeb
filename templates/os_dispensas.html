@@ -164,6 +164,10 @@
             <tr class="hover:bg-black/[0.02] align-top">
                 <td class="px-3 py-2 font-mono text-xs text-[#6f6f6f] whitespace-nowrap">
                     {{ d.fecha_venta.strftime('%d/%m %H:%M') }}
+                    {% if d.sin_datos %}
+                    <span class="block mt-1 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800"
+                          title="Sin médico ni afiliado en origen (Observer no capturó esos datos)">⚠ sin datos</span>
+                    {% endif %}
                 </td>
                 <td class="px-3 py-2">
                     {% if d.particular %}

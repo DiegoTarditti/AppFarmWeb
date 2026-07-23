@@ -10,7 +10,14 @@
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <h1 class="text-base font-bold text-[#1e1e1e]">🔬 Ventas por droga / producto / médico / fecha</h1>
     <div class="ml-auto flex items-center gap-2">
-        <a href="{{ url_for('informe_ventas_multi_export', desde=desde.isoformat(), hasta=hasta.isoformat(), droga_id=droga_id or '', producto_id=producto_id or '', medico_id=medico_id or '', group_by=group_by) }}"
+        <a href="{{ url_for('informe_ventas_multi_export',
+              desde=desde.isoformat(), hasta=hasta.isoformat(),
+              droga_id=droga_id or '', producto_id=producto_id or '',
+              medico_id=medico_id or '', lab_id=lab_id or '', os_id=os_id or '',
+              rubro_id=rubro_id if rubro_id is not none else 0,
+              excluir_sin_droga='1' if excluir_sin_droga else '',
+              solo_con_receta='1' if solo_con_receta else '',
+              group_by=group_by) }}"
            class="btn btn-secondary btn-sm" title="Exportar a Excel (XLSX)">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
             XLSX
@@ -53,6 +60,7 @@
                 <select name="group_by" class="bg-white border border-surface-border rounded px-2 py-1 text-sm">
                     <option value="producto" {% if group_by == 'producto' %}selected{% endif %}>Producto</option>
                     <option value="droga" {% if group_by == 'droga' %}selected{% endif %}>Droga</option>
+                    <option value="laboratorio" {% if group_by == 'laboratorio' %}selected{% endif %}>Laboratorio</option>
                     <option value="medico" {% if group_by == 'medico' %}selected{% endif %}>Médico</option>
                     <option value="mes" {% if group_by == 'mes' %}selected{% endif %}>Mes</option>
                     <option value="os" {% if group_by == 'os' %}selected{% endif %}>Obra Social</option>
@@ -65,6 +73,12 @@
                        {% if excluir_sin_droga %}checked{% endif %}>
                 Excluir sin droga
             </label>
+            <label class="flex items-center gap-1.5 text-xs text-[#3f6650] cursor-pointer pb-1"
+                   title="Filtra productos cuyo TipoVentaControl ≠ 'L' (Libre). Incluye Bajo Receta, Archivada, Psicotrópicos y Estupefacientes.">
+                <input type="checkbox" name="solo_con_receta" value="1" class="w-3.5 h-3.5"
+                       {% if solo_con_receta %}checked{% endif %}>
+                Solo con receta
+            </label>
             <div class="flex items-center gap-1 ml-auto">
                 <button type="button" onclick="setRango(7)" class="text-[11px] border border-surface-border px-2 py-1 rounded hover:bg-fuchsia-50">7d</button>
                 <button type="button" onclick="setRango(30)" class="text-[11px] border border-surface-border px-2 py-1 rounded hover:bg-fuchsia-50">30d</button>
@@ -74,8 +88,8 @@
             </div>
         </div>
 
-        {# Fila 2: rubro + droga + producto + médico + OS — todos en línea si entran #}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+        {# Fila 2: rubro + lab + droga + producto + médico + OS — todos en línea si entran #}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
             <div>
                 <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Rubro</label>
                 <select name="rubro_id" class="w-full bg-white border border-surface-border rounded px-2 py-1 text-sm">
@@ -84,6 +98,15 @@
                     <option value="{{ r.id }}" {% if rubro_id == r.id %}selected{% endif %}>{{ r.nombre }}</option>
                     {% endfor %}
                 </select>
+            </div>
+            <div class="relative">
+                <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Laboratorio</label>
+                <input type="hidden" name="lab_id" id="lab_id" value="{{ lab_id or '' }}">
+                <input type="text" id="lab_input" autocomplete="off"
+                       value="{{ lab_nombre or '' }}"
+                       placeholder="Buscar laboratorio…"
+                       class="w-full bg-white border border-surface-border rounded px-2 py-1 text-sm">
+                <div id="lab_results" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-surface-border rounded-lg shadow-lg z-30 max-h-64 overflow-auto"></div>
             </div>
             <div class="relative">
                 <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Droga (monodroga)</label>
@@ -245,6 +268,7 @@
         input.addEventListener('input', () => { hidden.value = ''; });  // limpia al escribir
     }
     setupAutocomplete('droga_input', 'droga_id', 'droga_results', '/api/informes/buscar-droga');
+    setupAutocomplete('lab_input', 'lab_id', 'lab_results', '/api/informes/buscar-lab');
     setupAutocomplete('producto_input', 'producto_id', 'producto_results', '/api/informes/buscar-producto-obs');
     setupAutocomplete('medico_input', 'medico_id', 'medico_results', '/api/consulta-medico/buscar');
     setupAutocomplete('os_input', 'os_id', 'os_results', '/api/informes/buscar-os');
@@ -382,6 +406,11 @@ const _PARAMS = {
     droga_id: {{ droga_id or 0 }} || '',
     producto_id: {{ producto_id or 0 }} || '',
     medico_id: {{ medico_id or 0 }} || '',
+    lab_id: {{ lab_id or 0 }} || '',
+    os_id: {{ os_id or 0 }} || '',
+    rubro_id: {{ rubro_id if rubro_id is not none else 0 }},
+    solo_con_receta: {{ 1 if solo_con_receta else 0 }},
+    excluir_sin_droga: {{ 1 if excluir_sin_droga else 0 }},
 };
 
 async function toggleDrill(row) {
@@ -409,6 +438,11 @@ async function toggleDrill(row) {
     if (_PARAMS.droga_id) params.set('droga_id', _PARAMS.droga_id);
     if (_PARAMS.producto_id) params.set('producto_id', _PARAMS.producto_id);
     if (_PARAMS.medico_id) params.set('medico_id', _PARAMS.medico_id);
+    if (_PARAMS.lab_id) params.set('lab_id', _PARAMS.lab_id);
+    if (_PARAMS.os_id) params.set('os_id', _PARAMS.os_id);
+    params.set('rubro_id', _PARAMS.rubro_id);   // siempre (0 = Todos)
+    if (_PARAMS.solo_con_receta) params.set('solo_con_receta', '1');
+    if (_PARAMS.excluir_sin_droga) params.set('excluir_sin_droga', '1');
 
     try {
         const r = await fetch('/api/informes/ventas-multi/detalle?' + params.toString(),

@@ -9,7 +9,7 @@ Endpoints:
 """
 from datetime import date, timedelta
 
-from flask import render_template, request
+from flask import jsonify, render_template, request
 from flask_login import login_required
 from sqlalchemy import desc, func
 
@@ -18,6 +18,29 @@ from helpers import excluir_no_medicamentos_ovd, ventas_periodo_filter
 
 
 def init_app(app):
+
+    @app.route('/consulta-droga')
+    @login_required
+    def consulta_droga():
+        """Pantalla de entrada mobile: input de búsqueda por nombre. Mismo
+        patrón que /consulta-os, /consulta-medico, etc."""
+        return render_template('consulta_droga.html')
+
+    @app.route('/api/consulta-droga/buscar')
+    @login_required
+    def api_consulta_droga_buscar():
+        """Autocomplete de drogas por nombre. Multi-token AND. Top 20."""
+        q = (request.args.get('q') or '').strip()
+        if len(q) < 2:
+            return jsonify({'items': []})
+        tokens = [t for t in q.split() if t]
+        with database.get_db() as session:
+            base = session.query(database.ObsNombreDroga)
+            for t in tokens:
+                base = base.filter(database.ObsNombreDroga.descripcion.ilike(f'%{t}%'))
+            results = base.order_by(database.ObsNombreDroga.descripcion).limit(20).all()
+            return jsonify({'items': [{'id': d.observer_id, 'nombre': d.descripcion}
+                                       for d in results]})
 
     @app.route('/consulta-droga/<int:droga_id>')
     @login_required

@@ -14,7 +14,7 @@ El cruce con el ERP se realiza por descripción normalizada o por mappings manua
 import re
 from datetime import datetime
 
-import pdfplumber
+from helpers import _normalize_quadrupled, extract_text_with_ocr_fallback
 
 
 def parse_invoice_pdf(pdf_path):
@@ -22,11 +22,11 @@ def parse_invoice_pdf(pdf_path):
         """'1.234,5600' → 1234.56"""
         return float(s.replace('.', '').replace(',', '.'))
 
-    pages_text = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            pages_text.append(page.extract_text() or '')
-    full_text = '\n'.join(pages_text)
+    # Mismo pipeline que los parsers que genera /converter: OCR fallback si el PDF
+    # viene escaneado (pdfplumber devuelve vacío y la factura no se podía importar
+    # de ninguna forma) + limpieza de artefactos de pdfplumber (letter-spacing,
+    # rellenos de puntos, caracteres repetidos de las fuentes bold).
+    full_text = _normalize_quadrupled(extract_text_with_ocr_fallback(pdf_path))
 
     # --- Cabecera ---
     # Número: aparece al final de la línea de fecha → "FECHA: 24/02/2026 0142-00964164"

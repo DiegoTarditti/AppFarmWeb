@@ -24,6 +24,7 @@ from database import (
     init_db,
     now_ar,
 )
+from services.farmacia import farmacia_operativa
 
 
 def recalcular(min_ventas=1):
@@ -38,7 +39,7 @@ def recalcular(min_ventas=1):
         dict con {procesados, con_os, sin_os, top_os}.
     """
     init_db()
-    id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+    id_farmacia = farmacia_operativa()
 
     with get_db() as session:
         # 1. Total de dispensas por cliente (con o sin OS) en la farmacia.

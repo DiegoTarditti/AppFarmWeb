@@ -8,6 +8,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: farmacia
       PGTZ: UTC
+      PGDATA: /var/lib/postgresql/18/docker
     volumes:
       - pgdata:/var/lib/postgresql
     ports:
@@ -56,6 +57,37 @@ services:
       # docs/lecciones_deploy_render.md).
       RUN_INIT_DB_ON_STARTUP: "1"
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Token del bot (Telegram hoy). Lo usa el bot para escuchar y el panel de
+      # atención (/atencion) para enviar las respuestas del operador al cliente.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # Bot Telegram del grupo de cadetes (separado del bot de clientes).
+      # USAR_POLLING=true → arranca un thread que hace getUpdates por
+      # long-polling (no necesita URL pública alcanzable desde internet).
+      # El secret valida el reenvío del polling al endpoint local.
+      TELEGRAM_CADETES_BOT_TOKEN: ${TELEGRAM_CADETES_BOT_TOKEN:-}
+      TELEGRAM_CADETES_GRUPO_CHAT_ID: ${TELEGRAM_CADETES_GRUPO_CHAT_ID:-}
+      TELEGRAM_CADETES_WEBHOOK_SECRET: ${TELEGRAM_CADETES_WEBHOOK_SECRET:-}
+      TELEGRAM_CADETES_USAR_POLLING: ${TELEGRAM_CADETES_USAR_POLLING:-}
+      # WhatsApp Cloud API. Dejar en blanco hasta tener las keys de Meta.
+      # WABA_TOKEN: System User Token (para enviar mensajes)
+      # WABA_PHONE_ID: ID del número de WhatsApp en el portal de Meta
+      # WABA_APP_SECRET: App Secret (para verificar firma del webhook entrante)
+      # WABA_VERIFY_TOKEN: string arbitrario que Meta usará para verificar el webhook
+      WABA_TOKEN: ${WABA_TOKEN:-}
+      WABA_PHONE_ID: ${WABA_PHONE_ID:-}
+      WABA_APP_SECRET: ${WABA_APP_SECRET:-}
+      WABA_VERIFY_TOKEN: ${WABA_VERIFY_TOKEN:-farmweb_wh_secret}
+      # Informes proactivos al dueño vía Telegram. Obtener el chat_id del dueño
+      # iniciando una conversación con @userinfobot. Umbral: minutos sin atender
+      # antes de notificar (default 15).
+      TELEGRAM_OWNER_CHAT_ID: ${TELEGRAM_OWNER_CHAT_ID:-}
+      TELEGRAM_DIEGO_CHAT_ID: ${TELEGRAM_DIEGO_CHAT_ID:-}
+      INFORMES_UMBRAL_MINUTOS: ${INFORMES_UMBRAL_MINUTOS:-15}
+      # Transcripción de notas de voz. Por defecto usa Whisper LOCAL (sin key,
+      # privado). WHISPER_MODEL: base (default) | small | medium (más exacto, más
+      # lento). OPENAI_API_KEY solo se usa como fallback si el modelo local no carga.
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Conexión a DB real de ObServer (SQL Server 2014). Si no seteás OBSERVER_HOST,
       # observer_source.observer_disponible() devuelve False y el sync queda deshabilitado.
       OBSERVER_HOST: ${OBSERVER_HOST:-}
@@ -65,14 +97,29 @@ services:
       OBSERVER_DB:   ${OBSERVER_DB:-ObServerGestion}
       OBSERVER_TDSVER: ${OBSERVER_TDSVER:-7.0}
       OBSERVER_ID_FARMACIA: ${OBSERVER_ID_FARMACIA:-10525}
+      # CUIT de esta farmacia (11 dígitos). Lo usa el import de "Mis Comprobantes"
+      # de ARCA para rechazar un CSV bajado con el CUIT de otra farmacia. Sin la
+      # var, ese import queda bloqueado a propósito (ver routes/cuentas.py).
+      FARMACIA_CUIT: ${FARMACIA_CUIT:-}
       # External URL del Postgres de Render. Usada por el job que replica obs_*.
       RENDER_DATABASE_URL: ${RENDER_DATABASE_URL:-}
       # Sync/pull ofertas local ↔ Render. PANEL_REMOTO_TOKEN es el mismo
       # que ya usa el DockerPanel para hablar con Render (X-Panel-Token).
       RENDER_BASE_URL: ${RENDER_BASE_URL:-}
       PANEL_REMOTO_TOKEN: ${PANEL_REMOTO_TOKEN:-}
+      # /transferencias: BADIA_DATABASE_URL es fallback legacy (sin tabla sucursales).
+      BADIA_DATABASE_URL: ${BADIA_DATABASE_URL:-}
+      # Slug de esta sucursal (si no, se autodetecta por db_name vs DATABASE_URL).
+      SUCURSAL_LOCAL: ${SUCURSAL_LOCAL:-}
+      # WAHA: WhatsApp HTTP API para publicar pedidos a un grupo.
+      WAHA_URL: ${WAHA_URL:-http://waha:3000}
+      WAHA_API_KEY: ${WAHA_API_KEY:-admin}
+      WAHA_SESSION: ${WAHA_SESSION:-default}
+      WAHA_GRUPO_ENVIOS: ${WAHA_GRUPO_ENVIOS:-}
     ports:
       - "${WEB_PORT:-5000}:5000"
+      # AppNúcleo (dashboard de grupo) corre standalone en 5001 para dev local.
+      - "${NUCLEO_PORT:-5001}:5001"
     # Si no tenés .env, el default es 5000.
     depends_on:
       db:
@@ -82,6 +129,68 @@ services:
     volumes:
       - ./:/app
 
+  # Bot asistente (Telegram, long polling). Levanta solo con el stack y se
+  # reinicia si crashea o al reiniciar la máquina (restart: unless-stopped).
+  # Misma imagen que web; comparte la DB local. NO necesita observer_db ni puerto.
+  # El proceso de WhatsApp (Fase 2) será un webhook dentro de `web`, no acá.
+  bot:
+    build: .
+    restart: unless-stopped
+    command: python -m bot.telegram_bot
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/farmacia
+      TZ: America/Argentina/Buenos_Aires
+      # IA (conversación + visión de recetas).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Token del bot. Ponelo en el .env (gitignored) para que arranque solo.
+      # Sin token, el proceso sale con error claro (y restart lo reintenta).
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # Transcripción de notas de voz: Whisper local por defecto.
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Auto-retorno al bot tras inactividad (minutos). Prod ~180 (3 hs); en .env
+      # se puede bajar (ej. 1) para probar.
+      ATENCION_AUTO_BOT_MINUTOS: ${ATENCION_AUTO_BOT_MINUTOS:-180}
+      # Re-enganche proactivo: minutos de silencio a mitad de un flujo antes del
+      # "¿Seguís ahí?". 0 = desactivado.
+      ATENCION_REENGANCHE_MINUTOS: ${ATENCION_REENGANCHE_MINUTOS:-5}
+      # Informes proactivos al dueño vía Telegram.
+      TELEGRAM_OWNER_CHAT_ID: ${TELEGRAM_OWNER_CHAT_ID:-}
+      TELEGRAM_DIEGO_CHAT_ID: ${TELEGRAM_DIEGO_CHAT_ID:-}
+      INFORMES_UMBRAL_MINUTOS: ${INFORMES_UMBRAL_MINUTOS:-15}
+    depends_on:
+      db:
+        condition: service_healthy
+      web:
+        condition: service_started   # web corre init_db (crea las tablas del bot)
+    volumes:
+      - ./:/app
+
+  # WAHA: WhatsApp HTTP API (wrapper de whatsapp-web.js). Permite mandar mensajes
+  # a GRUPOS (Cloud API de Meta no lo permite). Una sesión = una cuenta WhatsApp.
+  # Web UI en http://localhost:3000 — primer login: escanear QR con el celular
+  # desde WhatsApp → Dispositivos vinculados → Vincular dispositivo.
+  waha:
+    image: devlikeapro/waha:latest
+    restart: unless-stopped
+    ports:
+      - "${WAHA_PORT:-3000}:3000"
+    environment:
+      WAHA_LOG_FORMAT: PRETTY
+      WHATSAPP_DEFAULT_ENGINE: WEBJS
+      # Credenciales del Swagger/dashboard (WAHA Core 2026+ pide login). Default
+      # admin/admin para test local. Cambialos en .env si exponés el puerto.
+      WHATSAPP_SWAGGER_USERNAME: ${WAHA_USER:-admin}
+      WHATSAPP_SWAGGER_PASSWORD: ${WAHA_PASS:-admin}
+      WAHA_DASHBOARD_USERNAME: ${WAHA_USER:-admin}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_PASS:-admin}
+      # API key para endpoints /api/* (si la seteás, hay que mandar header X-Api-Key).
+      # Default admin/admin → admin como key, simple para test local.
+      WHATSAPP_API_KEY: ${WAHA_API_KEY:-admin}
+    volumes:
+      - waha_sessions:/app/.sessions
+
 volumes:
   pgdata:
   observer_pgdata:
+  waha_sessions:

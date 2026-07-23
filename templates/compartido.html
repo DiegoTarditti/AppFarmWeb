@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% set nav_active = "bi" %}
+{% block title %}Compartido del grupo{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    .cp-page { padding: 18px 24px 28px; max-width: 1100px; }
+    .cp-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+    .cp-head h1 { font-family:'Space Grotesk',sans-serif; font-size: 22px; font-weight: 700; color: var(--ds-text); margin: 0; }
+    .cp-head .sub { font-size: 12px; color: var(--ds-text-mute); }
+    .cp-sec-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); font-weight: 700; margin: 22px 0 8px; }
+
+    .cp-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+    .cp-table thead th {
+        background: rgba(0,0,0,.20); color: var(--ds-text-mute);
+        font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+        padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--ds-line);
+    }
+    .cp-table thead th.r { text-align: right; }
+    .cp-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); }
+    .cp-table tbody tr:hover { background: rgba(95,230,188,.04); }
+    .cp-table tbody td { padding: 9px 12px; color: var(--ds-text); vertical-align: middle; }
+    .cp-table tbody td.muted { color: var(--ds-text-mute); font-size: 11px; }
+    .cp-table tbody td.mono { font-family: ui-monospace, Consolas, monospace; text-align: right; }
+
+    .cp-tipo-badge { display: inline-block; font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 99px; background: rgba(125,211,252,.15); color: #7dd3fc; }
+    .cp-tipo-badge.oferta_minimo { background: rgba(95,230,188,.15); color: var(--ds-mint); }
+    .cp-tipo-badge.modulos { background: rgba(167,139,250,.15); color: #c4b5fd; }
+
+    .cp-estado { font-size: 10px; font-weight: 700; }
+    .cp-estado.importado { color: var(--ds-mint); }
+    .cp-estado.descartado { color: var(--ds-text-mute); }
+
+    .cp-card { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; overflow: hidden; }
+    .cp-empty { padding: 40px 20px; text-align: center; color: var(--ds-text-mute); font-size: 13px; }
+    .cp-error { padding: 10px 14px; background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); border-radius: 10px; color: #fca5a5; font-size: 11px; margin-bottom: 10px; }
+    .cp-warn  { padding: 12px 16px; background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3); border-radius: 10px; color: #FCD34D; font-size: 12px; margin-bottom: 14px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="cp-page">
+    <a href="{{ url_for('index') }}" class="text-xs" style="color:var(--ds-text-mute);">← Inicio</a>
+    <div class="cp-head" style="margin-top:6px;">
+        <span style="font-size:24px;">🔄</span>
+        <h1>Compartido del grupo</h1>
+        <span class="sub">Datasets curados (ofertas, módulos, equivalencias) que cualquier farmacia publica y las demás importan cuando quieren.</span>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+    <div style="margin-bottom:12px; padding:10px 14px; border-radius:8px;
+                background:{% if cat=='error' %}rgba(239,68,68,.12){% else %}rgba(95,230,188,.12){% endif %};
+                color:{% if cat=='error' %}#fca5a5{% else %}var(--ds-mint){% endif %}; font-size:12px;">{{ msg }}</div>
+    {% endfor %}
+    {% endwith %}
+
+    {% if sin_peers %}
+    <div class="cp-warn">⚠ No hay otras sucursales configuradas en la tabla <strong>sucursales</strong>. Cargá las sucursales del grupo (con su URL) para ver y compartir.</div>
+    {% endif %}
+    {% for e in errores %}
+    <div class="cp-error">⚠ No se pudo leer <strong>{{ e.origen }}</strong>: {{ e.error }}</div>
+    {% endfor %}
+
+    <!-- ── Del grupo (de las otras farmacias) ── -->
+    <div class="cp-sec-label">📥 Del grupo — importá lo que te sirva</div>
+    <div class="cp-card">
+        {% if items %}
+        <table class="cp-table">
+            <thead>
+                <tr>
+                    <th>Nombre</th><th>Tipo</th><th>Origen</th>
+                    <th class="r">Items</th><th>Fecha</th>
+                    <th style="text-align:right; padding-right:16px;">Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in items %}
+                <tr>
+                    <td>
+                        <div style="font-weight:600;">{{ a.nombre }}</div>
+                        {% if a.descripcion %}<div class="muted">{{ a.descripcion }}</div>{% endif %}
+                    </td>
+                    <td><span class="cp-tipo-badge {{ a.tipo }}">{{ a.tipo_label }}</span></td>
+                    <td class="muted">{{ a.origen_nombre }}</td>
+                    <td class="mono muted">{{ a.n_items }}</td>
+                    <td class="muted">{{ a.creado_en_fmt }}</td>
+                    <td style="text-align:right; padding-right:16px; white-space:nowrap;">
+                        {% if a.estado == 'importado' %}
+                        <span class="cp-estado importado">✓ importado</span>
+                        {% elif a.estado == 'descartado' %}
+                        <span class="cp-estado descartado">descartado</span>
+                        {% endif %}
+                        <form method="post" action="{{ url_for('compartido_importar') }}" style="display:inline;"
+                              onsubmit="return confirm('¿Importar {{ a.n_items }} registros de «{{ a.nombre }}»?')">
+                            <input type="hidden" name="origen_slug" value="{{ a.origen_slug }}">
+                            <input type="hidden" name="archivo_id" value="{{ a.id }}">
+                            <button type="submit" class="btn btn-mint btn-sm">{{ 'Re-importar' if a.estado == 'importado' else 'Importar' }}</button>
+                        </form>
+                        {% if a.estado == 'nuevo' %}
+                        <form method="post" action="{{ url_for('compartido_descartar') }}" style="display:inline;">
+                            <input type="hidden" name="origen_slug" value="{{ a.origen_slug }}">
+                            <input type="hidden" name="archivo_id" value="{{ a.id }}">
+                            <input type="hidden" name="tipo" value="{{ a.tipo }}">
+                            <input type="hidden" name="nombre" value="{{ a.nombre }}">
+                            <button type="submit" class="btn btn-ghost btn-sm" title="No me interesa, no avisar más">Descartar</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="cp-empty">
+            <p style="font-size:24px;">📭</p>
+            <p>No hay nada compartido por las otras farmacias todavía.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ── Publicado por mí ── -->
+    <div class="cp-sec-label">📤 Publicado por esta farmacia</div>
+    <div class="cp-card">
+        {% if mios %}
+        <table class="cp-table">
+            <thead>
+                <tr><th>Nombre</th><th>Tipo</th><th class="r">Items</th><th>Destinatarios</th><th>Fecha</th></tr>
+            </thead>
+            <tbody>
+                {% for m in mios %}
+                <tr>
+                    <td><div style="font-weight:600;">{{ m.nombre }}</div>{% if m.descripcion %}<div class="muted">{{ m.descripcion }}</div>{% endif %}</td>
+                    <td><span class="cp-tipo-badge {{ m.tipo }}">{{ m.tipo_label }}</span></td>
+                    <td class="mono muted">{{ m.n_items }}</td>
+                    <td class="muted">{{ m.destinatarios }}</td>
+                    <td class="muted">{{ m.creado_en }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="cp-empty"><p>Todavía no publicaste nada. Cargá una oferta y usá <strong>Compartir con el grupo</strong>.</p></div>
+        {% endif %}
+    </div>
+
+    <p style="font-size:11px; color:var(--ds-text-mute); margin-top:14px;">
+        Para publicar: importá ofertas en <a href="{{ url_for('ofertas_import_page') }}" style="color:var(--ds-mint);">/ofertas/import</a>
+        → botón <strong>Compartir con el grupo</strong> (en el paso final del wizard o en la pantalla de Ofertas del laboratorio).
+    </p>
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,21 @@
+[Unit]
+Description=Panel Remoto — worker que polea Render y ejecuta comandos en el server
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/appfarmweb
+Environment="PANEL_REMOTO_URL=https://farmacia-web-rj1z.onrender.com"
+Environment="PANEL_REMOTO_TOKEN=<PONER_TOKEN_ACA>"
+Environment="PANEL_REMOTO_SEG=8"
+Environment="APPFARMWEB_DIR=/root/appfarmweb"
+ExecStart=/usr/bin/python3 /root/panel_remoto_worker.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

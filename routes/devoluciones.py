@@ -14,13 +14,41 @@ Flow:
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from flask import flash, jsonify, redirect, render_template, request, url_for
+from flask import current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
 import database
 import observer_source
+from auth import perfiles_de_usuario
+
+
+def _rol_efectivo():
+    """Rol que la lógica de /rend-recetas espera ('rendicion'|'auditor').
+
+    Modelo nuevo: los operadores son rol='operador' + perfiles. Acá traducimos
+    operador + ?perfil (persistido en sesión) al rol equivalente, validando
+    contra los perfiles del usuario. Admin/dev/farmacia conservan su rol real.
+    Así toda la lógica que ramifica por rol sigue funcionando sin tocarse."""
+    real = current_user.rol if current_user.is_authenticated else None
+    if real != 'operador':
+        return real
+    perfil = request.args.get('perfil')
+    if perfil in ('rendicion', 'auditor'):
+        session['rend_perfil'] = perfil
+    perfil = session.get('rend_perfil')
+    perfiles = perfiles_de_usuario(current_user)
+    if perfil == 'auditor' and 'audit_recetas' in perfiles:
+        return 'auditor'
+    if perfil == 'rendicion' and 'rendicion' in perfiles:
+        return 'rendicion'
+    # Sin param válido: auditor manda si tiene ambos perfiles.
+    if 'audit_recetas' in perfiles:
+        return 'auditor'
+    if 'rendicion' in perfiles:
+        return 'rendicion'
+    return 'rendicion'
 
 # Carga incremental de recetas (ver devoluciones_buscar):
 # - Al rendir traemos TODO desde la última carga del vendedor hasta hoy.
@@ -140,6 +168,35 @@ def _detectar_duplicados():
     return grupos
 
 
+def _grupos_filtro_ctx():
+    """Contexto para el filtro client-side por *grupo de rendición* de OS.
+
+    Devuelve (grupos, grupo_por_nombre_os):
+      - grupos: [{'id', 'nombre'}] de los grupos activos (para el dropdown).
+      - grupo_por_nombre_os: {NOMBRE_OS_UPPER: {'id', 'nombre'}} para etiquetar
+        cada fila. Se mapea por NOMBRE (no observer_id) porque en estas
+        pantallas las recetas (DevolucionReceta / resultados de ObServer) solo
+        traen el nombre de la OS, no su observer_id.
+
+    El ABM de los grupos vive aparte en /rend-recetas/config-grupos (multiselect).
+    Esto es solo lectura para el filtro, no toca la DB.
+    """
+    with database.get_db() as _s:
+        grupos = [{'id': g.id, 'nombre': g.nombre}
+                  for g in (_s.query(database.RendicionGrupo)
+                            .filter_by(activo=True)
+                            .order_by(database.RendicionGrupo.nombre).all())]
+        nombre_por_id = {g['id']: g['nombre'] for g in grupos}
+        grupo_por_nombre_os = {}
+        for it in _s.query(database.RendicionGrupoOS).all():
+            if it.grupo_id not in nombre_por_id:
+                continue  # OS de un grupo inactivo → no se ofrece en el filtro
+            grupo_por_nombre_os.setdefault(
+                (it.nombre_cached or '').strip().upper(),
+                {'id': it.grupo_id, 'nombre': nombre_por_id[it.grupo_id]})
+    return grupos, grupo_por_nombre_os
+
+
 def init_app(app):
 
     # ──────────────────────────────────────────────────────────────────
@@ -167,7 +224,7 @@ def init_app(app):
         with database.get_db() as session:
             # Para rol rendicion: solo sus propias rendiciones.
             nombre_u = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
-            rol = getattr(current_user, 'rol', None)
+            rol = _rol_efectivo()
 
             # Agregado por (vendedor, nro_presentacion).
             base = (session.query(
@@ -264,21 +321,35 @@ def init_app(app):
     # ──────────────────────────────────────────────────────────────────
     def _vendedor_sugerido_actual(vendedores):
         """Retorna (uuid, nombre) del vendedor que matchea con
-        current_user.nombre_completo. None si no matchea."""
-        nombre_user = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
-        if not nombre_user:
+        current_user.nombre_completo. None si no matchea.
+
+        Prioridad: igualdad exacta > prefijo con borde de palabra > primer
+        token (nombre de pila). Sin esta prioridad, un usuario 'ROCIO B'
+        matchearía con el vendedor 'ROCIO' (prefijo) antes que con el suyo
+        exacto — clave cuando hay varios vendedores con el mismo nombre de pila."""
+        u = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
+        if not u:
             return None, None
+        exacto = prefijo = token = None
         for v in vendedores:
-            v_nombre = (v.get('nombre') or '').strip().upper()
-            if v_nombre == nombre_user or v_nombre.startswith(nombre_user) or nombre_user in v_nombre:
-                return v['id_usuario'], v['nombre']
-        return None, None
+            vn = (v.get('nombre') or '').strip().upper()
+            if not vn:
+                continue
+            if vn == u:
+                exacto = v
+                break
+            if (u.startswith(vn + ' ') or vn.startswith(u + ' ')) and prefijo is None:
+                prefijo = v
+            elif u.split()[0] == vn.split()[0] and token is None:
+                token = v
+        v = exacto or prefijo or token
+        return (v['id_usuario'], v['nombre']) if v else (None, None)
 
     @app.route('/rend-recetas/lotes', methods=['GET'])
     @login_required
     def rendicion_lotes_list():
         """Listado de lotes de rendición. Para rol=rendicion: solo los suyos."""
-        rol = getattr(current_user, 'rol', None)
+        rol = _rol_efectivo()
         nombre_user = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
         with database.get_db() as session:
             from sqlalchemy import func as _f
@@ -297,6 +368,17 @@ def init_app(app):
             ).filter(D.rendicion_lote_id.isnot(None),
                      D.auditor_motivo_id.isnot(None))
              .group_by(D.rendicion_lote_id).all())
+            # Grupo(s)/tipo de rendición por lote: se deriva de las OS de sus
+            # recetas (el lote no guarda grupo). Mapeo OS→grupo por nombre.
+            _, grupo_por_nombre_os = _grupos_filtro_ctx()
+            os_por_lote = session.query(
+                D.rendicion_lote_id, D.obra_social_nombre
+            ).filter(D.rendicion_lote_id.isnot(None)).distinct().all()
+            grupos_por_lote = {}
+            for lote_id_, os_nombre in os_por_lote:
+                g = grupo_por_nombre_os.get((os_nombre or '').strip().upper())
+                if g:
+                    grupos_por_lote.setdefault(lote_id_, set()).add(g['nombre'])
             items = []
             from datetime import datetime
             now = datetime.utcnow()
@@ -310,6 +392,7 @@ def init_app(app):
                     'lote': lote,
                     'n_recetas': n_rec,
                     'n_auditadas': conteos_audit.get(lote.id, 0),
+                    'grupos': sorted(grupos_por_lote.get(lote.id, [])),
                     'dias_sin_actividad': (now - lote.creado_en).days if lote.creado_en else 0,
                 })
         return render_template('rendicion_lotes_list.html',
@@ -336,15 +419,20 @@ def init_app(app):
         etiqueta = f'Rendición #{nro}'
 
         # Resolver vendedor: si rol=rendicion, forzar al matcheado por nombre.
-        rol = getattr(current_user, 'rol', None)
+        rol = _rol_efectivo()
         vendedor_id = (request.form.get('vendedor_id') or '').strip() or None
         vendedor_nombre = (request.form.get('vendedor_nombre') or '').strip() or None
         if rol == 'rendicion':
             try:
                 vendedores = observer_source.listar_vendedores(solo_habilitados=False)
-                vendedor_id, vendedor_nombre = _vendedor_sugerido_actual(vendedores)
-            except Exception:
-                pass
+                vendedor_id, _ = _vendedor_sugerido_actual(vendedores)
+            except Exception as e:
+                current_app.logger.warning('No se pudo resolver vendedor sugerido (ObServer): %s', e)
+            # El lote SIEMPRE se ata al nombre_completo del usuario (no al nombre
+            # corto de ObServer). Las vistas de rol=rendicion filtran por
+            # vendedor_nombre == nombre_completo; si guardáramos el alias corto
+            # ("CELINA" en vez de "CELINA FERRERO") el lote quedaría invisible.
+            vendedor_nombre = (getattr(current_user, 'nombre_completo', '') or '').strip() or None
 
         with database.get_db() as session:
             existe = (session.query(database.RendicionLote)
@@ -403,29 +491,28 @@ def init_app(app):
                     .all())
 
         buf = BytesIO()
+        # Compacto: márgenes chicos + letra chica para meter muchas recetas/hoja.
         doc = SimpleDocTemplate(buf, pagesize=A4,
-                                leftMargin=1.5*cm, rightMargin=1.5*cm,
-                                topMargin=1.5*cm, bottomMargin=1.5*cm)
+                                leftMargin=0.9*cm, rightMargin=0.9*cm,
+                                topMargin=0.9*cm, bottomMargin=0.9*cm)
         styles = getSampleStyleSheet()
         title_st = ParagraphStyle('t', parent=styles['Heading1'],
-                                  fontSize=16, textColor=colors.HexColor('#1F2937'))
+                                  fontSize=12, spaceAfter=0, leading=14,
+                                  textColor=colors.HexColor('#1F2937'))
         meta_st = ParagraphStyle('m', parent=styles['Normal'],
-                                 fontSize=10, textColor=colors.HexColor('#4B5563'))
+                                 fontSize=7.5, leading=10, textColor=colors.HexColor('#4B5563'))
         elems = [
             Paragraph(f'Recibo de Rendición #{lote.nro}', title_st),
-            Spacer(1, 6),
+            Spacer(1, 2),
             Paragraph(
                 f'<b>Vendedor:</b> {lote.vendedor_nombre or "—"} · '
                 f'<b>Período:</b> {lote.periodo_desde.strftime("%d/%m/%Y") if lote.periodo_desde else "—"} → '
-                f'{lote.periodo_hasta.strftime("%d/%m/%Y") if lote.periodo_hasta else "—"}',
-                meta_st),
-            Spacer(1, 4),
-            Paragraph(
+                f'{lote.periodo_hasta.strftime("%d/%m/%Y") if lote.periodo_hasta else "—"} · '
                 f'<b>Etiqueta:</b> {lote.etiqueta or "—"} · '
                 f'<b>Estado:</b> {lote.estado.upper()} · '
                 f'<b>Total recetas:</b> {len(devs)}',
                 meta_st),
-            Spacer(1, 12),
+            Spacer(1, 6),
         ]
         # Tabla de recetas
         hdr = ['#', 'Fecha', 'OS', 'Op#', 'Motivo', 'Auditor', 'A cargo OS']
@@ -448,22 +535,26 @@ def init_app(app):
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F2937')),
             ('TEXTCOLOR',  (0, 0), (-1, 0), colors.HexColor('#F4C430')),
             ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE',   (0, 0), (-1, -1), 8),
+            ('FONTSIZE',   (0, 0), (-1, -1), 6.5),
+            ('LEFTPADDING',  (0, 0), (-1, -1), 3),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+            ('TOPPADDING',   (0, 0), (-1, -1), 1.5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 1.5),
             ('ALIGN',      (-1, 1), (-1, -1), 'RIGHT'),
-            ('GRID',       (0, 0), (-1, -1), 0.5, colors.HexColor('#D1D5DB')),
+            ('GRID',       (0, 0), (-1, -1), 0.4, colors.HexColor('#D1D5DB')),
             ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#F9FAFB')]),
             ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#FEF3C7')),
             ('FONTNAME',   (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('VALIGN',     (0, 0), (-1, -1), 'TOP'),
         ]))
         elems.append(t)
-        elems.append(Spacer(1, 30))
-        # Espacio firmas
+        elems.append(Spacer(1, 14))
+        # Espacio firmas (compacto)
         firma_st = ParagraphStyle('f', parent=styles['Normal'],
-                                  fontSize=9, alignment=1)
+                                  fontSize=7.5, leading=10, alignment=1)
         tbl_firmas = Table([[
-            Paragraph('________________________<br/><br/>Entregó<br/>(firma y aclaración)', firma_st),
-            Paragraph('________________________<br/><br/>Recibió<br/>(firma y aclaración)', firma_st),
+            Paragraph('________________________<br/>Entregó (firma y aclaración)', firma_st),
+            Paragraph('________________________<br/>Recibió (firma y aclaración)', firma_st),
         ]], colWidths=[8*cm, 8*cm])
         elems.append(tbl_firmas)
         doc.build(elems)
@@ -520,7 +611,7 @@ def init_app(app):
         """Detecta DevolucionReceta con mismo id_operacion_observer en lotes
         distintos. Aplica reglas para identificar qué se mantiene y qué se
         descarta. NO toca nada — solo muestra."""
-        if getattr(current_user, 'rol', None) not in ('auditor', 'admin', 'dev'):
+        if _rol_efectivo() not in ('auditor', 'admin', 'dev'):
             flash('Sin permiso.', 'error')
             return redirect(url_for('devoluciones_list'))
         grupos = _detectar_duplicados()
@@ -532,7 +623,7 @@ def init_app(app):
         """Aplica la deduplicación: descarta los perdedores según las reglas
         (mantiene la fila ganadora, marca el resto como estado=descartada
         con nota_cierre indicando el winner)."""
-        if getattr(current_user, 'rol', None) not in ('auditor', 'admin', 'dev'):
+        if _rol_efectivo() not in ('auditor', 'admin', 'dev'):
             flash('Sin permiso.', 'error')
             return redirect(url_for('devoluciones_list'))
         grupos = _detectar_duplicados()
@@ -566,7 +657,7 @@ def init_app(app):
         """Asigna en bulk un lote a todas las DevolucionReceta sin
         rendicion_lote_id que matcheen vendedor (y opcionalmente rango fecha).
         Solo auditor/admin/dev."""
-        if getattr(current_user, 'rol', None) not in ('auditor', 'admin', 'dev'):
+        if _rol_efectivo() not in ('auditor', 'admin', 'dev'):
             flash('Sin permiso.', 'error')
             return redirect(url_for('devoluciones_list'))
         lote_id = request.form.get('lote_id', type=int)
@@ -596,7 +687,7 @@ def init_app(app):
         """Marca/desmarca un lote como físicamente entregado a la OS.
         Solo auditor/admin/dev. Si se marca como entregada y el lote está
         abierto, lo cierra automáticamente (la entrega implica cierre)."""
-        if getattr(current_user, 'rol', None) not in ('auditor', 'admin', 'dev'):
+        if _rol_efectivo() not in ('auditor', 'admin', 'dev'):
             flash('Solo auditor o admin puede marcar la entrega.', 'error')
             return redirect(url_for('rendicion_lotes_list'))
         with database.get_db() as session:
@@ -632,7 +723,7 @@ def init_app(app):
     def rendicion_lote_eliminar(id):
         """Elimina un lote — solo si está vacío (sin devoluciones).
         Para limpiar lotes creados por error. Admin/auditor/dev only."""
-        if getattr(current_user, 'rol', None) not in ('auditor', 'admin', 'dev'):
+        if _rol_efectivo() not in ('auditor', 'admin', 'dev'):
             flash('Sin permiso para eliminar lotes.', 'error')
             return redirect(url_for('rendicion_lotes_list'))
         with database.get_db() as session:
@@ -654,7 +745,7 @@ def init_app(app):
     @app.route('/rend-recetas/lotes/<int:id>/reabrir', methods=['POST'])
     @login_required
     def rendicion_lote_reabrir(id):
-        if getattr(current_user, 'rol', None) not in ('admin', 'dev'):
+        if _rol_efectivo() not in ('admin', 'dev'):
             flash('Solo admin puede reabrir rendiciones.', 'error')
             return redirect(url_for('rendicion_lotes_list'))
         with database.get_db() as session:
@@ -678,6 +769,9 @@ def init_app(app):
         q_estado = (request.args.get('estado') or '').strip()
         # Filtro extra: 'pend_auditor' = sin auditor_motivo_id seteado
         q_auditoria = (request.args.get('auditoria') or '').strip()
+        # Tipo de rendición (grupo de OS): filtro client-side, pero lo recordamos
+        # para re-aplicarlo tras Filtrar (sino el submit lo reseteaba).
+        q_grupo = (request.args.get('grupo') or '').strip()
         try:
             page = max(1, int(request.args.get('page', '1')))
         except ValueError:
@@ -685,7 +779,7 @@ def init_app(app):
         per_page = 50
         offset = (page - 1) * per_page
 
-        rol_actual_lista = getattr(current_user, 'rol', None)
+        rol_actual_lista = _rol_efectivo()
 
         with database.get_db() as session:
             base = session.query(database.DevolucionReceta).options(
@@ -718,6 +812,29 @@ def init_app(app):
                         _fu.upper(database.DevolucionReceta.vendedor_nombre) == nombre_user
                     )
                 base = base.filter(database.DevolucionReceta.estado != 'ok')
+
+            # Filtro server-side por TIPO/grupo de rendición (antes era solo
+            # client-side sobre la página visible → "no traía nada" si las
+            # recetas del grupo estaban en otra página o sin agrupar). Mapea por
+            # nombre de OS (RendicionGrupoOS.nombre_cached).
+            def _aplicar_filtro_grupo(q):
+                if not q_grupo:
+                    return q
+                from sqlalchemy import func as _fg
+                col = _fg.upper(database.DevolucionReceta.obra_social_nombre)
+                if q_grupo == '__sin__':
+                    agrup = {(o.nombre_cached or '').strip().upper()
+                             for o in session.query(database.RendicionGrupoOS).all()}
+                    return q.filter(col.notin_(agrup)) if agrup else q
+                if q_grupo.isdigit():
+                    nombres = [(o.nombre_cached or '').strip().upper()
+                               for o in session.query(database.RendicionGrupoOS)
+                               .filter_by(grupo_id=int(q_grupo)).all()]
+                    # grupo sin OS → no devolver nada (evita mostrar todo)
+                    return q.filter(col.in_(nombres)) if nombres \
+                        else q.filter(database.DevolucionReceta.id == -1)
+                return q
+            base = _aplicar_filtro_grupo(base)
 
             total = base.count()
             devoluciones = (base.order_by(database.DevolucionReceta.creado_en.desc())
@@ -764,6 +881,7 @@ def init_app(app):
                 if _nu:
                     _scope = _scope.filter(_f.upper(database.DevolucionReceta.vendedor_nombre) == _nu)
                 _scope = _scope.filter(database.DevolucionReceta.estado != 'ok')
+            _scope = _aplicar_filtro_grupo(_scope)
             _scope_sub = _scope.subquery()
             cuentas_estado = dict(session.query(
                 _scope_sub.c.estado, _f.count(_scope_sub.c.id)
@@ -888,11 +1006,14 @@ def init_app(app):
                          ).scalar() or 0)
                 alertas['duplicados'] = int(dup_q)
 
+            # Filtro client-side por grupo de OS (etiqueta cada fila por nombre).
+            _grupos_f, _grupo_por_nombre_os = _grupos_filtro_ctx()
             return render_template('devoluciones_list.html',
                                    devoluciones=devoluciones, total=total,
                                    page=page, last_page=last_page,
                                    q_presentacion=q_presentacion, q_vendedor=q_vendedor,
                                    q_estado=q_estado, q_auditoria=q_auditoria,
+                                   q_grupo=q_grupo,
                                    cuentas_estado=cuentas_estado,
                                    pend_auditor=pend_auditor,
                                    motivos_auditor=motivos_auditor,
@@ -902,6 +1023,8 @@ def init_app(app):
                                    lote_activo_id=lote_activo_id,
                                    vendedores_filtro=vendedores_filtro,
                                    nros_filtro=nros_filtro,
+                                   grupos=_grupos_f,
+                                   grupo_por_nombre_os=_grupo_por_nombre_os,
                                    estado_por_lote=estado_por_lote)
 
     # ──────────────────────────────────────────────────────────────────
@@ -912,14 +1035,14 @@ def init_app(app):
     def devoluciones_buscar():
         # Auditor no carga recetas — solo revisa lo ya cargado. Redirigir
         # a la vista por-vendedor que es su flujo natural.
-        if getattr(current_user, 'rol', None) == 'auditor':
+        if _rol_efectivo() == 'auditor':
             flash('El rol auditor no carga recetas — usá la vista por vendedor para revisar lo cargado.', 'info')
             return redirect(url_for('devoluciones_por_vendedor'))
         # Catálogos: obras sociales desde la DB local sincronizada (rápido, no
         # depende de SQL Server estar online en cada búsqueda).
         # Filtramos las OS ocultas para el rol del operador (lista negra
         # configurable desde /devoluciones/filtros-os).
-        rol_param = getattr(current_user, 'rol', None)
+        rol_param = _rol_efectivo()
         with database.get_db() as session:
             os_ocultas = set()
             if rol_param:
@@ -947,15 +1070,14 @@ def init_app(app):
 
         # Auto-sugerencia: si el user es rol=rendicion, pre-seleccionar el
         # vendedor de ObServer cuyo nombre matchea con nombre_completo.
-        rol_actual_get = getattr(current_user, 'rol', None)
+        rol_actual_get = _rol_efectivo()
         nombre_user = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
         vendedor_sugerido = ''
         if rol_actual_get == 'rendicion' and nombre_user:
-            for v in vendedores:
-                v_nombre = (v.get('nombre') or '').strip().upper()
-                if v_nombre == nombre_user or v_nombre.startswith(nombre_user) or nombre_user in v_nombre:
-                    vendedor_sugerido = v['id_usuario']
-                    break
+            # Misma prioridad que _vendedor_sugerido_actual (exacto > prefijo >
+            # primer token) para no confundir 'ROCIO B' con 'ROCIO'.
+            _vid, _ = _vendedor_sugerido_actual(vendedores)
+            vendedor_sugerido = _vid or ''
 
         # Lotes de rendición abiertos para el dropdown. Para rol=rendicion
         # solo los suyos (filtra por vendedor matcheado).
@@ -981,6 +1103,11 @@ def init_app(app):
         # aplica para GET inicial sin filtros explícitos en URL.
         # Rango automático: el operador NO elige fechas. Traemos desde la
         # última carga del vendedor (− margen rezagadas) hasta hoy.
+        # Primera rendición de un vendedor (rol=rendicion sin bookmark): el
+        # default de N días puede traer demasiado histórico. Pedimos la fecha
+        # al usuario via input visible (primera_vez=True). Una vez que guarde
+        # la primer rendición, el bookmark se crea y vuelve al modo automático.
+        primera_vez = False
         desde_default = (hoy - timedelta(days=DEFAULT_PRIMERA_VEZ_DIAS)).isoformat()
         if vendedor_sugerido:
             with database.get_db() as _s_bm:
@@ -991,6 +1118,9 @@ def init_app(app):
                     # pescar rezagadas; el dedup marca las ya cargadas.
                     desde_default = (_bm.ultima_fecha_op.date()
                                      - timedelta(days=MARGEN_REZAGADAS_DIAS)).isoformat()
+                elif rol_actual_get == 'rendicion':
+                    primera_vez = True
+                    desde_default = ''
 
         # Última receta procesada del vendedor (para mostrar en el encabezado
         # de dónde venimos). Es la de mayor creado_en (la última que se cargó).
@@ -1046,7 +1176,12 @@ def init_app(app):
                             'motivo_id': d.motivo_id, 'obs': d.observaciones or '',
                             'agregar_datos': ad, 'en_auditoria': d.en_auditoria,
                             'estado': d.estado,
-                            'editable': (not d.en_auditoria and d.estado == 'pendiente'),
+                            # Editable: la tiene el vendedor (pendiente) O fue
+                            # devuelta por el auditor (vuelve a corregir y re-rendir).
+                            'editable': (not d.en_auditoria and d.estado in ('pendiente', 'devuelta')),
+                            'devuelta': (d.estado == 'devuelta'),
+                            'auditor_motivo': d.auditor_motivo.nombre if d.auditor_motivo else None,
+                            'auditor_obs': d.auditor_observaciones or '',
                         }
                     q_m = _sg.query(database.MotivoDevolucion).filter_by(activo=True)
                     if rol_actual_get == 'rendicion':
@@ -1054,6 +1189,17 @@ def init_app(app):
                     elif rol_actual_get == 'auditor':
                         q_m = q_m.filter(database.MotivoDevolucion.uso_rol.in_(['auditor', 'ambos']))
                     motivos_g = q_m.order_by(database.MotivoDevolucion.nombre).all()
+            # Grupos de rendición activos para el dropdown del form.
+            with database.get_db() as _s_g:
+                grupos_rendicion_view = [
+                    {'id': g.id, 'nombre': g.nombre, 'n_os': len(g.os_items)}
+                    for g in _s_g.query(database.RendicionGrupo)
+                    .filter_by(activo=True)
+                    .order_by(database.RendicionGrupo.nombre).all()
+                ]
+            # Filtro client-side por grupo sobre los resultados ya cargados
+            # (independiente del dropdown server-side del form de búsqueda).
+            _grupos_f, _grupo_por_nombre_os = _grupos_filtro_ctx()
             return render_template('devoluciones_buscar.html',
                                    obras_sociales=obras_sociales,
                                    vendedores=vendedores,
@@ -1063,6 +1209,11 @@ def init_app(app):
                                    nro_presentacion='',
                                    vendedor_id=vendedor_sugerido,
                                    obra_social_id='',
+                                   grupo_id='',
+                                   grupo_sel=(request.args.get('grupo_id') or ''),
+                                   grupos_rendicion=grupos_rendicion_view,
+                                   grupos=_grupos_f,
+                                   grupo_por_nombre_os=_grupo_por_nombre_os,
                                    solo_a_cargo_os=False,
                                    resultados=(resultados_g or None),
                                    cargadas=cargadas_g,
@@ -1070,11 +1221,17 @@ def init_app(app):
                                    rol_actual=rol_actual_get,
                                    lotes_abiertos=lotes_abiertos,
                                    ultima_procesada=ultima_procesada,
+                                   primera_vez=primera_vez,
                                    lote_id=lote_id_preselect or '')
 
         # POST: buscar
         vendedor_id = (request.form.get('vendedor_id') or '').strip() or None
         obra_social_id = request.form.get('obra_social_id', type=int) or None
+        # Tipo de rendición (obligatorio): un grupo (id) o "otras" (las OS que
+        # NO están en ningún grupo). Nunca se trae "todas" sin filtro.
+        grupo_raw = (request.form.get('grupo_id') or '').strip()
+        modo_otras = (grupo_raw == 'otras')
+        grupo_id = int(grupo_raw) if grupo_raw.isdigit() else None
         nro_presentacion = (request.form.get('nro_presentacion') or '').strip() or None
         desde_str = (request.form.get('desde') or '').strip()
         hasta_str = (request.form.get('hasta') or '').strip()
@@ -1091,9 +1248,47 @@ def init_app(app):
                       'Pedile al admin que ajuste tu nombre completo para que '
                       'matchee con un OperadorVenta.', 'error')
                 return redirect(url_for('devoluciones_buscar'))
+            # Rol rendicion: se trae TODO (desde la última hasta hoy) y al
+            # registrar se reparte solo por grupo en lotes {base}-{grupo}. No se
+            # elige tipo manualmente → ignoramos cualquier grupo/os del form.
+            grupo_id = None
+            obra_social_id = None
+            modo_otras = False
 
-        if not vendedor_id and not obra_social_id:
-            flash('Seleccioná al menos un vendedor o una obra social.', 'error')
+        # Resolver lista de OS a buscar. Tipo de rendición OBLIGATORIO: un grupo,
+        # o "otras" (las OS que no están en ningún grupo). Prioridad: grupo >
+        # obra_social individual > otras.
+        os_ids_buscar = []
+        grupo_nombre = None
+        nombres_agrupadas = None   # set de nombres de OS de algún grupo (modo "otras")
+        if grupo_id:
+            with database.get_db() as _s:
+                grupo = _s.get(database.RendicionGrupo, grupo_id)
+                if not grupo:
+                    flash('Grupo no encontrado.', 'error')
+                    return redirect(url_for('devoluciones_buscar'))
+                grupo_nombre = grupo.nombre
+                os_ids_buscar = [o.obra_social_observer_id for o in grupo.os_items
+                                 if o.obra_social_observer_id not in os_ocultas]
+            if not os_ids_buscar:
+                flash(f'El grupo "{grupo_nombre}" no tiene OS visibles para tu rol.',
+                      'error')
+                return redirect(url_for('devoluciones_buscar'))
+        elif obra_social_id:
+            os_ids_buscar = [obra_social_id]
+        elif modo_otras:
+            grupo_nombre = 'Otras (sin tipo)'
+            with database.get_db() as _s:
+                nombres_agrupadas = {(o.nombre_cached or '').strip().upper()
+                                     for o in _s.query(database.RendicionGrupoOS).all()
+                                     if o.nombre_cached}
+
+        if (rol_actual_get != 'rendicion'
+                and not grupo_id and not obra_social_id and not modo_otras):
+            flash('Elegí un tipo de rendición, o "Otras (sin tipo)".', 'error')
+            return redirect(url_for('devoluciones_buscar'))
+        if modo_otras and not vendedor_id:
+            flash('Para "Otras (sin tipo)" necesitás un vendedor.', 'error')
             return redirect(url_for('devoluciones_buscar'))
         try:
             desde = datetime.strptime(desde_str, '%Y-%m-%d').date()
@@ -1111,12 +1306,44 @@ def init_app(app):
             return redirect(url_for('devoluciones_buscar'))
 
         try:
-            resultados = observer_source.buscar_recetas(
-                vendedor_uuid=vendedor_id,
-                obra_social_id=obra_social_id,
-                desde=desde, hasta=hasta,
-                solo_a_cargo_os=solo_a_cargo_os,
-            )
+            if os_ids_buscar:
+                # Iterar las OS del grupo (o la única individual) y concatenar.
+                resultados = []
+                vistos = set()  # dedupe por (id_receta o nro_presentacion+fecha)
+                for _oid in os_ids_buscar:
+                    parciales = observer_source.buscar_recetas(
+                        vendedor_uuid=vendedor_id,
+                        obra_social_id=_oid,
+                        desde=desde, hasta=hasta,
+                        solo_a_cargo_os=solo_a_cargo_os,
+                    )
+                    for r in parciales:
+                        key = r.get('id') or (
+                            r.get('nro_presentacion'), r.get('fecha_operacion'))
+                        if key in vistos:
+                            continue
+                        vistos.add(key)
+                        resultados.append(r)
+            elif modo_otras:
+                # "Otras": traer todas las del vendedor y descartar las que
+                # pertenecen a algún tipo (quedan solo las OS sin grupo).
+                resultados = observer_source.buscar_recetas(
+                    vendedor_uuid=vendedor_id,
+                    obra_social_id=None,
+                    desde=desde, hasta=hasta,
+                    solo_a_cargo_os=solo_a_cargo_os,
+                )
+                resultados = [r for r in resultados
+                              if (r.get('obra_social') or '').strip().upper()
+                              not in (nombres_agrupadas or set())]
+            else:
+                # Solo vendedor sin OS — un solo call sin obra_social_id.
+                resultados = observer_source.buscar_recetas(
+                    vendedor_uuid=vendedor_id,
+                    obra_social_id=None,
+                    desde=desde, hasta=hasta,
+                    solo_a_cargo_os=solo_a_cargo_os,
+                )
         except Exception as e:
             flash(f'Error consultando ObServer: {e}', 'error')
             return redirect(url_for('devoluciones_buscar'))
@@ -1151,7 +1378,7 @@ def init_app(app):
         # Filtramos motivos según el rol del operador: rendicion ve solo los
         # suyos + 'ambos', auditor ve solo los suyos + 'ambos'. Cualquier
         # otro rol (admin, dev) ve todos.
-        rol_actual = getattr(current_user, 'rol', None)
+        rol_actual = _rol_efectivo()
         with database.get_db() as session:
             q_motivos = (session.query(database.MotivoDevolucion)
                          .filter_by(activo=True))
@@ -1192,10 +1419,25 @@ def init_app(app):
                         'agregar_datos': ad,
                         'en_auditoria': d.en_auditoria,
                         'estado': d.estado,
-                        # Editable solo si la tiene el vendedor (no rendida, pendiente).
-                        'editable': (not d.en_auditoria and d.estado == 'pendiente'),
+                        # Editable: la tiene el vendedor (pendiente) O fue devuelta
+                        # por el auditor → vuelve a corregir y re-rendir.
+                        'editable': (not d.en_auditoria and d.estado in ('pendiente', 'devuelta')),
+                        'devuelta': (d.estado == 'devuelta'),
+                        'auditor_motivo': d.auditor_motivo.nombre if d.auditor_motivo else None,
+                        'auditor_obs': d.auditor_observaciones or '',
                     }
 
+        # Reload grupos para el dropdown del form en el render del POST.
+        with database.get_db() as _s_g:
+            grupos_rendicion_view = [
+                {'id': g.id, 'nombre': g.nombre, 'n_os': len(g.os_items)}
+                for g in _s_g.query(database.RendicionGrupo)
+                .filter_by(activo=True)
+                .order_by(database.RendicionGrupo.nombre).all()
+            ]
+        # Filtro client-side por grupo sobre los resultados (etiqueta por nombre
+        # de OS — buscar_recetas no devuelve observer_id).
+        _grupos_f, _grupo_por_nombre_os = _grupos_filtro_ctx()
         return render_template('devoluciones_buscar.html',
                                obras_sociales=obras_sociales,
                                vendedores=vendedores,
@@ -1205,6 +1447,12 @@ def init_app(app):
                                vendedor_id=vendedor_id or '',
                                vendedor_nombre=vendedor_nombre,
                                obra_social_id=obra_social_id or '',
+                               grupo_id=grupo_id or '',
+                               grupo_sel=grupo_raw,
+                               grupo_nombre=grupo_nombre,
+                               grupos_rendicion=grupos_rendicion_view,
+                               grupos=_grupos_f,
+                               grupo_por_nombre_os=_grupo_por_nombre_os,
                                os_nombre=os_nombre,
                                solo_a_cargo_os=solo_a_cargo_os,
                                resultados=resultados,
@@ -1213,6 +1461,7 @@ def init_app(app):
                                cargadas=cargadas,
                                rol_actual=rol_actual,
                                lotes_abiertos=lotes_abiertos,
+                               primera_vez=False,
                                lote_id=request.form.get('lote_id', type=int) or '')
 
     @app.route('/rend-recetas/guardar', methods=['POST'])
@@ -1223,7 +1472,14 @@ def init_app(app):
         # Lote de rendición (nuevo modelo). El nro_presentacion se desnormaliza
         # desde el lote para compat con queries viejas.
         lote_id = request.form.get('lote_id', type=int)
-        rol_g = getattr(current_user, 'rol', None)
+        rol_g = _rol_efectivo()
+        # Para rol=rendicion las recetas SIEMPRE se guardan con el nombre_completo
+        # del usuario (no el alias corto de ObServer que viene en el hidden). Los
+        # listados de este rol filtran por vendedor_nombre == nombre_completo; si
+        # guardáramos "CELINA" en vez de "CELINA FERRERO" las recetas quedarían
+        # guardadas pero invisibles. Mismo criterio que el lote.
+        if rol_g == 'rendicion':
+            vendedor_nombre = (getattr(current_user, 'nombre_completo', '') or '').strip() or vendedor_nombre
 
         # Fallback defensivo: si el form NO mandó lote_id (bug viejo del
         # template), intentamos resolverlo. 1ro por nro_presentacion del
@@ -1257,6 +1513,11 @@ def init_app(app):
                 _lote = _s.get(database.RendicionLote, lote_id)
                 if _lote:
                     nro_presentacion = _lote.nro
+        # Base de la rendición = el número ingresado, sin el sufijo de grupo.
+        # Cada receta se reparte luego en un lote {base}-{etiqueta_grupo[:8]}
+        # (o {base}-Otras si su OS no está en ningún grupo). Si el lote elegido
+        # ya tenía sufijo (ej "63105-AMR/Iapo"), recuperamos "63105".
+        base_nro = (nro_presentacion or '').split('-', 1)[0].strip() or None
         # Modelo nuevo: se guarda TODO el lote (todas las recetas traídas), no
         # solo las marcadas. `op_all` = todas las op de la pantalla; `marcar` =
         # las que el vendedor marcó "Rendida" (en_auditoria=True → pasan al
@@ -1302,8 +1563,9 @@ def init_app(app):
         try:
             for v in observer_source.listar_vendedores(solo_habilitados=False):
                 vendedor_name_by_id[v['id_usuario']] = v['nombre']
-        except Exception:
-            pass  # si ObServer no responde, guardamos solo UUID sin nombre
+        except Exception as e:
+            # si ObServer no responde, guardamos solo UUID sin nombre
+            current_app.logger.warning('Cache de vendedores vacío (ObServer no respondió): %s', e)
 
         n_creadas = 0
         n_rendidas = 0
@@ -1319,10 +1581,45 @@ def init_app(app):
                 for d in (session.query(database.DevolucionReceta)
                           .filter(database.DevolucionReceta.id_operacion_observer.in_(_ids_int))
                           .filter(database.DevolucionReceta.estado != 'descartada').all()):
-                    if not d.en_auditoria and d.estado == 'pendiente':
+                    # Editable: pendiente (la tiene el vendedor) o devuelta por
+                    # el auditor (vuelve a corregirse). El resto no se toca.
+                    if not d.en_auditoria and d.estado in ('pendiente', 'devuelta'):
                         existentes[d.id_operacion_observer] = d
                     else:
                         no_editables.add(d.id_operacion_observer)
+
+            # Auto-split por grupo: cada receta nueva va a un lote
+            # {base}-{etiqueta_grupo[:8]} según el grupo de su OS (o {base}-Otras
+            # si la OS no está en ningún grupo). El nombre del lote ya dice el
+            # grupo. find-or-create por (nro, vendedor); cache en memoria.
+            _, _grupo_por_nombre_os_g = _grupos_filtro_ctx()
+            _lote_cache = {}
+            _last_lote_id = lote_id
+
+            def _suffix_grupo(os_nombre):
+                g = _grupo_por_nombre_os_g.get((os_nombre or '').strip().upper())
+                return g['nombre'][:8] if g else 'Otras'
+
+            def _lote_para(nro_lote):
+                if nro_lote in _lote_cache:
+                    return _lote_cache[nro_lote]
+                from sqlalchemy import func as _fln
+                q = session.query(database.RendicionLote).filter_by(nro=nro_lote)
+                if vendedor_id:
+                    q = q.filter_by(vendedor_observer_id=vendedor_id)
+                elif vendedor_nombre:
+                    q = q.filter(_fln.upper(database.RendicionLote.vendedor_nombre)
+                                 == vendedor_nombre.upper())
+                lote = q.first()
+                if not lote:
+                    lote = database.RendicionLote(
+                        nro=nro_lote, vendedor_observer_id=vendedor_id,
+                        vendedor_nombre=vendedor_nombre, etiqueta=f'Rendición #{nro_lote}',
+                        estado='abierta', creado_por=str(creador) if creador else None)
+                    session.add(lote)
+                    session.flush()
+                _lote_cache[nro_lote] = lote
+                return lote
 
             for op_id_str in todas_op:
                 try:
@@ -1353,6 +1650,13 @@ def init_app(app):
                     d.observaciones = obs
                     d.agregar_datos_json = ad_json
                     d.en_auditoria = es_rendida
+                    # Si venía "devuelta" y el operador la re-trabaja, vuelve al
+                    # ciclo limpio (pendiente) y se borra el cierre anterior.
+                    if d.estado == 'devuelta':
+                        d.estado = 'pendiente'
+                        d.nota_cierre = None
+                        d.cerrada_en = None
+                        d.cerrada_por = None
                     n_creadas += 1
                     if es_rendida:
                         n_rendidas += 1
@@ -1381,9 +1685,19 @@ def init_app(app):
                 except Exception:
                     imp_os = None
 
+                # Lote destino por grupo de la OS de esta receta.
+                if base_nro:
+                    _target_nro = f'{base_nro}-{_suffix_grupo(os_nombre)}'
+                    _target_lote = _lote_para(_target_nro)
+                    _target_lote_id = _target_lote.id
+                    _last_lote_id = _target_lote_id
+                else:
+                    _target_nro = nro_presentacion
+                    _target_lote_id = lote_id
+
                 dev = database.DevolucionReceta(
-                    nro_presentacion=nro_presentacion,
-                    rendicion_lote_id=lote_id,
+                    nro_presentacion=_target_nro,
+                    rendicion_lote_id=_target_lote_id,
                     vendedor_observer_id=vendedor_id,
                     vendedor_nombre=vendedor_nombre,
                     id_operacion_observer=op_id,
@@ -1428,9 +1742,27 @@ def init_app(app):
                         session.add(bm)
                     bm.ultima_op_id = ult_op[0]
                     bm.ultima_fecha_op = ult_op[1]
-                    bm.ultimo_lote_id = lote_id
+                    bm.ultimo_lote_id = _last_lote_id
                     bm.actualizado_en = database.now_ar()
                     session.commit()
+
+            # Limpieza: el lote "base" (sin sufijo de grupo) que creó el modal
+            # queda vacío tras el split → lo borramos para no ensuciar la lista.
+            # Solo si su nro es exactamente base_nro (no un {base}-grupo) y no
+            # tiene recetas.
+            if base_nro and n_creadas:
+                from sqlalchemy import func as _fcl
+                q_base = session.query(database.RendicionLote).filter_by(nro=base_nro)
+                if vendedor_id:
+                    q_base = q_base.filter_by(vendedor_observer_id=vendedor_id)
+                elif vendedor_nombre:
+                    q_base = q_base.filter(_fcl.upper(database.RendicionLote.vendedor_nombre)
+                                           == vendedor_nombre.upper())
+                for lb in q_base.all():
+                    if session.query(database.DevolucionReceta).filter_by(
+                            rendicion_lote_id=lb.id).count() == 0:
+                        session.delete(lb)
+                session.commit()
 
         if errores:
             for e in errores:
@@ -1762,7 +2094,7 @@ def init_app(app):
         q_vendedor = (request.args.get('vendedor') or '').strip()
         q_estado = (request.args.get('estado') or '').strip()
         q_auditoria = (request.args.get('auditoria') or '').strip()
-        rol = getattr(current_user, 'rol', None)
+        rol = _rol_efectivo()
 
         with database.get_db() as session:
             D = database.DevolucionReceta
@@ -1854,7 +2186,7 @@ def init_app(app):
         """Etapa 2: el auditor revisa lo cargado por rendicion y agrega
         motivo + observaciones de auditoría. El motivo debe ser uno con
         uso_rol IN ('auditor', 'ambos')."""
-        if getattr(current_user, 'rol', None) not in ('auditor', 'admin', 'dev'):
+        if _rol_efectivo() not in ('auditor', 'admin', 'dev'):
             flash('No tenés permiso para auditar.', 'error')
             return redirect(url_for('devoluciones_list'))
 
@@ -1953,6 +2285,151 @@ def init_app(app):
                 session.commit()
                 flash('Filtro eliminado.', 'success')
         return redirect(url_for('devoluciones_filtros_os'))
+
+    # ──────────────────────────────────────────────────────────────────
+    # ABM Grupos de Rendición (clasifican N OS para procesar en tanda)
+    # Accesible desde /rend-recetas/config-grupos. Usado en /rend-recetas/buscar
+    # como filtro multi-OS.
+    # ──────────────────────────────────────────────────────────────────
+
+    @app.route('/rend-recetas/config-grupos', methods=['GET', 'POST'])
+    @login_required
+    def rendicion_grupos():
+        from database import ObsObraSocial, RendicionGrupo, RendicionGrupoOS
+        with database.get_db() as session:
+            if request.method == 'POST':
+                nombre = (request.form.get('nombre') or '').strip()
+                descripcion = (request.form.get('descripcion') or '').strip() or None
+                if not nombre:
+                    flash('Nombre obligatorio.', 'error')
+                elif session.query(RendicionGrupo).filter_by(nombre=nombre).first():
+                    flash(f'Ya existe un grupo "{nombre}".', 'error')
+                else:
+                    session.add(RendicionGrupo(nombre=nombre, descripcion=descripcion))
+                    session.commit()
+                    flash(f'Grupo "{nombre}" creado.', 'success')
+                return redirect(url_for('rendicion_grupos'))
+
+            grupos_raw = (session.query(RendicionGrupo)
+                          .order_by(RendicionGrupo.nombre).all())
+            grupos = [{
+                'id': g.id, 'nombre': g.nombre,
+                'descripcion': g.descripcion or '',
+                'activo': g.activo,
+                'os_items': [{
+                    'rgo_id': o.id, 'os_id': o.obra_social_observer_id,
+                    'nombre': o.nombre_cached,
+                } for o in sorted(g.os_items, key=lambda x: x.nombre_cached)],
+            } for g in grupos_raw]
+            obras_sociales = [{
+                'id': o.observer_id, 'nombre': o.descripcion,
+            } for o in (session.query(ObsObraSocial)
+                        .filter(ObsObraSocial.fecha_baja.is_(None))
+                        .order_by(ObsObraSocial.descripcion).all())]
+        return render_template('rendicion_grupos.html',
+                               grupos=grupos, obras_sociales=obras_sociales)
+
+    @app.route('/rend-recetas/config-grupos/<int:gid>/agregar-os', methods=['POST'])
+    @login_required
+    def rendicion_grupo_agregar_os(gid):
+        from database import ObsObraSocial, RendicionGrupo, RendicionGrupoOS
+        # Acepta múltiples ids (multi-select). getlist parsea repetidos.
+        ids_raw = request.form.getlist('obra_social_observer_id')
+        os_ids = []
+        for v in ids_raw:
+            try:
+                os_ids.append(int(v))
+            except (TypeError, ValueError):
+                continue
+        if not os_ids:
+            flash('Elegí al menos una obra social.', 'error')
+            return redirect(url_for('rendicion_grupos'))
+        with database.get_db() as session:
+            grupo = session.get(RendicionGrupo, gid)
+            if not grupo:
+                flash('Grupo no encontrado.', 'error')
+                return redirect(url_for('rendicion_grupos'))
+            # Pre-fetch: nombres y ya-existentes en una sola query c/u.
+            obs_nombre = {o.observer_id: o.descripcion for o in
+                          session.query(ObsObraSocial)
+                          .filter(ObsObraSocial.observer_id.in_(os_ids)).all()}
+            ya_estan = {x for (x,) in
+                        session.query(RendicionGrupoOS.obra_social_observer_id)
+                        .filter(RendicionGrupoOS.grupo_id == gid,
+                                RendicionGrupoOS.obra_social_observer_id.in_(os_ids))
+                        .all()}
+            agregadas = duplicadas = 0
+            for oid in os_ids:
+                if oid in ya_estan:
+                    duplicadas += 1
+                    continue
+                nom = obs_nombre.get(oid, f'OS#{oid}')
+                session.add(RendicionGrupoOS(
+                    grupo_id=gid, obra_social_observer_id=oid,
+                    nombre_cached=nom,
+                ))
+                agregadas += 1
+            session.commit()
+            partes = []
+            if agregadas:
+                partes.append(f'{agregadas} agregada(s) a "{grupo.nombre}"')
+            if duplicadas:
+                partes.append(f'{duplicadas} ya estaban (omitidas)')
+            flash(', '.join(partes) or 'Sin cambios.',
+                  'success' if agregadas else 'info')
+        return redirect(url_for('rendicion_grupos'))
+
+    @app.route('/rend-recetas/config-grupos/<int:gid>/quitar-os/<int:rgo_id>',
+               methods=['POST'])
+    @login_required
+    def rendicion_grupo_quitar_os(gid, rgo_id):
+        from database import RendicionGrupoOS
+        with database.get_db() as session:
+            rgo = session.get(RendicionGrupoOS, rgo_id)
+            if rgo and rgo.grupo_id == gid:
+                session.delete(rgo)
+                session.commit()
+        return redirect(url_for('rendicion_grupos'))
+
+    @app.route('/rend-recetas/config-grupos/<int:gid>/editar', methods=['POST'])
+    @login_required
+    def rendicion_grupo_editar(gid):
+        from database import RendicionGrupo
+        nombre = (request.form.get('nombre') or '').strip()
+        descripcion = (request.form.get('descripcion') or '').strip() or None
+        if not nombre:
+            flash('Nombre obligatorio.', 'error')
+            return redirect(url_for('rendicion_grupos'))
+        with database.get_db() as session:
+            grupo = session.get(RendicionGrupo, gid)
+            if not grupo:
+                flash('Grupo no encontrado.', 'error')
+                return redirect(url_for('rendicion_grupos'))
+            otro = (session.query(RendicionGrupo)
+                    .filter(RendicionGrupo.id != gid,
+                            RendicionGrupo.nombre == nombre).first())
+            if otro:
+                flash(f'Ya existe otro grupo "{nombre}".', 'error')
+            else:
+                grupo.nombre = nombre
+                grupo.descripcion = descripcion
+                session.commit()
+                flash('Grupo actualizado.', 'success')
+        return redirect(url_for('rendicion_grupos'))
+
+    @app.route('/rend-recetas/config-grupos/<int:gid>/eliminar',
+               methods=['POST'])
+    @login_required
+    def rendicion_grupo_eliminar(gid):
+        from database import RendicionGrupo
+        with database.get_db() as session:
+            grupo = session.get(RendicionGrupo, gid)
+            if grupo:
+                nom = grupo.nombre
+                session.delete(grupo)   # CASCADE borra RendicionGrupoOS
+                session.commit()
+                flash(f'Grupo "{nom}" eliminado.', 'success')
+        return redirect(url_for('rendicion_grupos'))
 
     # ──────────────────────────────────────────────────────────────────
     # ABM Motivos

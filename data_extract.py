@@ -1,4 +1,5 @@
 import importlib
+import re as _re_mod
 from datetime import datetime
 
 import pandas as pd
@@ -14,6 +15,7 @@ from database import (
     ProductoPrecioHist,
     Provider,
     StockDifference,
+    now_ar,
 )
 
 
@@ -119,10 +121,17 @@ def parse_erp_excel(excel_path):
                 precio = float(precio_raw or 0)
             except (ValueError, TypeError):
                 precio = 0
+            try:
+                cantidad = int(float(row.get('cantidad', row.get('Recibido', 0)) or 0))
+            except (ValueError, TypeError):
+                cantidad = 0
+            # Saltear ítems sin ingreso (cantidad recibida = 0).
+            if cantidad == 0:
+                continue
             items.append({
                 'codigo_barra': barcode,
                 'descripcion': str(row.get('descripcion', row.get('Producto', ''))).strip(),
-                'cantidad': int(float(row.get('cantidad', row.get('Recibido', 0)) or 0)),
+                'cantidad': cantidad,
                 'precio_unitario': precio,
             })
         return items
@@ -170,6 +179,11 @@ def parse_erp_excel(excel_path):
             cantidad = int(float(row.iloc[col_recibido])) if col_recibido is not None else 0
         except (ValueError, TypeError):
             cantidad = 0
+
+        # Saltear ítems sin ingreso (cantidad recibida = 0): no son parte del
+        # ingreso real, ensucian el cruce contra la factura.
+        if cantidad == 0:
+            continue
 
         try:
             precio = float(row.iloc[col_precio]) if col_precio is not None else 0
@@ -267,28 +281,105 @@ def save_invoice_to_db(session, invoice_data, pdf_filename=None, tipo_comprobant
 
 
 def save_erp_to_db(session, erp_items):
+    """Reemplaza TODO erp_stock con esta carga. Devuelve el carga_id.
+
+    El caller DEBE guardar el carga_id devuelto en Invoice.erp_carga_id de cada
+    factura que cruce contra esta carga. Si no lo hace, la factura queda como "sin
+    ERP" y no se compara — a propósito: es preferible no mostrar nada a mostrar el
+    stock de otro chequeo (ver erp_pertenece_a_factura).
+    """
+    from sqlalchemy import func
+    # Estrictamente mayor a cualquier carga_id ya usado: si dos cargas cayeran en el
+    # mismo milisegundo compartirían id y una factura vieja matchearía contra la carga
+    # nueva, que es justo lo que esto evita. El piso sale de las dos puntas porque el
+    # DELETE de abajo borra la evidencia del lado de erp_stock.
+    piso = max(v for v in (
+        session.query(func.max(ErpStock.carga_id)).scalar(),
+        session.query(func.max(Invoice.erp_carga_id)).scalar(),
+        0,
+    ) if v is not None)
+    carga_id = max(int(now_ar().timestamp() * 1000), piso + 1)
     session.query(ErpStock).delete()
     for item in erp_items:
         session.add(ErpStock(
             codigo_barra=item.get('codigo_barra'),
             descripcion=item.get('descripcion'),
             cantidad=item.get('cantidad'),
-            precio_unitario=item.get('precio_unitario')
+            precio_unitario=item.get('precio_unitario'),
+            carga_id=carga_id,
         ))
     session.commit()
+    return carga_id
+
+
+def carga_erp_actual(session):
+    """carga_id de lo que hay hoy en erp_stock. None si está vacía o es legacy."""
+    row = session.query(ErpStock.carga_id).first()
+    return row[0] if row else None
+
+
+def erp_pertenece_a_factura(session, invoice):
+    """True si el erp_stock cargado es justo el que se cruzó contra esta factura.
+
+    erp_stock es una tabla global que guarda UNA carga a la vez: cada Excel (o sync
+    de ObServer) borra la anterior. Entonces el stock que está cargado puede no tener
+    nada que ver con la factura que se está mirando — pasa siempre que se sube una
+    factura sin Excel (es opcional) o cuando otra carga pisó la tabla después.
+    Compararlas da diferencias fantasma del chequeo anterior.
+    """
+    if invoice is None or not invoice.erp_carga_id:
+        return False
+    actual = carga_erp_actual(session)
+    return actual is not None and actual == invoice.erp_carga_id
+
+
+_re_num = _re_mod.compile(r'\d+')
 
 
 def _normalize(s):
-    """Normaliza descripción para comparación: minúsculas, sin espacios dobles."""
-    return ' '.join((s or '').lower().split())
+    """Normaliza descripción para comparar factura vs ERP. Delega en el matcher central.
+
+    Era `lower()` + colapsar espacios y nada más, así que un acento, un decimal o un
+    "B 12" escritos distinto entre la factura y el ERP tiraban el match y el ítem caía
+    a "no encontrado" (trabajo manual para el operador). `normalizar_texto` además saca
+    acentos y puntuación, normaliza decimales (0.50 == 0.5) y mergea vitaminas
+    ("B 12" → "b12"). Se mantiene esta función como el punto único de normalización del
+    cruce; el resto de la app ya usaba el matcher (ver producto_matcher.py).
+    """
+    from producto_matcher import normalizar_texto
+    return normalizar_texto(s)
 
 
 def compare_invoice_vs_erp(session, factura_id):
     invoice = session.get(Invoice, factura_id)
+    # Sin ERP propio no hay nada que comparar: el que está cargado es de otro
+    # chequeo y compararlo inventa diferencias (ver erp_pertenece_a_factura).
+    if not erp_pertenece_a_factura(session, invoice):
+        return []
     invoice_items = session.query(InvoiceItem).filter_by(factura_id=factura_id).all()
     all_erp = session.query(ErpStock).all()
     erp_by_barcode = {item.codigo_barra: item for item in all_erp}
-    erp_by_desc = {_normalize(item.descripcion): item for item in all_erp if item.descripcion}
+
+    # Índice por descripción. Las claves AMBIGUAS (dos ítems distintos del ERP que
+    # normalizan igual) se descartan en vez de quedarse con el último: con un dict
+    # comprehension ganaba uno arbitrario (el orden de la tabla) y la factura podía
+    # cruzarse contra el producto equivocado, en silencio. Sin match el ítem cae al
+    # cruce manual — el error barato (regla: falso negativo > falso positivo).
+    erp_by_desc = {}
+    _desc_ambiguas = set()
+    for item in all_erp:
+        if not item.descripcion:
+            continue
+        k = _normalize(item.descripcion)
+        if not k:
+            continue
+        anterior = erp_by_desc.get(k)
+        if anterior is not None and anterior is not item:
+            _desc_ambiguas.add(k)
+        else:
+            erp_by_desc[k] = item
+    for k in _desc_ambiguas:
+        erp_by_desc.pop(k, None)
 
     # Expandir erp_by_barcode con códigos alternativos de la tabla productos.
     # Busca productos que tengan CUALQUIER barcode del ERP (legacy alt1/2/3,
@@ -339,7 +430,13 @@ def compare_invoice_vs_erp(session, factura_id):
         for m in session.query(BarcodeMapping).filter_by(proveedor_id=proveedor_id).all():
             mappings_by_factura_barcode[m.codigo_barra_factura] = m.codigo_barra_erp
 
-    differences = []
+    # Resolver cada línea a su ítem de ERP y AGRUPAR: una misma factura puede
+    # traer el mismo producto en varios renglones (ej. "2 + 1" bonificación).
+    # El ingreso del ERP viene consolidado (cantidad 3), así que hay que sumar
+    # las cantidades de factura del grupo antes de comparar; si no, cada renglón
+    # se compara solo contra el total del ERP y aparecen diferencias falsas.
+    grupos = {}   # key -> acumulador
+    orden = []    # preserva el orden de aparición
     for line in invoice_items:
         erp = None
         match_type = None
@@ -367,32 +464,52 @@ def compare_invoice_vs_erp(session, factura_id):
             erp = erp_by_barcode.get(mapped_erp_barcode)
             match_type = 'mapping'
 
-        cantidad_erp = erp.cantidad if erp else 0
-        diferencia = line.cantidad - cantidad_erp
-
         # Guardar precio unitario del ERP en el ítem de factura
         if erp and erp.precio_unitario is not None:
             line.precio_erp = erp.precio_unitario
-        session.flush()
 
-        if diferencia != 0:
-            if erp is None:
-                obs = 'Artículo no encontrado en ERP'
-            elif match_type == 'descripcion':
-                obs = 'Coincidencia por descripción (código de barra diferente)'
-            elif match_type == 'mapping':
-                obs = f'Coincidencia por correspondencia guardada ({erp.codigo_barra})'
-            else:
-                obs = 'No coincide con ERP'
+        # Clave: por ítem de ERP si matcheó (consolida renglones duplicados),
+        # o por código/descripción de factura si no se encontró.
+        if erp is not None:
+            key = ('erp', erp.codigo_barra)
+        else:
+            key = ('nf', line.codigo_barra or _normalize(line.descripcion))
 
-            differences.append({
-                'codigo_barra': line.codigo_barra,
-                'descripcion': line.descripcion,
-                'cantidad_factura': line.cantidad,
-                'cantidad_erp': cantidad_erp,
-                'diferencia': diferencia,
-                'observaciones': obs,
-            })
+        g = grupos.get(key)
+        if g is None:
+            g = {'codigo_barra': line.codigo_barra, 'descripcion': line.descripcion,
+                 'cantidad_factura': 0, 'erp': erp, 'match_type': match_type}
+            grupos[key] = g
+            orden.append(key)
+        g['cantidad_factura'] += line.cantidad
+
+    session.flush()
+
+    differences = []
+    for key in orden:
+        g = grupos[key]
+        erp = g['erp']
+        cantidad_erp = erp.cantidad if erp else 0
+        diferencia = g['cantidad_factura'] - cantidad_erp
+        if diferencia == 0:
+            continue
+        if erp is None:
+            obs = 'Artículo no encontrado en ERP'
+        elif g['match_type'] == 'descripcion':
+            obs = 'Coincidencia por descripción (código de barra diferente)'
+        elif g['match_type'] == 'mapping':
+            obs = f'Coincidencia por correspondencia guardada ({erp.codigo_barra})'
+        else:
+            obs = 'No coincide con ERP'
+
+        differences.append({
+            'codigo_barra': g['codigo_barra'],
+            'descripcion': g['descripcion'],
+            'cantidad_factura': g['cantidad_factura'],
+            'cantidad_erp': cantidad_erp,
+            'diferencia': diferencia,
+            'observaciones': obs,
+        })
     return differences
 
 
@@ -409,6 +526,120 @@ def save_differences(session, factura_id, differences):
             observaciones=diff['observaciones']
         ))
     session.commit()
+
+
+def sugerir_cruce_manual(diffs, erp_items, umbral=0.55, top_por_item=1):
+    """Para cada ítem del ERP sin coincidencia, cuál renglón de la factura se le parece.
+
+    NO auto-matchea: devuelve una sugerencia para que el operador la confirme de un
+    click en /compare. Un falso positivo acá termina en un reclamo a la droguería por
+    el producto equivocado, así que el fuzzy sugiere y decide una persona (regla:
+    falso negativo > falso positivo). El cruce automático sigue siendo exacto.
+
+    Reusa las primitivas de producto_matcher (mismo motor que /ofertas/import). No usa
+    match_producto porque ese orquesta contra el catálogo (Producto/ObsProducto) y acá
+    el universo son las filas de erp_stock, que no son un target del matcher.
+
+    Args:
+        diffs: diferencias YA ordenadas como se numeran en pantalla (nro = índice + 1).
+        erp_items: ítems del ERP sin match (los que muestran input de cruce).
+        umbral: score mínimo para sugerir. Bajo a propósito: es una pista, no un match.
+
+    Devuelve {erp_id: {'nro', 'score', 'descripcion'}}.
+    """
+    from producto_matcher import jaccard, refinar_candidatos, tokens_significativos
+
+    if not diffs or not erp_items:
+        return {}
+
+    def _numeros(desc):
+        """Números de una descripción, ya normalizada (dosis y unidades por envase).
+
+        En farmacia los números SON la presentación: "AMOXIDAL 500 COMP X 16" y
+        "AMOXIDAL 600 COMP X 16" son productos distintos, pero comparten marca, forma
+        y envase, así que puntúan 64% de parecido y el fuzzy los sugería. Igual pasaba
+        con x16 vs x30. Exigir que los números coincidan corta esos falsos positivos
+        sin perder los matches reales, que difieren en palabras y no en números
+        ("COMP" vs "comprimidos", acentos, "400MG" vs "400 mg").
+        """
+        return set(_re_num.findall(_normalize(desc)))
+
+    # Pre-tokenizar los renglones de la factura una sola vez (no por cada ítem del ERP).
+    lineas = []
+    for nro, d in enumerate(diffs, start=1):
+        if not d.descripcion:
+            continue
+        lineas.append({'nro': nro, 'descripcion': d.descripcion,
+                       '_toks': tokens_significativos(d.descripcion),
+                       '_nums': _numeros(d.descripcion)})
+    if not lineas:
+        return {}
+
+    # Índice invertido token → renglones. Sin esto son len(erp) × len(factura) jaccards
+    # (una factura de 400 contra un ERP de 400 = 160k) y el cruce tarda segundos en
+    # abrir. Con el índice sólo se comparan los renglones que comparten algún token.
+    # Es el mismo truco que usa producto_matcher para su pool (_candidatos_via_inv).
+    inv = {}
+    for idx, l in enumerate(lineas):
+        for t in l['_toks']:
+            inv.setdefault(t, []).append(idx)
+
+    sugerencias = {}
+    for erp in erp_items:
+        if not erp.descripcion:
+            continue
+        toks_erp = tokens_significativos(erp.descripcion)
+        if not toks_erp:
+            continue
+        idxs = set()
+        for t in toks_erp:
+            idxs.update(inv.get(t, ()))
+        if not idxs:
+            continue
+        nums_erp = _numeros(erp.descripcion)
+        candidatos = []
+        for i in idxs:
+            l = lineas[i]
+            # Distinta dosis o distinto envase = otro producto, por más que el texto
+            # se parezca. Se descarta antes de puntuar.
+            if l['_nums'] != nums_erp:
+                continue
+            sc = jaccard(toks_erp, l['_toks'])
+            if sc > 0:
+                candidatos.append({'nro': l['nro'], 'descripcion': l['descripcion'], 'score': sc})
+        if not candidatos:
+            continue
+        # refinar_candidatos corre un Levenshtein en Python por candidato: es el 85%
+        # del costo de esta función (medido con cProfile). Como sólo se usa el mejor y
+        # el segundo (para el chequeo de empate), se le pasa el top-3 por Jaccard y no
+        # más. Desempata con Levenshtein + prefijos ("cr" → "crema").
+        candidatos.sort(key=lambda c: -c['score'])
+        mejores = refinar_candidatos(erp.descripcion, candidatos[:3], top_keep=top_por_item + 1)
+        mejor = mejores[0]
+        if mejor['score'] < umbral:
+            continue
+        # Si el segundo está pegado, la sugerencia no distingue: mejor no sugerir nada
+        # que mandar al operador hacia una de dos opciones equivalentes.
+        if len(mejores) > 1 and (mejor['score'] - mejores[1]['score']) < 0.05:
+            continue
+        sugerencias[erp.id] = {'nro': mejor['nro'], 'score': round(mejor['score'], 2),
+                               'descripcion': mejor['descripcion']}
+    return sugerencias
+
+
+def recalcular_diferencias(session, factura_id):
+    """Recalcula y guarda las diferencias de una factura. Devuelve True si recalculó.
+
+    No hace nada si el erp_stock cargado no es el de esta factura: save_differences
+    borra y reinserta, así que recalcular en ese caso le borraría a la factura las
+    diferencias buenas (las que sí se calcularon contra su propio ingreso) para
+    reemplazarlas por nada — o peor, por las de otro chequeo.
+    """
+    invoice = session.get(Invoice, factura_id)
+    if not erp_pertenece_a_factura(session, invoice):
+        return False
+    save_differences(session, factura_id, compare_invoice_vs_erp(session, factura_id))
+    return True
 
 
 def get_saved_differences(session, factura_id):
@@ -441,8 +672,13 @@ def get_erp_items_with_issues(session, invoice_id):
     """
     Devuelve ítems del ERP cuyo código de barra no aparece en ningún ítem de la factura,
     buscando también por códigos alternativos en la tabla productos.
+
+    Vacío si el erp_stock cargado no es el de esta factura: mostrar el ingreso de otro
+    chequeo al lado de la factura es peor que no mostrar nada.
     """
     from sqlalchemy import or_
+    if not erp_pertenece_a_factura(session, session.get(Invoice, invoice_id)):
+        return []
     invoice_items = session.query(InvoiceItem).filter_by(factura_id=invoice_id).all()
     invoice_barcodes = {item.codigo_barra for item in invoice_items if item.codigo_barra}
 

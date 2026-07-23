@@ -1,13 +1,30 @@
-"""Listado, detalle y ABM local de clientes (espejo DW.Clientes + extensión local)."""
+"""Listado, detalle y ABM local de clientes (espejo DW.Clientes + extensión local).
+
+También expone la API JSON `/api/clientes/*` usada por el componente
+`cliente_picker` (ver static/js/cliente_picker.js), por templates/reparto.html
+y por tests/test_reparto.py.
+"""
 
 from datetime import datetime
 
-from flask import flash, redirect, render_template, request, url_for
-from flask_login import login_required
+from flask import flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
 from sqlalchemy import func as _f
 from sqlalchemy import or_
 
 import database
+from auth import tiene_perfil
+
+_ROLES_OK = ('admin', 'dev', 'farmacia')
+# Perfiles que usan las APIs de /api/clientes/* — el cliente_picker está embebido en
+# /pedido/nuevo, /atencion (chat clientes) y en /reparto/planilla.
+_PERFILES_OK = ('pedido_manual', 'chat_clientes', 'planilla_envios')
+
+
+def _api_ok():
+    if getattr(current_user, 'rol', None) in _ROLES_OK:
+        return True
+    return any(tiene_perfil(current_user, p) for p in _PERFILES_OK)
 
 
 def init_app(app):
@@ -19,6 +36,8 @@ def init_app(app):
         grupo_id = request.args.get('grupo_id', type=int)
         localidad = (request.args.get('localidad') or '').strip()
         os_id = request.args.get('os_id', type=int)
+        # Filtro: solo clientes cuyo último domicilio tiene lat/lng cargada.
+        domic_validado = request.args.get('domic_validado') == '1'
         try:
             page = max(1, int(request.args.get('page', '1')))
         except ValueError:
@@ -28,6 +47,19 @@ def init_app(app):
 
         with database.get_db() as session:
             base = session.query(database.ObsCliente)
+            # Domicilio validado: limita a obs_clientes cuya extensión local
+            # tiene al menos un DomicilioCliente con coords. Aplica ANTES del
+            # query principal para que el conteo total / paginado sean correctos.
+            if domic_validado:
+                # scalar_subquery() evita el SAWarning de coerción a select().
+                sub_geo = (session.query(database.Cliente.observer_id)
+                           .join(database.DomicilioCliente,
+                                 database.DomicilioCliente.cliente_id == database.Cliente.id)
+                           .filter(database.Cliente.observer_id.isnot(None),
+                                   database.DomicilioCliente.lat.isnot(None),
+                                   database.DomicilioCliente.lng.isnot(None))
+                           .distinct())
+                base = base.filter(database.ObsCliente.observer_id.in_(sub_geo))
             if q:
                 from helpers import multi_token_filter
                 # Match exacto por DNI si el query es solo numérico (atajo).
@@ -75,29 +107,94 @@ def init_app(app):
 
             # Detectar cuáles tienen extensión local (Cliente) ya cargada
             con_extension = set()
+            obs_to_cli = {}   # observer_id → cliente_id local (Cliente.id)
             if obs_ids:
-                con_extension = {oid for (oid,) in
-                                 session.query(database.Cliente.observer_id)
-                                 .filter(database.Cliente.observer_id.in_(obs_ids)).all()}
+                for cli_id, obs_id in (session.query(database.Cliente.id, database.Cliente.observer_id)
+                                       .filter(database.Cliente.observer_id.in_(obs_ids)).all()):
+                    con_extension.add(obs_id)
+                    obs_to_cli[obs_id] = cli_id
 
-            # OS principal inferida por cliente (con confianza)
-            os_inferida_map = {}
+            # Geo del último domicilio con coords + último chat + último pedido
+            # por cliente local. Se renderean como columnas extra (Diego 2026-06-15).
+            cli_ids = list(obs_to_cli.values())
+            geo_map = {}            # cli_id → (lat, lng)
+            ultima_conv_map = {}    # cli_id → conv_id (canal != 'manual')
+            ultimo_pedido_map = {}  # cli_id → (pedido_id, fecha)
+            if cli_ids:
+                # Último DomicilioCliente con lat/lng por cliente_id.
+                from sqlalchemy import func as __f
+                dom_rows = (session.query(database.DomicilioCliente.cliente_id,
+                                          database.DomicilioCliente.lat,
+                                          database.DomicilioCliente.lng,
+                                          database.DomicilioCliente.geo_actualizado_en)
+                            .filter(database.DomicilioCliente.cliente_id.in_(cli_ids),
+                                    database.DomicilioCliente.lat.isnot(None),
+                                    database.DomicilioCliente.lng.isnot(None))
+                            .order_by(database.DomicilioCliente.cliente_id,
+                                      database.DomicilioCliente.geo_actualizado_en.desc().nullslast())
+                            .all())
+                for cid, lat, lng, _ in dom_rows:
+                    if cid not in geo_map:
+                        geo_map[cid] = (float(lat), float(lng))
+                # Última BotConversacion no-manual por cliente_id.
+                conv_rows = (session.query(database.BotConversacion.cliente_id,
+                                           database.BotConversacion.id,
+                                           database.BotConversacion.ultimo_en)
+                             .filter(database.BotConversacion.cliente_id.in_(cli_ids),
+                                     database.BotConversacion.canal != 'manual')
+                             .order_by(database.BotConversacion.cliente_id,
+                                       database.BotConversacion.ultimo_en.desc().nullslast())
+                             .all())
+                for cid, conv_id, _ in conv_rows:
+                    if cid not in ultima_conv_map:
+                        ultima_conv_map[cid] = conv_id
+                # Último PedidoReparto por cliente_id.
+                ped_rows = (session.query(database.PedidoReparto.cliente_id,
+                                          database.PedidoReparto.id,
+                                          database.PedidoReparto.fecha)
+                            .filter(database.PedidoReparto.cliente_id.in_(cli_ids))
+                            .order_by(database.PedidoReparto.cliente_id,
+                                      database.PedidoReparto.fecha.desc(),
+                                      database.PedidoReparto.id.desc())
+                            .all())
+                for cid, pid, fecha in ped_rows:
+                    if cid not in ultimo_pedido_map:
+                        ultimo_pedido_map[cid] = (pid, fecha)
+
+            # OS principal: confirmada (en el chat por un operador) tiene
+            # prioridad sobre inferida (heurística del histórico de ventas).
+            os_inferida_map = {}     # cli_observer_id → {os_id, nombre, confianza, fuente='inferida'|'confirmada'}
             if obs_ids:
+                # 1. OS confirmadas — toman precedencia.
+                conf_rows = (session.query(database.ClienteOsConfirmada.cliente_observer_id,
+                                           database.ClienteOsConfirmada.obra_social_observer_id,
+                                           database.ClienteOsConfirmada.obra_social_nombre)
+                             .filter(database.ClienteOsConfirmada.cliente_observer_id.in_(obs_ids))
+                             .all())
+                for cli, os_obs, nombre in conf_rows:
+                    os_inferida_map[cli] = {
+                        'os_id': os_obs, 'nombre': nombre or f'OS#{os_obs}',
+                        'confianza': None, 'fuente': 'confirmada',
+                    }
+                # 2. OS inferidas — solo para los que NO tienen confirmada.
                 rows = (session.query(database.ClienteOsInferida.cliente_observer,
                                       database.ClienteOsInferida.obra_social_observer,
                                       database.ClienteOsInferida.confianza_pct)
                         .filter(database.ClienteOsInferida.cliente_observer.in_(obs_ids))
                         .filter(database.ClienteOsInferida.obra_social_observer.isnot(None))
                         .all())
-                os_ids_para_nombrar = {r[1] for r in rows}
+                os_ids_para_nombrar = {r[1] for r in rows if r[0] not in os_inferida_map}
                 os_nombres = dict(session.query(database.ObsObraSocial.observer_id,
                                                 database.ObsObraSocial.descripcion)
                                   .filter(database.ObsObraSocial.observer_id.in_(os_ids_para_nombrar)).all()) if os_ids_para_nombrar else {}
                 for cli, os_obs, conf in rows:
+                    if cli in os_inferida_map:
+                        continue   # ya tiene confirmada
                     os_inferida_map[cli] = {
                         'os_id': os_obs,
                         'nombre': os_nombres.get(os_obs, f'OS#{os_obs}'),
                         'confianza': float(conf) if conf is not None else None,
+                        'fuente': 'inferida',
                     }
 
             # Lista de grupos para el filtro
@@ -119,8 +216,12 @@ def init_app(app):
 
             clientes = []
             for c in clientes_raw:
+                cli_id = obs_to_cli.get(c.observer_id)
+                geo = geo_map.get(cli_id) if cli_id else None
+                ult_pedido = ultimo_pedido_map.get(cli_id) if cli_id else None
                 clientes.append({
                     'observer_id': c.observer_id,
+                    'cliente_id': cli_id,
                     'apellido_nombre': c.apellido_nombre,
                     'documento': (f'{c.documento_tipo} {c.documento_numero}'
                                    if c.documento_numero else ''),
@@ -130,6 +231,10 @@ def init_app(app):
                     'grupo': grupos_map.get(c.grupo_observer, ''),
                     'tiene_extension': c.observer_id in con_extension,
                     'os_inferida': os_inferida_map.get(c.observer_id),
+                    'geo': {'lat': geo[0], 'lng': geo[1]} if geo else None,
+                    'ultima_conv_id': ultima_conv_map.get(cli_id) if cli_id else None,
+                    'ultimo_pedido_id': ult_pedido[0] if ult_pedido else None,
+                    'ultimo_pedido_fecha': ult_pedido[1].strftime('%Y-%m-%d') if ult_pedido else None,
                 })
 
             last_page = max(1, (total + per_page - 1) // per_page)
@@ -141,6 +246,7 @@ def init_app(app):
                                    obras_sociales=[{'os_id': r[0], 'nombre': r[1], 'n_clientes': r[2]}
                                                     for r in os_con_clientes],
                                    q=q, grupo_id=grupo_id, localidad=localidad, os_id=os_id,
+                                   domic_validado=domic_validado,
                                    page=page, last_page=last_page)
 
     @app.route('/clientes/stats')
@@ -219,12 +325,16 @@ def init_app(app):
             categoria = (session.get(database.ObsCategoriaCliente, obs.categoria_observer)
                          if obs.categoria_observer else None)
             ext = session.query(database.Cliente).filter_by(observer_id=observer_id).first()
+            # Ubicaciones que el cliente compartió (pin del bot) — antes solo las veía
+            # el bot; ahora viven colgadas de cliente_id y se muestran acá.
+            from bot import store as _store
+            domicilios = _store.listar_domicilios_de_cliente(observer_id=observer_id)
 
             return render_template('cliente_detail.html',
                                    obs=obs,
                                    grupo=grupo.descripcion if grupo else None,
                                    categoria=categoria.descripcion if categoria else None,
-                                   ext=ext)
+                                   ext=ext, domicilios=domicilios)
 
     @app.route('/intelligence/recurrentes')
     @login_required
@@ -621,3 +731,149 @@ def init_app(app):
                 session.commit()
                 flash('Datos locales eliminados.', 'success')
         return redirect(url_for('cliente_detail', observer_id=observer_id))
+
+    # ── API JSON usada por cliente_picker (static/js/cliente_picker.js) ─────
+    # Movido desde routes/reparto.py el 2026-06-10 (commit f0eca4e). Los paths
+    # viejos `/reparto/api/*` y `/reparto/cliente*` se borraron el mismo día
+    # (commit ed7c0fb) tras migrar todos los callers.
+
+    @app.route('/api/clientes/buscar')
+    @login_required
+    def api_clientes_buscar():
+        if not _api_ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        from bot import store
+        return jsonify({'clientes': store.buscar_clientes_unificado(
+            request.args.get('q', ''), limite=12)})
+
+    @app.route('/api/clientes/ficha')
+    @login_required
+    def api_clientes_ficha():
+        """Ficha de un cliente para precarga del form.
+        Acepta ?cliente_id= o ?observer_id= (resuelve con get_or_create).
+        Opcional ?conv_id= : si viene, suma los DomicilioCliente huérfanos
+        de la conversación (pin que el cliente compartió ANTES de vincularse
+        al Cliente). Sin conv_id solo trae los del cliente."""
+        if not _api_ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        from bot import store
+        cliente_id = request.args.get('cliente_id', type=int)
+        observer_id = request.args.get('observer_id', type=int)
+        conv_id = request.args.get('conv_id', type=int)
+        if not cliente_id and not observer_id:
+            return jsonify({'error': 'falta cliente_id o observer_id'}), 400
+        with database.get_db() as s:
+            if not cliente_id and observer_id:
+                cliente_id = database.get_or_create_cliente(
+                    s, observer_id=observer_id, creado_por=current_user.id)
+                s.commit()
+            ficha = store._ficha_de_cliente(s, cliente_id)
+            if ficha:
+                # Si tenemos conv_id usamos listar_domicilios() que une
+                # cliente_id + conversacion_id (incluye los pin huérfanos).
+                # Sin conv_id caemos al fallback de solo cliente_id.
+                if conv_id:
+                    ficha['domicilios'] = store.listar_domicilios(conv_id)
+                else:
+                    ficha['domicilios'] = store.listar_domicilios_de_cliente(
+                        cliente_id=cliente_id)
+                c = s.get(database.Cliente, cliente_id)
+                if c:
+                    ficha['raw'] = {
+                        'nombre': c.nombre or '', 'apellido': c.apellido or '',
+                        'dni': c.dni or '', 'telefono': c.telefono or '',
+                        'domicilio': c.domicilio or '', 'ciudad': c.ciudad or '',
+                    }
+            return jsonify(ficha or {'error': 'no encontrado'}), 200 if ficha else 404
+
+    @app.route('/api/clientes', methods=['POST'])
+    @login_required
+    def api_clientes_crear():
+        """Alta de un cliente nuevo (lead puro, sin ObServer)."""
+        if not _api_ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        lead = {}
+        for k in ('nombre', 'apellido', 'dni', 'telefono', 'domicilio', 'ciudad'):
+            v = (b.get(k) or '').strip()
+            if v:
+                lead[k] = v
+        if not lead:
+            return jsonify({'ok': False, 'error': 'sin datos'}), 400
+        with database.get_db() as s:
+            cid = database.get_or_create_cliente(
+                s, lead=lead, creado_por=current_user.id)
+            s.commit()
+        return jsonify({'ok': True, 'cliente_id': cid})
+
+    @app.route('/api/clientes/<int:cid>', methods=['POST'])
+    @login_required
+    def api_clientes_editar(cid):
+        """Edita campos de la fila Clientes (NUNCA obs_clientes)."""
+        if not _api_ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        with database.get_db() as s:
+            c = s.get(database.Cliente, cid)
+            if not c:
+                return jsonify({'ok': False, 'error': 'no existe'}), 404
+            for k in ('nombre', 'apellido', 'dni', 'telefono', 'domicilio',
+                       'ciudad', 'notas'):
+                if k in b:
+                    setattr(c, k, (b[k] or '').strip() or None)
+            c.actualizado_en = database.now_ar()
+            s.commit()
+        return jsonify({'ok': True})
+
+    @app.route('/api/clientes/observer/<int:oid>/domicilios')
+    @login_required
+    def api_clientes_domicilios_observer(oid):
+        if not _api_ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        from bot import store
+        return jsonify({'domicilios': store.listar_domicilios_de_cliente(observer_id=oid)})
+
+    @app.route('/api/clientes/geocodificar')
+    @login_required
+    def api_clientes_geocodificar():
+        if not _api_ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        q = (request.args.get('q') or '').strip()
+        loc = (request.args.get('loc') or '').strip() or None
+        if len(q) < 3:
+            return jsonify({'sugerencias': []})
+        from bot import envio as _envio
+        return jsonify({'sugerencias': _envio.geocodificar_sugerencias(q, localidad=loc)})
+
+    @app.route('/api/clientes/separar-direccion', methods=['POST'])
+    @login_required
+    def api_clientes_separar_direccion():
+        """Server-side parser: separa 'calle+número' de
+        'piso / depto / referencia' para no duplicar lógica en JS."""
+        if not _api_ok():
+            return jsonify({'error': 'sin permiso'}), 403
+        b = request.json or {}
+        texto = (b.get('texto') or b.get('direccion') or '').strip()
+        from bot.direcciones import separar_direccion
+        return jsonify(separar_direccion(texto))
+
+    @app.route('/api/clientes/domicilios/<int:dom_id>/geo', methods=['POST'])
+    @login_required
+    def api_clientes_domicilio_set_geo(dom_id):
+        if not _api_ok():
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        try:
+            lat = float(b['lat'])
+            lng = float(b['lng'])
+        except (KeyError, TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'lat/lng inválidos'}), 400
+        with database.get_db() as s:
+            d = s.get(database.DomicilioCliente, dom_id)
+            if not d:
+                return jsonify({'ok': False, 'error': 'domicilio no existe'}), 404
+            d.lat, d.lng = lat, lng
+            d.geo_actualizado_en = database.now_ar()
+            s.commit()
+            return jsonify({'ok': True, 'lat': lat, 'lng': lng,
+                            'geo_actualizado_en': d.geo_actualizado_en.isoformat()})

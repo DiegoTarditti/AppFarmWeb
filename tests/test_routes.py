@@ -228,3 +228,70 @@ class TestApiUpload:
         }, content_type='multipart/form-data')
 
         assert resp.status_code == 400
+
+
+# ── /invoice/<id>/compare — ERP de otro chequeo ───────────────────────────────
+
+class TestCompareViewErpDeOtroChequeo:
+    """erp_stock es global: el cruce nunca puede mostrar el ingreso de otra factura.
+
+    El smoke test de /invoice/1/compare no cubre esto porque redirige (no existe la
+    factura) y nunca llega a renderizar el template.
+    """
+
+    def test_avisa_y_no_lista_el_erp_ajeno(self, client, db_session):
+        prov = _make_provider(db_session, razon='ERP AJENO', cuit='30-EAJ-1')
+        inv = _make_invoice(db_session, prov, numero='FEA01')
+        db_session.add(InvoiceItem(factura_id=inv.id, codigo_barra='FAC_Z',
+                                   descripcion='PROD Z', cantidad=5))
+        # Ingreso que quedó de OTRO chequeo: no es de esta factura (inv.erp_carga_id NULL).
+        db_session.add(ErpStock(codigo_barra='OTRO_CHEQUEO', descripcion='PROD DE OTRO',
+                                cantidad=9, carga_id=111))
+        db_session.commit()
+
+        resp = client.get(f'/invoice/{inv.id}/compare')
+        assert resp.status_code == 200
+        body = resp.data.decode('utf-8')
+        assert 'no está cruzada contra un ingreso de ERP' in body
+        # El bug: esto se listaba como si fuera el ingreso de esta factura.
+        assert 'PROD DE OTRO' not in body
+
+    def test_sin_aviso_cuando_el_erp_es_de_la_factura(self, client, db_session):
+        prov = _make_provider(db_session, razon='ERP PROPIO', cuit='30-EPR-1')
+        inv = _make_invoice(db_session, prov, numero='FEP01')
+        db_session.add(InvoiceItem(factura_id=inv.id, codigo_barra='FAC_W',
+                                   descripcion='PROD W', cantidad=5))
+        db_session.add(ErpStock(codigo_barra='SOLO_ERP', descripcion='PROD SOLO ERP',
+                                cantidad=2, carga_id=222))
+        inv.erp_carga_id = 222
+        db_session.commit()
+
+        resp = client.get(f'/invoice/{inv.id}/compare')
+        assert resp.status_code == 200
+        body = resp.data.decode('utf-8')
+        assert 'no está cruzada contra un ingreso de ERP' not in body
+        assert 'PROD SOLO ERP' in body
+
+
+class TestCompareViewSugerencias:
+    """El cruce manual sugiere el renglón parecido, sin aplicarlo solo."""
+
+    def test_muestra_el_chip_de_sugerencia(self, client, db_session):
+        prov = _make_provider(db_session, razon='SUG LAB', cuit='30-SUG-1')
+        inv = _make_invoice(db_session, prov, numero='FSG01')
+        db_session.add(InvoiceItem(factura_id=inv.id, codigo_barra='FAC_SG',
+                                   descripcion='AMOXIDAL 500 COMP X 16', cantidad=5))
+        # Item del ERP sin match exacto pero parecido -> debe sugerirse.
+        db_session.add(ErpStock(codigo_barra='ERP_SG', descripcion='Amoxidal 500 comprimidos x16',
+                                cantidad=5, carga_id=333))
+        inv.erp_carga_id = 333
+        _make_diff(db_session, inv, cb='FAC_SG', desc='AMOXIDAL 500 COMP X 16',
+                   cant_fac=5, cant_erp=0)
+        db_session.commit()
+
+        resp = client.get(f'/invoice/{inv.id}/compare')
+        assert resp.status_code == 200
+        body = resp.data.decode('utf-8')
+        assert 'usarSugerencia(' in body, 'no se renderizó el chip de sugerencia'
+        # La sugerencia NO se aplica sola: el input queda vacío.
+        assert 'name="mapping_' in body

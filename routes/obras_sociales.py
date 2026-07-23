@@ -15,6 +15,7 @@ from flask import flash, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import text as _text
 
 import database
+from services.farmacia import farmacia_operativa
 
 # ── Mock data ─────────────────────────────────────────────────────────
 
@@ -2072,6 +2073,7 @@ def init_app(app):
             func.min(ObsVentaDetalle.fecha_operacion).label('fecha'),
             func.min(ObsVentaDetalle.obra_social_observer).label('os_id'),
             func.min(ObsVentaDetalle.plan_principal_observer).label('plan_id'),
+            func.min(ObsVentaDetalle.medico_matricula_observer).label('med_mat'),
             particular_agg.label('particular'),
             func.sum(ObsVentaDetalle.importe).label('total'),
             func.sum(ObsVentaDetalle.importe_a_cargo_os).label('total_os'),
@@ -2229,12 +2231,15 @@ def init_app(app):
                 'os_plan': plan_nombre,
                 'particular': particular,
                 'ticket_validacion': str(r.op_id or '—'),
+                # Receta incompleta en origen: sin médico ni cliente/afiliado
+                # (Observer no capturó esos datos, ej. PAMI Ambulatorio).
+                'sin_datos': not r.med_id and not r.cli_id,
                 'afiliado_nombre': afiliado_nombre,
                 'afiliado_nro': afiliado_dni,
                 'afiliado_dni': afiliado_dni,
                 'medico_id': r.med_id,
                 'medico_nombre': (med_map.get(r.med_id).nombre if r.med_id and med_map.get(r.med_id) and med_map.get(r.med_id).nombre else (f'Médico #{r.med_id}' if r.med_id else '—')),
-                'medico_matricula': r.med_id or '',
+                'medico_matricula': r.med_mat or '',
                 'receta_tipo': '—',
                 'receta_fecha_emision': r.fecha,
                 'items': items,
@@ -2397,7 +2402,7 @@ def init_app(app):
 
         from database import get_db
 
-        id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         filtros = _parse_filtros_dispensas()
 
         with get_db() as session:
@@ -2461,7 +2466,7 @@ def init_app(app):
 
         from database import get_db
 
-        id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         filtros = _parse_filtros_dispensas()
 
         with get_db() as session:
@@ -2549,7 +2554,7 @@ def init_app(app):
             get_db,
         )
 
-        id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
 
         hoy = date.today()
         # Default: últimos 6 meses (180 días).

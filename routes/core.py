@@ -31,6 +31,28 @@ def init_app(app):
                 'productos_pendientes_revision': session.query(database.ProductoPendienteRevision)
                     .filter(database.ProductoPendienteRevision.estado == 'pendiente').count(),
             }
+            # Card "Requiere atención" del home — pendientes accionables.
+            # Control de Ingreso = documentos pendientes de procesar (mismo dato
+            # que la campanita del topbar; acá funciona como panel de triage).
+            # Novedades del grupo = compartidos de peers sin importar (count cacheado
+            # ~5 min; lee read-only las otras sucursales, no frena el home).
+            try:
+                from services import compartido_sync
+                compartido_nuevos = compartido_sync.contar_nuevos(session)
+            except Exception:
+                compartido_nuevos = 0
+            # Publicado por ESTA farmacia (buzón de salida local).
+            try:
+                compartido_publicados = session.query(database.ArchivoCompartido).count()
+            except Exception:
+                compartido_publicados = 0
+            alertas_atencion = {
+                'productos_pendientes':  badges['productos_pendientes_revision'],
+                'docs_pendientes':       badges['docs_pendientes'],
+                'reclamos_abiertos':     badges['reclamos_abiertos'],
+                'compartido_nuevos':     compartido_nuevos,
+                'compartido_publicados': compartido_publicados,
+            }
         cards = [c for c in cards if not c.get('oculto')]
         # Inyectar badge_count en cada card según su badge_key
         for c in cards:
@@ -59,14 +81,15 @@ def init_app(app):
                                config=get_config(),
                                acciones=cards,
                                grupos_acciones=grupos_acciones,
-                               alertas_repo=alertas_repo)
+                               alertas_repo=alertas_repo,
+                               alertas_atencion=alertas_atencion)
 
     @app.route('/ingresos')
     def ingresos():
         pdf_pendiente = request.args.get('pdf_pendiente', '')
         doc_pendiente_id = request.args.get('doc_pendiente_id', '', type=int)
         proceso_id = request.args.get('proceso_id', '', type=int)
-        return render_template('ingresos.html', providers=get_providers(), config=get_config(),
+        return render_template('ingresos.html', providers=get_providers(solo_drog_activas=True), config=get_config(),
                                pdf_pendiente=pdf_pendiente, doc_pendiente_id=doc_pendiente_id or '',
                                proceso_id=proceso_id or '')
 
@@ -84,6 +107,7 @@ def init_app(app):
                 cfg = database.Config(id=1)
                 session.add(cfg)
             cfg.farmacia_nombre = nombre
+            cfg.farmacia_cuit = (request.form.get('farmacia_cuit') or '').strip() or None
             cfg.ruta_facturas = ruta or None
             cfg.ruta_excels = (request.form.get('ruta_excels') or '').strip() or None
             cfg.ruta_descargas = (request.form.get('ruta_descargas') or '').strip() or None
@@ -98,6 +122,8 @@ def init_app(app):
                 cfg.rot_media_min = max(0.0, float(request.form.get('rot_media_min', 5.0)))
                 cfg.rot_media_tol = max(0.0, float(request.form.get('rot_media_tol', 0.0)))
                 cfg.rot_baja_tol = max(0.0, float(request.form.get('rot_baja_tol', 0.0)))
+                cfg.transfer_excedente_meses = max(1.0, min(60.0, float(request.form.get('transfer_excedente_meses', 6.0))))
+                cfg.transfer_necesita_meses = max(0.0, min(12.0, float(request.form.get('transfer_necesita_meses', 2.0))))
             except (ValueError, TypeError):
                 pass
             cfg.keep_alive_enabled = request.form.get('keep_alive_enabled') == '1'

@@ -1,0 +1,1045 @@
+"""Panel de operadores del bot (handoff humano).
+
+Cuando el bot deriva una consulta (estado='cola') o el operador toma una
+conversación (estado='humano'), el operador la atiende desde acá: ve la
+bandeja, abre el chat, lee el historial y le responde al cliente. El mensaje
+del operador sale al canal real (Telegram hoy, WhatsApp mañana) vía bot.canales.
+
+Mientras una conversación está en 'humano', el cerebro del bot NO responde
+(ver bot/cerebro.procesar) → no pisa al operador.
+
+Distribución: cola compartida (pull). Todo lo derivado cae en una bandeja; el
+operador libre toca "Tomar" (anti-colisión: si ya la tomó otro, no la pisa).
+Se puede transferir a otro operador o devolver a la cola.
+
+Rutas:
+  GET  /atencion                          → panel (bandeja + chat)
+  GET  /atencion/api/conversaciones       → JSON bandeja (polling)
+  GET  /atencion/api/operadores           → JSON operadores (dropdown transferir)
+  GET  /atencion/api/<id>/mensajes        → JSON mensajes (polling)
+  POST /atencion/<id>/tomar               → operador toma la conversación (pull)
+  POST /atencion/<id>/transferir          → pasa a otro operador (+ nota)
+  POST /atencion/<id>/devolver-cola       → libera a la cola
+  POST /atencion/<id>/responder           → operador envía un mensaje al cliente
+  POST /atencion/<id>/cerrar              → libera (vuelve al bot)
+"""
+from flask import jsonify, render_template, request
+from flask_login import current_user, login_required
+
+import database
+from bot import caja, canales, store
+
+
+def init_app(app):
+
+    @app.route('/atencion')
+    @login_required
+    def atencion_panel():
+        # Modo manual (walk-in): /atencion?modo=manual&new=1 crea una BotConversacion
+        # stub (sin chat WhatsApp/Telegram, solo para registrar el pedido) y abre el
+        # panel en modo simplificado (sin bandeja ni columna de chat).
+        # Refactor C — etapa 2: reemplaza /pedido/nuevo.
+        modo = (request.args.get('modo') or '').strip()
+        nueva = request.args.get('new') == '1'
+        if modo == 'manual' and nueva:
+            import uuid as _uuid
+            observer_id = request.args.get('observer_id')
+            # Deep-link con observer_id: vincular la conv al cliente automaticamente.
+            cliente_id = None
+            try:
+                observer_id_int = int(observer_id) if observer_id else None
+            except (TypeError, ValueError):
+                observer_id_int = None
+            with database.get_db() as s:
+                if observer_id_int:
+                    cliente_id = database.get_or_create_cliente(s, observer_id=observer_id_int)
+                conv = database.BotConversacion(
+                    canal='manual',
+                    canal_user_id=f'manual-{_uuid.uuid4().hex[:10]}',
+                    nombre_cliente='(walk-in)',
+                    estado_atencion='humano',
+                    nodo='pedido',
+                    operador_user_id=current_user.id,
+                    cliente_id=cliente_id,
+                )
+                s.add(conv); s.commit()
+                from flask import redirect
+                return redirect(f'/atencion?modo=manual&conv={conv.id}')
+        from flask import make_response
+        resp = make_response(render_template(
+            'atencion.html', lineas=store.lineas_distintas(),
+            modo=modo, conv_inicial=request.args.get('conv')))
+        # El JS de cerrar-transaccion va embebido en este HTML; si el browser cachea
+        # la respuesta, los fixes nuevos no llegan al operador hasta hard-reload.
+        resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        return resp
+
+    @app.route('/atencion/api/conversaciones')
+    @login_required
+    def atencion_conversaciones():
+        linea = request.args.get('linea') or None
+        return jsonify({'conversaciones': store.listar_conversaciones(linea)})
+
+    @app.route('/atencion/<int:conv_id>/retirar', methods=['POST'])
+    @login_required
+    def atencion_marcar_retirado(conv_id):
+        """Walk-in (canal='manual'): el cliente vino a retirar el pedido. Setea
+        BotConversacion.retirado_en → la conv desaparece de la pestaña 'Manuales'."""
+        with database.get_db() as s:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'ok': False, 'error': 'conv no existe'}), 404
+            conv.retirado_en = database.now_ar()
+            s.commit()
+            return jsonify({'ok': True,
+                            'retirado_en': conv.retirado_en.isoformat()})
+
+    @app.route('/atencion/api/<int:conv_id>/mensajes')
+    @login_required
+    def atencion_mensajes(conv_id):
+        desde = request.args.get('desde', 0, type=int)
+        conv = store.get_conversacion_full(conv_id)
+        if not conv:
+            return jsonify({'error': 'no existe'}), 404
+        return jsonify({'conversacion': conv,
+                        'mensajes': store.get_mensajes(conv_id, desde)})
+
+    def _nombre_actual():
+        return getattr(current_user, 'nombre_completo', None) or current_user.username
+
+    @app.route('/atencion/api/operadores')
+    @login_required
+    def atencion_operadores():
+        return jsonify({'operadores': store.listar_operadores(), 'yo': current_user.id})
+
+    @app.route('/atencion/operadores/crear', methods=['POST'])
+    @login_required
+    def atencion_operador_crear():
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'ok': False, 'error': 'solo un admin puede dar de alta operadores'}), 403
+        from routes.auth_routes import hash_password
+        b = request.json or {}
+        username = (b.get('username') or '').strip().lower()
+        nombre = (b.get('nombre') or '').strip()
+        password = b.get('password') or ''
+        if not username or len(password) < 6:
+            return jsonify({'ok': False, 'error': 'usuario y contraseña (mín. 6) requeridos'}), 400
+        with database.get_db() as s:
+            if s.query(database.Usuario).filter_by(username=username).first():
+                return jsonify({'ok': False, 'error': 'ese usuario ya existe'}), 400
+            s.add(database.Usuario(
+                username=username, nombre_completo=nombre or username, rol='operador',
+                activo=True, password_hash=hash_password(password),
+                permisos_json='{}', debe_cambiar_password=False))
+            s.commit()
+        return jsonify({'ok': True})
+
+    @app.route('/atencion/heartbeat', methods=['POST'])
+    @login_required
+    def atencion_heartbeat():
+        store.heartbeat(current_user.id)
+        return jsonify({'ok': True})
+
+    @app.route('/atencion/estado', methods=['POST'])
+    @login_required
+    def atencion_estado():
+        return jsonify(store.set_presencia(current_user.id, (request.json or {}).get('estado', '')))
+
+    @app.route('/atencion/<int:conv_id>/tomar', methods=['POST'])
+    @login_required
+    def atencion_tomar(conv_id):
+        r = store.tomar(conv_id, current_user.id, _nombre_actual())
+        if not r['ok'] and r.get('conflicto'):
+            return jsonify({'ok': False, 'conflicto': r['conflicto']}), 409
+        # Operador tomó la conv → limpiar alerta "sin tomar"
+        try:
+            from services.informes_bot import resetear_conv
+            with database.get_db() as _s:
+                resetear_conv(_s, conv_id)
+        except Exception:
+            pass
+        r['conversacion'] = store.get_conversacion_full(conv_id)
+        return jsonify(r)
+
+    @app.route('/atencion/<int:conv_id>/transferir', methods=['POST'])
+    @login_required
+    def atencion_transferir(conv_id):
+        body = request.json or {}
+        nuevo_id = body.get('operador_id')
+        nota = (body.get('nota') or '').strip()
+        ops = {o['id']: o['nombre'] for o in store.listar_operadores()}
+        if nuevo_id not in ops:
+            return jsonify({'ok': False, 'error': 'operador inválido'}), 400
+        r = store.transferir(conv_id, nuevo_id, ops[nuevo_id], _nombre_actual(), nota)
+        return jsonify(r)
+
+    @app.route('/atencion/<int:conv_id>/devolver-cola', methods=['POST'])
+    @login_required
+    def atencion_devolver_cola(conv_id):
+        return jsonify(store.devolver_a_cola(conv_id, _nombre_actual()))
+
+    # ── Ficha del cliente ────────────────────────────────────────────────────
+
+    @app.route('/atencion/api/<int:conv_id>/cliente')
+    @login_required
+    def atencion_cliente(conv_id):
+        return jsonify({'ficha': store.get_ficha_de_conversacion(conv_id)})
+
+    @app.route('/atencion/api/clientes/buscar')
+    @login_required
+    def atencion_clientes_buscar():
+        # Diego 2026-06-24: cambio a la versión unificada para que la
+        # búsqueda funcione por DNI (parcial) y también encuentre clientes
+        # locales que no estén sincronizados desde Observer.
+        return jsonify({'clientes': store.buscar_clientes_unificado(
+            request.args.get('q', ''))})
+
+    @app.route('/atencion/api/productos/buscar')
+    @login_required
+    def atencion_productos_buscar():
+        return jsonify({'productos': store.buscar_productos_detalle(request.args.get('q', ''))})
+
+    @app.route('/atencion/<int:conv_id>/vincular-cliente', methods=['POST'])
+    @login_required
+    def atencion_vincular_cliente(conv_id):
+        b = request.json or {}
+        store.vincular_cliente(conv_id,
+                               observer_id=b.get('observer_id'),
+                               cliente_id=b.get('cliente_id'))
+        return jsonify({'ok': True, 'ficha': store.get_ficha_de_conversacion(conv_id)})
+
+    @app.route('/atencion/<int:conv_id>/crear-cliente', methods=['POST'])
+    @login_required
+    def atencion_crear_cliente(conv_id):
+        datos = request.json or {}
+        if not (datos.get('nombre') or datos.get('apellido')):
+            return jsonify({'ok': False, 'error': 'falta nombre/apellido'}), 400
+        store.crear_cliente_local(conv_id, datos, creado_por=current_user.id)
+        return jsonify({'ok': True, 'ficha': store.get_ficha_de_conversacion(conv_id)})
+
+    # ── Catálogo de ciudades ─────────────────────────────────────────────────
+
+    @app.route('/atencion/api/ciudades')
+    @login_required
+    def atencion_ciudades():
+        return jsonify({'ciudades': store.listar_ciudades()})
+
+    # ── Libreta de domicilios del cliente ────────────────────────────────────
+
+    @app.route('/atencion/api/<int:conv_id>/domicilios')
+    @login_required
+    def atencion_domicilios(conv_id):
+        return jsonify({'domicilios': store.listar_domicilios(conv_id)})
+
+    @app.route('/atencion/<int:conv_id>/domicilio', methods=['POST'])
+    @login_required
+    def atencion_domicilio_crear(conv_id):
+        b = request.json or {}
+        if not (b.get('direccion') or '').strip():
+            return jsonify({'ok': False, 'error': 'falta dirección'}), 400
+        r = store.guardar_domicilio(conv_id, etiqueta=b.get('etiqueta'),
+                                    direccion=b.get('direccion'),
+                                    localidad=b.get('localidad'), origen='manual')
+        return jsonify({'ok': r.get('ok', False),
+                        'domicilios': store.listar_domicilios(conv_id)})
+
+    @app.route('/atencion/domicilio/<int:dom_id>/delete', methods=['POST'])
+    @login_required
+    def atencion_domicilio_eliminar(dom_id):
+        return jsonify(store.eliminar_domicilio(dom_id))
+
+    @app.route('/atencion/ciudades', methods=['POST'])
+    @login_required
+    def atencion_ciudad_crear():
+        body = request.json or {}
+        return jsonify(store.crear_ciudad(body.get('nombre'), body.get('provincia')))
+
+    @app.route('/atencion/ciudades/<int:ciudad_id>/delete', methods=['POST'])
+    @login_required
+    def atencion_ciudad_eliminar(ciudad_id):
+        return jsonify(store.eliminar_ciudad(ciudad_id))
+
+    @app.route('/atencion/<int:conv_id>/desvincular-cliente', methods=['POST'])
+    @login_required
+    def atencion_desvincular_cliente(conv_id):
+        return jsonify(store.desvincular_cliente(conv_id))
+
+    # ── Pago acordado durante el chat (Fase A.5) ──────────────────────────────
+    # El operador define la forma de pago + le manda el link/alias al cliente
+    # MIENTRAS sigue chateando, antes del cierre de transacción. Acá se persiste
+    # ese estado para que el modal 'Cerrar TX' lo precargue después.
+
+    _PAGO_FIELDS = ('forma_pago_propuesta', 'total_acordado', 'link_mp', 'paga_con',
+                    'dato_pago', 'tarjeta_marca', 'tarjeta_nombre', 'tarjeta_ult4',
+                    'envio_costo')
+
+    @app.route('/atencion/<int:conv_id>/pago')
+    @login_required
+    def atencion_pago_get(conv_id):
+        with database.get_db() as s:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'error': 'no existe'}), 404
+            return jsonify({
+                'forma_pago_propuesta': conv.forma_pago_propuesta,
+                'total_acordado': float(conv.total_acordado) if conv.total_acordado is not None else None,
+                'envio_costo': float(conv.envio_costo) if getattr(conv, 'envio_costo', None) is not None else None,
+                'link_mp': conv.link_mp,
+                'paga_con': float(conv.paga_con) if conv.paga_con is not None else None,
+                'dato_pago': conv.dato_pago,
+                'tarjeta_marca': conv.tarjeta_marca,
+                'tarjeta_nombre': conv.tarjeta_nombre,
+                'tarjeta_ult4': conv.tarjeta_ult4,
+                'pago_acordado_en': conv.pago_acordado_en.isoformat() if conv.pago_acordado_en else None,
+                'pago_confirmado_en': conv.pago_confirmado_en.isoformat() if conv.pago_confirmado_en else None,
+            })
+
+    @app.route('/atencion/<int:conv_id>/pago', methods=['POST'])
+    @login_required
+    def atencion_pago_set(conv_id):
+        body = request.json or {}
+        with database.get_db() as s:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'ok': False, 'error': 'no existe'}), 404
+            # Aplicar solo los campos que llegaron (no pisar con NULL si no vienen).
+            for k in _PAGO_FIELDS:
+                if k in body:
+                    v = body[k]
+                    if k in ('paga_con', 'total_acordado', 'envio_costo') and v not in (None, ''):
+                        try: v = float(v)
+                        except (TypeError, ValueError): v = None
+                    elif v in ('', 'null'):
+                        v = None
+                    setattr(conv, k, v)
+            # Timestamps automáticos.
+            ahora = database.now_ar()
+            if conv.forma_pago_propuesta and not conv.pago_acordado_en:
+                conv.pago_acordado_en = ahora
+            if conv.dato_pago and not conv.pago_confirmado_en:
+                conv.pago_confirmado_en = ahora
+            # Si limpia dato_pago, reseteo pago_confirmado_en (caso edit).
+            if 'dato_pago' in body and not body['dato_pago']:
+                conv.pago_confirmado_en = None
+            s.commit()
+            return jsonify({'ok': True,
+                            'pago_acordado_en': conv.pago_acordado_en.isoformat() if conv.pago_acordado_en else None,
+                            'pago_confirmado_en': conv.pago_confirmado_en.isoformat() if conv.pago_confirmado_en else None})
+
+    @app.route('/atencion/<int:conv_id>/ticket', methods=['POST'])
+    @login_required
+    def atencion_crear_ticket(conv_id):
+        """El operador confirma el pedido → va a la cola de caja."""
+        items = (request.json or {}).get('items') or []
+        ficha = store.get_ficha_de_conversacion(conv_id)
+        return jsonify(caja.crear_ticket(
+            conv_id, items, current_user.id,
+            cliente_nombre=ficha['nombre'] if ficha else None))
+
+    @app.route('/atencion/api/cerrados-hoy')
+    @login_required
+    def atencion_cerrados_hoy():
+        """Pedidos cerrados HOY por el operador actual.
+        Sirve para la pestaña 'Cerrados hoy' del panel: permite reabrir y
+        corregir un pedido recién cerrado (vuelto mal, monto, forma de pago, etc).
+        """
+        from sqlalchemy import desc
+        oper = (getattr(current_user, 'nombre_completo', None)
+                or getattr(current_user, 'username', None) or 'operador')
+        with database.get_db() as s:
+            hoy = database.now_ar().date()
+            P = database.PedidoReparto
+            q = (s.query(P)
+                 .filter(P.fecha == hoy, P.tomo == oper)
+                 .order_by(desc(P.id))
+                 .limit(50)
+                 .all())
+            return jsonify({'pedidos': [{
+                'id': p.id,
+                'creado_hora': p.creado_en.strftime('%H:%M') if p.creado_en else None,
+                'cliente_nombre': p.cliente_nombre,
+                'direccion': p.direccion,
+                'producto': (p.producto or '')[:40],
+                'forma_pago': p.forma_pago,
+                'importe': float(p.importe) if p.importe is not None else None,
+                'vuelto': p.vuelto,
+                'estado': p.estado,
+                'pagado': bool(p.pagado),
+            } for p in q]})
+
+    @app.route('/atencion/api/pedido/<int:pedido_id>/hidratar')
+    @login_required
+    def atencion_pedido_hidratar(pedido_id):
+        """Devuelve los campos de un PedidoReparto en formato listo para llenar
+        el form de 'Cerrar transacción'. El frontend hace fetch y pinta los inputs."""
+        with database.get_db() as s:
+            p = s.get(database.PedidoReparto, pedido_id)
+            if not p:
+                return jsonify({'ok': False, 'error': 'pedido no existe'}), 404
+            return jsonify({'ok': True, 'pedido': {
+                'id': p.id,
+                'conv_id': None,  # PedidoReparto no guarda conv_id; el reabrir se hace stand-alone
+                'cliente_id': p.cliente_id,
+                'cliente_nombre': p.cliente_nombre,
+                'telefono': p.telefono,
+                'direccion': p.direccion,
+                'piso': p.piso,
+                'depto': p.depto,
+                'referencia': p.referencia,
+                'localidad': p.localidad,
+                'lat': float(p.lat) if p.lat is not None else None,
+                'lng': float(p.lng) if p.lng is not None else None,
+                'total': float(p.importe) if p.importe is not None else None,
+                'forma_pago': p.forma_pago,
+                'paga_con': float(p.paga_con) if p.paga_con is not None else None,
+                'vuelto': p.vuelto,
+                'envio_costo': float(p.envio_costo) if p.envio_costo is not None else None,
+                'envio_sin_cargo': bool(p.envio_sin_cargo),
+                'link_mp': p.link_mp,
+                'dato_pago_mp': p.dato_pago_mp,
+                'tarjeta_ult4': p.tarjeta_ult4,
+                'tarjeta_nombre': p.tarjeta_nombre,
+                'tarjeta_marca': p.tarjeta_marca,
+                'obra_social': p.obra_social,
+                'requiere_receta': p.receta_estado,
+                'requiere_firma': bool(p.requiere_firma),
+                'producto': p.producto,
+                'producto_observer_id': p.producto_observer_id,
+                'nota': p.nota,
+                'observacion': p.observacion,
+                'stock': p.stock_status,
+                'drogueria_id': p.drogueria_id,
+                'destino': p.destino,
+                'pagado': bool(p.pagado),
+                'canal': p.canal,
+                'prioridad': p.prioridad,
+            }})
+
+    @app.route('/atencion/api/despachos-clinica')
+    @login_required
+    def atencion_despachos_clinica():
+        """Cola de despachos de clínica 'a_confirmar' cuya fecha ya venció (<= hoy).
+        Alimenta el panel izquierdo de /atencion?modo=manual. La tabla
+        despachos_programados solo existe en la DB fusionada con AppClinica; si no
+        está, devuelve []."""
+        from sqlalchemy import text as _text
+        hoy = database.now_ar().date()
+        sql = _text(
+            "SELECT d.id AS despacho_id, d.fecha_programada, d.modalidad, d.notas, "
+            "       pm.producto_snapshot, pm.observer_id_producto, pm.cantidad, "
+            "       p.id AS paciente_id, p.apellido, p.nombre, p.dni, "
+            "       p.observer_id, p.telefono, p.domicilio, p.ciudad, "
+            "       p.afiliado_nro, os.nombre AS obra_social_nombre "
+            "  FROM despachos_programados d "
+            "  JOIN paciente_medicamentos pm ON pm.id = d.paciente_medicamento_id "
+            "  JOIN pacientes p ON p.id = d.paciente_id "
+            "  LEFT JOIN obras_sociales os ON os.id = p.obra_social_id "
+            " WHERE d.estado = 'a_confirmar' AND d.fecha_programada <= :hoy "
+            " ORDER BY d.fecha_programada, p.apellido, p.nombre LIMIT 200")
+        try:
+            with database.get_db() as s:
+                rows = s.execute(sql, {'hoy': hoy}).fetchall()
+        except Exception:  # noqa: BLE001
+            return jsonify({'despachos': []})
+        out = []
+        for r in rows:
+            nombre = ', '.join(x for x in [r.apellido, r.nombre] if x) or '(sin nombre)'
+            out.append({
+                'despacho_id': r.despacho_id,
+                'paciente_id': r.paciente_id,  # para sync del observer_id
+                'fecha': r.fecha_programada.isoformat() if r.fecha_programada else None,
+                'modalidad': r.modalidad,
+                'producto': r.producto_snapshot or '',
+                'observer_id_producto': r.observer_id_producto,
+                'cantidad': r.cantidad,
+                'paciente': nombre,
+                'dni': r.dni or '',
+                'observer_id': r.observer_id,   # para vincular el cliente Badia
+                'telefono': r.telefono or '',
+                'domicilio': r.domicilio or '',
+                'ciudad': r.ciudad or '',
+                'afiliado_nro': r.afiliado_nro or '',
+                'obra_social': r.obra_social_nombre or '',
+                'notas': r.notas or '',
+            })
+        return jsonify({'despachos': out})
+
+    @app.route('/atencion/api/walkin', methods=['POST'])
+    @login_required
+    def atencion_api_walkin_nueva():
+        """Crea una BotConversacion walk-in (canal='manual') sin redirect.
+        Se usa desde el frontend cuando el operador clickea un despacho de
+        la cola clínica y no hay conv abierta — auto-arma una y sigue el
+        flujo sin perder el estado (checkboxes tildados, etc.)."""
+        import uuid as _uuid
+        with database.get_db() as s:
+            conv = database.BotConversacion(
+                canal='manual',
+                canal_user_id=f'manual-{_uuid.uuid4().hex[:10]}',
+                nombre_cliente='(walk-in)',
+                estado_atencion='humano',
+                nodo='pedido',
+                operador_user_id=current_user.id,
+            )
+            s.add(conv)
+            s.commit()
+            return jsonify({'ok': True, 'conv_id': conv.id})
+
+    @app.route('/atencion/api/despachos-clinica/paciente/<int:paciente_id>/observer',
+               methods=['POST'])
+    @login_required
+    def atencion_despachos_set_observer(paciente_id):
+        """Guarda el observer_id del cliente Badia en el paciente clínico
+        (tabla `pacientes` de AppClinica en la DB compartida).
+
+        Se llama cuando el operador vincula manualmente al cliente al procesar
+        un despacho — así los futuros despachos del mismo paciente ya vienen
+        con el observer_id resuelto y se auto-vinculan sin fricción.
+
+        Solo actualiza si observer_id era NULL (no pisar vínculo válido).
+        """
+        from sqlalchemy import text as _text
+        b = request.json or {}
+        try:
+            oid = int(b.get('observer_id'))
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'observer_id inválido'}), 400
+        try:
+            with database.get_db() as s:
+                r = s.execute(_text("""
+                    UPDATE pacientes
+                       SET observer_id = :oid
+                     WHERE id = :pid
+                       AND observer_id IS NULL
+                    RETURNING id
+                """), {'oid': oid, 'pid': paciente_id}).fetchone()
+                s.commit()
+        except Exception as e:  # noqa: BLE001
+            return jsonify({'ok': False, 'error': str(e)}), 500
+        return jsonify({'ok': True, 'actualizado': bool(r)})
+
+    @app.route('/atencion/<int:conv_id>/cerrar-transaccion', methods=['POST'])
+    @login_required
+    def atencion_cerrar_transaccion(conv_id):
+        """Persiste el pedido completo capturado en el modal 'Cerrar transacción'
+        (spec: docs/fase_a_transaccion.md). Crea un PedidoReparto con todos los
+        campos de pago/cobertura/destino y lo deja en estado='en_caja' para que
+        el cajero lo cobre fiscalmente en ObServer y lo despache."""
+        body = request.json or {}
+
+        # Validación defensiva: si el operador armó pago en efectivo (paga_con > 0)
+        # pero el form no mandó 'total', el frontend está con JS cacheado viejo
+        # (faltaba `total: total || null` en el payload hasta el 2026-06-15).
+        # Sin esto el backend leía total=None y el vuelto salía igual al paga_con.
+        try:
+            _total_in = float(body.get('total') or 0)
+        except (TypeError, ValueError):
+            _total_in = 0
+        try:
+            _paga_in = float(body.get('paga_con') or 0)
+        except (TypeError, ValueError):
+            _paga_in = 0
+        if _paga_in > 0 and _total_in <= 0:
+            return jsonify({
+                'ok': False,
+                'error': 'Falta el Monto del pedido. Refrescá la página (Ctrl+Shift+R) y cargalo de nuevo.'
+            }), 400
+
+        # Resolver drogueria_id (puede venir como id numérico o nombre).
+        drogueria_id = None
+        drog = body.get('drogueria')
+        if drog not in (None, '', 'null'):
+            try:
+                drogueria_id = int(drog)
+            except (TypeError, ValueError):
+                with database.get_db() as s:
+                    prov = (s.query(database.Provider)
+                            .filter(database.Provider.razon_social.ilike(f'%{drog}%'))
+                            .first())
+                    if prov:
+                        drogueria_id = prov.id
+
+        # Si NO vino domicilio_id pero SI vinieron pick_lat/lng del cliente_picker,
+        # creamos un DomicilioCliente nuevo y lo usamos. Así el cliente queda con
+        # su geo registrada en /clientes para próximas visitas (Diego 2026-06-15).
+        pick_lat = body.get('pick_lat')
+        pick_lng = body.get('pick_lng')
+        # Resolver cliente_id sin abrir el bloque grande (que viene más abajo y
+        # ahí también se carga conv para el resto del flujo).
+        _conv_cli_id = None
+        if (not body.get('domicilio_id')) and pick_lat and pick_lng:
+            with database.get_db() as _s:
+                _conv_tmp = _s.get(database.BotConversacion, conv_id)
+                _conv_cli_id = _conv_tmp.cliente_id if _conv_tmp else None
+        if (not body.get('domicilio_id')) and pick_lat and pick_lng and _conv_cli_id:
+            with database.get_db() as s:
+                # Dedupe por (cliente, dir, localidad, piso, depto): si el cliente
+                # ya tiene un domicilio con esos campos, actualizamos su geo;
+                # si no, lo creamos.
+                D = database.DomicilioCliente
+                pdir = (body.get('pick_direccion') or '').strip() or None
+                ploc = (body.get('pick_localidad') or '').strip() or None
+                ppiso = (body.get('pick_piso') or '').strip() or None
+                pdpto = (body.get('pick_depto') or '').strip() or None
+                pref = (body.get('pick_referencia') or '').strip() or None
+                existing = (s.query(D).filter(
+                    D.cliente_id == _conv_cli_id,
+                    D.direccion == pdir,
+                    D.localidad == ploc,
+                    D.piso == ppiso,
+                    D.depto == pdpto,
+                ).first())
+                if existing:
+                    existing.lat = float(pick_lat)
+                    existing.lng = float(pick_lng)
+                    existing.geo_actualizado_en = database.now_ar()
+                    s.commit()
+                    body['domicilio_id'] = existing.id
+                else:
+                    nuevo = D(cliente_id=_conv_cli_id, etiqueta='Casa',
+                              direccion=pdir, localidad=ploc, piso=ppiso,
+                              depto=pdpto, referencia=pref,
+                              lat=float(pick_lat), lng=float(pick_lng),
+                              geo_actualizado_en=database.now_ar())
+                    s.add(nuevo); s.commit()
+                    body['domicilio_id'] = nuevo.id
+
+        # Datos del cliente y el domicilio ELEGIDO en el modal (cuando el cliente
+        # tiene varias direcciones). Si no vino domicilio_id, cae al más reciente
+        # (cliente con una sola dirección).
+        ficha = store.get_ficha_de_conversacion(conv_id)
+        dom = (store.get_domicilio(body['domicilio_id'])
+               if body.get('domicilio_id') else None) or {}
+        if not dom:
+            doms = store.listar_domicilios(conv_id)
+            dom = doms[0] if doms else {}
+
+        # Operador que cierra (para el campo `tomo`).
+        oper = (getattr(current_user, 'nombre_completo', None)
+                or getattr(current_user, 'username', None) or 'operador')
+
+        # Turno: lo asigna el operador de planilla al organizar /reparto/planilla,
+        # no quien toma el pedido. Entra NULL y aparece en la sección 'Sin asignar'.
+        with database.get_db() as s:
+            conv = s.get(database.BotConversacion, conv_id)
+            if not conv:
+                return jsonify({'ok': False, 'error': 'conversación no existe'}), 404
+
+            total = float(body.get('total') or 0) or None
+            try:
+                paga_con = float(body['paga_con']) if body.get('paga_con') not in (None, '') else None
+            except (TypeError, ValueError):
+                paga_con = None
+            try:
+                envio = float(body['envio_costo']) if body.get('envio_costo') not in (None, '') else None
+            except (TypeError, ValueError):
+                envio = None
+
+            # Vuelto recalculado server-side (no se confía del valor del cliente):
+            # solo aplica a efectivo. vuelto = pagaCon − total. El total viene
+            # del ticket de ObServer que YA incluye el envío (Diego 2026-06-14),
+            # por eso NO sumamos envío aca.
+            vuelto_str = None
+            if body.get('forma_pago') == 'efectivo' and paga_con is not None:
+                vuelto_str = str(int(round(paga_con - (total or 0))))
+
+            # Teléfono (se muestra en la planilla): si el pedido vino del chat, en
+            # WhatsApp el canal_user_id ES el teléfono; si no, de la ficha del cliente.
+            telefono = (ficha.get('telefono') if ficha else None) or \
+                (conv.canal_user_id if conv.canal == 'whatsapp' else None)
+
+            data = dict(
+                cliente_id=conv.cliente_id,
+                cliente_nombre=(ficha['nombre'] if ficha else None) or conv.nombre_cliente,
+                telefono=telefono,
+                direccion=dom.get('direccion'),
+                piso=dom.get('piso'),
+                depto=dom.get('depto'),
+                referencia=dom.get('referencia'),
+                # Localidad: prioridad al DomicilioCliente; fallback al pick del picker.
+                localidad=dom.get('localidad') or (body.get('pick_localidad') or '').strip() or None,
+                lat=dom.get('lat'),
+                lng=dom.get('lng'),
+                # ── Pago ──
+                importe=total,                # total bruto ObServer
+                total_paciente=total,         # cobrado al paciente (idem si no hay cobertura)
+                forma_pago=body.get('forma_pago') or None,
+                paga_con=paga_con,
+                vuelto=vuelto_str,
+                link_mp=body.get('link_mp') or None,
+                # dato_pago_mp comparte campo entre nro op MP/transferencia y cupón
+                # de tarjeta (se diferencia por forma_pago). Si vienen ambos en el
+                # body (raro), prioriza dato_pago_mp.
+                dato_pago_mp=(body.get('dato_pago_mp') or body.get('cupon_tarjeta') or '').strip() or None,
+                tarjeta_ult4=body.get('tarjeta_ult4') or None,
+                tarjeta_nombre=body.get('tarjeta_nombre') or None,
+                tarjeta_marca=body.get('tarjeta_marca') or None,
+                # ── Cobertura ──
+                obra_social=body.get('obra_social') or None,
+                receta_estado=body.get('requiere_receta') or None,
+                requiere_firma=bool(body.get('requiere_firma') or False),
+                # ── Detalle del pedido (Diego 2026-06-14) ──
+                producto=(body.get('producto') or '').strip() or None,
+                producto_observer_id=body.get('producto_observer_id') or None,
+                nota=(body.get('nota') or '').strip() or None,
+                observacion=(body.get('observacion') or '').strip() or None,
+                # canal: cómo entró el pedido (atencion/mostrador/teléfono/otros).
+                # Lo guardamos en la columna 'canal' del PedidoReparto (reemplaza el
+                # 'atencion' hardcoded más abajo).
+                # cupon_tarjeta: nro de cupón/comprobante cuando forma=tarjeta.
+                # Se guarda en dato_pago_mp (campo unificado, lo diferenciás por forma_pago).
+                # ── Stock + destino ──
+                stock_status=body.get('stock') or None,
+                drogueria_id=drogueria_id,
+                destino=body.get('destino') or None,
+                envio_costo=envio,
+                # ── Workflow ──
+                # `pagado` viene del frontend: True cuando la plata YA entró (link
+                # MP confirmado, transfer con comprobante, tarjeta presencial). En
+                # efectivo queda False hasta que el cadete vuelva con la plata.
+                # `sin_cargo` se autocobra (no hay nada que cobrar).
+                pagado=(bool(body.get('pagado') or False)
+                        or body.get('forma_pago') == 'sin_cargo'),
+                # Saltamos /caja: el cierre de TX deja el pedido directo en su
+                # estado destino (mismo cálculo que usaba /caja/pedido/<id>/cobrar).
+                # Diego 2026-06-19: /caja queda subutilizada, el ticket fiscal en
+                # ObServer lo emite el operador desde /atencion (manual).
+                estado=caja.proximo_estado_cobrado(
+                    (body.get('destino') or '').strip() or None,
+                    (body.get('stock') or '').strip() or None,
+                ),
+                envio_sin_cargo=bool(body.get('envio_sin_cargo') or False),
+                # canal: si vino en el body lo usamos (modo manual permite elegir
+                # mostrador/teléfono/otros); default 'atencion' para mantener
+                # backward compat con cierres anteriores.
+                canal=(body.get('canal') or '').strip() or 'atencion',
+                tomo=oper,
+                # turno: viene del dropdown de /atención (global sticky). Si no
+                # vino, queda NULL (se podrá ver/derivar en la planilla).
+                turno=(body.get('turno') or '').strip() or None,
+                prioridad=body.get('prioridad') or 'normal',
+            )
+
+            # Reabrir un pedido existente (corregir vuelto/monto/forma/etc.) vs
+            # crear uno nuevo. Si llega pedido_id, UPDATE de campos editables
+            # (no pisamos fecha ni creado_en para preservar la historia).
+            pedido_existente_id = body.get('pedido_id')
+            if pedido_existente_id:
+                p = s.get(database.PedidoReparto, int(pedido_existente_id))
+                if not p:
+                    return jsonify({'ok': False, 'error': 'pedido no existe'}), 404
+                # Preservar campos del flujo original (no rebajar estado ni cambiar
+                # dueño): el operador puede estar solo corrigiendo monto/dirección.
+                NO_PISAR_EN_UPDATE = {'estado', 'tomo'}
+                for k, v in data.items():
+                    if k in NO_PISAR_EN_UPDATE:
+                        continue
+                    setattr(p, k, v)
+            else:
+                data['fecha'] = database.now_ar().date()
+                p = database.PedidoReparto(**data)
+                s.add(p)
+            # Turno global compartido: el último turno elegido queda de default
+            # para TODOS los operadores (sticky en /atención).
+            _turno_sel = (body.get('turno') or '').strip() or None
+            if _turno_sel:
+                cfg = s.get(database.Config, 1)
+                if cfg:
+                    cfg.turno_actual = _turno_sel
+            # Notas del cliente (textarea de la ficha): se persisten al cerrar
+            # TX en vez de tener un botón aparte (Diego 2026-06-15: el botón
+            # 'Guardar notas' antiguo refrescaba toda la ficha y borraba el
+            # monto del form). Sólo persistir si el body trae ficha_notas (no
+            # tocar Cliente.notas si el operador no escribió nada).
+            ficha_notas_raw = body.get('ficha_notas')
+            if conv.cliente_id and ficha_notas_raw is not None:
+                cli = s.get(database.Cliente, conv.cliente_id)
+                if cli:
+                    cli.notas = ficha_notas_raw.strip() or None
+            # Si el pedido viene de despachos de clínica (cola en modo=manual),
+            # marcar TODOS los despachos vinculados como 'programado' + linkear
+            # al PedidoReparto creado. Acepta 1 (legacy despacho_id) o N
+            # (despacho_ids, multi-select 2026-07-08).
+            _ids = []
+            _multi = body.get('despacho_ids') or []
+            if isinstance(_multi, list):
+                for _v in _multi:
+                    try:
+                        _ids.append(int(_v))
+                    except (TypeError, ValueError):
+                        pass
+            elif body.get('despacho_id'):
+                try:
+                    _ids.append(int(body.get('despacho_id')))
+                except (TypeError, ValueError):
+                    pass
+            if _ids:
+                try:
+                    from sqlalchemy import text as _text
+                    s.execute(_text(
+                        "UPDATE despachos_programados SET estado='programado', "
+                        "pedido_reparto_id=:pid, programado_en=:ahora "
+                        "WHERE id = ANY(:ids) AND estado='a_confirmar'"),
+                        {'pid': p.id, 'ahora': database.now_ar(),
+                         'ids': _ids})
+                except Exception:  # noqa: BLE001
+                    pass
+            s.commit()
+            return jsonify({'ok': True, 'pedido_id': p.id, 'estado': p.estado})
+
+    @app.route('/atencion/<int:conv_id>/ficha-notas', methods=['POST'])
+    @login_required
+    def atencion_guardar_notas(conv_id):
+        return jsonify(store.guardar_notas_conversacion(
+            conv_id, (request.json or {}).get('notas', '')))
+
+    @app.route('/atencion/<int:conv_id>/responder', methods=['POST'])
+    @login_required
+    def atencion_responder(conv_id):
+        texto = (request.json or {}).get('texto', '').strip()
+        if not texto:
+            return jsonify({'ok': False, 'error': 'mensaje vacío'}), 400
+        conv = store.get_conversacion_full(conv_id)
+        if not conv:
+            return jsonify({'ok': False, 'error': 'no existe'}), 404
+        # Si nadie la había tomado, la toma este operador al responder.
+        if conv['estado'] != 'humano':
+            store.tomar(conv_id, current_user.id, _nombre_actual())
+        enviado = canales.enviar(conv['canal'], conv['canal_user_id'], texto)
+        store.guardar_mensaje(conv_id, 'operador', texto)
+        # El operador respondió → limpiar informe para que si el cliente vuelve
+        # a quedar sin atención más tarde, se re-notifique al dueño.
+        try:
+            from services.informes_bot import resetear_conv
+            with database.get_db() as _s:
+                resetear_conv(_s, conv_id)
+        except Exception:
+            pass
+        return jsonify({'ok': True, 'enviado': enviado})
+
+    @app.route('/atencion/<int:conv_id>/cerrar', methods=['POST'])
+    @login_required
+    def atencion_cerrar(conv_id):
+        # Vuelve al bot: la próxima vez que el cliente escriba, lo atiende el bot.
+        store.set_atencion(conv_id, 'bot', operador_user_id=None)
+        try:
+            from services.informes_bot import resetear_conv
+            with database.get_db() as _s:
+                resetear_conv(_s, conv_id)
+        except Exception:
+            pass
+        return jsonify({'ok': True})
+
+    @app.route('/atencion/<int:conv_id>/reset-testing', methods=['POST'])
+    @login_required
+    def atencion_reset_testing(conv_id):
+        return jsonify(store.reset_conversacion_testing(conv_id))
+
+    # ── Respuestas rápidas ───────────────────────────────────────────────
+
+    @app.route('/atencion/api/respuestas-rapidas')
+    @login_required
+    def atencion_respuestas_rapidas():
+        with database.get_db() as s:
+            rrs = (s.query(database.RespuestaRapida)
+                   .filter(database.RespuestaRapida.activa.is_(True))
+                   .order_by(database.RespuestaRapida.orden).all())
+            return jsonify({'respuestas': [
+                {'id': r.id, 'emoji': r.emoji or '', 'etiqueta': r.etiqueta,
+                 'texto': r.texto, 'orden': r.orden or 0} for r in rrs]})
+
+    @app.route('/atencion/respuestas-rapidas')
+    @login_required
+    def atencion_rr_config():
+        if current_user.rol not in ('admin', 'dev'):
+            return 'Sin permiso', 403
+        with database.get_db() as s:
+            rrs = s.query(database.RespuestaRapida).order_by(
+                database.RespuestaRapida.orden).all()
+            rrs_data = [{'id': r.id, 'emoji': r.emoji or '', 'etiqueta': r.etiqueta,
+                         'texto': r.texto, 'orden': r.orden or 0, 'activa': r.activa}
+                        for r in rrs]
+        return render_template('respuestas_rapidas.html',
+                               respuestas=rrs_data)
+
+    @app.route('/atencion/respuestas-rapidas', methods=['POST'])
+    @login_required
+    def atencion_rr_crear():
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        etiqueta = (b.get('etiqueta') or '').strip()
+        texto = (b.get('texto') or '').strip()
+        if not etiqueta or not texto:
+            return jsonify({'ok': False, 'error': 'falta etiqueta o texto'}), 400
+        with database.get_db() as s:
+            max_ord = s.query(database.RespuestaRapida.orden).order_by(
+                database.RespuestaRapida.orden.desc()).first()
+            orden = (max_ord[0] or 0) + 1
+            rr = database.RespuestaRapida(
+                emoji=(b.get('emoji') or '').strip()[:8] or None,
+                etiqueta=etiqueta[:40], texto=texto, orden=orden, activa=True)
+            s.add(rr)
+            s.commit()
+            return jsonify({'ok': True, 'id': rr.id})
+
+    @app.route('/atencion/respuestas-rapidas/<int:rid>/edit', methods=['POST'])
+    @login_required
+    def atencion_rr_edit(rid):
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        b = request.json or {}
+        with database.get_db() as s:
+            rr = s.get(database.RespuestaRapida, rid)
+            if not rr:
+                return jsonify({'ok': False, 'error': 'no existe'}), 404
+            if 'emoji' in b: rr.emoji = (b['emoji'] or '').strip()[:8] or None
+            if 'etiqueta' in b: rr.etiqueta = (b['etiqueta'] or '').strip()[:40]
+            if 'texto' in b: rr.texto = (b['texto'] or '').strip()
+            s.commit()
+            return jsonify({'ok': True})
+
+    @app.route('/atencion/respuestas-rapidas/<int:rid>/delete', methods=['POST'])
+    @login_required
+    def atencion_rr_delete(rid):
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        with database.get_db() as s:
+            rr = s.get(database.RespuestaRapida, rid)
+            if rr:
+                s.delete(rr)
+                s.commit()
+            return jsonify({'ok': True})
+
+    @app.route('/atencion/respuestas-rapidas/<int:rid>/toggle', methods=['POST'])
+    @login_required
+    def atencion_rr_toggle(rid):
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        with database.get_db() as s:
+            rr = s.get(database.RespuestaRapida, rid)
+            if rr:
+                rr.activa = not rr.activa
+                s.commit()
+            return jsonify({'ok': True, 'activa': rr.activa})
+
+    @app.route('/atencion/respuestas-rapidas/reorder', methods=['POST'])
+    @login_required
+    def atencion_rr_reorder():
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'ok': False, 'error': 'sin permiso'}), 403
+        items = (request.json or {}).get('items') or []
+        with database.get_db() as s:
+            for it in items:
+                rr = s.get(database.RespuestaRapida, it.get('id'))
+                if rr:
+                    rr.orden = it.get('orden', 0)
+            s.commit()
+            return jsonify({'ok': True})
+
+    # ── Ofrecer oferta al cliente ───────────────────────────────────────
+
+    @app.route('/atencion/<int:conv_id>/ofrecer', methods=['POST'])
+    @login_required
+    def atencion_ofrecer(conv_id):
+        b = request.json or {}
+        oferta_bot_id = b.get('oferta_bot_id')
+        if not oferta_bot_id:
+            return jsonify({'ok': False, 'error': 'falta oferta_bot_id'}), 400
+        desc = b.get('descripcion', '') or 'este producto'
+        tipo = b.get('tipo', 'descuento_pct') or 'descuento_pct'
+        valor = b.get('valor') or 0
+        tipo_txt = f'{valor}% de descuento' if tipo == 'descuento_pct' else '2x1'
+        texto = f'¡Buenas noticias! 🎉 Tenemos {tipo_txt} en {desc}.\n¿Te interesa aprovecharlo? 🙂'
+        conv = store.get_conversacion_full(conv_id)
+        if not conv:
+            return jsonify({'ok': False, 'error': 'no existe'}), 404
+        enviado = canales.enviar(conv['canal'], conv['canal_user_id'], texto)
+        store.guardar_mensaje(conv_id, 'operador', texto)
+        store.registrar_oferta(conv_id, oferta_bot_id, current_user.id)
+        return jsonify({'ok': True, 'enviado': enviado})
+
+    # ── Obra social (inferida + confirmada) ─────────────────────────────
+
+    @app.route('/atencion/api/obras-sociales')
+    @login_required
+    def atencion_obras_sociales_lista():
+        """Lista de OS:
+        - Sin ?q: top 200 con ventas en el último año (uso típico).
+        - Con ?q='swiss medical': multi-token search sobre toda la tabla
+          (case-insensitive, cada palabra debe estar en la descripción)."""
+        q_arg = (request.args.get('q') or '').strip()
+        if not q_arg:
+            sql = """
+                SELECT DISTINCT oos.observer_id, oos.descripcion
+                FROM obs_obras_sociales oos
+                JOIN obs_ventas_detalle ovd ON ovd.obra_social_observer = oos.observer_id
+                WHERE ovd.fecha_estadistica >= NOW() - INTERVAL '12 months'
+                ORDER BY oos.descripcion LIMIT 200
+            """
+            with database.get_db() as s:
+                rows = s.execute(database.text(sql)).fetchall()
+            return jsonify([{'observer_id': r[0], 'descripcion': r[1]} for r in rows])
+        # Multi-token search: cada palabra del query es un ilike sobre descripcion.
+        # Más permisivo que el endpoint global porque incluye OS sin ventas
+        # recientes (útil cuando el operador escribe el nombre exacto).
+        from helpers import multi_token_filter
+        with database.get_db() as s:
+            base = s.query(database.ObsObraSocial).filter(database.ObsObraSocial.fecha_baja.is_(None))
+            clausula = multi_token_filter(q_arg, database.ObsObraSocial.descripcion)
+            if clausula is not None:
+                base = base.filter(clausula)
+            rows = base.order_by(database.ObsObraSocial.descripcion).limit(20).all()
+            return jsonify([{'observer_id': r.observer_id, 'descripcion': r.descripcion}
+                            for r in rows])
+
+    @app.route('/atencion/api/clientes/<int:observer_id>/obra-social', methods=['GET', 'POST'])
+    @login_required
+    def atencion_os_cliente(observer_id):
+        """GET: devuelve la OS (confirmada o inferida) para un cliente.
+        POST: confirma/limpia OS. Body: {obra_social_observer_id: 123|null}"""
+        from services.os_inferida import clear_os_confirmada, get_os_inferida, set_os_confirmada
+
+        if request.method == 'GET':
+            with database.get_db() as s:
+                os_info = get_os_inferida(s, observer_id)
+            if not os_info:
+                return jsonify({'ok': True, 'tiene_os': False})
+            return jsonify({'ok': True, 'tiene_os': True, **os_info})
+
+        # POST
+        body = request.json or {}
+        os_id = body.get('obra_social_observer_id')
+        with database.get_db() as s:
+            if os_id is None:
+                clear_os_confirmada(s, observer_id)
+                s.commit()
+                os_info = get_os_inferida(s, observer_id)
+                return jsonify({'ok': True, 'os': os_info or {'tiene_os': False}})
+            # Buscar la descripción en obs_obras_sociales
+            row = s.query(database.ObsObraSocial).filter_by(
+                observer_id=os_id).first()
+            nombre = row.descripcion if row else f'OS #{os_id}'
+            usuario = getattr(current_user, 'nombre_completo', None) or current_user.username
+            set_os_confirmada(s, observer_id, os_id, nombre, usuario)
+            s.commit()
+            os_info = get_os_inferida(s, observer_id)
+        return jsonify({'ok': True, 'os': os_info})
+    @app.route('/atencion/api/precio-os')
+    @login_required
+    def atencion_precio_os():
+        """Precio estimado con cobertura de OS para un producto.
+        Query: ?producto_observer=X&obra_social=Y"""
+        try:
+            producto_observer = int(request.args.get('producto_observer', '0'))
+            obra_social = int(request.args.get('obra_social', '0'))
+        except ValueError:
+            return jsonify({'ok': False, 'error': 'parámetros inválidos'}), 400
+        if not producto_observer or not obra_social:
+            return jsonify({'ok': False, 'error': 'faltan parámetros'}), 400
+        from services.os_inferida import get_precio_os
+        with database.get_db() as s:
+            info = get_precio_os(s, producto_observer, obra_social)
+        if not info:
+            return jsonify({'ok': True, 'datos': False})
+        return jsonify({'ok': True, 'datos': True, **info})

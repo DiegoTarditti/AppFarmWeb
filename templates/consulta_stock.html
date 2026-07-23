@@ -74,6 +74,11 @@ input[type=radio]:checked + .cs-tipo-btn {
 }
 .cs-cta--alt:active { background: rgba(95,230,188,.08); }
 
+/* Atajos a otras consultas: 2 por fila para no inflar la barra sticky
+   (antes 4 apilados → tapaba el slider de días que queda justo arriba). */
+.cs-shortcut-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.cs-shortcut-grid .cs-cta { margin-top: 0; padding: 13px 8px; font-size: 14px; }
+
 .cs-cancel { display: block; width: 100%; padding: 12px; text-align: center;
              color: var(--ds-text-mute); font-size: 13px; margin-top: 8px;
              text-decoration: none; }
@@ -219,22 +224,17 @@ input[type=radio]:checked + .cs-tipo-btn {
                 <span id="btn-label">Consultar stock</span>
             </button>
 
-            {# Atajos a otras consultas mobile — médico, lab, OS y producto al
-               final (uso menos frecuente, escaneo de troquel). #}
-            <a href="{{ url_for('consulta_medico') }}" class="cs-cta cs-cta--alt">
-                👨‍⚕️ Consultar médico
-            </a>
-            <a href="{{ url_for('consulta_lab') }}" class="cs-cta cs-cta--alt">
-                🧪 Consultar laboratorio
-            </a>
-            <a href="{{ url_for('consulta_os') }}" class="cs-cta cs-cta--alt">
-                🏥 Consultar obra social
-            </a>
-            <a href="{{ url_for('consulta_producto') }}" class="cs-cta cs-cta--alt">
-                🔍 Consultar producto
-            </a>
+            {# Atajos a otras consultas mobile (uso menos frecuente). 2 por fila
+               para que la barra sticky no tape el slider de días de arriba. #}
+            <div class="cs-shortcut-grid">
+                <a href="{{ url_for('consulta_medico') }}" class="cs-cta cs-cta--alt">👨‍⚕️ Médico</a>
+                <a href="{{ url_for('consulta_lab') }}" class="cs-cta cs-cta--alt">🧪 Laboratorio</a>
+                <a href="{{ url_for('consulta_os') }}" class="cs-cta cs-cta--alt">🏥 Obra social</a>
+                <a href="{{ url_for('consulta_producto') }}" class="cs-cta cs-cta--alt">🔍 Producto</a>
+                <a href="{{ url_for('consulta_droga') }}" class="cs-cta cs-cta--alt">💊 Drogas</a>
+            </div>
 
-            <a href="{{ url_for('index') }}" class="cs-cancel">Cancelar</a>
+            <a href="{{ url_for('auth_logout') }}" class="cs-cancel" style="color:var(--ds-danger);">🚪 Salir de la app</a>
         </div>
     </form>
 </div>
@@ -280,6 +280,15 @@ document.getElementById('form-consulta').addEventListener('submit', () => {
     const btn = document.getElementById('btn-submit');
     document.getElementById('btn-label').textContent = '⏳ Analizando…';
     btn.disabled = true;
+});
+
+// Al volver con "Atrás" el navegador restaura la página desde el bfcache con el
+// botón en "⏳ Analizando…" y deshabilitado → queda freezado. Capturamos el
+// texto original y lo restauramos en pageshow (dispara también en restore).
+const _btnLabelOrig = document.getElementById('btn-label').textContent;
+window.addEventListener('pageshow', () => {
+    document.getElementById('btn-label').textContent = _btnLabelOrig;
+    updateCtaState();  // re-habilita si quedó una selección válida
 });
 
 // Prellenar "Nombre del análisis" con `DD-MM -> NN días`. Se reajusta cuando

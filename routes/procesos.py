@@ -100,12 +100,16 @@ def init_app(app):
                 procs = [p for p in procs if q_text in (p.partner_nombre or '').lower()]
             data = [_serialize_list(p, session) for p in procs]
 
-            # Conteos para filtros
+            # Conteos para filtros: GROUP BY en SQL en vez de traer todas las
+            # filas y contar en Python. NULL → 'BORRADOR'; el `+= n` acumula el
+            # grupo NULL y el grupo 'BORRADOR' explícito en la misma clave.
+            from sqlalchemy import func
             counts = {est: 0 for est in ESTADOS_ORDEN}
-            for p in session.query(ProcesoCompra.estado).all():
-                est = p[0] or 'BORRADOR'
+            for estado, n in (session.query(ProcesoCompra.estado, func.count())
+                              .group_by(ProcesoCompra.estado).all()):
+                est = estado or 'BORRADOR'
                 if est in counts:
-                    counts[est] += 1
+                    counts[est] += n
 
             laboratorios = [{'id': l.id, 'nombre': l.nombre}
                             for l in session.query(Laboratorio).order_by(Laboratorio.nombre).all()]
@@ -278,18 +282,20 @@ def init_app(app):
 
     @app.route('/consulta-stock/sync-stock', methods=['POST'])
     def consulta_stock_sync_stock():
-        """Encola un comando 'sync_now' en panel_comandos para que el
-        DockerPanel local lo levante en el próximo polling y refresque
-        stock + ventas desde ObServer.
+        """Encola un comando 'sync_inteligente' en panel_comandos para que el
+        DockerPanel local lo levante en el próximo polling y refresque SOLO lo
+        vencido por tolerancia (stock 3h, ventas_mensuales 24h, productos 7d).
+        Mucho más liviano que el sync completo — no trae medicos/clientes/
+        ventas_detalle (esos solo en el sync completo manual).
 
         Retorna JSON con el id del comando + ETA típico (~30s polling +
-        ~1-2min de sync, según volumen).
+        ~40s-1.5min de sync, según qué esté vencido).
         """
         from database import PanelComando
         username = getattr(current_user, 'username', None) or 'usuario_movil'
         with database.get_db() as session:
             cmd = PanelComando(
-                comando='sync_now',
+                comando='sync_inteligente',
                 estado='pendiente',
                 solicitado_por=f'{username} (móvil)',
             )
@@ -299,9 +305,9 @@ def init_app(app):
         return jsonify({
             'ok': True,
             'id': cmd_id,
-            'mensaje': ('Sync encolado. La PC de la farmacia lo levanta en ~30s '
-                        'y tarda 1-2 min en completar. Re-ejecutá la consulta '
-                        'después para ver el stock actualizado.'),
+            'mensaje': ('Sync (inteligente) encolado. La PC de la farmacia lo levanta '
+                        'en ~30s y refresca solo lo vencido (stock, y ventas/catálogo '
+                        'si hace falta) en ~40s-1.5 min. Re-ejecutá la consulta después.'),
         })
 
     @app.route('/consulta-stock/export-xls', methods=['POST'])
@@ -523,6 +529,20 @@ def init_app(app):
             key=lambda p: (p.get('nombre') or '').upper(),
         )
 
+        # Frac (cajas/unidades) tipo ObServer: enriquecemos cada producto con el
+        # flag fraccionado + envase del master (por codigo_barra). El stock viene
+        # crudo de obs_stock → para fraccionables está en UNIDADES sueltas.
+        from database import Producto, ProductoAtributo, get_db
+        _eans = [p.get('codigo_barra') for p in data.get('products', []) if p.get('codigo_barra')]
+        _frac_by_ean = {}
+        if _eans:
+            with get_db() as _s:
+                for cb, fr, env in (_s.query(Producto.codigo_barra, Producto.fraccionado,
+                                             ProductoAtributo.cantidad_envase)
+                                    .outerjoin(ProductoAtributo, ProductoAtributo.producto_id == Producto.id)
+                                    .filter(Producto.codigo_barra.in_(_eans)).all()):
+                    _frac_by_ean[cb] = (bool(fr), env)
+
         # Pre-cómputo por producto para que el template sea liviano:
         # - vendido 3m (suma de los últimos 3 meses) + 12m (total).
         # - dias de cobertura.
@@ -530,6 +550,9 @@ def init_app(app):
             ventas = p.get('ventas') or []
             avg = p.get('avg_monthly') or 0
             stock = p.get('stock') or 0
+            _fr, _env = _frac_by_ean.get(p.get('codigo_barra'), (False, None))
+            p['frac'] = (f'{int(stock) // int(_env)}/{int(stock)}'
+                         if (_fr and _env and stock) else None)
             p['v3m'] = sum(ventas[:3]) if len(ventas) >= 3 else sum(ventas)
             p['v12m'] = p.get('total') or sum(ventas)
             if avg > 0 and stock > 0:
@@ -583,9 +606,16 @@ def init_app(app):
 
         # Para laboratorio: arrancar directo en Analizar Ventas con el lab precargado.
         # Para droguería/proveedor: ir al detail (el flujo arranca desde factura).
+        # OJO: solo desviamos a Analizar Ventas si hay datos Y el usuario tiene
+        # acceso a ObServer. Sino, observer_analizar rebota al home (con flash
+        # "Tu usuario no tiene acceso a ObServer") y el proceso recién creado
+        # "desaparece" de la vista aunque quedó guardado en BORRADOR. Para roles
+        # sin observer (ej. 'remoto') vamos directo al detail del proceso.
         if tipo == 'laboratorio':
             import observer_source
-            if observer_source.observer_analisis_disponible():
+            from routes.observer import _user_tiene_observer
+            if (observer_source.observer_analisis_disponible()
+                    and _user_tiene_observer(current_user)):
                 return redirect(url_for('observer_analizar',
                                         lab=partner_nombre, proceso=pid))
         return redirect(url_for('proceso_detail', proceso_id=pid))

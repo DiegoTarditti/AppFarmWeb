@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+{% block title %}Rubros publicados{% endblock %}
+{% block main %}
+<style>
+  .rubro-card { background:var(--surface); border:1px solid var(--border);
+                border-radius:12px; padding:14px 18px; margin:10px 0; }
+  .rubro-head { display:flex; align-items:center; gap:10px; padding-bottom:8px;
+                border-bottom:1px solid var(--row-bd); margin-bottom:8px; }
+  .rubro-head input[type=checkbox] { transform:scale(1.2); }
+  .rubro-head .name { font-size:15px; font-weight:600; color:var(--title); }
+  .rubro-head .count { font-size:11px; color:var(--muted); margin-left:auto; }
+  .sub-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+              gap:6px 12px; padding:6px 0 4px 4px; }
+  .sub-row { display:flex; align-items:center; gap:6px; padding:4px 6px;
+             border-radius:6px; font-size:12px; }
+  .sub-row:hover { background:rgba(255,255,255,0.03); }
+  .sub-row.disabled { opacity:0.5; }
+  .btn-primary { background:var(--accent); color:var(--accent-ink);
+                  border:none; padding:10px 20px; border-radius:8px;
+                  font-weight:600; cursor:pointer; font-size:13px; }
+  .toolbar { position:sticky; top:0; z-index:5; background:var(--bg);
+             padding:12px 0; margin-bottom:8px; display:flex; align-items:center;
+             gap:12px; border-bottom:1px solid var(--border); }
+  .search-input { flex:1; background:rgba(0,0,0,0.2); color:var(--txt);
+                  border:1px solid var(--border); border-radius:6px;
+                  padding:8px 12px; font-size:13px; }
+</style>
+
+<div style="max-width:960px; margin:0 auto; padding:20px;">
+  <h1 style="font-size:22px; margin-bottom:4px;">📂 Rubros publicados</h1>
+  <p style="color:var(--muted); margin-bottom:16px; font-size:13px;">
+    Tildá el rubro completo o subrubros específicos que querés mostrar en la
+    tienda pública. Si tildás el header del rubro, todos sus subrubros se
+    incluyen (podés seguir destildando individuales).
+  </p>
+
+  <form method="post">
+    <div class="toolbar">
+      <input type="text" id="filtroRubro" class="search-input"
+             placeholder="Filtrar rubros o subrubros…"
+             oninput="filtrar(this.value)">
+      <span style="font-size:12px; color:var(--muted);">
+        <span id="totalRubros">{{ rubros|length }}</span> rubros
+      </span>
+      <button type="submit" class="btn-primary">Guardar</button>
+    </div>
+
+    {% for rubro in rubros %}
+    {% set subs = subs_por_rubro.get(rubro.observer_id, []) %}
+    {% set rubro_all_pub = rubro.observer_id in pub_rubros_all %}
+    <div class="rubro-card" data-rubro-nombre="{{ rubro.descripcion|lower }}">
+      <div class="rubro-head">
+        <input type="checkbox" name="pub:{{ rubro.observer_id }}"
+               id="rubro_{{ rubro.observer_id }}"
+               {% if rubro_all_pub %}checked{% endif %}
+               onchange="tildarTodos({{ rubro.observer_id }}, this.checked)">
+        <label for="rubro_{{ rubro.observer_id }}" class="name">
+          {{ rubro.descripcion }}
+        </label>
+        <span class="count">
+          {{ subs|length }} subrubro{{ 's' if subs|length != 1 else '' }}
+        </span>
+      </div>
+
+      {% if subs %}
+      <div class="sub-list">
+        {% for sub in subs %}
+        {% set sub_pub = (rubro.observer_id, sub.observer_id) in pub_subs %}
+        <label class="sub-row">
+          <input type="checkbox"
+                 name="pub:{{ rubro.observer_id }}:{{ sub.observer_id }}"
+                 data-rubro="{{ rubro.observer_id }}"
+                 {% if sub_pub or rubro_all_pub %}checked{% endif %}>
+          <span>{{ sub.descripcion }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="font-size:11px; color:var(--muted); padding:4px;">
+        Sin subrubros. Tildá el rubro completo para publicarlo.
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </form>
+
+  <div style="margin-top:24px; text-align:center;">
+    <a href="{{ url_for('admin_tienda_config') }}" class="hbtn"
+       style="margin-right:6px;">⚙️ Config general</a>
+    <a href="{{ url_for('admin_tienda_imagenes') }}" class="hbtn">📷 Imágenes</a>
+  </div>
+</div>
+
+<script>
+  // Al tildar el header de un rubro, tildar todos sus subrubros. Al destildar,
+  // destildar todos. El operador después puede ajustar manualmente.
+  function tildarTodos(rubroId, tildado) {
+    document.querySelectorAll(`input[data-rubro="${rubroId}"]`)
+      .forEach(cb => { cb.checked = tildado; });
+  }
+
+  // Filtro por nombre de rubro o subrubro
+  function filtrar(q) {
+    q = q.trim().toLowerCase();
+    let visibles = 0;
+    document.querySelectorAll('.rubro-card').forEach(card => {
+      const nombreRubro = card.dataset.rubroNombre;
+      const subs = card.querySelectorAll('.sub-row span');
+      const matchRubro = !q || nombreRubro.includes(q);
+      const matchSub = Array.from(subs).some(s => s.textContent.toLowerCase().includes(q));
+      const visible = !q || matchRubro || matchSub;
+      card.style.display = visible ? '' : 'none';
+      if (visible) visibles++;
+    });
+    document.getElementById('totalRubros').textContent = visibles;
+  }
+</script>
+{% endblock %}

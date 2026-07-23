@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Crónicos PAMI{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+  .cp-page { padding: 18px 24px 28px; max-width: 1300px; }
+  .cp-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+  .cp-head h1 { font-family:'Space Grotesk',sans-serif; font-size: 22px; font-weight: 700; color: var(--ds-text); margin: 0; }
+  .cp-filtros { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+  .cp-filtros label { display: flex; flex-direction: column; gap: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); }
+  .cp-filtros input, .cp-filtros select { min-width: 90px; }
+  .cp-kpis { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  .cp-kpi { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 12px 18px; min-width: 140px; }
+  .cp-kpi .n { font-size: 22px; font-weight: 800; color: var(--ds-mint); font-variant-numeric: tabular-nums; }
+  .cp-kpi .l { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); }
+
+  .cp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 900px) { .cp-grid { grid-template-columns: 1fr; } }
+
+  .cp-panel { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 14px; }
+  .cp-panel h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text); margin: 0 0 10px 0; display: flex; align-items: center; gap: 8px; }
+  .cp-panel h3 .badge { background: var(--ds-mint); color: #0b1a12; font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 700; letter-spacing: 0; }
+
+  .cp-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .cp-table thead th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); padding: 6px 8px; border-bottom: 1px solid var(--ds-line); }
+  .cp-table thead th.r { text-align: right; }
+  .cp-table thead th[title] { cursor: help; text-decoration: underline dotted rgba(255,255,255,.28); text-underline-offset: 3px; }
+  .cp-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); }
+  .cp-table tbody tr:hover { background: rgba(95,230,188,.05); }
+  .cp-table td { padding: 6px 8px; color: var(--ds-text); vertical-align: middle; }
+  .cp-table td.r { text-align: right; font-variant-numeric: tabular-nums; }
+  .cp-table td.mono { font-family: 'SF Mono','Menlo','Consolas',monospace; font-size: 11px; color: var(--ds-text-mute); }
+
+  .cp-hist { display: flex; align-items: end; gap: 4px; height: 100px; padding: 0 4px; }
+  .cp-hist-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .cp-hist-bar { width: 100%; background: var(--ds-mint); border-radius: 3px 3px 0 0; min-height: 2px; opacity: .85; }
+  .cp-hist-col:hover .cp-hist-bar { opacity: 1; }
+  .cp-hist-lbl { font-size: 9px; color: var(--ds-text-mute); font-variant-numeric: tabular-nums; }
+  .cp-hist-val { font-size: 10px; color: var(--ds-text); font-weight: 600; }
+
+  .cp-empty { padding: 32px 16px; text-align: center; color: var(--ds-text-mute); font-size: 12px; }
+  .cp-warn { background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.3); border-radius: 12px; padding: 16px 20px; color: var(--ds-warn); font-size: 13px; margin-bottom: 16px; }
+  .cp-warn strong { color: var(--ds-text); }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="cp-page">
+  <a href="{{ url_for('informes_index') }}" class="text-xs" style="color:var(--ds-text-mute);">← Informes</a>
+  <div class="cp-head" style="margin-top:6px;">
+    <span style="font-size:24px;">🩺</span>
+    <h1>Crónicos PAMI</h1>
+    <span class="text-xs" style="color:var(--ds-text-mute)">
+      Detecta pacientes que reciben una droga con cadencia mensual → candidatos a crónicos
+    </span>
+  </div>
+
+  {% if sin_acceso_premium %}
+  <div class="cp-warn">
+    <strong>⚠ Requiere Observer premium (user <code>sa</code>).</strong><br>
+    Este informe lee de <code>Gestion.Recetas</code> — schema no accesible con
+    <code>usuarioDW</code>. Esta farmacia solo tiene el acceso limitado a <code>DW.*</code>,
+    donde no está el <code>NumeroAfiliado</code> ni el <code>Nombre</code> del afiliado.
+  </div>
+  {% elif error %}
+  <div class="cp-warn"><strong>Error:</strong> {{ error }}</div>
+  {% else %}
+
+  {# Filtros #}
+  <form method="get" class="cp-filtros">
+    <label>Obra social
+      <input name="os" value="{{ filtros.os }}" class="ds-input text-xs" style="min-width:100px;">
+    </label>
+    <label>Ventana (meses)
+      <input name="ventana_meses" type="number" min="1" max="24" value="{{ filtros.ventana }}" class="ds-input text-xs">
+    </label>
+    <label>Min. dispensas
+      <input name="min_dispensas" type="number" min="2" max="20" value="{{ filtros.min_disp }}" class="ds-input text-xs">
+    </label>
+    <label>Cadencia mín. (días)
+      <input name="cadencia_min" type="number" min="1" max="365" value="{{ filtros.cad_min }}" class="ds-input text-xs">
+    </label>
+    <label>Cadencia máx. (días)
+      <input name="cadencia_max" type="number" min="2" max="365" value="{{ filtros.cad_max }}" class="ds-input text-xs">
+    </label>
+    <button type="submit" class="ds-btn text-xs" style="height:32px;">Actualizar</button>
+    <span class="text-xs" style="color:var(--ds-text-mute); margin-left:8px;">
+      Regla: ≥ min_disp recetas en la ventana, cadencia entre mín/máx días → sugerido.
+    </span>
+  </form>
+
+  {# KPIs #}
+  <div class="cp-kpis">
+    <div class="cp-kpi">
+      <div class="n">{{ '{:,.0f}'.format(totales.afiliados).replace(',', '.') }}</div>
+      <div class="l">Afiliados con crónicos</div>
+    </div>
+    <div class="cp-kpi">
+      <div class="n">{{ '{:,.0f}'.format(totales.drogas).replace(',', '.') }}</div>
+      <div class="l">Drogas distintas</div>
+    </div>
+    <div class="cp-kpi" title="Combinaciones únicas afiliado + droga detectadas como crónicas. Un afiliado con 3 crónicos suma 3 pares.">
+      <div class="n">{{ '{:,.0f}'.format(totales.pares).replace(',', '.') }}</div>
+      <div class="l">Pares (afiliado + droga)</div>
+    </div>
+    <div class="cp-kpi">
+      <div class="n" style="font-size:16px;">
+        {{ filtros.os }} · {{ filtros.ventana }}m
+      </div>
+      <div class="l">Filtros aplicados</div>
+    </div>
+  </div>
+
+  {% if totales.afiliados == 0 %}
+  <div class="cp-empty">Sin resultados para los filtros aplicados.</div>
+  {% else %}
+
+  <div class="cp-grid">
+    {# Top drogas #}
+    <div class="cp-panel">
+      <h3>💊 Top drogas — más recetadas en crónico <span class="badge">{{ top_drogas|length }}</span></h3>
+      {% if top_drogas %}
+      <table class="cp-table">
+        <thead>
+          <tr>
+            <th title="Monodroga (principio activo), agrupando todas sus marcas y presentaciones">Droga</th>
+            <th class="r" title="Cantidad de afiliados distintos que la reciben en modo crónico">Afiliados</th>
+            <th class="r" title="Promedio de retiros (recetas dispensadas) por afiliado dentro de la ventana">Dispensas/afiliado</th>
+            <th class="r" title="Días promedio entre un retiro y el siguiente (cada cuánto se repone)">Cadencia (días)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in top_drogas %}
+          <tr>
+            <td>{{ d.droga }}</td>
+            <td class="r">{{ d.afiliados }}</td>
+            <td class="r">{{ d.disp_prom }}</td>
+            <td class="r">{{ d.cad_prom }}d</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="cp-empty">Sin drogas con crónicos detectados.</div>
+      {% endif %}
+    </div>
+
+    {# Top afiliados #}
+    <div class="cp-panel">
+      <h3>👥 Top afiliados — más crónicos <span class="badge">{{ top_afiliados|length }}</span></h3>
+      {% if top_afiliados %}
+      <table class="cp-table">
+        <thead>
+          <tr>
+            <th title="Nombre del afiliado. Click para ver el detalle de sus crónicos">Nombre</th>
+            <th class="mono" title="Número de afiliado PAMI">Nº afiliado</th>
+            <th class="r" title="Cantidad de drogas distintas que recibe en modo crónico">Drogas crónicas</th>
+            <th class="r" title="Total de retiros (recetas dispensadas) sumando todas sus drogas crónicas">Dispensas totales</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in top_afiliados %}
+          <tr>
+            <td>
+              <a href="{{ url_for('informe_cronicos_pami_afiliado', numero=a.numero,
+                                   ventana_meses=filtros.ventana, min_dispensas=filtros.min_disp,
+                                   cadencia_min=filtros.cad_min, cadencia_max=filtros.cad_max) }}"
+                 style="color: var(--ds-mint); text-decoration: none;"
+                 title="Ver detalle del afiliado">{{ a.nombre or '(sin nombre)' }} →</a>
+            </td>
+            <td class="mono">{{ a.numero }}</td>
+            <td class="r">{{ a.n_cronicos }}</td>
+            <td class="r">{{ a.dispensas_totales }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="cp-empty">Sin afiliados con crónicos detectados.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Distribución (histograma) #}
+  {% if histograma %}
+  <div class="cp-panel">
+    <h3>📊 Distribución — ¿cuántos crónicos tiene cada afiliado?</h3>
+    {% set max_hist = histograma | map(attribute='afiliados') | max %}
+    <div class="cp-hist">
+      {% for h in histograma %}
+      <div class="cp-hist-col" title="{{ h.afiliados }} afiliados con {{ h.n_cronicos }} crónicos">
+        <div class="cp-hist-val">{{ h.afiliados }}</div>
+        <div class="cp-hist-bar" style="height: {{ ((h.afiliados / max_hist) * 88)|round(1) }}px;"></div>
+        <div class="cp-hist-lbl">{{ h.n_cronicos }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div style="text-align:center; font-size:9px; color:var(--ds-text-mute); text-transform:uppercase; letter-spacing:.05em; margin-top:8px;">
+      Cantidad de drogas crónicas por afiliado
+    </div>
+  </div>
+  {% endif %}
+
+  {% endif %} {# end totales.afiliados > 0 #}
+  {% endif %} {# end sin_acceso_premium / error #}
+
+</div>
+</div>
+{% endblock %}

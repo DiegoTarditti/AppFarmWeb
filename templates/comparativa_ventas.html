@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% set nav_active = "admin" %}
+{% block title %}Comparativa de ventas — Pieri vs Badia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  .cv-pieri { color: #38bdf8; }
+  .cv-badia { color: #34d399; }
+  .cv-seg { display: inline-flex; border: 1px solid var(--ds-line); border-radius: 9px; overflow: hidden; }
+  .cv-seg button { padding: 6px 14px; font-size: 12px; font-weight: 700; background: var(--ds-surface-2, #1f2937);
+                   color: var(--ds-text-mute); border: none; cursor: pointer; }
+  .cv-seg button.on { background: var(--ds-mint, #34d399); color: #06281d; }
+  .cv-lab-head { cursor: pointer; user-select: none; }
+  .cv-lab-head:hover { background: var(--ds-surface-2, #1f2937); }
+  .cv-bar { height: 6px; border-radius: 3px; background: var(--ds-line); overflow: hidden; display: flex; }
+  .cv-num { font-variant-numeric: tabular-nums; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="max-w-[1200px] mx-auto px-4 py-6">
+
+  <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
+    <div>
+      <h1 class="text-xl font-bold glow-text">📊 Comparativa de ventas semanales</h1>
+      <p class="text-xs" style="color:var(--ds-text-mute)">
+        <b class="cv-pieri" id="cv-nom-intro-p">—</b> vs <b class="cv-badia" id="cv-nom-intro-b">—</b> por semana del mes, cruzado por código Alfabeta.
+        Filtrá por mes y laboratorio.
+      </p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap text-xs">
+      <select id="f-mes" class="ds-input text-xs" title="Mes a analizar">
+        {% for m in meses %}
+        <option value="{{ m.key }}">{{ m.label }}</option>
+        {% endfor %}
+      </select>
+      <select id="f-lab" class="ds-input text-xs" style="max-width:220px" title="Filtrar por laboratorio" disabled>
+        <option value="all">Todos los laboratorios</option>
+      </select>
+      <div class="cv-seg" title="Métrica">
+        <button type="button" id="m-u" class="on" onclick="setMetric('u')">Unidades</button>
+        <button type="button" id="m-m" onclick="setMetric('m')">$ Importe</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cv-error" class="hidden card p-4 border" style="border-color:#f87171">
+    <p class="text-sm font-semibold" style="color:#f87171">No se pudo generar el análisis</p>
+    <p id="cv-error-msg" class="text-xs mt-1" style="color:var(--ds-text-mute)"></p>
+  </div>
+
+  <div id="cv-loading" class="card p-6 text-center text-sm" style="color:var(--ds-text-mute)">⏳ Cargando…</div>
+
+  <div id="cv-body" class="hidden">
+    <!-- Resumen + gráfico -->
+    <div class="card p-4 mb-4">
+      <div class="flex items-center justify-between gap-3 flex-wrap mb-2">
+        <div class="text-sm font-semibold" id="cv-scope">Total — todos los laboratorios</div>
+        <div class="text-xs flex items-center gap-4 cv-num">
+          <span><b class="cv-pieri" id="cv-nom-tot-p">—</b>: <span id="cv-tot-p">—</span></span>
+          <span><b class="cv-badia" id="cv-nom-tot-b">—</b>: <span id="cv-tot-b">—</span></span>
+          <span id="cv-tot-diff" style="color:var(--ds-text-mute)"></span>
+        </div>
+      </div>
+      <div style="height:300px"><canvas id="cv-chart"></canvas></div>
+    </div>
+
+    <!-- Tablas colapsables por laboratorio -->
+    <div class="flex items-center gap-2 mb-2">
+      <input id="f-prod" type="text" placeholder="🔎 Filtrar producto…" class="ds-input text-xs" style="max-width:240px"
+             oninput="renderLabs()">
+      <span class="text-xs" style="color:var(--ds-text-mute)" id="cv-nlabs"></span>
+    </div>
+    <div id="cv-labs" class="space-y-2"></div>
+  </div>
+
+</div>
+
+<script>
+const NF  = new Intl.NumberFormat('es-AR', {maximumFractionDigits: 0});
+const NF1 = new Intl.NumberFormat('es-AR', {maximumFractionDigits: 1});
+const STATE = {data: null, metric: 'u', lab: 'all', chart: null};
+
+const fmt = (v) => STATE.metric === 'm' ? ('$' + NF.format(Math.round(v))) : NF1.format(v);
+const semU = (o) => o.p_sem_u ? o : o;           // helper noop (legibilidad)
+const pickSem = (o, who) => STATE.metric === 'm' ? o[who + '_sem_m'] : o[who + '_sem_u'];
+const pickTot = (o, who) => STATE.metric === 'm' ? o[who + '_m'] : o[who + '_u'];
+
+// Nombres dinámicos de las sucursales (p = local, b = otra). Vienen del backend
+// (tabla sucursales) → correctos en cualquier instancia, no hardcode Pieri/Badia.
+const NOM = {
+  get p() { return (STATE.data && STATE.data.local_nombre) || 'Local'; },
+  get b() { return (STATE.data && STATE.data.otra_nombre) || 'Otra'; },
+};
+function applyNames() {
+  ['cv-nom-intro-p', 'cv-nom-tot-p'].forEach(id => { const e = document.getElementById(id); if (e) e.textContent = NOM.p; });
+  ['cv-nom-intro-b', 'cv-nom-tot-b'].forEach(id => { const e = document.getElementById(id); if (e) e.textContent = NOM.b; });
+}
+
+function weekLabels() {
+  const n = STATE.data.n_semanas, d = STATE.data.n_dias, out = [];
+  for (let i = 0; i < n; i++) {
+    const a = i * 7 + 1, b = Math.min((i + 1) * 7, d);
+    out.push('Sem ' + (i + 1) + ' (' + a + '-' + b + ')');
+  }
+  return out;
+}
+
+function scopeObj() {
+  if (STATE.lab === 'all') return STATE.data.total;
+  return STATE.data.labs.find(L => L.lab === STATE.lab) || STATE.data.total;
+}
+
+function renderChart() {
+  const o = scopeObj();
+  const labels = weekLabels();
+  const dataP = pickSem(o, 'p'), dataB = pickSem(o, 'b');
+  if (STATE.chart) STATE.chart.destroy();
+  STATE.chart = new Chart(document.getElementById('cv-chart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {label: NOM.p, data: dataP, backgroundColor: '#38bdf8', borderRadius: 4},
+        {label: NOM.b, data: dataB, backgroundColor: '#34d399', borderRadius: 4},
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: {labels: {color: '#cbd5e1', font: {weight: 'bold'}}},
+        tooltip: {callbacks: {label: (c) => c.dataset.label + ': ' + fmt(c.parsed.y)}},
+      },
+      scales: {
+        x: {ticks: {color: '#94a3b8'}, grid: {display: false}},
+        y: {ticks: {color: '#94a3b8', callback: (v) => STATE.metric === 'm' ? '$' + NF.format(v) : NF.format(v)},
+            grid: {color: 'rgba(148,163,184,.12)'}, beginAtZero: true},
+      },
+    },
+  });
+  // Totales del scope
+  const tp = pickTot(o, 'p'), tb = pickTot(o, 'b');
+  document.getElementById('cv-tot-p').textContent = fmt(tp);
+  document.getElementById('cv-tot-b').textContent = fmt(tb);
+  const diff = tp - tb, pct = tb ? Math.abs(diff / tb * 100) : 0;
+  const el = document.getElementById('cv-tot-diff');
+  if (Math.abs(diff) < 0.5) { el.textContent = '(empatadas)'; }
+  else {
+    const quien = diff > 0 ? NOM.p : NOM.b;
+    el.textContent = quien + ' +' + fmt(Math.abs(diff)) + ' (' + NF1.format(pct) + '%)';
+  }
+  document.getElementById('cv-scope').textContent =
+    STATE.lab === 'all' ? 'Total — todos los laboratorios' : STATE.lab;
+}
+
+function barSplit(p, b) {
+  const t = Math.abs(p) + Math.abs(b);
+  const pp = t ? Math.abs(p) / t * 100 : 50;
+  return '<div class="cv-bar"><div style="width:' + pp + '%;background:#38bdf8"></div>' +
+         '<div style="width:' + (100 - pp) + '%;background:#34d399"></div></div>';
+}
+
+function renderLabs() {
+  if (!STATE.data) return;
+  const cont = document.getElementById('cv-labs');
+  const q = (document.getElementById('f-prod').value || '').trim().toLowerCase();
+  let labs = STATE.data.labs;
+  if (STATE.lab !== 'all') labs = labs.filter(L => L.lab === STATE.lab);
+
+  cont.innerHTML = '';
+  let shown = 0;
+  labs.forEach((L, idx) => {
+    let prods = L.productos;
+    if (q) prods = prods.filter(p => (p.desc || '').toLowerCase().includes(q) || String(p.alfa).includes(q));
+    if (!prods.length) return;
+    shown++;
+    const tp = pickTot(L, 'p'), tb = pickTot(L, 'b');
+    const wrap = document.createElement('div');
+    wrap.className = 'card overflow-hidden';
+    wrap.innerHTML =
+      '<div class="cv-lab-head flex items-center gap-3 px-3 py-2" data-idx="' + idx + '">' +
+        '<span class="text-xs" style="color:var(--ds-text-mute);width:14px">▸</span>' +
+        '<span class="text-sm font-semibold flex-1 truncate" title="' + L.lab + '">' + L.lab + '</span>' +
+        '<span class="text-xs cv-num cv-pieri">' + fmt(tp) + '</span>' +
+        '<span style="width:90px">' + barSplit(tp, tb) + '</span>' +
+        '<span class="text-xs cv-num cv-badia">' + fmt(tb) + '</span>' +
+        '<span class="text-[10px]" style="color:var(--ds-text-mute);width:48px;text-align:right">' + prods.length + ' prod</span>' +
+      '</div>' +
+      '<div class="cv-lab-body hidden"></div>';
+    const head = wrap.querySelector('.cv-lab-head');
+    const body = wrap.querySelector('.cv-lab-body');
+    head.addEventListener('click', () => {
+      const open = !body.classList.contains('hidden');
+      if (open) { body.classList.add('hidden'); head.querySelector('span').textContent = '▸'; return; }
+      if (!body.dataset.built) { body.innerHTML = prodTable(prods); body.dataset.built = '1'; }
+      body.classList.remove('hidden');
+      head.querySelector('span').textContent = '▾';
+    });
+    cont.appendChild(wrap);
+  });
+  document.getElementById('cv-nlabs').textContent =
+    shown + ' laboratorio' + (shown === 1 ? '' : 's') + (q ? ' (filtrado)' : '');
+  if (!shown) cont.innerHTML = '<div class="card p-4 text-sm" style="color:var(--ds-text-mute)">Sin resultados.</div>';
+}
+
+function prodTable(prods) {
+  let rows = '';
+  prods.forEach(p => {
+    const pv = STATE.metric === 'm' ? p.p_m : p.p_u;
+    const bv = STATE.metric === 'm' ? p.b_m : p.b_u;
+    rows +=
+      '<tr class="border-t" style="border-color:var(--ds-line)">' +
+        '<td class="px-3 py-1.5 text-xs truncate" title="' + (p.desc || '') + '">' + (p.desc || p.alfa) + '</td>' +
+        '<td class="px-3 py-1.5 text-xs text-right cv-num cv-pieri">' + fmt(pv) + '</td>' +
+        '<td class="px-2 py-1.5" style="width:90px">' + barSplit(pv, bv) + '</td>' +
+        '<td class="px-3 py-1.5 text-xs text-right cv-num cv-badia">' + fmt(bv) + '</td>' +
+      '</tr>';
+  });
+  return '<table class="w-full">' +
+    '<thead><tr class="text-[10px] uppercase" style="color:var(--ds-text-mute)">' +
+      '<th class="px-3 py-1 text-left">Producto</th>' +
+      '<th class="px-3 py-1 text-right cv-pieri">' + NOM.p + '</th>' +
+      '<th class="px-2 py-1"></th>' +
+      '<th class="px-3 py-1 text-right cv-badia">' + NOM.b + '</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function rebuildLabFilter() {
+  const sel = document.getElementById('f-lab');
+  const prev = STATE.lab;
+  sel.innerHTML = '<option value="all">Todos los laboratorios</option>';
+  STATE.data.labs.forEach(L => {
+    const o = document.createElement('option');
+    o.value = L.lab; o.textContent = L.lab;
+    sel.appendChild(o);
+  });
+  sel.value = STATE.data.labs.some(L => L.lab === prev) ? prev : 'all';
+  STATE.lab = sel.value;
+  sel.disabled = false;
+}
+
+function renderAll() {
+  applyNames();
+  document.getElementById('cv-tot-p').textContent = '—';
+  renderChart();
+  renderLabs();
+}
+
+function setMetric(m) {
+  STATE.metric = m;
+  document.getElementById('m-u').classList.toggle('on', m === 'u');
+  document.getElementById('m-m').classList.toggle('on', m === 'm');
+  // Re-render: las tablas ya construidas deben refrescarse → forzar rebuild.
+  if (STATE.data) renderAll();
+}
+
+async function fetchData() {
+  const mes = document.getElementById('f-mes').value;
+  document.getElementById('cv-loading').classList.remove('hidden');
+  document.getElementById('cv-body').classList.add('hidden');
+  document.getElementById('cv-error').classList.add('hidden');
+  try {
+    const r = await fetch('/admin/comparativa-ventas/data?mes=' + mes, {credentials: 'same-origin'});
+    const d = await r.json();
+    document.getElementById('cv-loading').classList.add('hidden');
+    if (!d.ok) {
+      document.getElementById('cv-error-msg').textContent = d.error || 'Error desconocido';
+      document.getElementById('cv-error').classList.remove('hidden');
+      return;
+    }
+    STATE.data = d;
+    rebuildLabFilter();
+    document.getElementById('cv-body').classList.remove('hidden');
+    renderAll();
+  } catch (err) {
+    document.getElementById('cv-loading').classList.add('hidden');
+    document.getElementById('cv-error-msg').textContent = err.message;
+    document.getElementById('cv-error').classList.remove('hidden');
+  }
+}
+
+document.getElementById('f-mes').addEventListener('change', fetchData);
+document.getElementById('f-lab').addEventListener('change', () => {
+  STATE.lab = document.getElementById('f-lab').value;
+  renderAll();
+});
+fetchData();
+</script>
+{% endblock %}

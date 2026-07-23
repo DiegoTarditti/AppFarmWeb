@@ -72,3 +72,24 @@ def clasificar_min(min_actual: int, min_sugerido: int) -> str:
     if min_sugerido > 0 and min_actual > min_sugerido * 2.0:
         return 'down'
     return 'ok'
+
+
+def pvp_reciente(unidades_por_mes, montos_por_mes):
+    """PVP del mes MÁS RECIENTE con ventas (monto/unidades de ese mes).
+
+    Mejor estimador que el promedio 12m bajo inflación: el promedio mezcla
+    precios viejos baratos y subestima el precio actual. Acá tomamos el último
+    mes que efectivamente vendió y usamos su precio real.
+
+    Args:
+        unidades_por_mes: lista de 12 (idx 0 = más antiguo, 11 = más reciente).
+        montos_por_mes:   lista de 12 paralela (monto $ por mes).
+    Returns:
+        float PVP redondeado a 2 decimales. 0.0 si nunca vendió.
+    """
+    for i in range(len(unidades_por_mes) - 1, -1, -1):
+        u = unidades_por_mes[i] or 0
+        if u > 0:
+            m = (montos_por_mes[i] if i < len(montos_por_mes) else 0) or 0
+            return round(float(m) / float(u), 2) if m else 0.0
+    return 0.0

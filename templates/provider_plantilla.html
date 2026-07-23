@@ -9,7 +9,11 @@
     <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','sans-serif'] } } } }</script>
     <style>
         body { background:#f3f3f3; color:#1e1e1e; }
-        ::-webkit-scrollbar { width:5px; } ::-webkit-scrollbar-thumb { background:#d0d0d0; border-radius:99px; }
+        * { scrollbar-width: auto; scrollbar-color: #6b7280 #e5e7eb; }
+        ::-webkit-scrollbar { width:14px; height:14px; }
+        ::-webkit-scrollbar-track { background:#e5e7eb; border-radius:4px; }
+        ::-webkit-scrollbar-thumb { background:#6b7280; border-radius:4px; border:2px solid #e5e7eb; }
+        ::-webkit-scrollbar-thumb:hover { background:#4b5563; }
         input,select { background:#f5f5f5; border:1px solid #e0e0e0; border-radius:6px; padding:4px 8px; font-size:0.8rem; }
         input:focus, select:focus { outline:2px solid #EAB308; background:#fff; }
         .campo-row { transition: background .1s; }

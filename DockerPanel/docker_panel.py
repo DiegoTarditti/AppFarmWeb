@@ -16,6 +16,8 @@ import os
 import queue
 import socket
 import subprocess
+import sys
+import textwrap
 import threading
 import time
 import tkinter as tk
@@ -46,6 +48,11 @@ KEEPALIVE_DEFAULT_MIN = 10
 COMMANDS = [
     ("⬇️  Pull código + Restart",  "git pull && docker-compose restart web",  "#10B981"),
     ("🔄  Reiniciar Web",         "docker-compose restart web",              "#2563EB"),
+    # Bot asistente (servicio aparte). "Reiniciar bot" lo arranca si estaba caído
+    # y recrea el proceso para tomar código/.env nuevos.
+    ("🤖  Arrancar/Reiniciar bot", "docker-compose up -d --force-recreate bot", "#2563EB"),
+    ("🤖  Parar bot",             "docker-compose stop bot",                 "#DC2626"),
+    ("🤖  Logs bot (50 líneas)",  "docker-compose logs --tail=50 bot",       "#D97706"),
     ("🏗️  Rebuild Web",           "docker-compose build web",                "#7C3AED"),
     ("🏗️  Rebuild Todo",          "docker-compose build",                    "#7C3AED"),
     ("▶️  Iniciar (up -d)",       "docker-compose up -d",                    "#16A34A"),
@@ -71,6 +78,14 @@ BRAND    = "#EAB308"
 GREEN    = "#4ADE80"
 RED      = "#F87171"
 YELLOW   = "#FBBF24"
+
+# Backup diario obligatorio (config). Si la share no es alcanzable, se loguea
+# el error en backup_log y se muestra warning rojo (no bloquea el panel).
+# Estos son los DEFAULTS — la carpeta real y la retención son configurables
+# en el diálogo "Configurar Agente Pendientes" y viven en agente_config.txt
+# como `backup_share=…` y `backup_retention_days=N`.
+BACKUP_SHARE_DEFAULT = r'\\server-1\D\RespaldoFarmWeb'
+BACKUP_RETENTION_DAYS_DEFAULT = 30
 
 
 # ── Persistencia del último proyecto abierto ──────────────────────────────────
@@ -247,6 +262,23 @@ class DockerPanel(tk.Tk):
         threading.Thread(target=self._panel_remoto_loop, daemon=True).start()
         self.after(500, self._update_panel_remoto_label)
         # === END PANEL REMOTO ===
+
+        # === BEGIN BACKUP DIARIO (obligatorio, dispara al arrancar) ===
+        # Diferido 1.5s para que la UI ya esté renderizada y los containers estén
+        # responsivos al docker-compose exec. Idempotente: si ya hay backup ok
+        # del día (chequea backup_log), no ejecuta nada.
+        self.after(1500, lambda: self._backup_diario_check(manual=False))
+        # === END BACKUP DIARIO ===
+
+        # === BEGIN SNAPSHOT STOCK DIARIO ===
+        # Snapshot diario de obs_stock para reconstruir movimientos reales del
+        # stock vs los documentados (ventas + facturas). La diferencia es el
+        # "stock invisible": compras al contado, ajustes manuales, mermas,
+        # transferencias, devoluciones a proveedor. Idempotente: si ya hay
+        # snapshot del día, no ejecuta. Local-only por arquitectura (este
+        # archivo no se deploya a Render).
+        self.after(2500, self._snapshot_stock_check)
+        # === END SNAPSHOT STOCK DIARIO ===
 
     def _ask_project_dir(self):
         dlg = _StartupDialog(self)
@@ -466,6 +498,20 @@ class DockerPanel(tk.Tk):
         btn_push_master.pack(fill="x", pady=2)
         btn_push_master.bind("<Enter>", lambda e: btn_push_master.config(bg="#5a3a2a"))
         btn_push_master.bind("<Leave>", lambda e: btn_push_master.config(bg="#3a2a1a"))
+
+        btn_push_cad = tk.Button(
+            left, text="📊  Subir cadencias a Render",
+            font=("Segoe UI", 9, "bold"),
+            bg="#3a2a1a", fg="#ffb87f",
+            activebackground="#4a3a2a", activeforeground="#ffb87f",
+            relief="flat", cursor="hand2", pady=7, anchor="w", padx=10,
+            command=lambda: threading.Thread(
+                target=self._push_cadencias, daemon=True
+            ).start()
+        )
+        btn_push_cad.pack(fill="x", pady=2)
+        btn_push_cad.bind("<Enter>", lambda e: btn_push_cad.config(bg="#5a3a2a"))
+        btn_push_cad.bind("<Leave>", lambda e: btn_push_cad.config(bg="#3a2a1a"))
         # === END PUSH MASTER ===
 
         # === BEGIN PANEL REMOTO (buzón de comandos en Render) ===
@@ -690,6 +736,21 @@ class DockerPanel(tk.Tk):
         self._panel_remoto_lbl.bind("<Button-1>", lambda e: self._config_panel_remoto())
         # === END PANEL REMOTO ===
 
+        # === BEGIN BACKUP DIARIO (mostrar estado + click para reintentar) ===
+        tk.Label(self._status_bar, text="│", bg="#111113", fg=BORDER).pack(side="right", padx=8)
+        self._backup_lbl = tk.Label(
+            self._status_bar,
+            text="○ backup ·",
+            font=("Segoe UI", 8),
+            bg="#111113", fg=FG_DIM,
+            cursor="hand2",
+        )
+        self._backup_lbl.pack(side="right", padx=4)
+        # Click → reintenta el backup (útil si la share no estaba antes).
+        self._backup_lbl.bind("<Button-1>",
+                              lambda e: self._backup_diario_check(manual=True))
+        # === END BACKUP DIARIO ===
+
         # Indicador de PDFs pendientes en carpeta local + botón Revisar
         tk.Label(self._status_bar, text="│", bg="#111113", fg=BORDER).pack(side="right", padx=8)
         self._carpeta_lbl = tk.Label(
@@ -900,6 +961,209 @@ class DockerPanel(tk.Tk):
             self._update_queue_badge()
             self._append(f"  ↳ backup encolado → {folder}\n", "dim")
 
+    # ── Backup diario obligatorio (corre al arrancar el panel) ────────────────
+
+    def _backup_diario_check(self, manual=False):
+        """Si hoy no hay backup ok en `backup_log`, dispara uno a la share
+        corporativa. Idempotente: si la fila ok del día ya existe, no hace nada.
+        manual=True fuerza el intento aunque ya haya backup hoy (botón
+        Reintentar)."""
+        if not manual:
+            existe = self._db_query_scalar(
+                "SELECT 1 FROM backup_log WHERE fecha = CURRENT_DATE AND ok = true LIMIT 1"
+            )
+            if existe == '1':
+                self._set_backup_status('ok')
+                return
+        self._set_backup_status('running')
+        threading.Thread(target=self._backup_diario_ejecutar, daemon=True).start()
+
+    def _backup_diario_ejecutar(self):
+        """Thread: pg_dump → share → INSERT backup_log → rotación. No bloquea UI."""
+        from datetime import date
+        share = self._get_backup_share()
+        today = date.today().isoformat()
+        dest_path = os.path.join(share, f'farmacia_{today}.dump')
+
+        self.after(0, self._append,
+                   f"\n💾 backup diario → {dest_path}\n", "bk")
+
+        # 1) ¿Share alcanzable?
+        if not os.path.isdir(share):
+            try:
+                os.makedirs(share, exist_ok=True)
+            except OSError as e:
+                err = f'share no alcanzable: {e}'
+                self._backup_log_insert(False, dest_path, None, err)
+                self.after(0, self._append, f"  ⚠ {err}\n", "err")
+                self.after(0, self._set_backup_status, 'fail',
+                           'share offline')
+                return
+
+        # 2) pg_dump → archivo en la share (redirección de stdout)
+        try:
+            cwd = self.dir_var.get()
+            with open(dest_path, 'wb') as f:
+                r = subprocess.run(
+                    ['docker-compose', 'exec', '-T', 'db', 'pg_dump',
+                     '-Fc', '-U', 'postgres', '-d', 'farmacia'],
+                    stdout=f, stderr=subprocess.PIPE, cwd=cwd, timeout=600,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                )
+            if r.returncode != 0:
+                stderr = r.stderr.decode('utf-8', 'replace')[:500]
+                err = f'pg_dump rc={r.returncode}: {stderr}'
+                try:
+                    os.remove(dest_path)  # archivo parcial
+                except OSError:
+                    pass
+                self._backup_log_insert(False, dest_path, None, err)
+                self.after(0, self._append, f"  ✗ {err[:200]}\n", "err")
+                self.after(0, self._set_backup_status, 'fail', 'pg_dump error')
+                return
+            size = os.path.getsize(dest_path)
+        except Exception as e:
+            err = str(e)[:500]
+            self._backup_log_insert(False, dest_path, None, err)
+            self.after(0, self._append, f"  ✗ {err}\n", "err")
+            self.after(0, self._set_backup_status, 'fail', 'error')
+            return
+
+        # 3) Log success
+        self._backup_log_insert(True, dest_path, size, None)
+        size_mb = size / (1024 * 1024)
+        self.after(0, self._append,
+                   f"  ✓ backup OK ({size_mb:.1f} MB)\n", "ok")
+        self.after(0, self._set_backup_status, 'ok')
+
+        # 4) Rotar viejos (best-effort)
+        try:
+            self._backup_rotar()
+        except Exception:
+            pass
+
+    # ── Snapshot stock diario (para reconstruir movimientos) ──────────────────
+
+    def _snapshot_stock_check(self):
+        """Si no hay snapshot de hoy en obs_stock_snapshot_diario, lo crea.
+        Idempotente: si la fila del día ya existe (cualquier producto), no hace
+        nada. INSERT ... SELECT trae los ~67k productos de obs_stock en una
+        sola query."""
+        existe = self._db_query_scalar(
+            "SELECT 1 FROM obs_stock_snapshot_diario WHERE fecha = CURRENT_DATE LIMIT 1"
+        )
+        if existe == '1':
+            return
+        threading.Thread(target=self._snapshot_stock_ejecutar, daemon=True).start()
+
+    def _snapshot_stock_ejecutar(self):
+        """Thread: INSERT idempotente. No bloquea UI."""
+        sql = (
+            "INSERT INTO obs_stock_snapshot_diario "
+            "(fecha, id_farmacia, producto_observer, stock_actual) "
+            "SELECT CURRENT_DATE, id_farmacia, producto_observer, stock_actual "
+            "FROM obs_stock "
+            "ON CONFLICT (fecha, id_farmacia, producto_observer) DO NOTHING"
+        )
+        try:
+            r = subprocess.run(
+                ['docker-compose', 'exec', '-T', 'db', 'psql',
+                 '-U', 'postgres', 'farmacia', '-c', sql],
+                cwd=self.dir_var.get(), timeout=60, check=False,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+            if r.returncode == 0:
+                self.after(0, self._append, "📸 snapshot stock OK\n", "ok")
+            else:
+                err = r.stderr.decode('utf-8', 'replace')[:200]
+                self.after(0, self._append,
+                           f"⚠ snapshot stock falló: {err}\n", "err")
+        except Exception as e:
+            self.after(0, self._append,
+                       f"⚠ snapshot stock error: {e}\n", "err")
+
+    def _backup_log_insert(self, ok, destino, size, error):
+        """INSERT en backup_log vía docker-compose exec. Best-effort: si la DB
+        local no está disponible, no rompe el flujo del backup."""
+        ok_sql = 'true' if ok else 'false'
+        dest_esc = (destino or '').replace("'", "''")
+        size_sql = str(int(size)) if size else 'NULL'
+        if error:
+            err_esc = error.replace("'", "''")[:1000]
+            err_sql = f"'{err_esc}'"
+        else:
+            err_sql = 'NULL'
+        # creado_en es NOT NULL sin default a nivel DB (el default es Python-side
+        # en el modelo y este INSERT crudo lo saltea) → lo seteamos con NOW().
+        sql = (f"INSERT INTO backup_log (fecha, creado_en, destino, tamano_bytes, ok, error) "
+               f"VALUES (CURRENT_DATE, NOW(), '{dest_esc}', {size_sql}, {ok_sql}, {err_sql})")
+        try:
+            subprocess.run(
+                ['docker-compose', 'exec', '-T', 'db', 'psql',
+                 '-U', 'postgres', 'farmacia', '-c', sql],
+                cwd=self.dir_var.get(), timeout=30, check=False,
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+        except Exception:
+            pass
+
+    def _backup_rotar(self):
+        """Borra farmacia_YYYY-MM-DD.dump más viejos que la retención configurada."""
+        from datetime import date, timedelta
+        share = self._get_backup_share()
+        if not os.path.isdir(share):
+            return
+        cutoff = date.today() - timedelta(days=self._get_backup_retention_days())
+        for nombre in os.listdir(share):
+            if not (nombre.startswith('farmacia_') and nombre.endswith('.dump')):
+                continue
+            fecha_str = nombre[len('farmacia_'):-len('.dump')]
+            try:
+                fdate = date.fromisoformat(fecha_str)
+            except ValueError:
+                continue
+            if fdate < cutoff:
+                try:
+                    os.remove(os.path.join(share, nombre))
+                except OSError:
+                    pass
+
+    def _db_query_scalar(self, sql):
+        """Corre un SELECT que devuelve un único valor; '' si vacío, None si error.
+        Usa docker-compose exec -T db psql -tAc para output limpio (sin headers).
+        """
+        try:
+            r = subprocess.run(
+                ['docker-compose', 'exec', '-T', 'db', 'psql',
+                 '-U', 'postgres', 'farmacia', '-tAc', sql],
+                cwd=self.dir_var.get(), capture_output=True, text=True, timeout=15,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+            if r.returncode != 0:
+                return None
+            return r.stdout.strip()
+        except Exception:
+            return None
+
+    def _set_backup_status(self, estado, motivo=None):
+        """Setea el indicador del backup en la barra de estado.
+        estado: 'ok' | 'fail' | 'running'."""
+        if not getattr(self, '_backup_lbl', None):
+            return
+        from datetime import date
+        hoy = date.today().strftime('%d/%m')
+        if estado == 'ok':
+            self._backup_lbl.config(text=f"● backup {hoy} OK", fg=GREEN)
+        elif estado == 'running':
+            self._backup_lbl.config(text="⏳ backup en curso…", fg=YELLOW)
+        else:  # fail
+            txt = f"⚠ backup {hoy} pendiente"
+            if motivo:
+                txt = f"{txt} ({motivo})"
+            self._backup_lbl.config(text=txt, fg=RED)
+
     # ── Restore ───────────────────────────────────────────────────────────────
 
     def _restore_from_file(self):
@@ -984,6 +1248,72 @@ class DockerPanel(tk.Tk):
         # Config vive en la misma carpeta que este script (evita problemas de case en Windows)
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente_config.txt")
 
+    def _python_exe(self):
+        """Intérprete Python a usar para subprocesos. Usa el MISMO que corre el
+        panel (sys.executable) para no caer en el alias de Microsoft Store que
+        rompe 'python' en el PATH. Si el panel se lanzó con pythonw.exe, prefiere
+        el python.exe hermano (tiene consola para capturar stdout)."""
+        py = sys.executable or "python"
+        low = py.lower()
+        if low.endswith("pythonw.exe"):
+            cand = py[:-len("pythonw.exe")] + "python.exe"
+            if os.path.isfile(cand):
+                py = cand
+        return py
+
+    def _read_config_value(self, key, default=""):
+        """Lee una clave puntual de agente_config.txt (ej. 'agente_token')."""
+        cfg_path = self._get_agente_config_path()
+        if os.path.isfile(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith(key + "="):
+                            return line.split("=", 1)[1].strip()
+            except OSError:
+                pass
+        return default
+
+    def _get_backup_share(self):
+        """Carpeta destino del backup diario. Configurable desde el diálogo
+        Configurar Agente; fallback al default histórico si no hay config."""
+        return self._read_config_value('backup_share', BACKUP_SHARE_DEFAULT) or BACKUP_SHARE_DEFAULT
+
+    def _get_backup_retention_days(self):
+        """Días de retención del backup diario (1–365). Default 30."""
+        raw = self._read_config_value('backup_retention_days',
+                                       str(BACKUP_RETENTION_DAYS_DEFAULT))
+        try:
+            return max(1, min(365, int(raw)))
+        except (ValueError, TypeError):
+            return BACKUP_RETENTION_DAYS_DEFAULT
+
+    def _update_config_file(self, updates):
+        """Reescribe agente_config.txt actualizando SOLO las claves de `updates`
+        (dict clave→valor str) y preservando cualquier otra línea existente.
+        Evita que guardar un bloque (agente / keepalive / auto-sync / panel-remoto)
+        borre los otros bloques o claves sueltas (agente_token, helper_whitelist)."""
+        cfg_path = self._get_agente_config_path()
+        managed = set(updates.keys())
+        preserved = []
+        if os.path.isfile(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        raw = line.rstrip("\n")
+                        key = raw.split("=", 1)[0].strip() if "=" in raw else ""
+                        if key in managed:
+                            continue
+                        preserved.append(raw)
+            except OSError:
+                pass
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            for ln in preserved:
+                f.write(ln + "\n")
+            for k, v in updates.items():
+                f.write(f"{k}={v}\n")
+
     def _load_agente_config(self):
         """Carga carpeta y URL del agente desde archivo de config."""
         cfg_path = self._get_agente_config_path()
@@ -1019,29 +1349,17 @@ class DockerPanel(tk.Tk):
     def _save_agente_config(self, carpeta, url, mover, keepalive=False,
                              keepalive_url=KEEPALIVE_DEFAULT_URL,
                              keepalive_min=KEEPALIVE_DEFAULT_MIN):
-        # Preservar config de auto-sync que puede haberse guardado por separado
-        auto_sync_cfg = self._load_auto_sync_config()
-        cfg_path = self._get_agente_config_path()
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            f.write(f"carpeta={carpeta}\n")
-            f.write(f"url={url}\n")
-            f.write(f"mover={'true' if mover else 'false'}\n")
-            # === BEGIN KEEPALIVE RENDER (copy to unified panel) ===
-            f.write(f"keepalive={'true' if keepalive else 'false'}\n")
-            f.write(f"keepalive_url={keepalive_url}\n")
-            f.write(f"keepalive_min={keepalive_min}\n")
-            # === END KEEPALIVE RENDER ===
-            # === BEGIN AUTO-SYNC ===
-            f.write(f"autosync_enabled={'true' if auto_sync_cfg['enabled'] else 'false'}\n")
-            f.write(f"autosync_horas={auto_sync_cfg['horas']}\n")
-            f.write(f"autosync_arranque_min={auto_sync_cfg['arranque_min']}\n")
-            f.write(f"autosync_url={auto_sync_cfg['url']}\n")
-            f.write(f"autosync_token={auto_sync_cfg['token']}\n")
-            if auto_sync_cfg.get('last_run'):
-                f.write(f"autosync_last_run={auto_sync_cfg['last_run']}\n")
-            if auto_sync_cfg.get('last_attempt'):
-                f.write(f"autosync_last_attempt={auto_sync_cfg['last_attempt']}\n")
-            # === END AUTO-SYNC ===
+        # Solo toca las claves del agente + keepalive. Auto-sync, panel-remoto,
+        # agente_token y helper_whitelist quedan intactos (los preserva
+        # _update_config_file).
+        self._update_config_file({
+            'carpeta': carpeta,
+            'url': url,
+            'mover': 'true' if mover else 'false',
+            'keepalive': 'true' if keepalive else 'false',
+            'keepalive_url': keepalive_url,
+            'keepalive_min': keepalive_min,
+        })
 
     # === BEGIN AUTO-SYNC ===
     def _load_auto_sync_config(self):
@@ -1078,30 +1396,22 @@ class DockerPanel(tk.Tk):
         return cfg
 
     def _save_auto_sync_config(self, **changes):
-        """Actualiza solo los campos provistos del bloque auto-sync."""
+        """Actualiza solo los campos provistos del bloque auto-sync.
+        Preserva los otros bloques (agente/keepalive/panel-remoto)."""
         current = self._load_auto_sync_config()
         current.update(changes)
-        # Reusar _save_agente_config para reescribir el archivo entero.
-        # Necesitamos los otros bloques tal cual están ahora.
-        carpeta, url, mover, ka, ka_url, ka_min = self._load_agente_config()
-        # Guardar de forma manual para incluir los cambios del auto-sync
-        cfg_path = self._get_agente_config_path()
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            f.write(f"carpeta={carpeta}\n")
-            f.write(f"url={url}\n")
-            f.write(f"mover={'true' if mover else 'false'}\n")
-            f.write(f"keepalive={'true' if ka else 'false'}\n")
-            f.write(f"keepalive_url={ka_url}\n")
-            f.write(f"keepalive_min={ka_min}\n")
-            f.write(f"autosync_enabled={'true' if current['enabled'] else 'false'}\n")
-            f.write(f"autosync_horas={current['horas']}\n")
-            f.write(f"autosync_arranque_min={current['arranque_min']}\n")
-            f.write(f"autosync_url={current['url']}\n")
-            f.write(f"autosync_token={current['token']}\n")
-            if current.get('last_run'):
-                f.write(f"autosync_last_run={current['last_run']}\n")
-            if current.get('last_attempt'):
-                f.write(f"autosync_last_attempt={current['last_attempt']}\n")
+        updates = {
+            'autosync_enabled': 'true' if current['enabled'] else 'false',
+            'autosync_horas': current['horas'],
+            'autosync_arranque_min': current['arranque_min'],
+            'autosync_url': current['url'],
+            'autosync_token': current['token'],
+        }
+        if current.get('last_run'):
+            updates['autosync_last_run'] = current['last_run']
+        if current.get('last_attempt'):
+            updates['autosync_last_attempt'] = current['last_attempt']
+        self._update_config_file(updates)
     # === END AUTO-SYNC ===
 
     def _config_agente(self):
@@ -1178,6 +1488,72 @@ class DockerPanel(tk.Tk):
                  bg=BG, fg=FG_DIM).pack(side="left", padx=(6, 0))
         # === END KEEPALIVE RENDER ===
 
+        # ── BACKUP DIARIO ──────────────────────────────────────────────────
+        tk.Frame(dlg, bg=BORDER, height=1).pack(fill="x", padx=16, pady=(14, 8))
+        tk.Label(dlg, text="BACKUP DIARIO", font=("Segoe UI", 8, "bold"),
+                 bg=BG, fg=FG_DIM).pack(anchor="w", padx=16)
+        tk.Label(dlg, text="Carpeta destino del pg_dump diario. Puede ser un share "
+                 "de red (\\\\server\\D\\Backups) o una carpeta local. Retención "
+                 "borra los .dump más viejos automáticamente.",
+                 font=("Segoe UI", 8), bg=BG, fg=FG_DIM, wraplength=460, justify="left"
+                 ).pack(anchor="w", padx=16, pady=(0, 4))
+
+        tk.Label(dlg, text="Carpeta destino:", font=("Segoe UI", 9),
+                 bg=BG, fg=FG).pack(anchor="w", padx=16, pady=(8, 2))
+        row_bk = tk.Frame(dlg, bg=BG)
+        row_bk.pack(fill="x", padx=16)
+        bk_share_var = tk.StringVar(value=self._get_backup_share())
+        tk.Entry(row_bk, textvariable=bk_share_var, font=("Consolas", 9),
+                 bg=SURFACE, fg=FG, insertbackground=FG, relief="flat", bd=4
+                 ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+        tk.Button(row_bk, text="Buscar…", font=("Segoe UI", 9),
+                  bg=SURFACE, fg=BRAND, activebackground=BORDER,
+                  activeforeground=BRAND, relief="flat", cursor="hand2",
+                  command=lambda: bk_share_var.set(
+                      filedialog.askdirectory(parent=dlg, initialdir=bk_share_var.get() or os.path.expanduser("~")) or bk_share_var.get()
+                  )).pack(side="left")
+
+        def _probar_carpeta_bk():
+            path = bk_share_var.get().strip()
+            if not path:
+                messagebox.showwarning("Probar carpeta", "Ingresá una ruta primero.", parent=dlg)
+                return
+            if not os.path.isdir(path):
+                try:
+                    os.makedirs(path, exist_ok=True)
+                except OSError as e:
+                    messagebox.showerror("Probar carpeta",
+                                          f"No se puede acceder ni crear:\n{path}\n\n{e}",
+                                          parent=dlg)
+                    return
+            test_file = os.path.join(path, '.dockerpanel_test')
+            try:
+                with open(test_file, 'w', encoding='utf-8') as f:
+                    f.write('ok')
+                os.remove(test_file)
+                messagebox.showinfo("Probar carpeta",
+                                     f"✓ Accesible y escribible:\n{path}",
+                                     parent=dlg)
+            except OSError as e:
+                messagebox.showerror("Probar carpeta",
+                                      f"Accesible pero sin permiso de escritura:\n{path}\n\n{e}",
+                                      parent=dlg)
+
+        row_bk2 = tk.Frame(dlg, bg=BG)
+        row_bk2.pack(fill="x", padx=16, pady=(8, 0))
+        tk.Label(row_bk2, text="Retención (días):", font=("Segoe UI", 9),
+                 bg=BG, fg=FG).pack(side="left")
+        bk_ret_var = tk.StringVar(value=str(self._get_backup_retention_days()))
+        tk.Entry(row_bk2, textvariable=bk_ret_var, font=("Consolas", 9), width=6,
+                 bg=SURFACE, fg=FG, insertbackground=FG, relief="flat", bd=4
+                 ).pack(side="left", padx=(8, 0))
+        tk.Label(row_bk2, text="(1–365)", font=("Segoe UI", 8),
+                 bg=BG, fg=FG_DIM).pack(side="left", padx=(6, 12))
+        tk.Button(row_bk2, text="Probar carpeta", font=("Segoe UI", 9),
+                  bg=SURFACE, fg=BRAND, activebackground=BORDER,
+                  activeforeground=BRAND, relief="flat", cursor="hand2",
+                  command=_probar_carpeta_bk).pack(side="right")
+
         # Botones
         btns = tk.Frame(dlg, bg=BG)
         btns.pack(fill="x", padx=16, pady=(14, 14))
@@ -1185,12 +1561,19 @@ class DockerPanel(tk.Tk):
         def _save():
             try: ka_min_int = max(1, min(60, int(ka_min_var.get())))
             except (ValueError, TypeError): ka_min_int = KEEPALIVE_DEFAULT_MIN
+            try: bk_ret_int = max(1, min(365, int(bk_ret_var.get())))
+            except (ValueError, TypeError): bk_ret_int = BACKUP_RETENTION_DAYS_DEFAULT
             self._save_agente_config(
                 carpeta_var.get().strip(), url_var.get().strip(), mover_var.get(),
                 keepalive=ka_enabled_var.get(),
                 keepalive_url=ka_url_var.get().strip() or KEEPALIVE_DEFAULT_URL,
                 keepalive_min=ka_min_int,
             )
+            # Backup: persiste aparte (no toca las claves del agente/keepalive).
+            self._update_config_file({
+                'backup_share': bk_share_var.get().strip() or BACKUP_SHARE_DEFAULT,
+                'backup_retention_days': str(bk_ret_int),
+            })
             self._append("  ✔  Config del agente guardada.\n", "ok")
             # Actualiza label del status bar inmediatamente
             self._update_keepalive_label()
@@ -1205,7 +1588,7 @@ class DockerPanel(tk.Tk):
 
         # Centrar
         dlg.update_idletasks()
-        w, h = 520, 500
+        w, h = 520, 680
         sw = dlg.winfo_screenwidth()
         sh = dlg.winfo_screenheight()
         dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
@@ -1226,7 +1609,14 @@ class DockerPanel(tk.Tk):
             self._append(f"  ✖  No se encontró {script}\n", "err")
             return
 
-        cmd = f'python "{script}" --carpeta "{carpeta}" --url "{url}"'
+        # El agente lee AGENTE_TOKEN de os.environ y lo manda como X-Agent-Token
+        # (Render lo valida). Lo inyectamos acá desde agente_config.txt — el
+        # subprocess (shell=True) hereda el env del panel.
+        agente_token = self._read_config_value("agente_token")
+        if agente_token:
+            os.environ["AGENTE_TOKEN"] = agente_token
+
+        cmd = f'"{self._python_exe()}" "{script}" --carpeta "{carpeta}" --url "{url}"'
         if mover:
             cmd += ' --mover'
 
@@ -1258,7 +1648,7 @@ class DockerPanel(tk.Tk):
             return
 
         # Encadenamos el pull + restart web en una sola shell (cwd = proyecto)
-        cmd = f'python "{script}" && docker-compose restart web'
+        cmd = f'"{self._python_exe()}" "{script}" && docker-compose restart web'
         self._set_pull_running(True)
         self._queue.put(("cmd", cmd))
         self._queue.put(("cb", lambda: self._set_pull_running(False)))
@@ -1672,6 +2062,56 @@ class DockerPanel(tk.Tk):
         finally:
             self.after(0, self._cerrar_overlay_sync)
 
+    def _push_cadencias(self):
+        """Dispara /admin/push-cadencias de la app local: computa el snapshot de
+        cadencias (todos los labs) y lo copia a Render. Reusa url + token del
+        auto-sync."""
+        import datetime as _dt
+        cfg = self._load_auto_sync_config()
+        url = (cfg.get('url') or '').strip().rstrip('/')
+        if not url:
+            self.after(0, self._append,
+                       "  ⚠ push-cadencias: falta configurar URL del auto-sync\n", "err")
+            return
+        endpoint = url + '/admin/push-cadencias'
+        token = (cfg.get('token') or '').strip()
+
+        ts = _dt.datetime.now().strftime('%H:%M')
+        self.after(0, self._append,
+                   f"\n📊 {ts} push cadencias → {endpoint}\n", "dim")
+        self.after(0, self._mostrar_overlay_sync,
+                   'Computando + subiendo cadencias a Render',
+                   'Analizando ~400 labs…')
+        try:
+            headers = {'User-Agent': 'DockerPanel-PushCadencias',
+                       'Content-Type': 'application/json'}
+            if token:
+                headers['X-Auto-Sync-Token'] = token
+            req = urllib.request.Request(endpoint, data=b'{}',
+                                         headers=headers, method='POST')
+            with urllib.request.urlopen(req, timeout=600) as r:
+                body = r.read().decode('utf-8', errors='replace')
+            try:
+                result = json.loads(body)
+            except Exception:
+                result = {'ok': r.getcode() == 200, 'raw': body[:200]}
+            if result.get('ok'):
+                n_local = result.get('local', '?')
+                res = result.get('resultados', {})
+                snap = res.get('cadencia_lab_snapshot', {})
+                self.after(0, self._append,
+                           f"  ✓ push-cadencias OK — {n_local} labs computados, "
+                           f"{snap.get('filas', '?')} subidos ({snap.get('ms', '?')} ms)\n", "ok")
+            else:
+                self.after(0, self._append,
+                           f"  ✗ push-cadencias FALLÓ — {result.get('error', 'error desconocido')}\n",
+                           "err")
+        except (urllib.error.URLError, OSError, socket.timeout) as e:
+            self.after(0, self._append,
+                       f"  ✗ push-cadencias conexión falló: {e}\n", "err")
+        finally:
+            self.after(0, self._cerrar_overlay_sync)
+
     def _config_autosync(self):
         """Diálogo para configurar el auto-sync: enabled, horarios, URL, token."""
         cfg = self._load_auto_sync_config()
@@ -1808,11 +2248,20 @@ class DockerPanel(tk.Tk):
             'status':        [('docker-compose ps', 'ps')],
             'version':       [('git rev-parse --short HEAD', 'rev'),
                               ('git log -1 --format=%s%n%cI', 'last_commit')],
-            # Sync ObServer completo via endpoint local de la app web. El
-            # endpoint /api/auto-sync ya orquesta sync ObServer→local + push
-            # a Render con lock atómico. --max-time 290 para no chocar con
-            # el timeout=300 del subprocess.
-            'sync_now':      [('curl -sS --max-time 290 -X POST "http://localhost:5000/api/auto-sync"', 'auto-sync')],
+            # Sync ObServer completo. Corre en BACKGROUND (?bg=1): el endpoint
+            # responde 202 al instante y el sync sigue server-side, coordinado
+            # por sync_lock. Antes era sincrónico y el sync completo (~10min)
+            # chocaba siempre con --max-time 290 → timeout. El progreso y el
+            # resultado se ven en /api/auto-sync/status y en /admin (sync audit).
+            'sync_now':      [('curl -sS --max-time 30 -X POST "http://localhost:5000/api/auto-sync?bg=1"', 'auto-sync (bg)')],
+            # Sync inteligente: solo entidades de Nivel 1 vencidas por tolerancia
+            # (stock 3h, ventas_mensuales 24h, productos 7d). Lo dispara el boton
+            # movil de consulta-stock. Rapido (~40s-1.5min) vs el completo (~10min).
+            'sync_inteligente': [('curl -sS --max-time 290 -X POST "http://localhost:5000/api/auto-sync?modo=inteligente"', 'sync inteligente')],
+            # Genera el snapshot de cadencias LOCAL (todos los labs) y lo copia a
+            # Render. Corre dentro del container (DB + RENDER_DATABASE_URL del
+            # entorno). El snapshot se computa fresco con datos de ObServer.
+            'push_cadencias': [('docker-compose exec -T web python -m scripts.push_cadencias_to_render', 'cadencias')],
             # Dedupe labs/proveedores. Corre DENTRO del container web (vía
             # docker-compose exec) para usar Python + DB del entorno deployado.
             # SIEMPRE dry-run primero; el apply solo después de revisar el
@@ -1854,23 +2303,12 @@ class DockerPanel(tk.Tk):
 
     def _save_panel_remoto_config(self, cfg):
         """Persiste solo las claves del panel remoto, preservando lo demás."""
-        cfg_path = self._get_agente_config_path()
-        # Leer archivo actual y reemplazar solo las claves panel_remoto_*
-        keys = ('panel_remoto_enabled', 'panel_remoto_url',
-                'panel_remoto_token', 'panel_remoto_seg')
-        existing = []
-        if os.path.isfile(cfg_path):
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if not any(line.startswith(k + "=") for k in keys):
-                        existing.append(line.rstrip("\n"))
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            for line in existing:
-                f.write(line + "\n")
-            f.write(f"panel_remoto_enabled={'true' if cfg['enabled'] else 'false'}\n")
-            f.write(f"panel_remoto_url={cfg['url']}\n")
-            f.write(f"panel_remoto_token={cfg['token']}\n")
-            f.write(f"panel_remoto_seg={cfg['seg']}\n")
+        self._update_config_file({
+            'panel_remoto_enabled': 'true' if cfg['enabled'] else 'false',
+            'panel_remoto_url': cfg['url'],
+            'panel_remoto_token': cfg['token'],
+            'panel_remoto_seg': cfg['seg'],
+        })
 
     def _panel_remoto_loop(self):
         """Loop principal: polea cada N seg si está enabled."""
@@ -1921,14 +2359,19 @@ class DockerPanel(tk.Tk):
                    "cmd")
         self._update_panel_remoto_label_text(f"● panel · ejecutando #{cmd_id}", YELLOW)
         # Ejecutar
-        whitelist = self._comandos_remotos_whitelist()
-        steps = whitelist.get(cmd_name)
         t0 = time.time()
-        if not steps:
-            estado = 'error'
-            output = f'Comando "{cmd_name}" no está en el whitelist del DockerPanel.'
+        # Handler especial para consultas de stock en vivo desde AppClinica.
+        # Formato: 'stock:<observer_id>'. Ver docs/BACKLOG.md item 17 opcion C.
+        if cmd_name.startswith('stock:'):
+            estado, output = self._ejecutar_stock_query(cmd_name)
         else:
-            estado, output = self._ejecutar_comando_remoto(steps)
+            whitelist = self._comandos_remotos_whitelist()
+            steps = whitelist.get(cmd_name)
+            if not steps:
+                estado = 'error'
+                output = f'Comando "{cmd_name}" no está en el whitelist del DockerPanel.'
+            else:
+                estado, output = self._ejecutar_comando_remoto(steps)
         dur_ms = int((time.time() - t0) * 1000)
         # Reportar
         reporte_url = cfg['url'].rstrip('/') + f'/api/panel/comandos/{cmd_id}/resultado'
@@ -1978,6 +2421,14 @@ class DockerPanel(tk.Tk):
                 out_lines.append(f'[exit={proc.returncode}]')
                 if proc.returncode != 0:
                     return 'error', '\n'.join(out_lines)
+                # Falso positivo: endpoints como /api/auto-sync devuelven HTTP 200
+                # con {"ok": false, ...} cuando el proceso interno falló (ej.
+                # ObServer no disponible). curl da exit 0 igual → detectamos el
+                # ok:false del cuerpo y lo reportamos como error real.
+                err_body = self._error_en_respuesta_json(proc.stdout)
+                if err_body:
+                    out_lines.append(f'[respuesta ok:false → {err_body}]')
+                    return 'error', '\n'.join(out_lines)
             except subprocess.TimeoutExpired:
                 out_lines.append(f'[TIMEOUT >300s en paso "{desc}"]')
                 return 'error', '\n'.join(out_lines)
@@ -1985,6 +2436,69 @@ class DockerPanel(tk.Tk):
                 out_lines.append(f'[EXCEPCIÓN en paso "{desc}": {e}]')
                 return 'error', '\n'.join(out_lines)
         return 'ok', '\n'.join(out_lines)
+
+    @staticmethod
+    def _error_en_respuesta_json(stdout):
+        """Si `stdout` es un JSON con 'ok': false, devuelve un string de error
+        (con el detalle del primer paso fallido si viene en 'pasos'). Sino None.
+        Para no marcar error en salidas que no son JSON (git pull, etc.)."""
+        salida = (stdout or '').strip()
+        if not salida.startswith('{'):
+            return None
+        try:
+            j = json.loads(salida)
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(j, dict) or j.get('ok') is not False:
+            return None
+        err = j.get('error')
+        if not err and isinstance(j.get('pasos'), list):
+            for p in j['pasos']:
+                if isinstance(p, dict) and p.get('ok') is False:
+                    err = f"{p.get('paso')}: {p.get('error')}"
+                    break
+        return err or 'la respuesta trajo ok:false'
+
+    def _ejecutar_stock_query(self, cmd_name):
+        """Handler para comandos 'stock:<observer_id>'.
+        Ejecuta python dentro del container farm_web para consultar obs_stock
+        y devuelve {stock, sync_en} como JSON string.
+
+        Ver docs/BACKLOG.md item 17 opcion C (AppClinica → consulta stock en vivo).
+        """
+        try:
+            observer_id = int(cmd_name.split(':', 1)[1])
+        except (ValueError, IndexError):
+            return 'error', f'Formato de comando invalido: {cmd_name}'
+        # docker exec farm_web python -c "..."
+        # Consulta obs_stock, suma stock_actual, devuelve JSON.
+        py = (
+            "import json; import database; database.init_db(); "
+            "s = next(iter(database.get_db().gen if hasattr(database.get_db(), 'gen') "
+            "else [database.get_db().__enter__()])); "
+            f"rows = s.query(database.ObsStock).filter_by(producto_observer={observer_id}).all(); "
+            "total = sum(int(r.stock_actual or 0) for r in rows); "
+            "syncs = [r.sync_en for r in rows if r.sync_en]; "
+            "sync_en = max(syncs).isoformat() if syncs else None; "
+            "print(json.dumps({'stock': total, 'sync_en': sync_en, 'filas': len(rows)}))"
+        )
+        # Container name asumido: farm_web (ver docker-compose.yml). Si es
+        # distinto en tu setup, cambiar aca. Timeout corto porque el
+        # cliente polea con timeout 5s.
+        cmd = f'docker exec -T farm_web python -c "{py}"'
+        try:
+            proc = subprocess.run(
+                cmd, shell=True, cwd=self.dir_var.get(),
+                capture_output=True, text=True, timeout=8,
+                encoding='utf-8', errors='replace',
+            )
+            if proc.returncode != 0:
+                return 'error', f'docker exec fallo: {proc.stderr.strip()[:500]}'
+            return 'ok', (proc.stdout or '').strip()
+        except subprocess.TimeoutExpired:
+            return 'error', 'timeout (>8s)'
+        except Exception as e:  # noqa: BLE001
+            return 'error', f'excepcion: {e}'
 
     def _update_panel_remoto_label(self):
         """Refresca el indicador visual del panel remoto en la status bar."""
@@ -2519,6 +3033,210 @@ def _path_allowed(target_path, whitelist):
     return False
 
 
+def _is_lan_origin(origin):
+    """¿El origin es de la red local? (localhost, IPs privadas LAN, *.local).
+    El helper solo bindea a 127.0.0.1, así que solo lo alcanza el navegador de
+    esta misma PC — permitir orígenes LAN es seguro y evita configurar el CORS a
+    mano cuando la caja se abre desde una IP de la LAN (no por Render)."""
+    import ipaddress
+    try:
+        host = (urllib.parse.urlparse(origin).hostname or "").lower()
+    except ValueError:
+        return False
+    if host in ("localhost", "127.0.0.1", "::1") or host.endswith(".local"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
+def _config_render_origins():
+    """Orígenes (scheme://host) de las URLs de Render configuradas en
+    agente_config.txt. Permite que el helper acepte CORS desde la instancia
+    de ESTA farmacia sin hardcodear su dominio en HELPER_ALLOWED_ORIGINS."""
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente_config.txt")
+    origins = set()
+    if os.path.isfile(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    for key in ("url=", "panel_remoto_url=", "keepalive_url=", "autosync_url="):
+                        if line.startswith(key):
+                            val = line.split("=", 1)[1].strip()
+                            if val.startswith("http"):
+                                p = urllib.parse.urlparse(val)
+                                if p.scheme and p.netloc:
+                                    origins.add(f"{p.scheme}://{p.netloc}")
+        except OSError:
+            pass
+    return origins
+
+
+# ── Impresión térmica 80mm (ticket del cadete) ─────────────────────────────
+# El frontend de Render postea el JSON del pedido a POST /print-ticket; acá lo
+# convertimos a ESC/POS y lo mandamos a la impresora. Pensado para impresoras de
+# 80mm (48 columnas en fuente A). La impresora se toma de `printer_name=` en
+# agente_config.txt; si no está, se usa la impresora default de Windows.
+_TICKET_COLS = 48
+_ESC = b"\x1b"
+_GS = b"\x1d"
+
+
+def _load_printer_name():
+    """Nombre de la impresora térmica (clave ``printer_name=`` en agente_config.txt).
+    Vacío → se usa la default de Windows."""
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente_config.txt")
+    if os.path.isfile(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("printer_name="):
+                        return line.split("=", 1)[1].strip()
+        except OSError:
+            pass
+    return ""
+
+
+def _money(v):
+    """Formatea a pesos sin decimales con separador de miles (12500 -> '$ 12.500')."""
+    try:
+        n = int(round(float(v)))
+    except (TypeError, ValueError):
+        return ""
+    return "$ " + format(n, ",d").replace(",", ".")
+
+
+def _ticket_escpos_bytes(d):
+    """Convierte el dict del pedido en una secuencia ESC/POS para 80mm.
+    Sin emojis (la térmica no los renderiza); texto en cp850 (acentos AR)."""
+    def enc(txt):
+        return str(txt or "").encode("cp850", "replace")
+
+    out = bytearray()
+    out += _ESC + b"@"            # init
+    out += _ESC + b"t\x02"       # codepage PC850 (acentos)
+
+    def w(txt=""):               # línea izquierda
+        out.extend(enc(txt) + b"\n")
+
+    def center(txt):
+        out.extend(_ESC + b"a\x01" + enc(txt) + b"\n" + _ESC + b"a\x00")
+
+    def bold(txt):
+        out.extend(_ESC + b"E\x01" + enc(txt) + b"\n" + _ESC + b"E\x00")
+
+    def sep():
+        w("-" * _TICKET_COLS)
+
+    def row(label, value):       # label a la izq, value a la der (48 col)
+        value = str(value or "")
+        pad = max(1, _TICKET_COLS - len(label) - len(value))
+        w(label + " " * pad + value)
+
+    def wrap(txt, indent="  "):
+        for ln in textwrap.wrap(str(txt or ""), _TICKET_COLS - len(indent)) or [""]:
+            w(indent + ln)
+
+    # Encabezado
+    out += _GS + b"!\x11"        # doble alto/ancho
+    center((d.get("farmacia") or "FARMACIA").upper())
+    out += _GS + b"!\x00"        # normal
+    enc_id = d.get("id")
+    center(f"Pedido #{enc_id} - {d.get('fecha') or ''}".strip(" -"))
+    sep()
+
+    # Cliente
+    bold("CLIENTE")
+    wrap(d.get("cliente") or "s/nombre")
+    if d.get("telefono"):
+        w("  Tel: " + str(d["telefono"]))
+    sep()
+
+    # Domicilio
+    bold("ENTREGAR EN")
+    wrap(d.get("direccion") or "s/direccion")
+    pd = []
+    if d.get("piso"):
+        pd.append("Piso " + str(d["piso"]))
+    if d.get("depto"):
+        pd.append("Depto " + str(d["depto"]))
+    if pd:
+        w("  " + " - ".join(pd))
+    if d.get("referencia"):
+        wrap("(" + str(d["referencia"]) + ")")
+    sep()
+
+    # Receta
+    if d.get("receta_pendiente"):
+        out += _GS + b"!\x11"
+        center("** TRAER RECETA **")
+        out += _GS + b"!\x00"
+        sep()
+
+    # Observación
+    if d.get("observacion"):
+        bold("OBSERVACION")
+        wrap(d["observacion"])
+        sep()
+
+    # Producto (lo que lleva)
+    if d.get("producto"):
+        bold("LLEVA")
+        wrap(d["producto"])
+        sep()
+
+    # Cobro
+    if d.get("pagado"):
+        bold("PAGADO - NO COBRAR")
+    else:
+        out += _GS + b"!\x01"        # doble alto
+        bold("COBRAR " + (_money(d.get("cobrar")) if d.get("cobrar") is not None else ""))
+        out += _GS + b"!\x00"
+        if d.get("producto_monto") is not None:
+            row("  Producto", _money(d["producto_monto"]))
+        if d.get("envio") is not None:
+            row("  Envio", _money(d["envio"]))
+        if d.get("forma_pago"):
+            row("Forma pago", str(d["forma_pago"]))
+        if d.get("paga_con") is not None:
+            row("Paga con", _money(d["paga_con"]))
+        if d.get("vuelto"):
+            v = str(d["vuelto"])
+            bold("VUELTO  " + (_money(v) if v.replace(".", "").replace("$", "").strip().isdigit() else v))
+    sep()
+
+    if d.get("cadete"):
+        w("Cadete: " + str(d["cadete"]))
+
+    out += b"\n\n\n\n" + _GS + b"V\x00"   # feed + corte total
+    return bytes(out)
+
+
+def _imprimir_ticket_cadete(d):
+    """Manda el ticket a la térmica vía el spooler de Windows (raw ESC/POS).
+    Requiere pywin32. Lanza excepción con mensaje claro si falta o falla."""
+    payload = _ticket_escpos_bytes(d)
+    try:
+        import win32print
+    except ImportError as e:
+        raise RuntimeError("Falta pywin32 en la PC del panel (pip install pywin32).") from e
+    name = _load_printer_name() or win32print.GetDefaultPrinter()
+    if not name:
+        raise RuntimeError("No hay impresora configurada (printer_name= en agente_config.txt).")
+    h = win32print.OpenPrinter(name)
+    try:
+        win32print.StartDocPrinter(h, 1, ("Ticket cadete", None, "RAW"))
+        win32print.StartPagePrinter(h)
+        win32print.WritePrinter(h, payload)
+        win32print.EndPagePrinter(h)
+        win32print.EndDocPrinter(h)
+    finally:
+        win32print.ClosePrinter(h)
+
+
 class _HelperHandler(http.server.BaseHTTPRequestHandler):
     """Endpoints locales: /ping, /folder-files?path=…, /read-pdf?path=…
 
@@ -2528,9 +3246,11 @@ class _HelperHandler(http.server.BaseHTTPRequestHandler):
 
     def _cors(self):
         origin = self.headers.get("Origin", "")
-        if origin in HELPER_ALLOWED_ORIGINS:
+        if origin and (origin in HELPER_ALLOWED_ORIGINS
+                       or origin in _config_render_origins()
+                       or _is_lan_origin(origin)):
             self.send_header("Access-Control-Allow-Origin", origin)
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def _json(self, status, payload):
@@ -2546,6 +3266,25 @@ class _HelperHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(204)
         self._cors()
         self.end_headers()
+
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/print-ticket":
+            try:
+                length = int(self.headers.get("Content-Length", 0) or 0)
+            except ValueError:
+                length = 0
+            raw = self.rfile.read(length) if length else b""
+            try:
+                data = json.loads(raw.decode("utf-8")) if raw else {}
+            except (ValueError, UnicodeDecodeError):
+                return self._json(400, {"ok": False, "error": "JSON inválido"})
+            try:
+                _imprimir_ticket_cadete(data)
+                return self._json(200, {"ok": True})
+            except Exception as e:   # noqa: BLE001 — devolvemos el error al browser
+                return self._json(500, {"ok": False, "error": str(e)})
+        return self._json(404, {"ok": False, "error": "not found"})
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -2616,7 +3355,10 @@ class _HelperHandler(http.server.BaseHTTPRequestHandler):
 def _start_helper_server(panel):
     """Arranca el HTTP server en un thread daemon y notifica al GUI."""
     try:
-        srv = http.server.HTTPServer(("127.0.0.1", HELPER_PORT), _HelperHandler)
+        # ThreadingHTTPServer (no HTTPServer single-thread): el navegador poolea
+        # /ping con keep-alive y una conexión abierta bloqueaba el único hilo →
+        # las demás requests timeouteaban ("Panel inactivo" con el panel corriendo).
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", HELPER_PORT), _HelperHandler)
     except OSError as e:
         panel.after(0, panel._set_helper_status, False, str(e))
         return

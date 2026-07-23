@@ -10,9 +10,72 @@
 8. **El usuario manda** — Las instrucciones del usuario siempre ganan sobre cualquier otra regla.
 9. **Precisión > velocidad** — Preferir siempre configuraciones/técnicas que maximicen exactitud aunque tarden más. El tiempo ahorrado procesando rápido se pierde 10x más corrigiendo errores después. Aplica a OCR (DPI alto + preprocessing), regex (anclado y específico, no greedy), parseo numérico (aceptar todos los formatos), auto-detect (preferir falso negativo a falso positivo), validación (bloquear al siguiente paso si faltan campos críticos).
 10. **Revisar backlog al iniciar sesión** — Antes de responder al primer mensaje de una sesión nueva, leer `docs/mejoras_pendientes.md`. Si hay items relacionados con lo que el usuario pide, mencionarlos brevemente al inicio de la respuesta ("hay X anotado en backlog que aplica acá"). No re-leer en mensajes siguientes de la misma sesión salvo que el archivo haya cambiado.
+11. **Antes de decir "X no existe": verificá la rama** — el working copy puede estar
+    parado en un feature branch viejo. Correr `git status` y buscar también en
+    `origin/main` (`git grep <cosa> origin/main`). Pasó dos veces en una sesión:
+    afirmé que `routes/api_publica.py` y el badge premium ⭐ no existían, y estaban
+    los dos en `main` (el working copy estaba 23 commits atrás).
+12. **Para ubicarse: `docs/MAPA.generado.md`** — índice de las 767 rutas, 122 modelos,
+    21 syncs y 26 services, con archivo:línea. Sale del código (`python scripts/mapa.py`),
+    así que no miente. Mirarlo ANTES de grepear a ciegas. Si tocás rutas o modelos,
+    regeneralo.
+13. **Si un dato se puede derivar del código, NO lo escribas a mano acá** — este archivo
+    es para lo que el código NO dice: decisiones, trampas, el "por qué". Los inventarios
+    van al mapa generado. La doc escrita a mano se pudre y termina mintiendo (ver la
+    trampa del `observer_id` abajo, que estuvo mal documentada y costó rediseñar).
 
 
 # Farmacia - Control de Stock y Reclamos
+
+## ⚠️ Trampas de ObServer (leer antes de tocar syncs o catálogo)
+
+Lo que el código no dice y cuesta caro descubrir. Todo verificado el 2026-07-16
+contra el catálogo real (122.774 productos).
+
+### `observer_id` es el ID de la tabla de CADA farmacia — NO es universal
+
+**No es una clave común como el EAN**: son los IDs internos de cada instalación de
+ObServer. El "catálogo central" que sirve `/api/publica` es **el catálogo de Badia,
+con los IDs de Badia**. Para otra farmacia esos números no significan nada.
+
+Consecuencia: cruzar el catálogo del central contra el `obs_stock` de otra farmacia
+**no matchea nunca**. Y no se detecta en dev, porque ahí catálogo y stock salen los
+dos de Badia y coinciden por casualidad.
+
+**Regla**: catálogo, stock, clientes y precios se sincronizan **desde el ObServer de
+cada farmacia**. Del central solo pueden venir datos con clave universal.
+
+### La capa `DW.*` NO es parte de ObServer
+
+Las vistas `DW.*` se las armó **Praxis** a Badia y Pieristei. Una farmacia nueva puede
+tener **solo las tablas vivas**. **No asumir que `DW.Clientes` / `DW.Productos` existen**
+en un cliente nuevo — hay que ir a `INFORMATION_SCHEMA` y mirar
+(`observer_source.explorar_schema`).
+
+### El schema `Gestion` requiere usuario SA — es lo "premium" (⭐)
+
+`usuarioDW` lee `DW.*` pero **no** `Gestion.*`. De ahí salen las 2 features premium:
+`sync_precios_vigentes` y `sync_condiciones_comerciales`. Sin SA se **skipean limpio**
+y la app funciona degradada (`_test_acceso_gestion` cachea el chequeo).
+`diagnostico_acceso()` responde con `IS_SRVROLEMEMBER('sysadmin')` si el usuario es SA.
+
+### El precio uniforme es SOLO el de medicamentos
+
+`Gestion.ProductosPreciosVigentes` es la fuente **exacta** de todos los precios, y es
+**por farmacia**. Los de medicamentos los actualiza Praxis dentro de cada ObServer
+(esos sí son parejos); **el resto de los rubros los pone cada farmacia** (los de Badia
+≠ los de Rivarola). Y no es un caso de borde: **perfumería es el rubro más grande**
+(~58k productos vs ~40k de medicamentos).
+
+### Claves universales: alfabeta sí, EAN no tanto
+
+| Clave | Cobertura | Colisiones |
+|---|---|---|
+| `codigo_alfabeta` | **96,1%** de medicamentos (98,6% de los que tienen stock) | **0,01%** |
+| EAN (`obs_codigos_barras`) | 93,1% general | **9,48%** ← el mismo EAN en varios productos |
+
+Para cruzar **medicamentos** entre farmacias: **alfabeta**. Para perfumería no sirve
+(solo 8,5% lo tiene). El EAN parece tentador pero colisiona 1 de cada 10.
 
 ## Stack
 
@@ -39,7 +102,7 @@
 | `proveedores` | Provider | razon_social, cuit, domicilio, parser_file, **match_strategy** ('barcode'/'descripcion') |
 | `facturas` | Invoice | numero_factura, fecha, proveedor_razon, proveedor_cuit, total, total_articulos, total_unidades, pdf_filename, **tipo_comprobante** ('FAC'/'NCR') |
 | `factura_items` | InvoiceItem | codigo_barra, cantidad, descripcion, precio_unitario, **dto**, importe, lote, vencimiento |
-| `erp_stock` | ErpStock | codigo_barra, descripcion, cantidad, **precio_unitario** (se reemplaza en cada carga) |
+| `erp_stock` | ErpStock | codigo_barra, descripcion, cantidad, **precio_unitario**, **carga_id**. Tabla GLOBAL: se reemplaza entera en cada carga, no es por factura (ver Gotchas) |
 | `stock_differences` | StockDifference | diferencias por factura: codigo_barra, descripcion, cantidad_factura, cantidad_erp, diferencia, observaciones |
 | `reclamos` | Claim | proveedor_id, factura_id, numero_factura, fecha, estado (ABIERTO/COMPLETADO) |
 | `reclamo_items` | ClaimItem | detalle del reclamo, referencia a StockDifference |
@@ -130,13 +193,39 @@ Se hacen inline en `init_db()` con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (P
 
 | Archivo | Proveedor | CUIT | match_strategy |
 |---------|-----------|------|----------------|
-| `droguer_a_kellerhoff_s_a.py` | Droguería Kellerhoff | — | barcode |
 | `pharmos.py` | Pharmos | 30-64266156-2 | descripcion (usa refs internas como barcode) |
 | `20_de_junio.py` | 20 de Junio | 23-17460511-4 | barcode |
 
-### ⚠ OBLIGATORIO: normalización de texto PDF
+> **Kellerhoff ya no usa parser regex.** Se importa por el flujo JSON con IA (`/converter/<token>/extraer-json` → `services/factura_ia.py`, Claude lee el PDF). Los 3 parsers regex (`droguer_a_kellerhoff_s_a.py`, `kellerhoff.py`, `drogueria_kelleroff.py`) se retiraron el 2026-05-26. El path regex (`data_extract.parse_invoice_pdf` vía `Provider.parser_file`, usado por `routes/batch.py` y el modo aprendizaje del conversor) sigue vivo para otros proveedores; si un Provider Kellerhoff viejo todavía tiene `parser_file` seteado, los callers degradan con error limpio (no crashean).
 
-**Todos los parsers (nuevos y existentes) deben usar `_normalize_quadrupled` de `helpers.py`** al extraer texto con pdfplumber. A pesar del nombre, hace **3 limpiezas** de artefactos comunes:
+### ⚠ OBLIGATORIO: una sola línea para leer el PDF
+
+**Ningún parser lee con `pdfplumber.open()` directo.** La línea es esta, y es la misma
+que emite el template auto-generado de `/converter` (`_generar_codigo_parser`):
+
+```python
+from helpers import _normalize_quadrupled, extract_text_with_ocr_fallback
+
+def parse_invoice_pdf(pdf_path):
+    full_text = _normalize_quadrupled(extract_text_with_ocr_fallback(pdf_path))
+```
+
+Da dos cosas: **OCR fallback** (sin él, un PDF escaneado devuelve texto vacío → 0 ítems
+y la factura no se puede importar por ningún lado; Tesseract está en el `Dockerfile`) y
+la **limpieza de artefactos** de abajo. `tests/test_parsers_pdf.py` lo verifica sobre
+cada parser — si alguien vuelve a `pdfplumber.open()`, falla.
+
+> Hasta el 2026-07-17 esto era mentira: acá decía "todos los parsers deben usarlo" y
+> **ninguno** de los activos lo hacía (sólo los auto-generados por `/converter`).
+> `20_de_junio.py` tenía su propia lógica inline que rearmaba el texto cuadruplicado
+> tomando cada 4º carácter a mano, y sólo cubría ese artefacto.
+>
+> Excepción real: `laboratorios_bernabo_s_a.py` usa `extract_words()` porque sus ítems
+> salen de coordenadas (layout multi-columna). Lleva `_normalize_quadrupled` pero no
+> OCR: el OCR devuelve texto plano, no coordenadas. `sales_history.py` igual, y además
+> no es un parser de factura (va por `/purchase`).
+
+A pesar del nombre, `_normalize_quadrupled` hace **3 limpiezas** de artefactos comunes:
 
 1. **Caracteres cuadruplicados** (fuentes en negrita en 20 de Junio, etc.) — `"TTTTOOOOTTTTAAAALLLL"` → `"TOTAL"`
 2. **Letter-spacing** (cada carácter separado por un espacio) — `"G r a v a d o I V A"` → `"GravadoIVA"`. Dispara cuando hay ≥10 tokens cortos en secuencia.
@@ -144,28 +233,13 @@ Se hacen inline en `init_db()` con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (P
 
 Las 3 son idempotentes en líneas normales (no afectan decimales como `1.234,56`).
 
-Pattern en **todos los parsers**:
-
-```python
-from helpers import _normalize_quadrupled
-
-def parse_invoice_pdf(pdf_path):
-    pages_text = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            pages_text.append(_normalize_quadrupled(page.extract_text() or ''))
-    full_text = '\n'.join(pages_text)
-    # ... regex sobre full_text
-```
-
-- El template del parser auto-generado (`_generar_codigo_parser` en `routes/converter.py`) ya lo incluye → cualquier parser nuevo lo hereda
-- Si escribís un parser manual, **no te olvides de agregar el import y llamarlo por cada página**
-- Si migrás un parser viejo que no lo tenía, agregalo — es seguro por default
+Las 3 se aplican solas con la línea de arriba. Para un parser nuevo, copiá
+`parsers/_template.py`, que ya la trae.
 
 **Si descubrís otro artefacto recurrente de pdfplumber** (ej. rotaciones de caracteres, comillas raras, etc.), agregarlo como paso nuevo en `_normalize_quadrupled` en `helpers.py` — así automáticamente se propaga a todos los parsers que ya llaman a esta función.
 
 ### Formato Kellerhoff
-`BARCODE CANT DESC PRECIO_PUB %DTO PRECIO_UNIT IMPORTE` — regex con grupos.
+Importado por el flujo JSON con IA (ver nota en "Parsers activos"). El parser regex se retiró. El layout del PDF era `BARCODE CANT DESC PRECIO_PUB %DTO PRECIO_UNIT IMPORTE` + sección "PRODUCTOS GRAVADOS" (5 cols) + pie fiscal; todo eso ahora lo extrae `factura_ia.py`.
 
 ### Formato Pharmos
 Sin barcodes reales. Usa códigos internos tipo `79-65` como codigo_barra. Regex: `^(\d{2}-\d+)\s+...`
@@ -181,6 +255,35 @@ Sin barcodes reales. Usa códigos internos tipo `79-65` como codigo_barra. Regex
 - `match_strategy='barcode'`: barcode exacto → descripción normalizada → barcode_mappings
 - `match_strategy='descripcion'`: descripción normalizada → barcode exacto → barcode_mappings
 - El Ratio en compare.html: `(unitErp - pUnit) / unitErp * 100` — positivo verde (ERP mayor), negativo rojo
+
+### El cruce automático es EXACTO. El fuzzy sólo sugiere (2026-07-17)
+
+`_normalize()` delega en `producto_matcher.normalizar_texto` (el mismo motor que
+`/ofertas/import`) — era `lower()` + colapsar espacios, y un acento o un decimal
+escrito distinto entre factura y ERP tiraba el match. **El cruce automático sigue
+siendo por igualdad**, no fuzzy.
+
+El fuzzy vive sólo en `sugerir_cruce_manual()`: pinta un chip "≈ 12 · 95%" en
+`/compare` que el operador aplica **con un click**. No se auto-aplica a propósito: un
+falso positivo termina en un reclamo a la droguería por el producto equivocado, y eso
+cuesta más que un falso negativo (que sólo manda al operador a cruzar a mano).
+
+**Al tocar el fuzzy, respetá estas dos reglas o vuelven los falsos positivos:**
+
+1. **Los números tienen que coincidir.** En farmacia el número ES la presentación:
+   `AMOXIDAL 500 COMP X 16` vs `AMOXIDAL 600 COMP X 16` comparten marca, forma y
+   envase → puntúan 64% y se sugerían. Igual `x16` vs `x30`. Hay tests que lo fijan.
+2. **Descripciones ambiguas no matchean.** Si dos ítems del ERP normalizan igual, la
+   clave se descarta del índice en vez de quedarse con el último (antes ganaba uno
+   arbitrario, según el orden de la tabla, y cruzaba mal en silencio).
+
+`refinar_candidatos` corre un Levenshtein en Python por candidato — era el 85% del
+costo. Se le pasa **top-3** y nada más; pasarle todos hacía tardar 1,5 s en abrir el
+cruce de una factura grande.
+
+No se usa `match_producto()` porque orquesta contra el catálogo (`Producto` /
+`ObsProducto`) y acá el universo son las filas de `erp_stock`, que no son un target del
+matcher. Se reusan sus primitivas, que son duck-typed sobre `.descripcion`.
 
 ## Notas importantes
 
@@ -210,6 +313,31 @@ Sin barcodes reales. Usa códigos internos tipo `79-65` como codigo_barra. Regex
 
 - En Jinja, `dict.items` resuelve al método `items()` del dict, no a la key `'items'`. Renombrar la key a `'productos'` u otra.
 - `order_save_module_matches` recibe `{matches: [...]}` como JSON, no array directo: usar `body.get('matches', [])`.
+
+### ⚠ `erp_stock` es GLOBAL y guarda UNA sola carga (2026-07-17)
+
+No hay una fila por factura: **cada carga borra la tabla entera y reinserta**
+(`save_erp_to_db`). Y como el Excel del ERP es **opcional** al subir la factura, la
+tabla se quedaba con el ingreso del **chequeo anterior** y `/compare` lo mostraba como
+si fuera el de la factura nueva → diferencias fantasma. Lo reportó Diego ("me pareció
+ver diferencias de un chequeo anterior").
+
+Cada carga lleva `erp_stock.carga_id` y la factura guarda `facturas.erp_carga_id`. Si
+no coinciden **no se compara** (`data_extract.erp_pertenece_a_factura`), y `/compare`
+avisa y ofrece subir el Excel (`POST /invoice/<id>/erp-upload`). Falla cerrado: las
+filas legacy (`carga_id` NULL) cuentan como "no es de esta factura".
+
+**Si escribís un cargador de `erp_stock`**: guardá el `carga_id` que devuelve
+`save_erp_to_db()` en `Invoice.erp_carga_id` y commiteá **antes** de comparar; si no,
+la factura queda "sin ERP" y el cruce devuelve vacío. No taggear por nombre de Excel:
+la farmacia reexporta siempre el mismo nombre y matchearía una carga vieja por
+casualidad.
+
+> `observer_source.get_recepciones_factura` **no existe** — las 2 rutas que la llaman
+> (`/observer/factura/<id>/recepciones` y el botón ObServer del cruce) daban 500.
+> Quedan gateadas por `_recepciones_implementadas()` (chequeo con `hasattr`, se
+> prende solo el día que se implemente). Por eso el cruce desde ObServer que promete
+> `ingresos.html` nunca funcionó.
 
 ## Estado de features — order_detail.html (Abril 2026)
 

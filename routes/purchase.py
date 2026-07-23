@@ -25,6 +25,7 @@ from parsers.sales_history import parse_sales_history_pdf
 from parsers.sales_history_html import parse_sales_history_html
 from parsers.sales_history_xls import parse_sales_history_xls
 from purchase_engine import analyze_purchase
+from services.farmacia import farmacia_operativa
 
 _PACK_PATTERN = re.compile(r'\bPACK\s*X\s*(\d+)\b', re.IGNORECASE)
 
@@ -1074,7 +1075,7 @@ def init_app(app):
 
         from sqlalchemy import func as _f
 
-        id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         hoy = datetime.now()
 
         # Ventana 12m
@@ -1690,6 +1691,20 @@ def init_app(app):
                 for bc in _all_eans(p):
                     if bc and bc not in obs_ids_directos:
                         obs_ids_directos[bc] = p.observer_id
+            # Fallback raíz: EANs que no resolvieron vía Producto local — ir
+            # directo a obs_codigos_barras (ObServer es la verdad). Esto elimina
+            # duplicados cuando productos.observer_id es NULL o el EAN ni
+            # existe en productos.
+            _cbs_sin_resolver = [cb for cb in cbs_pedido
+                                 if cb and cb not in obs_ids_directos]
+            if _cbs_sin_resolver:
+                for cb, oid in (session.query(database.ObsCodigoBarras.codigo_barras,
+                                              database.ObsCodigoBarras.producto_observer)
+                                .filter(database.ObsCodigoBarras.codigo_barras.in_(_cbs_sin_resolver),
+                                        database.ObsCodigoBarras.fecha_baja.is_(None))
+                                .all()):
+                    if cb and oid and cb not in obs_ids_directos:
+                        obs_ids_directos[cb] = oid
             todos_obs_ids = list({oid for oid in obs_ids_directos.values()})
             droga_id_by_cb = {}
             if todos_obs_ids:
@@ -1705,8 +1720,110 @@ def init_app(app):
                     if droga_map.get(oid):
                         droga_id_by_cb[cb] = droga_map[oid]
 
-            data['productos'] = [
-                {
+            # Stock actual + presentación (fraccionado + envase) por EAN del pedido.
+            # Reusa obs_ids_directos ya armado arriba (cb → observer_id).
+            from services.farmacia import farmacia_operativa
+            _id_farm = farmacia_operativa()
+            stock_actual_by_obs = {}
+            if todos_obs_ids and _id_farm:
+                for po, sa in (session.query(
+                        database.ObsStock.producto_observer,
+                        database.ObsStock.stock_actual)
+                        .filter(database.ObsStock.id_farmacia == _id_farm,
+                                database.ObsStock.producto_observer.in_(todos_obs_ids))):
+                    stock_actual_by_obs[po] = int(sa or 0)
+            fraccionado_by_pid = {p.id: bool(p.fraccionado) for p in all_prods}
+            envase_by_pid = {}
+            if all_prods:
+                _pids = [p.id for p in all_prods]
+                for pid, ce in (session.query(database.ProductoAtributo.producto_id,
+                                              database.ProductoAtributo.cantidad_envase)
+                                .filter(database.ProductoAtributo.producto_id.in_(_pids),
+                                        database.ProductoAtributo.cantidad_envase.isnot(None))):
+                    envase_by_pid[pid] = int(ce)
+            fraccionado_by_cb = {}
+            envase_by_cb = {}
+            for p in all_prods:
+                fr = fraccionado_by_pid.get(p.id, False)
+                ce = envase_by_pid.get(p.id)
+                for bc in _all_eans(p):
+                    if bc:
+                        fraccionado_by_cb[bc] = fr
+                        if ce is not None:
+                            envase_by_cb[bc] = ce
+
+            # ── Consolidación por observer_id ──────────────────────────────
+            # ObServer es la fuente de verdad: cada producto tiene UN
+            # observer_id que agrupa N EANs alts. El pedido puede traer N
+            # items para el mismo producto (caso TERMOFREN GTS x 20 con 3
+            # EANs). Consolidamos antes de mandar a frontend: una entrada
+            # por observer_id con la suma de cantidades y un EAN canónico
+            # (preferir EAN real, no OBS:N pseudo).
+            #
+            # Beneficio: el step 3 (resumen) sale limpio sin dedup en JS;
+            # el export al proveedor manda EANs únicos y reales.
+            # Las propagaciones de EQUIV_GROUPS en el template se encargan
+            # de que steps 1/2 sigan funcionando — pedidoQty[alt] se llena
+            # desde pedidoQty[canónico] via los grupos.
+            from collections import defaultdict as _dd
+
+            _items_por_obs = _dd(list)
+            _items_huerfanos = []   # sin observer_id resoluble
+            for it in pedido.items:
+                _oid = obs_ids_directos.get(it.codigo_barra)
+                if _oid:
+                    _items_por_obs[_oid].append(it)
+                else:
+                    _items_huerfanos.append(it)
+
+            # EAN canónico por observer_id: preferir un EAN real de
+            # obs_codigos_barras vigente (orden mínimo).
+            _canonical_eans = {}
+            if _items_por_obs:
+                _obs_ids_list = list(_items_por_obs.keys())
+                for oid, ean in (session.query(database.ObsCodigoBarras.producto_observer,
+                                               database.ObsCodigoBarras.codigo_barras)
+                                 .filter(database.ObsCodigoBarras.producto_observer.in_(_obs_ids_list),
+                                         database.ObsCodigoBarras.fecha_baja.is_(None))
+                                 .order_by(database.ObsCodigoBarras.producto_observer,
+                                           database.ObsCodigoBarras.orden).all()):
+                    if oid not in _canonical_eans and ean and not ean.startswith('OBS:'):
+                        _canonical_eans[oid] = ean
+
+            _productos = []
+            for _oid, _items in _items_por_obs.items():
+                _ean_canon = _canonical_eans.get(_oid)
+                if not _ean_canon:
+                    # Sin EAN real para ese obs → caemos al primer codigo_barra
+                    # del item (puede ser OBS:N). Sigue siendo único por obs.
+                    _ean_canon = _items[0].codigo_barra or f'OBS:{_oid}'
+                _primero = _items[0]
+                _cant_tot = sum(int(_x.cantidad or 0) for _x in _items)
+                _subtot   = sum(float(_x.subtotal or 0) for _x in _items)
+                _productos.append({
+                    'codigo_barra': _ean_canon,
+                    'nombre': _primero.nombre,
+                    'cantidad': _cant_tot,
+                    'precio_pvp': float(_primero.precio_pvp or 0),
+                    'subtotal': _subtot,
+                    'rotacion': _primero.rotacion or '',
+                    'avg_monthly': float(_primero.avg_monthly) if _primero.avg_monthly else None,
+                    'erp_qty': erp_stock_map.get(_ean_canon)
+                               or erp_stock_map.get(_primero.codigo_barra),
+                    'stock_actual': stock_actual_by_obs.get(_oid),
+                    'fraccionado': fraccionado_by_cb.get(_ean_canon,
+                                   fraccionado_by_cb.get(_primero.codigo_barra, False)),
+                    'cantidad_envase': envase_by_cb.get(_ean_canon)
+                                       or envase_by_cb.get(_primero.codigo_barra),
+                    'monodroga': monodroga_by_bc.get(_primero.codigo_barra, ''),
+                    'tvc': tvc_by_cb.get(_primero.codigo_barra, ''),
+                    'monodroga_id': droga_id_by_cb.get(_primero.codigo_barra),
+                })
+            # Huérfanos (sin obs_id resoluble): los dejamos como están — son
+            # productos no linkeados a ObServer (deberían ser pocos tras el
+            # script materializar_huerfanos).
+            for it in _items_huerfanos:
+                _productos.append({
                     'codigo_barra': it.codigo_barra,
                     'nombre': it.nombre,
                     'cantidad': it.cantidad,
@@ -1715,16 +1832,45 @@ def init_app(app):
                     'rotacion': it.rotacion or '',
                     'avg_monthly': float(it.avg_monthly) if it.avg_monthly else None,
                     'erp_qty': erp_stock_map.get(it.codigo_barra),
+                    'stock_actual': None,
+                    'fraccionado': fraccionado_by_cb.get(it.codigo_barra, False),
+                    'cantidad_envase': envase_by_cb.get(it.codigo_barra),
                     'monodroga': monodroga_by_bc.get(it.codigo_barra, ''),
                     'tvc': tvc_by_cb.get(it.codigo_barra, ''),
                     'monodroga_id': droga_id_by_cb.get(it.codigo_barra),
-                }
-                for it in pedido.items
-            ]
+                })
+            data['productos'] = _productos
             equiv = [
                 {'barcodes': [b for b in _all_eans(p) if b]}
                 for p in all_prods
             ]
+            # Extensión ObServer: agrega grupos extra construidos desde
+            # obs_codigos_barras (alts ObServer de un mismo producto_observer).
+            # Cubre el punto ciego donde un EAN del pedido vive solo en el
+            # maestro y no fue materializado a `productos` — sin esto, módulos
+            # y ofertas-mínimo no cruzan vía alts para esos productos.
+            # El JS del template propaga transitivamente entre grupos, así que
+            # solapamiento con `equiv` existente no rompe nada (idempotente).
+            ped_eans = {(it.codigo_barra or '').strip()
+                        for it in pedido.items if it.codigo_barra}
+            ped_eans.discard('')
+            if ped_eans:
+                obs_ids_pedido = {oid for (_, oid) in
+                    session.query(database.ObsCodigoBarras.codigo_barras,
+                                  database.ObsCodigoBarras.producto_observer)
+                    .filter(database.ObsCodigoBarras.codigo_barras.in_(list(ped_eans)),
+                            database.ObsCodigoBarras.fecha_baja.is_(None)).all()}
+                if obs_ids_pedido:
+                    grupos_obs = {}
+                    for ean_obs, oid in (
+                        session.query(database.ObsCodigoBarras.codigo_barras,
+                                      database.ObsCodigoBarras.producto_observer)
+                        .filter(database.ObsCodigoBarras.producto_observer.in_(list(obs_ids_pedido)),
+                                database.ObsCodigoBarras.fecha_baja.is_(None)).all()):
+                        grupos_obs.setdefault(oid, set()).add(ean_obs)
+                    for eans_set in grupos_obs.values():
+                        if len(eans_set) >= 2:  # solo si aporta alts
+                            equiv.append({'barcodes': sorted(eans_set)})
             product_prices = {}
             for p in all_prods:
                 if p.precio_pvp is not None:
@@ -1838,7 +1984,8 @@ def init_app(app):
             # Droguerías disponibles para elegir como canal
             droguerias = [{'id': p.id, 'razon_social': p.razon_social}
                           for p in (session.query(database.Provider)
-                                    .filter(database.Provider.tipo == 'drogueria')
+                                    .filter(database.Provider.tipo == 'drogueria',
+                                            database.Provider.activo.is_(True))
                                     .order_by(database.Provider.razon_social).all())]
 
             return render_template('order_detail.html', pedido=data, productos_equiv=equiv,
@@ -2209,6 +2356,68 @@ def init_app(app):
             headers={'Content-Disposition': f'attachment; filename="{filename}"'}
         )
 
+    @app.route('/order/<int:pedido_id>/analizar-ia', methods=['POST'])
+    def order_analizar_ia(pedido_id):
+        """Análisis IA del resumen final (Claude Haiku 4.5).
+
+        Body JSON: {rows: [...], agregados: {...}}.
+        - rows = el exportData del frontend (1 fila por EAN con stock+rot+sug+
+          total+cob_post+gap+precio).
+        - agregados = totales calculados client-side ($, ahorro, n productos).
+        Devuelve {ok, analisis, tokens_in, tokens_out} o {ok:false, error}.
+        """
+        import os
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False,
+                            'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        body = request.get_json(silent=True) or {}
+        rows = body.get('rows') or []
+        agregados = body.get('agregados') or {}
+        if not rows:
+            return jsonify({'ok': False, 'error': 'Sin líneas para analizar.'}), 400
+
+        with database.get_db() as session:
+            pedido = session.get(database.Pedido, pedido_id)
+            if not pedido:
+                return jsonify({'ok': False, 'error': 'Pedido inexistente.'}), 404
+            lab_nombre = pedido.laboratorio or '—'
+            n_days = int(pedido.n_days or 35)
+
+        from routes.informes import _guardar_analisis_cache
+        from services import pedido_analisis
+        try:
+            texto, usage = pedido_analisis.analizar_pedido(
+                lab_nombre, n_days, rows, agregados, api_key)
+            _guardar_analisis_cache(
+                f'pedido:{pedido_id}',
+                f'Análisis pedido — {lab_nombre}',
+                texto, usage,
+            )
+        except ImportError:
+            return jsonify({'ok': False,
+                            'error': 'Paquete anthropic no instalado.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:   # noqa: BLE001
+            msg = str(e); low = msg.lower()
+            if 'credit balance' in low or 'insufficient' in low:
+                friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito y reintentá.'
+            elif 'invalid' in low and 'api' in low and 'key' in low:
+                friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada.'
+            elif 'rate limit' in low or '429' in low:
+                friendly = 'Rate limit alcanzado. Esperá unos segundos y reintentá.'
+            else:
+                friendly = f'Claude API: {msg}'
+            return jsonify({'ok': False, 'error': friendly}), 502
+
+        return jsonify({
+            'ok': True,
+            'analisis': texto,
+            'tokens_in': getattr(usage, 'input_tokens', None),
+            'tokens_out': getattr(usage, 'output_tokens', None),
+        })
+
     @app.route('/order/<int:pedido_id>/canal', methods=['POST'])
     def order_set_canal(pedido_id):
         """Setea el canal de compra del pedido: laboratorio (directo) o droguería.
@@ -2463,45 +2672,22 @@ def init_app(app):
         elif step == 'summary':
             rows = data if isinstance(data, list) else []
 
-            hrow(ws, ['EAN', 'Producto', 'Stock ERP', 'Rot.', 'Prom.mes',
-                      'Precio PVP', 'Cant. módulo', 'Oferta c/mín', 'Sin Deal',
-                      'Total', 'Cant. pedida', 'Saldo'])
-            ws.column_dimensions['A'].width = 16
-            ws.column_dimensions['B'].width = 40
-            ws.column_dimensions['C'].width = 10
-            ws.column_dimensions['D'].width = 6
-            ws.column_dimensions['E'].width = 10
-            ws.column_dimensions['F'].width = 12
-            ws.column_dimensions['G'].width = 12
-            ws.column_dimensions['H'].width = 12
-            ws.column_dimensions['I'].width = 10
-            ws.column_dimensions['J'].width = 10
-            ws.column_dimensions['K'].width = 12
-            ws.column_dimensions['L'].width = 10
+            # Excel del "Pedido extra" — saldos fuera de módulos. Solo lo
+            # esencial para mandar al proveedor por el canal extra: EAN,
+            # descripción y cantidad. Los módulos se exportan aparte (step
+            # 'modules'). Si el operador clickea con toggle 'ver todo', el
+            # JS manda también los productos cubiertos por módulo (cantidad=0)
+            # — quedan listados pero con qty 0.
+            hrow(ws, ['EAN', 'Descripción', 'Cantidad'])
+            for col, w in zip('ABC', [18, 60, 12]):
+                ws.column_dimensions[col].width = w
 
             for row in rows:
-                saldo = row.get('saldo', '')
                 ws.append([
                     row.get('ean', ''),
                     row.get('nombre', ''),
-                    row.get('erp_qty', '') if row.get('erp_qty') is not None else '',
-                    row.get('rotacion', ''),
-                    row.get('avg_monthly', '') if row.get('avg_monthly') is not None else '',
-                    row.get('precio_pvp', '') if row.get('precio_pvp') else '',
-                    row.get('cant_modulo', '') if row.get('cant_modulo') else '',
-                    row.get('cant_oferta_min', '') if row.get('cant_oferta_min') else '',
-                    row.get('cant_nodeal', '') if row.get('cant_nodeal') else '',
-                    row.get('total', ''),
-                    row.get('cant_pedida', ''),
-                    saldo if saldo != '' else '',
+                    row.get('cantidad', 0) or 0,
                 ])
-                saldo_val = row.get('saldo')
-                if saldo_val is not None:
-                    from openpyxl.styles import PatternFill as _PF
-                    if saldo_val > 0:
-                        ws.cell(row=ws.max_row, column=12).fill = _PF(fill_type='solid', fgColor='FEE2E2')
-                    elif saldo_val < 0:
-                        ws.cell(row=ws.max_row, column=12).fill = _PF(fill_type='solid', fgColor='D1FAE5')
 
         if fmt == 'xlsx':
             buf = BytesIO()

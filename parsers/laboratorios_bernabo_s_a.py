@@ -16,17 +16,24 @@ from datetime import datetime
 
 import pdfplumber
 
+from helpers import _normalize_quadrupled
+
 
 def parse_invoice_pdf(pdf_path):
     def to_float(s):
         return float(s.replace('.', '').replace(',', '.'))
 
     # ── Extraer encabezado con texto plano ────────────────────────────────────
+    # Sin OCR fallback a propósito, a diferencia del resto de los parsers: acá los
+    # ítems salen de las COORDENADAS de las palabras (layout multi-columna), y el OCR
+    # devuelve texto plano, no coordenadas. En un PDF escaneado igual no habría ítems,
+    # así que enchufarlo daría encabezado sin ítems — la misma factura fallida, con
+    # más ruido. _normalize_quadrupled sí aplica: limpia artefactos del encabezado.
     pages_text = []
     all_words_by_page = []
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
-            pages_text.append(page.extract_text() or '')
+            pages_text.append(_normalize_quadrupled(page.extract_text() or ''))
             all_words_by_page.append(
                 page.extract_words(x_tolerance=3, y_tolerance=3) or []
             )

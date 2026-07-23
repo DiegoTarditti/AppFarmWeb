@@ -1,0 +1,6 @@
+# AppNúcleo — deploy como servicio aparte. (En local reusa el container web.)
+Flask>=3.0
+SQLAlchemy>=2.0
+psycopg2-binary>=2.9
+gunicorn>=21.0
+python-dotenv>=1.0   # carga appnucleo/.env (opcional; silencia el tip de Flask)

@@ -50,7 +50,60 @@ def init_app(app):
                     return prod_map[mp.ean_unidad].descripcion or ''
                 return obs_desc_map.get(mp.ean_unidad, '')
 
+            # ── Stock + presentación por ean_unidad (para columna "Stock") ──
+            # Mapeamos ean_unidad → observer_id (vía 'OBS:N' o Producto.observer_id).
+            from services.farmacia import farmacia_operativa
+            _id_farm = farmacia_operativa()
+            ean_to_obs = {}
+            for mp in session.query(database.ModuloPack.ean_unidad).distinct():
+                e = mp[0]
+                if not e:
+                    continue
+                if e.startswith('OBS:'):
+                    try:
+                        ean_to_obs[e] = int(e[4:])
+                    except (ValueError, TypeError):
+                        pass
+                elif e in prod_map and prod_map[e].observer_id:
+                    ean_to_obs[e] = prod_map[e].observer_id
+            stock_actual_by_obs = {}
+            if ean_to_obs and _id_farm:
+                _obs_ids = list({oid for oid in ean_to_obs.values()})
+                for po, sa in (session.query(
+                        database.ObsStock.producto_observer,
+                        database.ObsStock.stock_actual)
+                        .filter(database.ObsStock.id_farmacia == _id_farm,
+                                database.ObsStock.producto_observer.in_(_obs_ids))):
+                    stock_actual_by_obs[po] = int(sa or 0)
+            # Fraccionado + cantidad_envase del producto unidad (cuando exista
+            # en el catálogo master). Si ean_unidad es 'OBS:N' o no está en
+            # productos, no aplica fraccionable display.
+            _prod_ids_unidad = [p.id for p in all_prods if p.codigo_barra in ean_to_obs and p.codigo_barra in prod_map]
+            envase_by_pid = {}
+            if _prod_ids_unidad:
+                for pid, ce in (session.query(database.ProductoAtributo.producto_id,
+                                              database.ProductoAtributo.cantidad_envase)
+                                .filter(database.ProductoAtributo.producto_id.in_(_prod_ids_unidad),
+                                        database.ProductoAtributo.cantidad_envase.isnot(None))):
+                    envase_by_pid[pid] = int(ce)
+
+            def _stock_info_unidad(ean):
+                """Devuelve dict con stock + flags para mostrar la celda. None si no hay dato."""
+                if not ean:
+                    return None
+                oid = ean_to_obs.get(ean)
+                if oid is None or oid not in stock_actual_by_obs:
+                    return None
+                stock = stock_actual_by_obs[oid]
+                p = prod_map.get(ean)
+                fraccionado = bool(p.fraccionado) if p else False
+                envase = envase_by_pid.get(p.id) if p else None
+                return {'stock': stock, 'fraccionado': fraccionado, 'envase': envase}
+
             def _pack_dict(mp):
+                # prod_pack: master local del EAN del pack (para tildar Producto.es_pack
+                # desde la fila — toggle inline de "este producto es un pack en catálogo").
+                _pp = prod_map.get(mp.ean_pack)
                 return {'id': mp.id, 'ean_pack': mp.ean_pack, 'ean_unidad': mp.ean_unidad,
                         'cantidad': mp.cantidad,
                         'cant_modulo': mp.cant_modulo,
@@ -58,7 +111,10 @@ def init_app(app):
                         'desc_pack':   mp.descripcion or '',
                         'desc_unidad': _desc_unidad(mp),
                         'prod_unidad_id': prod_map[mp.ean_unidad].id if mp.ean_unidad in prod_map else None,
-                        'modulo_id': mp.modulo_id}
+                        'prod_pack_id':       _pp.id if _pp else None,
+                        'prod_pack_es_pack':  bool(_pp.es_pack) if _pp else False,
+                        'modulo_id': mp.modulo_id,
+                        'stock_unidad': _stock_info_unidad(mp.ean_unidad)}
 
             modulos_raw = (session.query(Modulo)
                            .outerjoin(Laboratorio)
@@ -352,6 +408,419 @@ def init_app(app):
             try: os.remove(tmp)
             except OSError: pass
 
+    # ── Nuevo flujo: preview + confirmar (no ensucia las tablas hasta confirmar) ──
+
+    def _parsear_y_armar_preview(modules, lab_id, lista_nombre):
+        """Toma la lista de módulos (output del parser regex o IA) y devuelve
+        el JSON de preview con detección de packs + validación EANs contra
+        catálogo + detección de conflicto (módulo activo del mismo lab)."""
+        from pack_detector import detectar_packs
+        with database.get_db() as session:
+            # Detección packs (igual que /importar).
+            detect = detectar_packs(modules, session, saltear_registrados=False)
+            pack_map = {}
+            for p in detect:
+                if p['confianza'] == 'baja':
+                    continue
+                if not p.get('cantidad'):
+                    if p.get('destacado'):
+                        p = dict(p, cantidad=2)
+                    else:
+                        continue
+                pack_map[p['ean_pack']] = p
+
+            # Lookup en pack_equivalencias (aprendidas o cargadas manualmente
+            # vía Excel desde el ABM de laboratorios). Si un ean_pack ya tiene
+            # equivalencia persistida, lo aplicamos sin pedirle al user.
+            # Same shape que /importar (modulos_import.py:295-320).
+            todos_ean_pack = [it.get('ean') for mod in modules
+                              for it in (mod.get('items') or []) if it.get('ean')]
+            if todos_ean_pack:
+                q = session.query(database.PackEquivalencia).filter(
+                    database.PackEquivalencia.ean_pack.in_(todos_ean_pack[:1000]))
+                # Si vino lab_id en el form, priorizar equivalencias del lab
+                # (caen primero — luego globales como fallback).
+                aprendidas = q.all()
+                if lab_id:
+                    aprendidas.sort(key=lambda x: 0 if x.laboratorio_id == lab_id else 1)
+                seen = set()
+                for pe in aprendidas:
+                    if pe.ean_pack in seen:
+                        continue
+                    seen.add(pe.ean_pack)
+                    cur = pack_map.get(pe.ean_pack)
+                    if cur is None:
+                        # No detectado como pack — promoverlo igual porque la
+                        # tabla dice que es uno.
+                        pack_map[pe.ean_pack] = {
+                            'ean_pack': pe.ean_pack,
+                            'ean_unidad_sug': pe.ean_unidad,
+                            'desc_unidad_sug': pe.desc_unidad or '',
+                            'cantidad': pe.cantidad or 1,
+                            'confianza': 'alta',
+                            'razon': 'aprendido',
+                        }
+                    else:
+                        # La equivalencia aprendida/manual SIEMPRE pisa la
+                        # sugerencia del detector (incluida cantidad) — el
+                        # usuario ya confirmó este ean_pack: ean_unidad,
+                        # cantidad y descripción son fuente de verdad.
+                        cur['ean_unidad_sug'] = pe.ean_unidad
+                        if pe.desc_unidad:
+                            cur['desc_unidad_sug'] = pe.desc_unidad
+                        if pe.cantidad and pe.cantidad >= 1:
+                            cur['cantidad'] = pe.cantidad
+                        cur['confianza'] = 'alta'
+                        cur['razon'] = (cur.get('razon', '') + '+aprendido').lstrip('+')
+
+            # Validación EANs contra catálogo (master + alts + obs_productos).
+            from database import ProductoCodigoBarra
+            todos_eans = set()
+            for mod in modules:
+                for it in mod.get('items') or []:
+                    if it.get('ean'):
+                        todos_eans.add(str(it['ean']).strip())
+            for p in pack_map.values():
+                if p.get('ean_unidad_sug'):
+                    todos_eans.add(p['ean_unidad_sug'])
+            eans_en_catalogo = set()
+            desc_unidad_map = {}
+            if todos_eans:
+                # EANs reales (numericos): productos master + alts + maestro ObServer.
+                # ObsCodigoBarras se incluye como 4ta fuente porque las equivalencias
+                # cargadas vía Excel/aprendidas pueden apuntar a EANs que viven en el
+                # maestro ObServer pero todavía no se materializaron a `productos`.
+                # Sin esto, esos EANs daban falso "no en catálogo" en el preview.
+                eans_reales = [e for e in todos_eans if not e.startswith('OBS:')]
+                if eans_reales:
+                    eans_en_catalogo = {row[0] for row in
+                        session.query(Producto.codigo_barra)
+                        .filter(Producto.codigo_barra.in_(eans_reales)).all()}
+                    eans_en_catalogo |= {row[0] for row in
+                        session.query(ProductoCodigoBarra.codigo_barra)
+                        .filter(ProductoCodigoBarra.codigo_barra.in_(eans_reales)).all()}
+                    eans_en_catalogo |= {row[0] for row in
+                        session.query(database.ObsCodigoBarras.codigo_barras)
+                        .filter(database.ObsCodigoBarras.codigo_barras.in_(eans_reales),
+                                database.ObsCodigoBarras.fecha_baja.is_(None)).all()}
+                # 'OBS:N' = referencia directa a obs_productos.observer_id.
+                # Si el observer_id existe en obs_productos, lo damos por valido.
+                obs_refs = {e for e in todos_eans if e.startswith('OBS:')}
+                obs_ids = []
+                if obs_refs:
+                    for e in obs_refs:
+                        try:
+                            obs_ids.append(int(e[4:]))
+                        except (ValueError, TypeError):
+                            pass
+                    if obs_ids:
+                        ids_vigentes = {oid for (oid,) in
+                            session.query(database.ObsProducto.observer_id)
+                            .filter(database.ObsProducto.observer_id.in_(obs_ids)).all()}
+                        for e in obs_refs:
+                            try:
+                                if int(e[4:]) in ids_vigentes:
+                                    eans_en_catalogo.add(e)
+                            except (ValueError, TypeError):
+                                pass
+
+                # Mapa EAN → descripcion (para mostrar al lado del EAN unidad
+                # del preview, "descripcion equivalencia hija").
+                desc_unidad_map = {}
+                if eans_reales:
+                    for cb, dsc in (session.query(Producto.codigo_barra, Producto.descripcion)
+                                    .filter(Producto.codigo_barra.in_(eans_reales)).all()):
+                        desc_unidad_map[cb] = (dsc or '').strip()
+                    # Alts: si el EAN aparece como alt de un Producto, usar su desc.
+                    for cb, pid in (session.query(ProductoCodigoBarra.codigo_barra,
+                                                  ProductoCodigoBarra.producto_id)
+                                    .filter(ProductoCodigoBarra.codigo_barra.in_(eans_reales)).all()):
+                        if cb not in desc_unidad_map:
+                            p = session.get(Producto, pid)
+                            if p:
+                                desc_unidad_map[cb] = (p.descripcion or '').strip()
+                    # ObServer puro (no materializado a productos): traer desc del
+                    # maestro vía obs_codigos_barras → obs_productos.
+                    pendientes = [e for e in eans_reales if e not in desc_unidad_map]
+                    if pendientes:
+                        for cb, dsc in (session.query(database.ObsCodigoBarras.codigo_barras,
+                                                     database.ObsProducto.descripcion)
+                                       .join(database.ObsProducto,
+                                             database.ObsProducto.observer_id ==
+                                             database.ObsCodigoBarras.producto_observer)
+                                       .filter(database.ObsCodigoBarras.codigo_barras.in_(pendientes),
+                                               database.ObsCodigoBarras.fecha_baja.is_(None)).all()):
+                            desc_unidad_map.setdefault(cb, (dsc or '').strip())
+                if obs_ids:
+                    for oid, dsc in (session.query(database.ObsProducto.observer_id,
+                                                   database.ObsProducto.descripcion)
+                                     .filter(database.ObsProducto.observer_id.in_(obs_ids)).all()):
+                        desc_unidad_map[f'OBS:{oid}'] = (dsc or '').strip()
+
+            # Conflicto: ¿hay un módulo activo de este lab ya?
+            conflicto = None
+            if lab_id:
+                activo = (session.query(Modulo)
+                          .filter(Modulo.laboratorio_id == lab_id,
+                                  Modulo.activo.is_(True))
+                          .order_by(Modulo.id.desc()).first())
+                if activo:
+                    n_packs = session.query(ModuloPack).filter_by(modulo_id=activo.id).count()
+                    conflicto = {'modulo_id': activo.id, 'nombre': activo.nombre,
+                                 'lista_nombre': activo.lista_nombre or '',
+                                 'n_packs': n_packs}
+
+            # Armar payload por módulo + item.
+            modulos_preview = []
+            n_packs_auto = n_packs_pendientes = 0
+            n_eans_pack_no_cat = n_eans_unidad_no_cat = 0
+            for mod in modules:
+                items_preview = []
+                for it in mod.get('items') or []:
+                    ean_pack = (str(it.get('ean') or '').strip()) or None
+                    if not ean_pack:
+                        continue
+                    det = pack_map.get(ean_pack)
+                    es_pack = bool(det)
+                    if det:
+                        ean_unidad = det.get('ean_unidad_sug') or ean_pack
+                        cantidad = int(det.get('cantidad') or 1)
+                        confianza = det.get('confianza', '—')
+                        n_packs_auto += 1
+                    else:
+                        ean_unidad = ean_pack
+                        cantidad = 1
+                        confianza = None
+                    cat_pack = 'ok' if ean_pack in eans_en_catalogo else 'no_en_catalogo'
+                    if cat_pack == 'no_en_catalogo':
+                        n_eans_pack_no_cat += 1
+                    if es_pack and ean_unidad != ean_pack:
+                        cat_unidad = 'ok' if ean_unidad in eans_en_catalogo else 'no_en_catalogo'
+                        if cat_unidad == 'no_en_catalogo':
+                            n_eans_unidad_no_cat += 1
+                    else:
+                        cat_unidad = 'igual_pack'
+                    if es_pack and not det.get('ean_unidad_sug'):
+                        n_packs_pendientes += 1
+                    items_preview.append({
+                        'ean_pack': ean_pack,
+                        'descripcion': it.get('descripcion', ''),
+                        'cant_modulo': it.get('cant'),
+                        'desc_pct': float(it['desc_pct']) if it.get('desc_pct') is not None else None,
+                        'destacado': bool(it.get('destacado')),
+                        'es_pack': es_pack,
+                        'ean_unidad': ean_unidad,
+                        'desc_unidad': desc_unidad_map.get(ean_unidad, '') if ean_unidad != ean_pack else '',
+                        'cantidad_pack': cantidad,
+                        'confianza': confianza,
+                        'catalogo_pack': cat_pack,
+                        'catalogo_unidad': cat_unidad,
+                    })
+                if items_preview:
+                    modulos_preview.append({'nombre': mod['nombre'], 'items': items_preview})
+
+            stats = {
+                'n_modulos': len(modulos_preview),
+                'n_items': sum(len(m['items']) for m in modulos_preview),
+                'n_packs_auto': n_packs_auto,
+                'n_packs_pendientes': n_packs_pendientes,
+                'n_eans_pack_no_catalogo': n_eans_pack_no_cat,
+                'n_eans_unidad_no_catalogo': n_eans_unidad_no_cat,
+            }
+            return {
+                'ok': True,
+                'modulos': modulos_preview,
+                'lista_nombre': lista_nombre,
+                'lab_id': lab_id,
+                'conflicto_activo': conflicto,
+                'stats': stats,
+            }
+
+    @app.route('/modulo-packs/import-preview', methods=['POST'])
+    def modulo_packs_import_preview():
+        """Sube el archivo, lo parsea (regex o IA) y devuelve el JSON de
+        preview con equivalencias + validación. NO toca la DB.
+        Form: file (XLSX/PDF/imagen), lab_id, lista_nombre, usar_ia (0|1).
+        """
+        f = request.files.get('file')
+        if not f:
+            return jsonify({'error': 'No se recibió archivo'}), 400
+        lab_id = request.form.get('lab_id') or None
+        try:
+            lab_id = int(lab_id) if lab_id else None
+        except (TypeError, ValueError):
+            lab_id = None
+        lista_nombre = (request.form.get('lista_nombre') or '').strip() or None
+        usar_ia = request.form.get('usar_ia') in ('1', 'true', 'on')
+
+        ext = os.path.splitext(f.filename)[1].lower()
+        IMG_EXTS = ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif')
+        if usar_ia:
+            if ext not in ('.xlsx', '.xls', '.pdf', *IMG_EXTS):
+                return jsonify({'error': f'Formato {ext} no soportado por IA. Aceptamos XLSX, PDF y fotos.'}), 400
+            if not os.environ.get('ANTHROPIC_API_KEY', '').strip():
+                return jsonify({'error': 'IA no disponible: falta ANTHROPIC_API_KEY.'}), 503
+        else:
+            if ext not in ('.xlsx',):
+                return jsonify({'error': 'El parser regex solo acepta XLSX. Para PDF/foto tildá "Usar IA".'}), 400
+
+        tmp = os.path.join(UPLOAD_FOLDER, secure_filename(f.filename))
+        f.save(tmp)
+        try:
+            if usar_ia:
+                from services import modulos_ia
+                try:
+                    modules = modulos_ia.extraer(tmp, ext)
+                except RuntimeError as e:
+                    return jsonify({'error': str(e)}), 503
+                except Exception as e:   # noqa: BLE001
+                    return jsonify({'error': f'IA: {e}'}), 500
+            else:
+                from parsers.modulos_xlsx import parse_modulos_xlsx
+                try:
+                    modules = parse_modulos_xlsx(tmp)
+                except Exception as e:   # noqa: BLE001
+                    return jsonify({'error': f'Parser: {e}'}), 500
+
+            if not modules:
+                return jsonify({'error': 'No se encontraron módulos en el archivo'}), 400
+
+            preview = _parsear_y_armar_preview(modules, lab_id, lista_nombre)
+            return jsonify(preview)
+        finally:
+            try: os.remove(tmp)
+            except OSError: pass
+
+    @app.route('/modulo-packs/producto/marcar-pack', methods=['POST'])
+    def modulo_packs_producto_marcar():
+        """Toggle inline de Producto.es_pack desde la tabla de packs activos.
+        Body JSON: {ean: str, es_pack: 0|1}. Busca el Producto por codigo_barra
+        (master principal). Si no existe master local, devuelve 404 con aviso.
+        """
+        data = request.get_json(silent=True) or {}
+        ean = (str(data.get('ean') or '').strip())
+        if not ean:
+            return jsonify({'ok': False, 'error': 'ean requerido'}), 400
+        val = 1 if data.get('es_pack') in (True, 1, '1', 'true') else 0
+        with database.get_db() as session:
+            prod = (session.query(Producto)
+                    .filter(Producto.codigo_barra == ean).first())
+            if not prod:
+                return jsonify({'ok': False,
+                                'error': 'sin master local',
+                                'producto_id': None}), 404
+            prod.es_pack = val
+            session.commit()
+            return jsonify({'ok': True, 'producto_id': prod.id, 'es_pack': bool(val)})
+
+    @app.route('/modulo-packs/import-confirmar', methods=['POST'])
+    def modulo_packs_import_confirmar():
+        """Recibe el JSON del preview (posiblemente editado) y persiste:
+          - Si hay módulo activo del mismo lab: aplica accion_anterior:
+              'pisar' → borra el viejo (cascade ModuloPacks);
+              'conservar' → setea su activo=False (queda histórico);
+              ausente y hay conflicto → 409.
+          - Crea los Modulo + ModuloPack nuevos con activo=True.
+        Body JSON: {lab_id, lista_nombre, modulos, accion_anterior?}.
+        """
+        from helpers import now_ar
+        data = request.get_json(silent=True) or {}
+        try:
+            lab_id = int(data.get('lab_id')) if data.get('lab_id') else None
+        except (TypeError, ValueError):
+            lab_id = None
+        lista_nombre = (data.get('lista_nombre') or '').strip() or None
+        modulos_in = data.get('modulos') or []
+        accion = (data.get('accion_anterior') or '').strip().lower()  # '' | 'pisar' | 'conservar'
+
+        if not modulos_in:
+            return jsonify({'error': 'No hay módulos para confirmar'}), 400
+
+        with database.get_db() as session:
+            try:
+                # Conflicto con el activo previo (si hay lab).
+                viejo = None
+                if lab_id:
+                    viejo = (session.query(Modulo)
+                             .filter(Modulo.laboratorio_id == lab_id,
+                                     Modulo.activo.is_(True))
+                             .order_by(Modulo.id.desc()).first())
+                if viejo and not accion:
+                    return jsonify({
+                        'error': 'conflicto_activo',
+                        'conflicto': {'modulo_id': viejo.id, 'nombre': viejo.nombre},
+                    }), 409
+                if viejo:
+                    if accion == 'pisar':
+                        session.delete(viejo)
+                        session.flush()
+                    elif accion == 'conservar':
+                        viejo.activo = False
+                    else:
+                        return jsonify({'error': f'accion_anterior inválida: {accion}'}), 400
+
+                creados = 0
+                packs_agregados = 0
+                primer_modulo_id = None
+                for mod in modulos_in:
+                    nombre_mod = (mod.get('nombre') or '').strip()
+                    if not nombre_mod:
+                        continue
+                    nuevo = Modulo(
+                        nombre=nombre_mod, laboratorio_id=lab_id,
+                        lista_nombre=lista_nombre, activo=True,
+                    )
+                    session.add(nuevo)
+                    session.flush()
+                    if primer_modulo_id is None:
+                        primer_modulo_id = nuevo.id
+                    creados += 1
+                    for it in mod.get('items') or []:
+                        ean_pack = (str(it.get('ean_pack') or '').strip())
+                        if not ean_pack:
+                            continue
+                        ean_unidad = (str(it.get('ean_unidad') or '').strip()) or ean_pack
+                        try:
+                            cantidad = max(1, int(it.get('cantidad_pack') or 1))
+                        except (TypeError, ValueError):
+                            cantidad = 1
+                        desc_pct = it.get('desc_pct')
+                        try:
+                            desc_pct = float(desc_pct) if desc_pct not in (None, '') else None
+                        except (TypeError, ValueError):
+                            desc_pct = None
+                        try:
+                            cant_modulo = int(it.get('cant_modulo')) if it.get('cant_modulo') not in (None, '') else None
+                        except (TypeError, ValueError):
+                            cant_modulo = None
+                        session.add(ModuloPack(
+                            ean_pack=ean_pack, ean_unidad=ean_unidad,
+                            cantidad=cantidad,
+                            descripcion=(it.get('descripcion') or '')[:255],
+                            cant_modulo=cant_modulo, desc_pct=desc_pct,
+                            modulo_id=nuevo.id,
+                            creado_en=now_ar(),
+                        ))
+                        packs_agregados += 1
+                        # Persistencia del flag es_pack a nivel catálogo (si el
+                        # operador lo tildó/destildó en el preview). Solo si
+                        # existe master local — no creamos Producto desde acá.
+                        if 'es_pack' in it:
+                            prod_master = (session.query(Producto)
+                                           .filter(Producto.codigo_barra == ean_pack)
+                                           .first())
+                            if prod_master:
+                                prod_master.es_pack = 1 if it.get('es_pack') else 0
+                session.commit()
+                return jsonify({
+                    'ok': True, 'modulos_creados': creados,
+                    'packs_agregados': packs_agregados,
+                    'primer_modulo_id': primer_modulo_id,
+                })
+            except Exception as e:   # noqa: BLE001
+                session.rollback()
+                return jsonify({'error': str(e)}), 500
+
     @app.route('/modulos/delete-by-lista', methods=['POST'])
     def modulos_delete_by_lista():
         """Elimina todos los módulos (y sus packs en cascada) de una lista/importación."""
@@ -386,6 +855,56 @@ def init_app(app):
             raw = q.order_by(Modulo.lista_nombre, Modulo.nombre).all()
             prod_map = {p.codigo_barra: p for p in session.query(Producto).all()}
 
+            # ── Resolver desc + categoría del EAN unidad por pack ─────────
+            # cat_unidad: 'local' (en master/alts) | 'observer' (OBS:N vigente) | 'none'.
+            # Permite mostrar un badge inline en /order/<id> sin n+1 queries.
+            from database import ProductoCodigoBarra
+            eans_pack_local = set()
+            obs_ids_pack = []
+            for m in raw:
+                if m.lista_nombre and m.nombre == m.lista_nombre:
+                    continue
+                for mp in m.packs:
+                    eu = mp.ean_unidad
+                    if not eu:
+                        continue
+                    if eu.startswith('OBS:'):
+                        try:
+                            obs_ids_pack.append(int(eu[4:]))
+                        except (ValueError, TypeError):
+                            pass
+                    else:
+                        eans_pack_local.add(eu)
+            # EANs reconocidos como locales (master + alts).
+            eans_locales_ok = set(prod_map.keys()) & eans_pack_local
+            if eans_pack_local:
+                for (cb,) in (session.query(ProductoCodigoBarra.codigo_barra)
+                              .filter(ProductoCodigoBarra.codigo_barra.in_(list(eans_pack_local)))):
+                    eans_locales_ok.add(cb)
+            obs_local = {}
+            if obs_ids_pack:
+                for oid, dsc in (session.query(database.ObsProducto.observer_id,
+                                                database.ObsProducto.descripcion)
+                                 .filter(database.ObsProducto.observer_id.in_(obs_ids_pack))):
+                    obs_local[oid] = (dsc or '').strip()
+
+            def _resolve_unit(eu):
+                if not eu:
+                    return ('', 'none')
+                if eu.startswith('OBS:'):
+                    try:
+                        oid = int(eu[4:])
+                        if oid in obs_local:
+                            return (obs_local[oid], 'observer')
+                    except (ValueError, TypeError):
+                        pass
+                    return ('', 'none')
+                if eu in prod_map:
+                    return (prod_map[eu].descripcion or '', 'local')
+                if eu in eans_locales_ok:
+                    return ('', 'local')
+                return ('', 'none')
+
             from collections import OrderedDict
             listas = OrderedDict()
             for m in raw:
@@ -396,13 +915,18 @@ def init_app(app):
                                    'modulos': []}
                 if m.lista_nombre and m.nombre == m.lista_nombre:
                     continue
-                packs = [{'ean_pack':    mp.ean_pack,
-                          'desc_pack':   mp.descripcion or '',
-                          'ean_unidad':  mp.ean_unidad,
-                          'desc_unidad': (prod_map[mp.ean_unidad].descripcion or '') if mp.ean_unidad in prod_map else '',
-                          'cant_modulo': mp.cant_modulo if mp.cant_modulo is not None else mp.cantidad,
-                          'desc_pct':    float(mp.desc_pct) if mp.desc_pct is not None else 0.0}
-                         for mp in m.packs]
+                packs = []
+                for mp in m.packs:
+                    desc_u, cat_u = _resolve_unit(mp.ean_unidad)
+                    packs.append({
+                        'ean_pack':    mp.ean_pack,
+                        'desc_pack':   mp.descripcion or '',
+                        'ean_unidad':  mp.ean_unidad,
+                        'desc_unidad': desc_u,
+                        'cat_unidad':  cat_u,
+                        'cant_modulo': mp.cant_modulo if mp.cant_modulo is not None else mp.cantidad,
+                        'desc_pct':    float(mp.desc_pct) if mp.desc_pct is not None else 0.0,
+                    })
                 listas[ln]['modulos'].append({'id': m.id, 'nombre': m.nombre, 'packs': packs})
 
             return jsonify({'listas': list(listas.values())})

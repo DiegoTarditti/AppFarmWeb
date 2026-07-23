@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Comparar farmacias · AppNúcleo{% endblock %}
+{% block nav_cmp %}bg-white/10 text-[color:var(--mint)]{% endblock %}
+{% block content %}
+
+<h1 class="text-2xl font-extrabold tracking-tight mb-1">Comparar farmacias</h1>
+<p class="text-[color:var(--mute)] text-sm mb-4">Dos farmacias enfrentadas · ventas valorizadas 12 meses</p>
+
+{# ── Selector A vs B ── #}
+<form method="get" class="card p-3 mb-4 grid grid-cols-[1fr_auto_1fr] items-end gap-3">
+  <div>
+    <label class="block text-[10px] uppercase text-[color:var(--mute)] mb-1">Farmacia A</label>
+    <select name="a" onchange="this.form.submit()"
+            class="w-full bg-[#0b1411] border border-[color:var(--line)] rounded-lg px-3 py-2 text-sm">
+      {% for p in por_far %}<option value="{{ p.slug }}" {{ 'selected' if a==p.slug }}>{{ p.nombre }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="pb-2 text-[color:var(--mute)] font-bold text-sm">vs</div>
+  <div>
+    <label class="block text-[10px] uppercase text-[color:var(--mute)] mb-1">Farmacia B</label>
+    <select name="b" onchange="this.form.submit()"
+            class="w-full bg-[#0b1411] border border-[color:var(--line)] rounded-lg px-3 py-2 text-sm">
+      {% for p in por_far %}<option value="{{ p.slug }}" {{ 'selected' if b==p.slug }}>{{ p.nombre }}</option>{% endfor %}
+    </select>
+  </div>
+</form>
+
+{# ── Tendencia superpuesta ── #}
+<div class="card glow p-4 mb-4">
+  <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+    <h2 class="font-bold">Tendencia 12m · {{ pf[a].nombre }} vs {{ pf[b].nombre }}</h2>
+    <span class="text-[11px] text-[color:var(--mute)]">$ valorizado</span>
+  </div>
+  <div class="h-[280px]"><canvas id="chCmp"></canvas></div>
+</div>
+
+{# ── KPIs enfrentados (con ganador) ── #}
+{% set metricas = [
+  ('Ventas 12m', 'ventas_val', 'money', 'mas'),
+  ('Unidades 12m', 'unidades', 'miles', 'mas'),
+  ('Stock valorizado', 'stock_val', 'money', 'neutro'),
+  ('Sin movimiento 60d', 'sin_mov', 'miles', 'menos'),
+  ('SKUs', 'skus', 'miles', 'mas')
+] %}
+<div class="card overflow-hidden mb-4">
+  <div class="grid grid-cols-[1fr_auto_1fr] text-center border-b border-[color:var(--line)] py-3 px-4 font-bold">
+    <div class="text-[color:var(--mint)]">{{ pf[a].nombre }}</div>
+    <div class="text-[color:var(--mute)] text-xs self-center px-4">métrica</div>
+    <div class="text-[color:var(--mint)]">{{ pf[b].nombre }}</div>
+  </div>
+  {% for label, key, fmt, dir in metricas %}
+    {% set va = pf[a][key] %}
+    {% set vb = pf[b][key] %}
+    {% set win = '' %}
+    {% if dir == 'mas' %}{% set win = 'a' if va > vb else ('b' if vb > va else '') %}
+    {% elif dir == 'menos' %}{% set win = 'a' if va < vb else ('b' if vb < va else '') %}{% endif %}
+    <div class="grid grid-cols-[1fr_auto_1fr] items-center text-center border-t border-[color:var(--line)] py-3 px-4">
+      <div class="text-lg font-extrabold {{ 'text-[color:var(--mint)]' if win=='a' else 'text-[color:var(--text)]' }}">
+        {% if win == 'a' %}<span class="text-emerald-400">▲</span> {% endif %}
+        {{ va | money if fmt == 'money' else va | miles }}
+      </div>
+      <div class="text-[11px] uppercase tracking-wide text-[color:var(--mute)] px-4 min-w-[120px]">{{ label }}</div>
+      <div class="text-lg font-extrabold {{ 'text-[color:var(--mint)]' if win=='b' else 'text-[color:var(--text)]' }}">
+        {{ vb | money if fmt == 'money' else vb | miles }}
+        {% if win == 'b' %} <span class="text-emerald-400">▲</span>{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+{# ── Top labs lado a lado ── #}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+  {% for slug in [a, b] %}
+  <div class="card p-4">
+    <h2 class="font-bold mb-3">Top laboratorios · {{ pf[slug].nombre }}</h2>
+    {% set top = detalle[slug].top_labs %}
+    {% set mx = top[0].ventas_val if top else 1 %}
+    <div class="space-y-2">
+      {% for l in top %}
+      <div class="flex items-center gap-2 text-sm">
+        <span class="w-32 truncate" title="{{ l.lab }}">{{ l.lab }}</span>
+        <span class="flex-1 h-2.5 rounded bg-white/5 overflow-hidden">
+          <span class="block h-full bg-[color:var(--mint)]" style="width:{{ '%.1f' % (l.ventas_val / mx * 100 if mx else 0) }}%"></span>
+        </span>
+        <span class="w-20 text-right text-[color:var(--mint)] font-semibold">{{ l.ventas_val | money }}</span>
+      </div>
+      {% endfor %}
+      {% if not top %}<div class="text-[color:var(--mute)] text-sm">Sin datos.</div>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+const CMP_MESES = {{ meses | tojson }};
+const CMP_A = {{ {'nombre': pf[a].nombre, 'serie': detalle[a].serie} | tojson }};
+const CMP_B = {{ {'nombre': pf[b].nombre, 'serie': detalle[b].serie} | tojson }};
+
+Chart.defaults.color = '#7fa394';
+Chart.defaults.font.family = "Inter, system-ui, sans-serif";
+
+function cmpGrad(ctx, color){
+  const g = ctx.createLinearGradient(0, 0, 0, 280);
+  g.addColorStop(0, color + 'aa'); g.addColorStop(1, color + '08');
+  return g;
+}
+
+function drawCmp(){
+  new Chart(document.getElementById('chCmp'), {
+    type: 'line',
+    data: { labels: CMP_MESES, datasets: [
+      { label: CMP_A.nombre, data: CMP_A.serie, fill: true, tension: .35, borderWidth: 2,
+        borderColor: '#34d399', backgroundColor: c => cmpGrad(c.chart.ctx, '#34d399'),
+        pointRadius: 0, pointHoverRadius: 4 },
+      { label: CMP_B.nombre, data: CMP_B.serie, fill: true, tension: .35, borderWidth: 2,
+        borderColor: '#22d3ee', backgroundColor: c => cmpGrad(c.chart.ctx, '#22d3ee'),
+        pointRadius: 0, pointHoverRadius: 4 },
+    ]},
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      animation: { duration: 1000, easing: 'easeOutCubic' },
+      scales: { y: { grid: { color: '#13241d' }, ticks: { callback: v => '$' + (v / 1e6).toFixed(0) + 'M' } },
+                x: { grid: { display: false } } },
+      plugins: { legend: { position: 'top' }, tooltip: { callbacks: {
+        label: c => c.dataset.label + ': $' + Math.round(c.parsed.y).toLocaleString('es-AR') } } } }
+  });
+}
+
+let _cmpDrawn = false;
+function runCmp(){ if (_cmpDrawn) return; _cmpDrawn = true; drawCmp(); }
+window.addEventListener('nuc:start', runCmp);
+setTimeout(runCmp, 5000);
+</script>
+{% endblock %}

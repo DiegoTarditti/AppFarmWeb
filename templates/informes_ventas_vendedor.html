@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Ventas por vendedor{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+  .vv-page { padding: 18px 24px 28px; max-width: 1000px; }
+  .vv-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+  .vv-head h1 { font-family:'Space Grotesk',sans-serif; font-size: 22px; font-weight: 700; color: var(--ds-text); margin: 0; }
+  .vv-kpis { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .vv-kpi { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 12px 18px; }
+  .vv-kpi .n { font-size: 22px; font-weight: 800; color: var(--ds-mint); font-variant-numeric: tabular-nums; }
+  .vv-kpi .l { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); }
+  .vv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .vv-table thead th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); padding: 8px 12px; border-bottom: 1px solid var(--ds-line); }
+  .vv-table thead th.r { text-align: right; }
+  .vv-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); }
+  .vv-table tbody tr:hover { background: rgba(95,230,188,.04); }
+  .vv-table td { padding: 8px 12px; color: var(--ds-text); vertical-align: middle; }
+  .vv-table td.r { text-align: right; font-variant-numeric: tabular-nums; }
+  .vv-bar { height: 6px; border-radius: 3px; background: var(--ds-line); overflow: hidden; }
+  .vv-bar > div { height: 100%; background: var(--ds-mint); }
+  .vv-empty { padding: 44px 20px; text-align: center; color: var(--ds-text-mute); font-size: 13px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="vv-page">
+  <a href="{{ url_for('informes_index') }}" class="text-xs" style="color:var(--ds-text-mute);">← Informes</a>
+  <div class="vv-head" style="margin-top:6px;">
+    <span style="font-size:24px;">🧑‍💼</span>
+    <h1>Ventas por vendedor</h1>
+    <span class="text-xs" style="color:var(--ds-text-mute)">Operador del POS (ObServer) · solo ventas</span>
+    <form method="get" style="margin-left:auto;">
+      <select name="mes" class="ds-input text-xs" onchange="this.form.submit()" title="Mes">
+        {% for m in meses %}
+        <option value="{{ m.key }}" {% if m.key == mes_sel %}selected{% endif %}>{{ m.label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  {% if data %}
+  <div class="vv-kpis">
+    <div class="vv-kpi"><div class="n">{{ '{:,.0f}'.format(tot_imp).replace(',', '.') }}</div><div class="l">$ Importe total</div></div>
+    <div class="vv-kpi"><div class="n">{{ '{:,.0f}'.format(tot_u).replace(',', '.') }}</div><div class="l">Unidades</div></div>
+    <div class="vv-kpi"><div class="n">{{ data|length }}</div><div class="l">Vendedores</div></div>
+  </div>
+
+  <div class="card" style="padding:0; overflow:hidden;">
+    <table class="vv-table">
+      <thead>
+        <tr>
+          <th>Vendedor</th>
+          <th class="r">Operaciones</th>
+          <th class="r">Unidades</th>
+          <th class="r">Importe</th>
+          <th style="width:140px;">% del total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in data %}
+        {% set pct = (v.importe / tot_imp * 100) if tot_imp else 0 %}
+        <tr>
+          <td style="font-weight:600;">{{ v.nombre }}</td>
+          <td class="r" style="color:var(--ds-text-soft);">{{ '{:,.0f}'.format(v.operaciones).replace(',', '.') }}</td>
+          <td class="r" style="color:var(--ds-text-soft);">{{ '{:,.0f}'.format(v.unidades).replace(',', '.') }}</td>
+          <td class="r" style="color:var(--ds-mint); font-weight:700;">${{ '{:,.0f}'.format(v.importe).replace(',', '.') }}</td>
+          <td>
+            <div class="vv-bar"><div style="width:{{ pct }}%;"></div></div>
+            <span style="font-size:10px; color:var(--ds-text-mute);">{{ '%.1f'|format(pct) }}%</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card vv-empty">
+    <p style="font-size:24px;">🧑‍💼</p>
+    <p>Sin ventas por vendedor para este mes.</p>
+    <p style="font-size:11px; margin-top:8px;">
+      Requiere haber sincronizado las ventas con el operador (sync ObServer con el código nuevo + entidad <code>operadores</code>).
+      Si recién deployaste, corré un sync completo y volvé.
+    </p>
+  </div>
+  {% endif %}
+</div>
+</div>
+{% endblock %}
