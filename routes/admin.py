@@ -965,3 +965,22 @@ def init_app(app):
             cmd.ejecutado_en = now_ar()
             session.commit()
         return jsonify({'ok': True, 'id': cmd_id, 'estado': estado})
+
+    @app.route('/api/admin/actualizar', methods=['POST'])
+    def api_admin_actualizar():
+        """git pull origin main desde el container. Protegido por X-Panel-Token.
+        El caller (actualizar_server.py) hace el restart del container via Portainer."""
+        import subprocess
+        ok, err = _check_panel_token()
+        if not ok:
+            return jsonify({'ok': False, 'error': err[0]}), err[1]
+        branch = request.get_json(silent=True, force=True).get('branch', 'main') if request.data else 'main'
+        result = subprocess.run(
+            ['git', 'pull', 'origin', branch],
+            cwd='/app',
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        output = (result.stdout + result.stderr).strip()
+        return jsonify({'ok': result.returncode == 0, 'output': output, 'branch': branch})
