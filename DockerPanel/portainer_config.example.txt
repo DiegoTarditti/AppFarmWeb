@@ -1,17 +1,23 @@
 # portainer_config.txt — gitignored, completar por máquina
 # Copiá este archivo a portainer_config.txt y completá los valores.
 
-# URL de Portainer en el servidor de la farmacia (con VPN activa)
+# URL de la app Flask en el servidor (para el git pull)
+APP_URL=http://192.168.1.220:5000
+
+# URL de Portainer en el servidor de la farmacia (para el restart)
 PORTAINER_URL=http://192.168.1.220:9000
 
 # Usuario y contraseña del panel Portainer
 PORTAINER_USER=admin
 PORTAINER_PASS=
 
+# Token de autenticación del panel remoto (mismo que PANEL_REMOTO_TOKEN en el .env del servidor)
+PANEL_REMOTO_TOKEN=
+
 # Nombre (o parte del nombre) del container de la app web
 CONTAINER_NAME=appfarmweb-web-1
 
-# ID del entorno en Portainer (1 = "Local" en la mayoría de los casos)
+# ID del entorno en Portainer (auto-detectado si da 404, igualmente completar)
 ENDPOINT_ID=1
 
 # Branch a pullear

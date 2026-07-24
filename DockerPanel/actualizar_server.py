@@ -68,25 +68,29 @@ def _print_output(raw: bytes):
 def main():
     cfg        = _leer_config()
     url        = cfg.get("PORTAINER_URL",   "http://192.168.1.220:9000")
+    app_url    = cfg.get("APP_URL",         "http://192.168.1.220:5000")
     user       = cfg.get("PORTAINER_USER",  "admin")
     pwd        = cfg.get("PORTAINER_PASS",  "")
+    panel_tok  = cfg.get("PANEL_REMOTO_TOKEN", "")
     cname      = cfg.get("CONTAINER_NAME",  "web")
     ep_id      = int(cfg.get("ENDPOINT_ID", "1"))
     branch     = cfg.get("BRANCH",          "main")
 
     if not pwd:
         _err("PORTAINER_PASS está vacío en portainer_config.txt")
+    if not panel_tok:
+        _err("PANEL_REMOTO_TOKEN está vacío en portainer_config.txt")
 
     TOTAL = 4
     print(f"\n{BOLD}╔══ AppFarmWeb — Actualización en servidor ══╗{RESET}")
-    print(f"  {DIM}URL       {url}{RESET}")
-    print(f"  {DIM}Container {cname}{RESET}")
-    print(f"  {DIM}Branch    {branch}{RESET}")
+    print(f"  {DIM}App       {app_url}{RESET}")
+    print(f"  {DIM}Portainer {url}{RESET}")
+    print(f"  {DIM}Container {cname}  /  Branch {branch}{RESET}")
 
     s = requests.Session()
     s.timeout = 30
 
-    # ── Paso 1: Auth ──────────────────────────────────────────────────────────
+    # ── Paso 1: Auth Portainer ────────────────────────────────────────────────
     _paso(1, TOTAL, "Autenticando en Portainer")
     try:
         r = s.post(f"{url}/api/auth", json={"username": user, "password": pwd})
@@ -98,12 +102,30 @@ def main():
     s.headers["Authorization"] = f"Bearer {r.json()['jwt']}"
     _ok("Token obtenido")
 
+    # ── Auto-detectar endpoint si el configurado da 404 ──────────────────────
+    def _get_endpoint_id():
+        r2 = s.get(f"{url}/api/endpoints")
+        r2.raise_for_status()
+        endpoints = r2.json()
+        if not endpoints:
+            _err("Portainer no tiene endpoints configurados.")
+        for e in endpoints:
+            if e.get("Name", "").lower() == "local":
+                return e["Id"]
+        return endpoints[0]["Id"]
+
     # ── Paso 2: Encontrar container ───────────────────────────────────────────
     _paso(2, TOTAL, f"Buscando container '{cname}'")
     r = s.get(
         f"{url}/api/endpoints/{ep_id}/docker/containers/json",
         params={"all": "true"},
     )
+    if r.status_code == 404:
+        ep_id = _get_endpoint_id()
+        r = s.get(
+            f"{url}/api/endpoints/{ep_id}/docker/containers/json",
+            params={"all": "true"},
+        )
     r.raise_for_status()
     container_id = None
     for c in r.json():
@@ -119,32 +141,27 @@ def main():
             f"  Verificá CONTAINER_NAME en portainer_config.txt"
         )
 
-    # ── Paso 3: Git pull ──────────────────────────────────────────────────────
+    # ── Paso 3: Git pull via endpoint Flask ───────────────────────────────────
     _paso(3, TOTAL, f"git pull origin {branch}")
-    cmd = f"git -C /app pull origin {branch} 2>&1"
-    r = s.post(
-        f"{url}/api/endpoints/{ep_id}/docker/containers/{container_id}/exec",
-        json={
-            "AttachStdout": True,
-            "AttachStderr": True,
-            "Tty": True,
-            "Cmd": ["/bin/sh", "-c", cmd],
-        },
-    )
+    try:
+        r = requests.post(
+            f"{app_url}/api/admin/actualizar",
+            json={"branch": branch},
+            headers={"X-Panel-Token": panel_tok},
+            timeout=60,
+        )
+    except requests.ConnectionError:
+        _err(f"No se puede conectar a la app en {app_url}\n  ¿El container web está corriendo?")
+    if r.status_code == 401:
+        _err("Token inválido. Verificá PANEL_REMOTO_TOKEN en portainer_config.txt")
     r.raise_for_status()
-    exec_id = r.json()["Id"]
-
-    r = s.post(
-        f"{url}/api/endpoints/{ep_id}/docker/exec/{exec_id}/start",
-        json={"Detach": False, "Tty": True},
-    )
-    _print_output(r.content)
-
-    output_text = r.content.decode("utf-8", errors="replace").lower()
-    if "already up to date" in output_text:
+    data = r.json()
+    for line in (data.get("output") or "").splitlines():
+        print(f"    {DIM}{line}{RESET}")
+    if not data.get("ok"):
+        _warn("git pull reportó error — revisá la salida de arriba")
+    elif "already up to date" in (data.get("output") or "").lower():
         _warn("Ya estaba actualizado — no hubo cambios")
-    elif "error" in output_text and "fast-forward" not in output_text and "updating" not in output_text:
-        _warn("Revisá la salida de arriba, puede haber un error en el pull")
 
     # ── Paso 4: Restart ───────────────────────────────────────────────────────
     _paso(4, TOTAL, "Reiniciando container web")
