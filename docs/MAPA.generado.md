@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-07-23 19:03 · rama `main` · commit `1085c05`
+Generado: 2026-07-23 21:56 · rama `feat/admin-actualizar-endpoint-v2` · commit `c9735a4`
 
-**772 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **28 services** · **11 parsers**
+**773 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **28 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -181,6 +181,7 @@ Generado: 2026-07-23 19:03 · rama `main` · commit `1085c05`
 | `/admin/panel/comandos/recientes` | GET | [`admin_panel_recientes`](../routes/admin.py#L858) |
 | `/admin/reset-datos` | GET/POST | [`admin_reset_datos`](../routes/admin.py#L763) |
 | `/admin/seed-proveedores` | GET/POST | [`admin_seed_proveedores`](../routes/admin.py#L555) |
+| `/api/admin/actualizar` | POST | [`api_admin_actualizar`](../routes/admin.py#L970) |
 | `/api/admin/alarmas` | GET | [`api_admin_alarmas`](../routes/admin.py#L389) |
 | `/api/admin/alarmas/probar-telegram` | POST | [`api_alarmas_probar_telegram`](../routes/admin.py#L501) |
 | `/api/admin/migrar/backfill-codigos-barra` | POST | [`api_migrar_backfill_codigos_barra`](../routes/admin.py#L571) |
