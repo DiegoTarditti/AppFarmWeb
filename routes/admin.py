@@ -968,13 +968,19 @@ def init_app(app):
 
     @app.route('/api/admin/actualizar', methods=['POST'])
     def api_admin_actualizar():
-        """git pull origin main desde el container. Protegido por X-Panel-Token.
-        El caller (actualizar_server.py) hace el restart del container via Portainer."""
+        """git pull + reload de gunicorn. Protegido por X-Panel-Token.
+        Después del pull manda SIGHUP al master de gunicorn para recargar los
+        workers sin bajar el container (evita el restart de Portainer, que da 403
+        en CE). Las migraciones se corren inline antes del reload."""
+        import os
+        import signal
         import subprocess
+        import threading
+
         ok, err = _check_panel_token()
         if not ok:
             return jsonify({'ok': False, 'error': err[0]}), err[1]
-        branch = request.get_json(silent=True, force=True).get('branch', 'main') if request.data else 'main'
+        branch = (request.get_json(silent=True, force=True) or {}).get('branch', 'main')
         result = subprocess.run(
             ['git', 'pull', 'origin', branch],
             cwd='/app',
@@ -983,4 +989,20 @@ def init_app(app):
             timeout=60,
         )
         output = (result.stdout + result.stderr).strip()
-        return jsonify({'ok': result.returncode == 0, 'output': output, 'branch': branch})
+        if result.returncode == 0:
+            # Migraciones antes de recargar workers
+            try:
+                from database import init_db
+                init_db()
+            except Exception as e:
+                output += f'\n[init_db error: {e}]'
+            # SIGHUP al master de gunicorn → recarga workers gracefully
+            def _sighup():
+                import time
+                time.sleep(0.5)
+                try:
+                    os.kill(os.getppid(), signal.SIGHUP)
+                except ProcessLookupError:
+                    pass
+            threading.Thread(target=_sighup, daemon=True).start()
+        return jsonify({'ok': result.returncode == 0, 'output': output, 'branch': branch, 'reload': result.returncode == 0})

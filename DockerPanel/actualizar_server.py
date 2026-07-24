@@ -163,16 +163,14 @@ def main():
     elif "already up to date" in (data.get("output") or "").lower():
         _warn("Ya estaba actualizado — no hubo cambios")
 
-    # ── Paso 4: Restart ───────────────────────────────────────────────────────
-    _paso(4, TOTAL, "Reiniciando container web")
-    r = s.post(
-        f"{url}/api/endpoints/{ep_id}/docker/containers/{container_id}/restart",
-        params={"t": 5},
-    )
-    r.raise_for_status()
-    _ok("Container reiniciado (gunicorn recargando...)")
+    # ── Paso 4: Reload ────────────────────────────────────────────────────────
+    _paso(4, TOTAL, "Recargando workers")
+    if data.get("reload"):
+        _ok("SIGHUP enviado al master de gunicorn — workers recargando")
+    else:
+        _warn("No se envió SIGHUP (el pull falló). Reiniciá el container manualmente si es necesario.")
 
-    print(f"\n{BOLD}{GREEN}╚══ Listo. App disponible en ~10 segundos. ══╝{RESET}\n")
+    print(f"\n{BOLD}{GREEN}╚══ Listo. App disponible en ~5 segundos. ══╝{RESET}\n")
 
 
 if __name__ == "__main__":
