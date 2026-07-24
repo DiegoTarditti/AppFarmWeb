@@ -7,10 +7,10 @@
     <h1 class="text-base font-bold text-[#1e1e1e]">Sincronización con ObServer</h1>
     {% if disponible %}
         <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold border border-emerald-300"
-              title="Hay conexión TCP al SQL Server de ObServer (estás en la LAN de la farmacia)">● conectado · modo fuente</span>
+              title="El server puede leer el SQL Server de ObServer (el server está en la LAN de la farmacia). El sync activo trae datos frescos.">● server con acceso a ObServer</span>
     {% else %}
         <span class="text-xs px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-semibold border border-sky-300"
-              title="Sin conexión a ObServer. Típico desde Render — solo lectura de las tablas obs_* ya replicadas.">● modo lectura (remoto)</span>
+              title="El server NO puede leer el SQL Server de ObServer. Típico en Render (cloud). Solo lectura de las tablas obs_* ya replicadas.">● server sin acceso · modo lectura</span>
     {% endif %}
     <a href="{{ url_for('sync_audit_panel') }}"
        class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-white font-semibold text-[#1e1e1e]"
@@ -107,10 +107,11 @@
     </div>
     {% else %}
     <div class="bg-sky-50 border border-sky-200 rounded-xl p-4 text-sm text-sky-900">
-        <p class="font-semibold">Modo lectura: estás accediendo desde fuera de la LAN.</p>
+        <p class="font-semibold">Modo lectura: el server no puede alcanzar ObServer.</p>
         <p class="mt-1 text-xs">
-            Sin conexión a ObServer (192.168.1.137) y sin origen local para pushear — los botones de sync y replicación quedaron ocultos.
-            Las tablas <code class="font-mono">obs_*</code> que ves acá las replica la PC de la farmacia usando "Push a Render".
+            El server donde corre esta app no tiene conexión al SQL Server de ObServer (192.168.1.137) — típico en deploys cloud (Render) o en cualquier server fuera de la LAN de la farmacia.
+            Los botones de sync y replicación quedan ocultos.
+            Las tablas <code class="font-mono">obs_*</code> que ves acá las replica otro server que sí está en la LAN, vía "Push a Render".
             El matcher y la pantalla de productos sin vincular sí funcionan porque trabajan sobre la DB actual.
         </p>
     </div>
