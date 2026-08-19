@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-19 19:16 · rama `feat/armar-oferta-cubrir-dias` · commit `260385a`
+Generado: 2026-08-19 19:59 · rama `feat/rowa-modulo` · commit `5e4471b`
 
-**773 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **28 services** · **11 parsers**
+**773 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **32 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -1339,6 +1339,10 @@ Generado: 2026-08-19 19:16 · rama `feat/armar-oferta-cubrir-dias` · commit `26
 | [`referencia_websearch.py`](../services/referencia_websearch.py) | Recopilación de marcas estrella de un laboratorio vía web search de Claude. |
 | [`reparto.py`](../services/reparto.py) | Asignación de pedidos a rutas de reparto (v1: cuadrantes N/S/E/O). |
 | [`reparto_sla_cron.py`](../services/reparto_sla_cron.py) | Cron interno para los SLA del flujo de reparto. |
+| [`rowa_analisis.py`](../services/rowa_analisis.py) | Análisis de stock del robot Rowa: rotación, vencimientos y optimización. |
+| [`rowa_client.py`](../services/rowa_client.py) | Conector WWKS2 con el robot BD Rowa (Mosaic). |
+| [`rowa_export.py`](../services/rowa_export.py) | Genera las 3 planillas del robot Rowa (Stock, Optimización, Capacidad) en vivo. |
+| [`rowa_observer.py`](../services/rowa_observer.py) | Cruce del stock del robot Rowa con datos reales de ObServer. |
 | [`transferencias.py`](../services/transferencias.py) | Análisis de transferencias entre sucursales (comparador N-way por par). |
 | [`ventas_comparativa.py`](../services/ventas_comparativa.py) | Comparación de ventas año contra año, agregada por mes. |
 | [`ventas_vendedor.py`](../services/ventas_vendedor.py) | Estadísticas de ventas por vendedor (operador del POS). |
