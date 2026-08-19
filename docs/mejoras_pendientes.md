@@ -17,6 +17,21 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Pedidos: contemplar rotación ínfima (venta anual < 0.5 u/mes) (2026-08-19)
+
+Al armar pedidos, agregar una condición para los productos con **promedio de
+ventas anual < 0.5 u/mes** (venden menos de 1 cada dos meses): rotación tan baja
+que no conviene reponer en automático.
+
+- Criterio: promedio mensual sobre las ventas de los últimos 12 meses < 0.5.
+- Dónde: `services/calculo_pedido.py` / `routes/compras_dia.py` (armado), y/o como
+  flag de producto (no pedir por default, o badge para revisar a mano).
+- Distinto del `sin_mov` actual, que mira una ventana corta: esto es la **cola larga
+  anual** — productos que sí venden pero rarísimo.
+- Pedido por Lisandro.
+
+---
+
 ## ✅ Componente reusable `cliente_picker` (2026-05-28 → 2026-06-10)
 
 **Origen**: la sección "👤 Cliente + Dirección" de `/pedido/nuevo` está
