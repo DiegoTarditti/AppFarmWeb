@@ -1207,11 +1207,21 @@ def init_app(app):
                 daily_rate = (u_rot / dias_rotacion) if dias_rotacion else 0
                 target_unid = math.ceil(daily_rate * factor_h)
                 from services.calculo_pedido import calcular_a_pedir, cargar_config
-                # Modo oferta (multi-lab por droguería): es una compra de volumen
-                # aprovechando el descuento → mismo criterio que compra al lab
-                # ("cubrir N días"), no reposición al mínimo.
-                _tipo_slug = 'COMPRA_LAB' if (lab_id or oferta_pids) else 'REPOSICION'
+                # Tipo de cálculo: compra al lab, compra por oferta multi-lab, o
+                # reposición al mínimo. MULTI_LAB (modo oferta) tiene su propia
+                # config editable en /config/tipos-pedido, igual criterio que
+                # COMPRA_LAB ("cubrir N días") pero tuneable aparte.
+                if lab_id:
+                    _tipo_slug = 'COMPRA_LAB'
+                elif oferta_pids:
+                    _tipo_slug = 'MULTI_LAB'
+                else:
+                    _tipo_slug = 'REPOSICION'
                 _cfg = cargar_config(_tipo_slug) or {}
+                # Red de seguridad: si MULTI_LAB aún no fue sembrado (deploy sin
+                # init_db), caemos a COMPRA_LAB (mismo criterio "cubrir N días").
+                if not _cfg and _tipo_slug == 'MULTI_LAB':
+                    _cfg = cargar_config('COMPRA_LAB') or {}
                 _ctx_base = {
                     'daily_rate': daily_rate,
                     'min_efectivo': min_efectivo,
@@ -1558,7 +1568,8 @@ def init_app(app):
             # Valor piso ("productos caros $") desde la config del pedido, para
             # pre-cargar el filtro de PVP en el header (editable por el operador).
             from services.calculo_pedido import cargar_config as _cargar_cfg_vp
-            _cfg_vp = _cargar_cfg_vp('COMPRA_LAB' if (lab_id or oferta_pids) else 'REPOSICION') or {}
+            _cfg_vp = _cargar_cfg_vp(
+                'COMPRA_LAB' if lab_id else ('MULTI_LAB' if oferta_pids else 'REPOSICION')) or {}
             valor_piso = float(_cfg_vp.get('valor_piso') or 0)
 
             return render_template('compras_dia_armar.html',
