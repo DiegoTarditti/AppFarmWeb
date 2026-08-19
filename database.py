@@ -4589,6 +4589,14 @@ def _pg_add_columns(conn):
          {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
           'buffer_pct': 0, 'universo': 'lab_x',
           'override_producto': 'none', 'redondeo': 'ceil'}),
+        ('MULTI_LAB', 'Compra por oferta multi-lab (droguería)', 'pedido',
+         'Compra de volumen aprovechando la oferta multi-lab de una droguería. '
+         'Cantidad = tasa diaria × cubrir_dias (configurable por slider), igual '
+         'que la compra al lab pero con su propia config para tunear aparte.',
+         {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
+          'buffer_pct': 0, 'universo': 'lab_x',
+          'override_producto': 'none', 'redondeo': 'ceil',
+          'base_demanda': 'u3m'}),
         ('PRUEBA', 'Planificación estacional', 'pedido',
          'Planificación grande con estacionalidad. Base = ventas 12m × índice '
          'estacional de la droga × cobertura. El mínimo de oferta solo informa '

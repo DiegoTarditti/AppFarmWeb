@@ -296,9 +296,10 @@
     </div>
     {% endif %}
 
-    {# Slider "Cubrir por N días" — solo en modo compra a lab. En modo REPO
-       (matriz drog) el piso es min_efectivo y no se ajusta acá. #}
-    {% if lab_id %}
+    {# Slider "Cubrir por N días" — en compra a lab y en modo oferta (multi-lab
+       por droguería), donde también se compra volumen por N días. En modo REPO
+       normal (matriz drog, sin oferta) el piso es min_efectivo y no se ajusta acá. #}
+    {% if lab_id or oferta_drog_n %}
     <form method="get" id="cubrir-form" style="display: inline-flex; align-items: center; gap: 8px;">
         {# Re-emitimos todos los query params para no perder filtros al cambiar el slider. #}
         {% for k, v in request.args.items() if k != 'cubrir_dias' %}
@@ -312,7 +313,7 @@
                style="width: 180px; accent-color: var(--ds-mint);"
                oninput="document.getElementById('cubrir-dias-display').textContent = this.value"
                onchange="document.getElementById('cubrir-form').submit()">
-        <span style="font-size: 10px; color: var(--ds-text-mute);">(min de compra al lab)</span>
+        <span style="font-size: 10px; color: var(--ds-text-mute);">{{ '(min de compra al lab)' if lab_id else '(compra por oferta)' }}</span>
     </form>
     {% endif %}
 
