@@ -67,6 +67,9 @@
     {% endfor %}
   </div>
 
+  {# ---- Gráfico dual de ventas (12m + 30d) — se llena al click en una fila ---- #}
+  {% include '_grafico_dual_panel.html' %}
+
   {# ---- Qué sacar / reducir del robot ---- #}
   <section class="mb-8">
     <h2 class="text-sm font-bold mb-2 flex items-center gap-2">
@@ -74,8 +77,34 @@
       <span class="text-[11px] font-normal text-[color:var(--ds-text-mute)]">
         {{ n_accion }} artículos · liberan {{ diag.espacio_recuperable_l }} L al depósito</span>
     </h2>
+
+    {# ---- Filtros (client-side, sobre la tabla ya cargada) ---- #}
+    <div class="flex flex-wrap items-center gap-2 mb-2">
+      <input id="rowa-buscar" type="search" placeholder="🔎 Buscar producto…" oninput="rowaFiltrar()"
+             class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)] w-52">
+      <select id="rowa-rotacion" onchange="rowaFiltrar()"
+              class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)]">
+        <option value="">Toda rotación</option>
+        <option value="Durmiente">Durmiente (0 ventas)</option>
+        <option value="Baja">Baja</option>
+        <option value="Media">Media</option>
+        <option value="Alta">Alta</option>
+      </select>
+      <select id="rowa-reco" onchange="rowaFiltrar()"
+              class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)]">
+        <option value="">Toda recomendación</option>
+        <option value="Candidato a sacar del robot">Candidato a sacar</option>
+        <option value="Reducir en robot (lento, ocupa lugar)">Reducir en robot</option>
+        <option value="Bajar cantidad interna">Bajar cantidad interna</option>
+        <option value="Revisar: 1u parada &gt;180d">Revisar 1u parada</option>
+      </select>
+      <label class="flex items-center gap-1 text-xs text-[color:var(--ds-text-mute)] cursor-pointer">
+        <input id="rowa-frio" type="checkbox" onchange="rowaFiltrar()"> ❄ Solo heladera</label>
+      <span id="rowa-count" class="text-xs text-[color:var(--ds-text-mute)] ml-auto"></span>
+    </div>
+
     <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)]">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm" id="rowa-tabla">
         <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
           <tr>
             <th class="text-left px-3 py-2">Producto</th>
@@ -90,8 +119,17 @@
         </thead>
         <tbody>
           {% for f in accion %}
-          <tr class="border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]">
-            <td class="px-3 py-1.5">{{ (f.nombre_obs or f.nombre or '')[:36] }}
+          <tr class="rowa-fila border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]"
+              data-nombre="{{ (f.nombre_obs or f.nombre or '')|lower }}"
+              data-rotacion="{{ f.rotacion }}"
+              data-reco="{{ f.recomendacion }}"
+              data-frio="{{ '1' if f.requiere_frio else '0' }}">
+            <td class="px-3 py-1.5">
+              {% if f.producto_observer %}<button type="button" onclick="rowaGrafico(this)"
+                 data-obs="{{ f.producto_observer }}" data-nombre="{{ (f.nombre_obs or f.nombre or '') }}"
+                 title="Ver movimiento (ventas 12m + 30d)"
+                 class="mr-1 align-middle text-[color:var(--ds-mint)] hover:opacity-70">📊</button>{% endif %}
+              {{ (f.nombre_obs or f.nombre or '')[:36] }}
               {% if f.requiere_frio %}<span title="Cadena de frío">❄</span>{% endif %}</td>
             <td class="px-3 py-1.5">{{ f.rotacion }}</td>
             <td class="px-3 py-1.5 text-right font-mono">{{ f.unid_mes_est if f.unid_mes_est is not none else '—' }}</td>
@@ -166,5 +204,37 @@
   {% endif %}
 
   {% endif %}
+
+  {# ---- Filtro client-side de la tabla "qué sacar/reducir" ---- #}
+  <script>
+  function rowaFiltrar() {
+    var q    = (document.getElementById('rowa-buscar').value || '').toLowerCase();
+    var rot  = document.getElementById('rowa-rotacion').value;
+    var reco = document.getElementById('rowa-reco').value;
+    var frio = document.getElementById('rowa-frio').checked;
+    var vis = 0, total = 0;
+    document.querySelectorAll('tr.rowa-fila').forEach(function (tr) {
+      total++;
+      var ok = (!q    || (tr.dataset.nombre || '').indexOf(q) !== -1)
+            && (!rot  || tr.dataset.rotacion === rot)
+            && (!reco || tr.dataset.reco === reco)
+            && (!frio || tr.dataset.frio === '1');
+      tr.style.display = ok ? '' : 'none';
+      if (ok) vis++;
+    });
+    var c = document.getElementById('rowa-count');
+    if (c) c.textContent = vis + ' de ' + total;
+  }
+  document.addEventListener('DOMContentLoaded', rowaFiltrar);
+
+  // Botón 📊 por fila: carga el gráfico dual del artículo y hace scroll al panel.
+  function rowaGrafico(btn) {
+    if (window.cargarGraficoDual) {
+      window.cargarGraficoDual(btn.dataset.obs, btn.dataset.nombre || '');
+    }
+    var panel = document.getElementById('dual-grafico-panel');
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  </script>
 </div>
 {% endblock %}

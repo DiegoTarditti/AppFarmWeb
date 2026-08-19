@@ -25,7 +25,7 @@ from flask import Response, render_template, request
 from flask_login import login_required
 
 from database import get_db
-from services.rowa_analisis import analizar_alturas, analizar_stock
+from services.rowa_analisis import analizar_alturas, analizar_stock, diagnosticar
 from services.rowa_client import RowaClient, RowaError
 from services.rowa_observer import cruzar_con_observer
 
@@ -50,6 +50,9 @@ def _cargar(refresh: bool = False) -> dict:
     try:
         with get_db() as session:
             cruce = cruzar_con_observer(session, filas)
+        # El cruce cambió rotación y recomendaciones con ventas reales → los KPIs
+        # se recalculan, si no quedan mostrando los valores del proxy.
+        diag = diagnosticar(filas)
     except Exception:  # noqa: BLE001 — sin DB/ObServer, se muestra el proxy
         cruce = {"matcheados": 0, "sin_match": len(filas), "error": "ObServer no disponible"}
 

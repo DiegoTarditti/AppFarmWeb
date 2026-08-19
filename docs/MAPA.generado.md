@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-19 20:17 · rama `feat/rowa-web` · commit `30a5baa`
+Generado: 2026-08-19 20:31 · rama `feat/rowa-mejoras` · commit `857230e`
 
 **775 rutas** en 75 archivos · **123 modelos** · **21 syncs** · **32 services** · **11 parsers**
 
@@ -1250,8 +1250,8 @@ Generado: 2026-08-19 20:17 · rama `feat/rowa-web` · commit `30a5baa`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L69) |
-| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L95) |
+| `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L72) |
+| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L98) |
 
 ### `routes/sucursales.py`
 
