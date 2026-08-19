@@ -200,12 +200,11 @@ class Diagnostico:
     espacio_recuperable_l: float = 0.0
 
 
-def analizar_stock(articulos, hoy: date | None = None
-                   ) -> tuple[list[ArticuloAnalizado], Diagnostico]:
-    """Analiza toda la lista de artículos del robot. Devuelve (filas, diagnóstico)."""
+def diagnosticar(filas, hoy: date | None = None) -> Diagnostico:
+    """Arma el Diagnostico desde las filas. Se recalcula tras cruzar con ObServer
+    (la rotación y las recomendaciones cambian con las ventas reales), así que los
+    KPIs no pueden quedar con los valores del proxy."""
     hoy = hoy or datetime.now().date()
-    filas = [f for f in (analizar_articulo(a, hoy) for a in articulos) if f]
-
     por_rot: dict[str, int] = {}
     for f in filas:
         por_rot[f.rotacion] = por_rot.get(f.rotacion, 0) + 1
@@ -215,7 +214,7 @@ def analizar_stock(articulos, hoy: date | None = None
     con_accion = [f for f in filas if f.recomendacion not in _sin_accion]
     recup_cm3 = sum(f.al_deposito * f.vol_unit_cm3 for f in filas)
 
-    diag = Diagnostico(
+    return Diagnostico(
         generado=hoy,
         articulos=len(filas),
         packs=sum(f.cantidad for f in filas),
@@ -224,7 +223,14 @@ def analizar_stock(articulos, hoy: date | None = None
         con_accion=len(con_accion),
         espacio_recuperable_l=round(recup_cm3 / 1000, 1),
     )
-    return filas, diag
+
+
+def analizar_stock(articulos, hoy: date | None = None
+                   ) -> tuple[list[ArticuloAnalizado], Diagnostico]:
+    """Analiza toda la lista de artículos del robot. Devuelve (filas, diagnóstico)."""
+    hoy = hoy or datetime.now().date()
+    filas = [f for f in (analizar_articulo(a, hoy) for a in articulos) if f]
+    return filas, diagnosticar(filas, hoy)
 
 
 # -- Análisis de alturas (para densificar estantes) ----------------------
