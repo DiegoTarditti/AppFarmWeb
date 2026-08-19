@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-07-23 21:56 · rama `feat/admin-actualizar-endpoint-v2` · commit `c9735a4`
+Generado: 2026-08-19 18:40 · rama `fix/armar-oferta-cubre-lab` · commit `6260f25`
 
 **773 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **28 services** · **11 parsers**
 
@@ -386,32 +386,32 @@ Generado: 2026-07-23 21:56 · rama `feat/admin-actualizar-endpoint-v2` · commit
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/api/drogueria/<int:prov_id>/pedidos-emitidos` | GET | [`api_drogueria_pedidos_emitidos`](../routes/compras_dia.py#L586) |
-| `/api/lab-drog/asignar-bulk` | POST | [`api_lab_drog_asignar_bulk`](../routes/compras_dia.py#L2150) |
-| `/api/lab-drog/toggle` | POST | [`api_lab_drog_toggle`](../routes/compras_dia.py#L2123) |
-| `/api/matriz/drog-config` | POST | [`api_matriz_drog_config`](../routes/compras_dia.py#L2104) |
-| `/api/matriz/drog-visible` | POST | [`api_matriz_drog_visible`](../routes/compras_dia.py#L2091) |
+| `/api/lab-drog/asignar-bulk` | POST | [`api_lab_drog_asignar_bulk`](../routes/compras_dia.py#L2153) |
+| `/api/lab-drog/toggle` | POST | [`api_lab_drog_toggle`](../routes/compras_dia.py#L2126) |
+| `/api/matriz/drog-config` | POST | [`api_matriz_drog_config`](../routes/compras_dia.py#L2107) |
+| `/api/matriz/drog-visible` | POST | [`api_matriz_drog_visible`](../routes/compras_dia.py#L2094) |
 | `/api/pedido-emitido/<int:pedido_id>` | DELETE | [`api_pedido_emitido_borrar`](../routes/compras_dia.py#L652) |
-| `/api/pedido-emitido/<int:pedido_id>/export-plantilla` | GET | [`api_pedido_emitido_export_plantilla`](../routes/compras_dia.py#L2561) |
-| `/api/pedido-emitido/<int:pedido_id>/export-xls` | GET | [`api_pedido_emitido_export_xls`](../routes/compras_dia.py#L2786) |
-| `/api/pedido-emitido/<int:pedido_id>/importar-xls` | POST | [`api_pedido_importar_xls`](../routes/compras_dia.py#L2493) |
-| `/api/pedido-emitido/<int:pedido_id>/mapear-ean` | POST | [`api_pedido_mapear_ean`](../routes/compras_dia.py#L2424) |
-| `/api/pedido-emitido/<int:pedido_id>/recepcion` | POST | [`api_pedido_recepcion`](../routes/compras_dia.py#L2385) |
+| `/api/pedido-emitido/<int:pedido_id>/export-plantilla` | GET | [`api_pedido_emitido_export_plantilla`](../routes/compras_dia.py#L2564) |
+| `/api/pedido-emitido/<int:pedido_id>/export-xls` | GET | [`api_pedido_emitido_export_xls`](../routes/compras_dia.py#L2789) |
+| `/api/pedido-emitido/<int:pedido_id>/importar-xls` | POST | [`api_pedido_importar_xls`](../routes/compras_dia.py#L2496) |
+| `/api/pedido-emitido/<int:pedido_id>/mapear-ean` | POST | [`api_pedido_mapear_ean`](../routes/compras_dia.py#L2427) |
+| `/api/pedido-emitido/<int:pedido_id>/recepcion` | POST | [`api_pedido_recepcion`](../routes/compras_dia.py#L2388) |
 | `/api/pedidos-emitidos/todos` | GET | [`api_pedidos_emitidos_todos`](../routes/compras_dia.py#L610) |
-| `/api/pedidos/dia/buscar-producto` | GET | [`api_compras_dia_buscar_producto`](../routes/compras_dia.py#L1827) |
+| `/api/pedidos/dia/buscar-producto` | GET | [`api_compras_dia_buscar_producto`](../routes/compras_dia.py#L1830) |
 | `/api/pedidos/dia/countdown` | GET | [`api_compras_dia_countdown`](../routes/compras_dia.py#L666) |
-| `/api/pedidos/dia/emitir` | POST | [`api_compras_dia_emitir`](../routes/compras_dia.py#L2189) |
+| `/api/pedidos/dia/emitir` | POST | [`api_compras_dia_emitir`](../routes/compras_dia.py#L2192) |
 | `/api/pedidos/dia/horarios/<int:proveedor_id>` | GET/POST/DELETE | [`api_horarios_crud`](../routes/compras_dia.py#L688) |
-| `/api/producto/<int:prod_id>/excluir` | POST | [`api_producto_excluir`](../routes/compras_dia.py#L2900) |
-| `/api/producto/<int:prod_id>/reactivar` | POST | [`api_producto_reactivar`](../routes/compras_dia.py#L2921) |
-| `/api/usuarios-pedidos` | GET/POST | [`api_usuarios_pedidos`](../routes/compras_dia.py#L2859) |
-| `/api/usuarios-pedidos/<int:uid>` | DELETE | [`api_usuarios_pedidos_borrar`](../routes/compras_dia.py#L2889) |
-| `/compras/armar/exportar-minimos` | GET | [`compras_armar_exportar_minimos`](../routes/compras_dia.py#L1635) |
+| `/api/producto/<int:prod_id>/excluir` | POST | [`api_producto_excluir`](../routes/compras_dia.py#L2903) |
+| `/api/producto/<int:prod_id>/reactivar` | POST | [`api_producto_reactivar`](../routes/compras_dia.py#L2924) |
+| `/api/usuarios-pedidos` | GET/POST | [`api_usuarios_pedidos`](../routes/compras_dia.py#L2862) |
+| `/api/usuarios-pedidos/<int:uid>` | DELETE | [`api_usuarios_pedidos_borrar`](../routes/compras_dia.py#L2892) |
+| `/compras/armar/exportar-minimos` | GET | [`compras_armar_exportar_minimos`](../routes/compras_dia.py#L1638) |
 | `/compras/laboratorio` | GET | [`compras_laboratorio`](../routes/compras_dia.py#L375) |
 | `/compras/laboratorio/<int:obs_lab_id>/comprar-modulos` | POST | [`compras_laboratorio_comprar_modulos`](../routes/compras_dia.py#L465) |
-| `/compras/labs-drogerias` | GET | [`labs_drogerias_matriz`](../routes/compras_dia.py#L2024) |
-| `/compras/multi-lab` | GET | [`compras_multi_lab`](../routes/compras_dia.py#L1590) |
-| `/pedidos-emitidos` | GET | [`pedidos_emitidos_list`](../routes/compras_dia.py#L2270) |
-| `/pedidos-emitidos/<int:pedido_id>` | GET | [`pedido_emitido_detalle`](../routes/compras_dia.py#L2320) |
+| `/compras/labs-drogerias` | GET | [`labs_drogerias_matriz`](../routes/compras_dia.py#L2027) |
+| `/compras/multi-lab` | GET | [`compras_multi_lab`](../routes/compras_dia.py#L1593) |
+| `/pedidos-emitidos` | GET | [`pedidos_emitidos_list`](../routes/compras_dia.py#L2273) |
+| `/pedidos-emitidos/<int:pedido_id>` | GET | [`pedido_emitido_detalle`](../routes/compras_dia.py#L2323) |
 | `/pedidos/dia` | GET | [`compras_dia`](../routes/compras_dia.py#L129) |
 | `/pedidos/dia/armar` | GET | [`compras_dia_armar`](../routes/compras_dia.py#L747) |
 

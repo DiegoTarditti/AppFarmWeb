@@ -1137,7 +1137,10 @@ def init_app(app):
                 lab_local_id = (local['lab_local_id'] if local else None) \
                                 or lab_obs_to_local.get(r.lab_obs_id) \
                                 or local_lab_por_norm.get(obs_lab_norm.get(r.lab_obs_id, ''))
-                cubre_lab = lab_local_id in labs_cubiertos
+                # En modo oferta los productos vienen de la oferta de ESTA misma
+                # droguería → los vende sí o sí; la matriz lab↔drog no aplica
+                # (si no, todo saldría "otra drog" y no se podría emitir nada).
+                cubre_lab = True if oferta_pids else (lab_local_id in labs_cubiertos)
                 u12m_int = int(r.u12m or 0)
                 u24h_val = int(v24h_rows.get(r.pid, 0) or 0)
                 u7d_val  = int(v7d_rows.get(r.pid, 0) or 0)
