@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% set nav_active = "rowa" %}
+{% block title %}{{ meta.titulo }}{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block main %}
+<div class="p-4 md:p-6 max-w-[1300px] mx-auto">
+
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <div>
+      <h1 class="text-xl font-bold flex items-center gap-2">{{ meta.icono }} {{ meta.titulo }}</h1>
+      <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-0.5">{{ meta.sub }}</p>
+    </div>
+    <a href="{{ url_for('rowa_dashboard') }}"
+       class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">← Volver al robot</a>
+  </div>
+
+  {% if sin_robot %}
+  <div class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-6 text-center">
+    <div class="text-3xl mb-2">🔌</div>
+    <p class="font-semibold">No se pudo conectar al robot.</p>
+    {% if error %}<p class="text-[11px] text-[color:var(--ds-text-mute)] mt-2 font-mono">{{ error }}</p>{% endif %}
+  </div>
+  {% else %}
+
+  {# ---- Filtros + acción ---- #}
+  <div class="flex flex-wrap items-center gap-2 mb-3">
+    <input id="q" type="search" placeholder="🔎 Buscar producto…" oninput="filtrar()"
+           class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)] w-52">
+    {% if tipo == 'rotacion' %}
+    <select id="rot" onchange="filtrar()" class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)]">
+      <option value="">Toda rotación</option>
+      <option value="Durmiente">Durmiente (0 ventas)</option>
+      <option value="Baja">Baja</option>
+    </select>
+    {% endif %}
+    {% if tipo == 'vencimiento' %}
+    <select id="dias" onchange="filtrar()" class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)]">
+      <option value="">Cualquier plazo</option>
+      <option value="30">Vence en ≤ 30 días</option>
+      <option value="60">Vence en ≤ 60 días</option>
+      <option value="90">Vence en ≤ 90 días</option>
+    </select>
+    {% endif %}
+    <label class="flex items-center gap-1 text-xs text-[color:var(--ds-text-mute)] cursor-pointer">
+      <input type="checkbox" onchange="marcarTodos(this)"> Marcar todos (visibles)</label>
+    <span id="cuenta" class="text-xs text-[color:var(--ds-text-mute)] ml-auto"></span>
+  </div>
+
+  {# ---- Barra de acción (sticky) ---- #}
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-3 p-3 rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.03]">
+    <div class="text-sm">
+      <span id="sel-count" class="font-bold">0</span> productos marcados ·
+      <span id="sel-unid" class="font-bold">0</span> unidades ·
+      salen por la <b>boca {{ boca }}</b>
+    </div>
+    <button id="btn-extraer" onclick="extraer()" disabled
+      class="px-4 py-2 rounded text-sm font-semibold bg-[color:var(--ds-mint)] text-black disabled:opacity-40 disabled:cursor-not-allowed">
+      ⬇ Extraer marcados del robot
+    </button>
+  </div>
+  <p id="status" class="text-[13px] mb-3 text-[color:var(--ds-text-mute)]"></p>
+
+  <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)]">
+    <table class="w-full text-sm">
+      <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
+        <tr>
+          <th class="px-3 py-2 w-8"></th>
+          <th class="text-left px-3 py-2">Producto</th>
+          <th class="text-left px-3 py-2">EAN</th>
+          {% if tipo == 'rotacion' %}
+          <th class="text-left px-3 py-2">Rotación</th>
+          <th class="text-right px-3 py-2">u/mes</th>
+          {% else %}
+          <th class="text-left px-3 py-2">Vence</th>
+          <th class="text-right px-3 py-2">Días</th>
+          {% endif %}
+          <th class="text-right px-3 py-2">En robot</th>
+          <th class="text-right px-3 py-2">Sacar</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in candidatos %}
+        {% set sugerido = f.packs_venc_alerta if tipo == 'vencimiento' else f.al_deposito %}
+        <tr class="fila border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]"
+            data-nombre="{{ (f.nombre_obs or f.nombre or '')|lower }}"
+            data-rotacion="{{ f.rotacion }}"
+            data-dias="{{ f.dias_prox_venc if f.dias_prox_venc is not none else 9999 }}"
+            data-aid="{{ f.article_id }}"
+            data-nom="{{ f.nombre_obs or f.nombre or '' }}"
+            data-ean="{{ f.ean or '' }}">
+          <td class="px-3 py-1.5 text-center"><input type="checkbox" class="chk" onchange="recalc()"></td>
+          <td class="px-3 py-1.5">{{ (f.nombre_obs or f.nombre or '')[:38] }}
+            {% if f.requiere_frio %}<span title="Cadena de frío">❄</span>{% endif %}</td>
+          <td class="px-3 py-1.5 font-mono text-[12px] text-[color:var(--ds-text-mute)]">{{ f.ean or '—' }}</td>
+          {% if tipo == 'rotacion' %}
+          <td class="px-3 py-1.5">{{ f.rotacion }}</td>
+          <td class="px-3 py-1.5 text-right font-mono">{{ f.unid_mes_est if f.unid_mes_est is not none else '—' }}</td>
+          {% else %}
+          <td class="px-3 py-1.5">{{ f.prox_venc.strftime('%Y-%m-%d') if f.prox_venc }}</td>
+          <td class="px-3 py-1.5 text-right {% if f.dias_prox_venc is not none and f.dias_prox_venc < 30 %}text-rose-400 font-bold{% endif %}">{{ f.dias_prox_venc }}</td>
+          {% endif %}
+          <td class="px-3 py-1.5 text-right">{{ f.cantidad }}</td>
+          <td class="px-3 py-1.5 text-right">
+            <input type="number" class="cant w-16 text-right bg-white/5 border border-[color:var(--ds-surface-border)] rounded px-1.5 py-0.5"
+                   value="{{ sugerido if sugerido else 1 }}" min="1" max="{{ f.cantidad }}" oninput="recalc()">
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if not candidatos %}
+  <p class="text-center text-[color:var(--ds-text-mute)] mt-6">No hay candidatos para este proceso ahora mismo. 🎉</p>
+  {% endif %}
+
+  {% endif %}
+</div>
+
+<script>
+function filtrar() {
+  var q = (document.getElementById('q').value || '').toLowerCase();
+  var rot = (document.getElementById('rot') || {}).value || '';
+  var dias = parseInt((document.getElementById('dias') || {}).value || '0') || 0;
+  document.querySelectorAll('tr.fila').forEach(function (tr) {
+    var ok = (!q || (tr.dataset.nombre || '').indexOf(q) !== -1)
+          && (!rot || tr.dataset.rotacion === rot)
+          && (!dias || parseInt(tr.dataset.dias) <= dias);
+    tr.style.display = ok ? '' : 'none';
+    if (!ok) { var c = tr.querySelector('.chk'); if (c) c.checked = false; }
+  });
+  recalc();
+}
+function marcarTodos(box) {
+  document.querySelectorAll('tr.fila').forEach(function (tr) {
+    if (tr.style.display !== 'none') tr.querySelector('.chk').checked = box.checked;
+  });
+  recalc();
+}
+function seleccion() {
+  var out = [];
+  document.querySelectorAll('tr.fila').forEach(function (tr) {
+    var chk = tr.querySelector('.chk');
+    if (chk && chk.checked && tr.style.display !== 'none') {
+      var cant = parseInt(tr.querySelector('.cant').value || '0') || 0;
+      if (cant > 0) out.push({ article_id: tr.dataset.aid, cantidad: cant,
+                               nombre: tr.dataset.nom, ean: tr.dataset.ean });
+    }
+  });
+  return out;
+}
+function recalc() {
+  var sel = seleccion();
+  var unid = sel.reduce(function (a, b) { return a + b.cantidad; }, 0);
+  document.getElementById('sel-count').textContent = sel.length;
+  document.getElementById('sel-unid').textContent = unid;
+  document.getElementById('btn-extraer').disabled = sel.length === 0;
+  var vis = 0; document.querySelectorAll('tr.fila').forEach(function (t) { if (t.style.display !== 'none') vis++; });
+  document.getElementById('cuenta').textContent = vis + ' candidatos';
+}
+async function extraer() {
+  var sel = seleccion();
+  if (!sel.length) return;
+  var unid = sel.reduce(function (a, b) { return a + b.cantidad; }, 0);
+  if (!confirm('⚠ Vas a EXTRAER ' + unid + ' unidades de ' + sel.length +
+      ' productos del robot por la boca {{ boca }}.\n\nEl robot los va a dispensar físicamente. ' +
+      'Después hay que cargar el egreso en ObServer con el reporte.\n\n¿Confirmás?')) return;
+  var btn = document.getElementById('btn-extraer'), st = document.getElementById('status');
+  btn.disabled = true; st.textContent = 'Extrayendo del robot… (mirá la boca {{ boca }})';
+  try {
+    var r = await fetch('{{ url_for("rowa_extraer") }}', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+      body: JSON.stringify({ tipo: '{{ tipo }}', items: sel })
+    });
+    var d = await r.json();
+    if (!d.ok) { st.textContent = 'Error: ' + (d.error || ''); btn.disabled = false; return; }
+    st.textContent = '✓ Salieron ' + d.salieron + ' de ' + d.pedido + ' unidades. Abriendo el reporte…';
+    setTimeout(function () { location.href = '/rowa/egreso/' + d.egreso_id; }, 900);
+  } catch (e) { st.textContent = 'Error de red.'; btn.disabled = false; }
+}
+document.addEventListener('DOMContentLoaded', recalc);
+</script>
+{% endblock %}
