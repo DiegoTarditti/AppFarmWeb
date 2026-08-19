@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-19 20:31 · rama `feat/rowa-mejoras` · commit `857230e`
+Generado: 2026-08-19 21:46 · rama `feat/rowa-limpieza` · commit `aa450d3`
 
-**775 rutas** en 75 archivos · **123 modelos** · **21 syncs** · **32 services** · **11 parsers**
+**778 rutas** en 75 archivos · **123 modelos** · **21 syncs** · **32 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -1250,8 +1250,11 @@ Generado: 2026-08-19 20:31 · rama `feat/rowa-mejoras` · commit `857230e`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L72) |
-| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L98) |
+| `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L80) |
+| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L213) |
+| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L106) |
+| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L159) |
+| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L135) |
 
 ### `routes/sucursales.py`
 

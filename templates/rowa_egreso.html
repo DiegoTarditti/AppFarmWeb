@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% set nav_active = "rowa" %}
+{% block title %}Egreso de robot #{{ e.id }}{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* En papel: fondo blanco, tinta negra, sin controles de la app. */
+  @media print {
+    .no-print { display: none !important; }
+    body { background: #fff !important; color: #000 !important; }
+    .egreso-doc { box-shadow: none !important; border: none !important; }
+    aside, nav, header { display: none !important; }
+  }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="p-4 md:p-6 max-w-[900px] mx-auto">
+
+  <div class="no-print flex flex-wrap items-center justify-between gap-3 mb-4">
+    <a href="{{ url_for('rowa_limpieza', tipo=e.tipo) }}"
+       class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">← Volver</a>
+    <button onclick="window.print()"
+       class="px-4 py-2 rounded text-sm font-semibold bg-[color:var(--ds-mint)] text-black">🖨 Imprimir / PDF</button>
+  </div>
+
+  {% if e.estado and e.estado not in ('Completed', None) %}
+  <div class="no-print mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+    ⚠ El robot informó estado <b>{{ e.estado }}</b> — puede que no haya salido todo lo pedido.
+    El reporte muestra lo que <b>realmente salió</b> (columna “Salieron”).
+  </div>
+  {% endif %}
+
+  <div class="egreso-doc bg-white text-[#161616] rounded-lg border border-[color:var(--ds-surface-border)] p-6 md:p-8 shadow-sm">
+
+    <div class="flex items-start justify-between border-b border-[#ddd] pb-4 mb-4">
+      <div>
+        <h1 class="text-lg font-bold">Egreso de mercadería del robot</h1>
+        <p class="text-sm text-[#555]">Para cargar como <b>egreso</b> en ObServer.</p>
+      </div>
+      <div class="text-right text-[13px] text-[#555]">
+        <div>Comprobante interno <b>#{{ e.id }}</b></div>
+        <div>{{ e.generado.strftime('%d/%m/%Y %H:%M') }}</div>
+        <div>Boca de salida: <b>{{ e.boca }}</b></div>
+      </div>
+    </div>
+
+    <table class="w-full text-sm border-collapse">
+      <thead>
+        <tr class="text-[11px] uppercase text-[#777] border-b border-[#ccc]">
+          <th class="text-left py-2">Producto</th>
+          <th class="text-left py-2">EAN</th>
+          <th class="text-right py-2">Salieron</th>
+          <th class="text-left py-2 no-print-hint">Lote · Vence</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in e.lineas %}
+        <tr class="border-b border-[#eee]">
+          <td class="py-1.5 pr-2">{{ l.nombre or l.article_id }}</td>
+          <td class="py-1.5 pr-2 font-mono text-[12px]">{{ l.ean or '—' }}</td>
+          <td class="py-1.5 text-right font-mono">
+            <b>{{ l.salieron }}</b>{% if l.salieron != l.pedido %} <span class="text-[11px] text-[#b45309]">(de {{ l.pedido }})</span>{% endif %}
+          </td>
+          <td class="py-1.5 text-[11px] text-[#666]">
+            {% for p in l.packs %}{{ p.batch_number or '—' }}{% if p.expiry_date %} · {{ p.expiry_date }}{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="border-t-2 border-[#333] font-bold">
+          <td class="py-2" colspan="2">TOTAL — {{ e.lineas|length }} productos</td>
+          <td class="py-2 text-right font-mono">{{ e.total_salieron }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <p class="mt-6 text-[12px] text-[#888] border-t border-[#eee] pt-3">
+      Generado por AppFarmWeb desde el robot Rowa. Las cantidades “Salieron” son las que el robot
+      confirmó que dispensó físicamente por la boca {{ e.boca }}. Cargá este egreso en ObServer para
+      mantener el stock coherente.
+    </p>
+  </div>
+</div>
+{% endblock %}
