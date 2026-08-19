@@ -28,6 +28,10 @@ ROT_MEDIA_MAX = 60     # 22-60 d -> Media
 ROT_BAJA_MAX = 120     # 61-120 d -> Baja; >120 -> Durmiente
 PARADA_REVISAR_D = 180  # 1 sola unidad parada más de esto -> revisar
 VENC_ALERTA_D = 120    # vencimiento próximo a vigilar
+# El robot pone un vencimiento DEFAULT (+1 año) al ingresar un pack sin escanear
+# la fecha real (ExpiryDateSource "AutoCalculated"/"Unknown"). Solo son fechas
+# reales las cargadas a mano o por código de barras — el resto no debe alarmar.
+FUENTES_VENC_CONFIABLES = {"ManualEntry", "Barcode"}
 
 
 def clean_ean(raw: str | None) -> str | None:
@@ -135,8 +139,10 @@ def analizar_articulo(art, hoy: date | None = None) -> ArticuloAnalizado | None:
             antigs.append((hoy - sd).days)
         if p.volume_cm3:
             vols.append(p.volume_cm3)
+        # Solo vencimientos reales (cargados a mano o por código); los
+        # AutoCalculated/Unknown son el default +1 año y no son confiables.
         ed = _parse_date(p.expiry_date)
-        if ed:
+        if ed and p.expiry_source in FUENTES_VENC_CONFIABLES:
             vencs.append(ed)
 
     # EAN del artículo = ScanCode más frecuente entre sus packs (limpiado).

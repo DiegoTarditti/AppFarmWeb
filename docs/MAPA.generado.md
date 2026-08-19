@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-19 19:59 · rama `feat/rowa-modulo` · commit `5e4471b`
+Generado: 2026-08-19 20:17 · rama `feat/rowa-web` · commit `30a5baa`
 
-**773 rutas** en 74 archivos · **123 modelos** · **21 syncs** · **32 services** · **11 parsers**
+**775 rutas** en 75 archivos · **123 modelos** · **21 syncs** · **32 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -1245,6 +1245,13 @@ Generado: 2026-08-19 19:59 · rama `feat/rowa-modulo` · commit `5e4471b`
 | `/telegram/cadetes/webhook` | POST | [`reparto_telegram_cadetes_webhook`](../routes/reparto.py#L808) |
 | `/whatsapp/grupo/setup-webhook` | POST | [`reparto_whatsapp_setup_webhook`](../routes/reparto.py#L795) |
 | `/whatsapp/grupo/webhook` | POST | [`reparto_whatsapp_grupo_webhook`](../routes/reparto.py#L677) |
+
+### `routes/rowa.py`
+
+| Ruta | Métodos | Función |
+|---|---|---|
+| `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L69) |
+| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L95) |
 
 ### `routes/sucursales.py`
 
