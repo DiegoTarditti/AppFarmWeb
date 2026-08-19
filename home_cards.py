@@ -307,6 +307,7 @@ CARD_CATEGORIA = {
     'envio':                'operativo',
     'reparto':              'operativo',
     'cadetes':              'operativo',
+    'rowa':                 'operativo',
     # Laboratorios
     'ofertas_import':       'laboratorios',
     'consulta_lab':         'laboratorios',
