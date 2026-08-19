@@ -262,6 +262,65 @@ class RowaClient:
             raise RowaError("sin StockInfoResponse")
         return [self._parse_article(a) for a in resp.findall("Article")]
 
+    def output_batch(self, items, output_destination: int, order_id: str | None = None,
+                     priority: str = "Normal", max_mensajes: int = 300) -> dict:
+        """Extrae packs del robot EN LOTE (un OutputRequest con varios Criteria).
+
+        ⚠️  MUEVE EL ROBOT FÍSICAMENTE y descuenta su stock; NO avisa a ObServer
+            (el egreso hay que cargarlo en ObServer con el reporte que sale de acá).
+
+        `items`: iterable de (article_id, cantidad). `output_destination`: boca 1-5.
+        Sigue los OutputMessage hasta un estado final y devuelve **los packs que
+        REALMENTE salieron** (con EAN/lote/venc), para armar el reporte de egreso.
+        """
+        if self._sock is None:
+            raise RowaError("socket no conectado")
+        oid = order_id or _msg_id()
+        criterios = "".join(
+            f'<Criteria ArticleId="{aid}" Quantity="{int(q)}"/>'
+            for aid, q in items if int(q) > 0)
+        if not criterios:
+            raise RowaError("no hay nada para extraer (cantidades en 0)")
+        inner = (
+            f'<OutputRequest Id="{oid}" Source="{self.ims_id}" '
+            f'Destination="{self.robot_id}">'
+            f'<Details Priority="{priority}" OutputDestination="{output_destination}"/>'
+            f'{criterios}'
+            '</OutputRequest>'
+        )
+        # OutputResponse = aceptación; luego llegan los OutputMessage con el avance.
+        resp = self._parse(self._send(inner)).find(".//OutputResponse")
+        dispensados: list[dict] = []
+        estado = None
+        for _ in range(max_mensajes):
+            try:
+                root = self._parse(self._recv())
+            except (OSError, RowaError):
+                break
+            om = root.find(".//OutputMessage")
+            if om is None:
+                continue
+            for art in om.findall("Article"):
+                aid = art.get("Id")
+                for pk in art.findall("Pack"):
+                    dispensados.append({
+                        "article_id": aid,
+                        "pack_id": pk.get("Id"),
+                        "scan_code": pk.get("ScanCode"),
+                        "expiry_date": pk.get("ExpiryDate"),
+                        "batch_number": pk.get("BatchNumber") or None,
+                    })
+            estado = om.get("Status")
+            if estado in ("Completed", "Aborted", "Incomplete"):
+                break
+        return {
+            "order_id": oid,
+            "estado": estado,
+            "boca": output_destination,
+            "dispensados": dispensados,
+            "response": dict(resp.attrib) if resp is not None else {},
+        }
+
     # -- parseo ----------------------------------------------------------
     @staticmethod
     def _parse_article(el: ET.Element) -> Article:
