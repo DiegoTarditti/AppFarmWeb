@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% set nav_active = "rowa" %}
+{% block title %}Robot Rowa{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block main %}
+<div class="p-4 md:p-6 max-w-[1400px] mx-auto">
+
+  {# ---- Header ---- #}
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+    <div>
+      <h1 class="text-xl font-bold flex items-center gap-2">🤖 Robot Rowa
+        {% if not sin_robot %}<span class="text-[11px] font-normal text-[color:var(--ds-text-mute)]">
+          {{ robot.get('ProductInfo') }} v{{ robot.get('VersionInfo') }}</span>{% endif %}
+      </h1>
+      {% if not sin_robot %}
+      <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-0.5">
+        Generado {{ generado.strftime('%H:%M') }} ·
+        {{ cruce.get('matcheados', 0) }}/{{ diag.articulos }} cruzados con ObServer</p>
+      {% endif %}
+    </div>
+    {% if not sin_robot %}
+    <div class="flex items-center gap-2">
+      <a href="{{ url_for('rowa_dashboard', refresh=1) }}"
+         class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">↻ Actualizar</a>
+      <a href="{{ url_for('rowa_export_xlsx') }}"
+         class="px-3 py-1.5 rounded text-sm bg-[color:var(--ds-mint)] text-black font-semibold">⬇ Exportar XLS</a>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if sin_robot %}
+  <div class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-6 text-center">
+    <div class="text-3xl mb-2">🔌</div>
+    <p class="font-semibold">No se pudo conectar al robot.</p>
+    <p class="text-sm text-[color:var(--ds-text-mute)] mt-1">
+      Este módulo solo aplica a farmacias con robot Rowa. Si esta farmacia tiene uno,
+      revisá que <code>ROWA_HOST</code> apunte al equipo y que esté encendido.</p>
+    {% if error %}<p class="text-[11px] text-[color:var(--ds-text-mute)] mt-2 font-mono">{{ error }}</p>{% endif %}
+  </div>
+  {% else %}
+
+  {# ---- KPIs ---- #}
+  {% set _kpis = [
+      ('Artículos', diag.articulos, ''),
+      ('Packs', diag.packs, ''),
+      ('Volumen ocupado', diag.vol_ocupado_l, 'L'),
+      ('Con acción sugerida', diag.con_accion, ''),
+      ('Espacio recuperable', diag.espacio_recuperable_l, 'L'),
+  ] %}
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+    {% for label, val, unit in _kpis %}
+    <div class="rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.02] p-3">
+      <div class="text-[11px] text-[color:var(--ds-text-mute)] uppercase tracking-wide">{{ label }}</div>
+      <div class="text-2xl font-bold mt-1">{{ val }}<span class="text-sm font-normal ml-1">{{ unit }}</span></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ---- Rotación (por ventas reales de ObServer) ---- #}
+  <div class="flex flex-wrap gap-2 mb-6 text-xs">
+    <span class="text-[color:var(--ds-text-mute)]">Rotación (ventas reales):</span>
+    {% for rot, color in [('Alta','emerald'),('Media','sky'),('Baja','amber'),('Durmiente','rose')] %}
+      {% set n = diag.por_rotacion.get(rot, 0) %}
+      <span class="px-2 py-0.5 rounded bg-{{ color }}-500/15 text-{{ color }}-300 border border-{{ color }}-500/30">
+        {{ rot }}: <b>{{ n }}</b></span>
+    {% endfor %}
+  </div>
+
+  {# ---- Qué sacar / reducir del robot ---- #}
+  <section class="mb-8">
+    <h2 class="text-sm font-bold mb-2 flex items-center gap-2">
+      📦 Qué sacar o reducir del robot
+      <span class="text-[11px] font-normal text-[color:var(--ds-text-mute)]">
+        {{ n_accion }} artículos · liberan {{ diag.espacio_recuperable_l }} L al depósito</span>
+    </h2>
+    <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)]">
+      <table class="w-full text-sm">
+        <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
+          <tr>
+            <th class="text-left px-3 py-2">Producto</th>
+            <th class="text-left px-3 py-2">Rotación</th>
+            <th class="text-right px-3 py-2">u/mes</th>
+            <th class="text-right px-3 py-2">En robot</th>
+            <th class="text-right px-3 py-2">Sugerido</th>
+            <th class="text-right px-3 py-2">Al depósito</th>
+            <th class="text-right px-3 py-2">Libera</th>
+            <th class="text-left px-3 py-2">Recomendación</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in accion %}
+          <tr class="border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]">
+            <td class="px-3 py-1.5">{{ (f.nombre_obs or f.nombre or '')[:36] }}
+              {% if f.requiere_frio %}<span title="Cadena de frío">❄</span>{% endif %}</td>
+            <td class="px-3 py-1.5">{{ f.rotacion }}</td>
+            <td class="px-3 py-1.5 text-right font-mono">{{ f.unid_mes_est if f.unid_mes_est is not none else '—' }}</td>
+            <td class="px-3 py-1.5 text-right">{{ f.cantidad }}</td>
+            <td class="px-3 py-1.5 text-right text-emerald-300">{{ f.sug_en_robot }}</td>
+            <td class="px-3 py-1.5 text-right text-amber-300">{{ f.al_deposito }}</td>
+            <td class="px-3 py-1.5 text-right font-mono">{{ (f.al_deposito * f.vol_unit_cm3) | round | int }} cm³</td>
+            <td class="px-3 py-1.5 text-[color:var(--ds-text-mute)]">{{ f.recomendacion }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ---- Vencimientos próximos ---- #}
+  {% if vencimientos %}
+  <section class="mb-8">
+    <h2 class="text-sm font-bold mb-2">⏰ Vencimientos próximos <span class="text-[11px] font-normal text-[color:var(--ds-text-mute)]">({{ n_venc }})</span></h2>
+    <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)]">
+      <table class="w-full text-sm">
+        <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
+          <tr><th class="text-left px-3 py-2">Producto</th><th class="text-right px-3 py-2">Cantidad</th>
+              <th class="text-left px-3 py-2">Vence</th><th class="text-right px-3 py-2">Días</th>
+              <th class="text-right px-3 py-2">Packs en alerta</th></tr>
+        </thead>
+        <tbody>
+          {% for f in vencimientos[:50] %}
+          <tr class="border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]">
+            <td class="px-3 py-1.5">{{ (f.nombre_obs or f.nombre or '')[:36] }}</td>
+            <td class="px-3 py-1.5 text-right">{{ f.cantidad }}</td>
+            <td class="px-3 py-1.5">{{ f.prox_venc.strftime('%Y-%m-%d') if f.prox_venc }}</td>
+            <td class="px-3 py-1.5 text-right {% if f.dias_prox_venc < 30 %}text-rose-400 font-bold{% endif %}">{{ f.dias_prox_venc }}</td>
+            <td class="px-3 py-1.5 text-right">{{ f.packs_venc_alerta }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ---- Capacidad por altura ---- #}
+  {% if alturas %}
+  <section class="mb-6">
+    <h2 class="text-sm font-bold mb-2">📏 Capacidad por altura de estantes
+      <span class="text-[11px] font-normal text-[color:var(--ds-text-mute)]">
+        prom {{ alturas.altura_prom }}mm · máx {{ alturas.altura_max }}mm</span></h2>
+    <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)] max-w-2xl">
+      <table class="w-full text-sm">
+        <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
+          <tr><th class="text-left px-3 py-2">Canal (mm)</th><th class="text-right px-3 py-2">Cubre stock</th>
+              <th class="text-right px-3 py-2">Filas/metro</th><th class="text-right px-3 py-2">vs 80mm</th></tr>
+        </thead>
+        <tbody>
+          {% for r in alturas.rendimiento %}
+          <tr class="border-t border-[color:var(--ds-surface-border)]">
+            <td class="px-3 py-1.5">{{ r.canal_mm }}</td>
+            <td class="px-3 py-1.5 text-right">{{ r.cubre_pct }}%</td>
+            <td class="px-3 py-1.5 text-right">{{ r.filas_x_metro }}</td>
+            <td class="px-3 py-1.5 text-right {% if r.vs_80mm and r.vs_80mm > 0 %}text-emerald-300{% endif %}">
+              {{ '+' if r.vs_80mm and r.vs_80mm > 0 }}{{ r.vs_80mm }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-2">
+      Bajar canales altos a la altura que cubre el grueso del stock gana filas por metro.
+      Reservar 1-2 canales altos para lo poco que pasa 80mm (jarabes/jeringas).</p>
+  </section>
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}
