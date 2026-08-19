@@ -59,11 +59,13 @@ jobs:
           python-version: '3.12'
           cache: pip
 
+      # Cacheados con action: la primera vez instala normal, después es
+      # instantáneo desde el cache. Antes un mirror lento de apt colgó 30 min.
       - name: System libs (camelot/pdfplumber)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            ghostscript libgl1 poppler-utils
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: ghostscript libgl1 poppler-utils
+          version: "1"
 
       - name: Install Python deps
         run: |
