@@ -326,6 +326,14 @@
                            placeholder="60" oninput="simular()">
                     <div class="tp-field-help">Ventana de venta del caro+baja: si no vendió nada en estos días → <b>no se compra</b> (0); si vendió → repone 1. Default 60. Se evalúa por mes.</div>
                 </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Umbral ventas anuales (u/año)</label>
+                    <input type="number" name="umbral_ventas_anuales" min="0" max="999"
+                           value="{{ tipo.config.umbral_ventas_anuales or 0 }}" class="tp-input"
+                           placeholder="6" oninput="simular()">
+                    <div class="tp-field-help">Si el producto vendió <b>menos de este valor en 12 meses</b> y llega a <b>stock 0</b>, no se repone automáticamente (se pide a droguería solo si alguien lo necesita). Excepción: productos nuevos con historial &lt; 6 meses. 0 = desactivado.</div>
+                </div>
             </div>
         </div>
         {% endif %}
@@ -551,6 +559,7 @@ async function simular() {
         cant_fija_efecto:    _val('cant_fija_efecto'),
         oferta_min_efecto:   _val('oferta_min_efecto'),
         valor_piso:          parseFloat(_val('valor_piso') || 0),
+        umbral_ventas_anuales: parseInt(_val('umbral_ventas_anuales') || 0),
     };
     const fijaRaw = document.getElementById('sim-fija').value;
     const ctx = {
@@ -562,7 +571,7 @@ async function simular() {
         cantidad_reposicion_fija: fijaRaw === '' ? null : parseInt(fijaRaw),
         pvp:       _simPvp || 0,
         rotacion:  _simRot || null,
-        u12m: 48, sin_mov: false,
+        u12m: 48, sin_mov: false, es_nuevo: false,
     };
     _actualizarMinCorto(ctx.min_efectivo, ctx.cubrir_dias);
     try {

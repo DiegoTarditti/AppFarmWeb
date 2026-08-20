@@ -79,6 +79,40 @@ class TestOverrideYGuards:
         r = calcular_a_pedir(cfg, {'daily_rate': 5, 'u12m': 100, 'sin_mov': True})
         assert r['a_pedir'] == 0
 
+    def test_baja_venta_anual_stock_cero_no_repone(self):
+        cfg = {'piso_ideal': 'daily_rate_x_cubrir_dias', 'umbral_ventas_anuales': 6}
+        r = calcular_a_pedir(cfg, {'daily_rate': 0.01, 'u12m': 3, 'sin_mov': False,
+                                   'stock_actual': 0})
+        assert r['a_pedir'] == 0
+        assert 'baja_venta_anual' in r['regla_usada']
+
+    def test_baja_venta_anual_stock_cero_es_nuevo_repone(self):
+        """Producto nuevo (< 6 meses de historial) queda exento de la regla."""
+        cfg = {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
+               'umbral_ventas_anuales': 6}
+        r = calcular_a_pedir(cfg, {'daily_rate': 0.5, 'min_efectivo': 2, 'u12m': 3,
+                                   'sin_mov': False, 'stock_actual': 0, 'es_nuevo': True,
+                                   'dias_cobertura_fijo': 4})
+        assert r['a_pedir'] > 0
+
+    def test_baja_venta_anual_con_stock_repone_normal(self):
+        """Si hay stock > 0 la regla no aplica (no está en 0)."""
+        cfg = {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
+               'umbral_ventas_anuales': 6}
+        r = calcular_a_pedir(cfg, {'daily_rate': 0.5, 'min_efectivo': 5, 'u12m': 3,
+                                   'sin_mov': False, 'stock_actual': 3,
+                                   'dias_cobertura_fijo': 4})
+        assert r['a_pedir'] >= 0
+        assert 'baja_venta_anual' not in r['regla_usada']
+
+    def test_baja_venta_anual_umbral_cero_desactivado(self):
+        """umbral_ventas_anuales=0 → regla apagada."""
+        cfg = {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
+               'umbral_ventas_anuales': 0}
+        r = calcular_a_pedir(cfg, {'daily_rate': 0.01, 'u12m': 3, 'sin_mov': False,
+                                   'stock_actual': 0, 'dias_cobertura_fijo': 4})
+        assert 'baja_venta_anual' not in r['regla_usada']
+
     def test_override_cant_fija_cuando_stock_bajo_minimo(self):
         cfg = {'override_producto': 'cantidad_reposicion_fija',
                'piso_ideal': 'min_efectivo'}

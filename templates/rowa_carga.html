@@ -52,6 +52,31 @@
     </div>
   </div>
 
+  {# ---- Historial snapshots ---- #}
+  {% if snap_historial %}
+  <details class="mb-4 rounded-lg border border-[color:var(--ds-surface-border)] overflow-hidden">
+    <summary class="px-3 py-2 text-xs text-[color:var(--ds-text-mute)] cursor-pointer hover:bg-white/5 select-none">
+      📷 Últimos snapshots ({{ snap_historial | length }})
+    </summary>
+    <table class="w-full text-xs border-t border-[color:var(--ds-surface-border)]">
+      <thead class="bg-white/5 text-[10px] uppercase text-[color:var(--ds-text-mute)]">
+        <tr>
+          <th class="text-left px-3 py-1.5">Fecha y hora</th>
+          <th class="text-right px-3 py-1.5">Artículos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ts, n_art in snap_historial %}
+        <tr class="border-t border-[color:var(--ds-surface-border)]">
+          <td class="px-3 py-1 font-mono">{{ ts.strftime('%d-%m-%y %H:%M') }}</td>
+          <td class="px-3 py-1 text-right font-mono text-[color:var(--ds-text-mute)]">{{ n_art }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+
   {# ---- Filtros ---- #}
   <div class="flex flex-wrap items-center gap-2 mb-3">
     <input id="carga-buscar" type="search" placeholder="🔎 Buscar…" oninput="cargaFiltrar()"

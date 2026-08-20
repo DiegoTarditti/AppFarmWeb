@@ -396,6 +396,19 @@ def init_app(app):
                 .first()
             )
 
+            # Historial de snapshots (últimos 10, agrupados por timestamp)
+            from sqlalchemy import func as _func
+            snap_historial = (
+                session.query(
+                    RowaSnapshot.tomado_en,
+                    _func.count(RowaSnapshot.article_id).label("n_art"),
+                )
+                .group_by(RowaSnapshot.tomado_en)
+                .order_by(RowaSnapshot.tomado_en.desc())
+                .limit(10)
+                .all()
+            )
+
         # Construir lista de carga con cobertura
         items = []
         for f in filas:
@@ -429,6 +442,7 @@ def init_app(app):
             ultima_carga=ultima_carga[0] if ultima_carga else None,
             n_criticos=sum(1 for i in items if i["urgencia"] < 2),
             generado=data["generado"],
+            snap_historial=snap_historial,
         )
 
     @app.route("/rowa/carga/registrar", methods=["POST"])

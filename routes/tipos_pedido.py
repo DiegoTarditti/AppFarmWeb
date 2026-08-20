@@ -65,22 +65,25 @@ BASE_CONFIGS = {
                    'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
                    'dias_cobertura_fijo': 4, 'base_demanda': 'u3m',
                    'cant_fija_efecto': 'override', 'oferta_min_efecto': 'piso',
-                   'valor_piso': 0, 'dias_valor_piso': 60},
+                   'valor_piso': 0, 'dias_valor_piso': 60, 'umbral_ventas_anuales': 6},
     'COMPRA_LAB': {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
                    'buffer_pct': 0, 'universo': 'lab_x',
                    'override_producto': 'none', 'redondeo': 'ceil',
                    'base_demanda': 'u3m', 'cant_fija_efecto': 'override',
-                   'oferta_min_efecto': 'piso', 'valor_piso': 0, 'dias_valor_piso': 60},
+                   'oferta_min_efecto': 'piso', 'valor_piso': 0, 'dias_valor_piso': 60,
+                   'umbral_ventas_anuales': 6},
     'PRUEBA':     {'piso_ideal': 'min_efectivo', 'target_horizonte': 'none',
                    'buffer_pct': 0, 'universo': 'manual',
                    'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
                    'base_demanda': 'u12m_estacional', 'cant_fija_efecto': 'override',
-                   'oferta_min_efecto': 'indicador', 'valor_piso': 0, 'dias_valor_piso': 60},
+                   'oferta_min_efecto': 'indicador', 'valor_piso': 0, 'dias_valor_piso': 60,
+                   'umbral_ventas_anuales': 6},
     'PEDIDO_ROEMMERS': {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
                         'buffer_pct': 0, 'universo': 'lab_x',
                         'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
                         'base_demanda': 'u3m', 'cant_fija_efecto': 'override',
-                        'oferta_min_efecto': 'piso', 'valor_piso': 0, 'dias_valor_piso': 60},
+                        'oferta_min_efecto': 'piso', 'valor_piso': 0, 'dias_valor_piso': 60,
+                        'umbral_ventas_anuales': 6},
 }
 
 ENUMS_FLAG = {
@@ -182,6 +185,9 @@ def init_app(app):
                         'valor_piso':          _valor_piso,
                         # Ventana (días) para evaluar si el caro+baja vendió algo. Default 60.
                         'dias_valor_piso':     _dias_valor_piso,
+                        # Umbral de ventas anuales: si u12m < este valor y stock==0 → no reponer.
+                        # Solo si el producto NO es nuevo (historial < 6 meses). 0 = desactivado.
+                        'umbral_ventas_anuales': max(0, int(request.form.get('umbral_ventas_anuales') or 0)),
                     }
                 row.nombre      = (request.form.get('nombre') or row.nombre).strip()
                 row.descripcion = (request.form.get('descripcion') or '').strip() or None
@@ -225,6 +231,7 @@ def init_app(app):
         ctx.setdefault('sin_mov', False)
         ctx.setdefault('pvp', 0)
         ctx.setdefault('rotacion', None)
+        ctx.setdefault('es_nuevo', False)
         try:
             result = calcular_a_pedir(cfg, ctx)
         except Exception as e:
