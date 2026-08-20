@@ -562,7 +562,7 @@ def init_app(app):
                 .first()
             )
             ahora = datetime.now()
-            if ultimo and (ahora - ultimo[0]).total_seconds() < 3000:  # 50 min
+            if ultimo and (ahora - ultimo[0]).total_seconds() < 14400:  # 4 hs
                 return jsonify({"ok": True, "skipped": True,
                                 "ultimo": ultimo[0].isoformat()})
             ts = _tomar_snapshot(session, data["filas"])
