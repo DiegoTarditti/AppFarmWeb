@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-20 16:22 · rama `feat/rowa-nuevos-tabla` · commit `5871a18`
+Generado: 2026-08-20 17:26 · rama `feat/rowa-nuevos-tabla` · commit `b47d519`
 
-**782 rutas** en 75 archivos · **126 modelos** · **21 syncs** · **32 services** · **11 parsers**
+**783 rutas** en 75 archivos · **126 modelos** · **21 syncs** · **32 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -1262,6 +1262,7 @@ Generado: 2026-08-20 16:22 · rama `feat/rowa-nuevos-tabla` · commit `5871a18`
 | `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L211) |
 | `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L187) |
 | `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L273) |
+| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L546) |
 
 ### `routes/sucursales.py`
 
