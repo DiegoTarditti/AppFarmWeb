@@ -45,6 +45,14 @@
             </select>
         </div>
 
+        <!-- Botón sincronización portal Kellerhoff (solo visible cuando se selecciona Kellerhoff) -->
+        <a id="kh-sync-btn" href="{{ url_for('kellerhoff_sync') }}"
+           class="hidden w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg
+                  border border-emerald-600/40 bg-emerald-600/[0.08] text-sm text-emerald-400
+                  hover:bg-emerald-600/[0.15] transition">
+          🔄 Bajar comprobantes del portal Kellerhoff
+        </a>
+
         <!-- Info proveedor existente -->
         <div id="provider-info" class="hidden bg-[#f3f3f3] rounded-lg px-4 py-3 text-xs space-y-1.5 border border-surface-border">
             <div class="flex justify-between">
@@ -328,6 +336,9 @@ select.addEventListener('change', function () {
         show('provider-info');
         show('upload-section');
         cargarArchivosCarpeta(this.value, !!ruta);
+        // Botón Kellerhoff: solo cuando es el proveedor Kellerhoff
+        const khBtn = document.getElementById('kh-sync-btn');
+        if (khBtn) khBtn.classList.toggle('hidden', this.value !== '{{ kellerhoff_provider_id }}');
         // Con PDF pre-cargado no existe el <input file>, así que no hay change que
         // habilite el botón: ya tenemos el PDF, alcanza con haber elegido proveedor.
         const btnProbar = document.getElementById('btn-probar-existing');

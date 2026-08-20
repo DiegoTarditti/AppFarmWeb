@@ -101,6 +101,10 @@ services:
       # de ARCA para rechazar un CSV bajado con el CUIT de otra farmacia. Sin la
       # var, ese import queda bloqueado a propósito (ver routes/cuentas.py).
       FARMACIA_CUIT: ${FARMACIA_CUIT:-}
+      # Credenciales portal Kellerhoff — valor en docker-compose.override.yml
+      KELLERHOFF_USER: ${KELLERHOFF_USER:-}
+      KELLERHOFF_PASS: ${KELLERHOFF_PASS:-}
+      KELLERHOFF_PROVIDER_ID: ${KELLERHOFF_PROVIDER_ID:-1}
       # External URL del Postgres de Render. Usada por el job que replica obs_*.
       RENDER_DATABASE_URL: ${RENDER_DATABASE_URL:-}
       # Sync/pull ofertas local ↔ Render. PANEL_REMOTO_TOKEN es el mismo
