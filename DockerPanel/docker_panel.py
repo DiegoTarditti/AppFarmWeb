@@ -2235,11 +2235,16 @@ class DockerPanel(tk.Tk):
     PANEL_REMOTO_DEFAULT_SEG = 8
     PANEL_REMOTO_OUTPUT_LIMIT = 30000  # caracteres a reportar (Render trimma a 32k igual)
 
-    def _comandos_remotos_whitelist(self):
+    def _comandos_remotos_whitelist(self, cfg=None):
         """Mapeo nombre_comando → lista de pasos (cmd shell, descripción).
         Se ejecutan en serie; si uno falla, se aborta y se reporta error.
         Los comandos viven en el directorio del proyecto (self.dir_var.get()).
+        cfg se usa para inyectar el token y la URL de cartelera en los curl.
         """
+        cfg = cfg or {}
+        tok = cfg.get('token', '')
+        cartelera_url = cfg.get('cartelera_url', 'http://192.168.1.220:8096')
+        cartelera_path = cfg.get('cartelera_path', '') or '/home/diego/cartelera-badia'
         return {
             'pull_restart':  [('git pull', 'pull'), ('docker-compose restart web', 'restart')],
             'restart':       [('docker-compose restart web', 'restart')],
@@ -2275,6 +2280,16 @@ class DockerPanel(tk.Tk):
                              ('git rev-parse --short HEAD', 'rev'),
                              ('docker-compose logs --tail=20 web', 'web logs'),
                              ('docker-compose logs --tail=20 db', 'db logs')],
+            # Cartelera Badia (Docker en el 220). cartelera_path en agente_config.txt.
+            # git pull en el host (el repo no está montado en el container);
+            # docker restart toma el código nuevo porque ./app está montado como volumen.
+            'actualizar-cartelera': [
+                (f'git -C "{cartelera_path}" pull origin main', 'git pull'),
+                ('docker restart cartelera-badia-signage cartelera-badia-vertical', 'restart'),
+            ],
+            'restart-cartelera': [
+                ('docker restart cartelera-badia-signage cartelera-badia-vertical', 'restart'),
+            ],
         }
 
     def _load_panel_remoto_config(self):
@@ -2285,6 +2300,8 @@ class DockerPanel(tk.Tk):
             'url': self.PANEL_REMOTO_DEFAULT_URL,
             'token': '',
             'seg': self.PANEL_REMOTO_DEFAULT_SEG,
+            'cartelera_url': 'http://192.168.1.220:8096',
+            'cartelera_path': '',
         }
         if os.path.isfile(cfg_path):
             with open(cfg_path, "r", encoding="utf-8") as f:
@@ -2299,6 +2316,10 @@ class DockerPanel(tk.Tk):
                     elif line.startswith("panel_remoto_seg="):
                         try: cfg['seg'] = max(3, min(60, int(line.split("=", 1)[1])))
                         except ValueError: pass
+                    elif line.startswith("cartelera_url="):
+                        cfg['cartelera_url'] = line.split("=", 1)[1]
+                    elif line.startswith("cartelera_path="):
+                        cfg['cartelera_path'] = line.split("=", 1)[1]
         return cfg
 
     def _save_panel_remoto_config(self, cfg):
@@ -2365,7 +2386,7 @@ class DockerPanel(tk.Tk):
         if cmd_name.startswith('stock:'):
             estado, output = self._ejecutar_stock_query(cmd_name)
         else:
-            whitelist = self._comandos_remotos_whitelist()
+            whitelist = self._comandos_remotos_whitelist(cfg)
             steps = whitelist.get(cmd_name)
             if not steps:
                 estado = 'error'

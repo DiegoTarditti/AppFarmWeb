@@ -3114,6 +3114,24 @@ class WebProductoImagen(Base):
     subido_por    = Column(String(80), nullable=True)
 
 
+class RowaNuevo(Base):
+    """Memoria de artículos detectados como 'nuevos' en el robot Rowa.
+
+    Proxy de detección: todos los packs del artículo entraron hace ≤90 días →
+    podría ser una incorporación reciente al mercado. Lisandro confirma (o descarta)
+    cada uno. `fecha_alta` es la estimación de cuándo entró: hoy - antig_max_d
+    del primer avistamiento.
+    """
+    __tablename__ = 'rowa_nuevos'
+    id           = Column(Integer, primary_key=True)
+    article_id   = Column(String(100), nullable=False, unique=True, index=True)
+    ean          = Column(String(20), nullable=True)
+    nombre       = Column(String(300), nullable=True)
+    confirmado   = Column(Boolean, nullable=False, default=True, server_default='true')
+    fecha_alta   = Column(Date, nullable=True)
+    detectado_en = Column(DateTime, default=now_ar)
+
+
 def init_db(database_url=None):
     database_url = init_engine(database_url)
     if not database_url.startswith('sqlite'):
@@ -3174,7 +3192,8 @@ def init_db(database_url=None):
                         'cadetes', 'ofertas_bot', 'ofertas_registro',
                         'respuestas_rapidas', 'informe_enviado',
                         'api_keys',
-                        'web_rubros_publicados', 'web_producto_imagen')
+                        'web_rubros_publicados', 'web_producto_imagen',
+                        'rowa_nuevos')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.

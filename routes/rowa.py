@@ -21,12 +21,12 @@ from __future__ import annotations
 import io
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from flask import Response, abort, jsonify, render_template, request
 from flask_login import login_required
 
-from database import get_db
+from database import RowaNuevo, get_db
 from services.rowa_analisis import analizar_alturas, analizar_stock, clean_ean, diagnosticar
 from services.rowa_client import RowaClient, RowaError
 from services.rowa_observer import cruzar_con_observer
@@ -84,6 +84,37 @@ def init_app(app):
             return render_template("rowa.html", sin_robot=True, error=str(e))
 
         filas = data["filas"]
+
+        # Upsert artículos nuevos y cargar el mapa completo desde DB.
+        nuevos_map = {}
+        try:
+            nuevos_actuales = [f for f in filas if f.es_nuevo]
+            with get_db() as session:
+                hoy = date.today()
+                for f in nuevos_actuales:
+                    if not session.query(RowaNuevo).filter_by(article_id=f.article_id).first():
+                        fa = hoy - timedelta(days=f.antig_max_d) if f.antig_max_d > 0 else hoy
+                        session.add(RowaNuevo(
+                            article_id=f.article_id,
+                            ean=f.ean,
+                            nombre=f.nombre_obs or f.nombre,
+                            confirmado=True,
+                            fecha_alta=fa,
+                        ))
+                session.commit()
+                nuevos_map = {
+                    r.article_id: {
+                        "confirmado": r.confirmado,
+                        "fecha_alta": r.fecha_alta,
+                        "detectado_en": r.detectado_en,
+                        "ean": r.ean,
+                        "nombre": r.nombre,
+                    }
+                    for r in session.query(RowaNuevo).order_by(RowaNuevo.detectado_en.desc()).all()
+                }
+        except Exception:
+            pass
+
         # Orden para operar: primero lo accionable (mayor espacio a liberar).
         accion = sorted(
             [f for f in filas if f.al_deposito > 0],
@@ -91,6 +122,7 @@ def init_app(app):
         vencimientos = sorted(
             [f for f in filas if f.dias_prox_venc is not None and f.packs_venc_alerta],
             key=lambda f: f.dias_prox_venc)
+        n_nuevos = sum(1 for v in nuevos_map.values() if v["confirmado"])
         return render_template(
             "rowa.html",
             sin_robot=False,
@@ -99,6 +131,7 @@ def init_app(app):
             filas=sorted(filas, key=lambda f: (f.nombre_obs or f.nombre or "").lower()),
             accion=accion, vencimientos=vencimientos,
             n_accion=len(accion), n_venc=len(vencimientos),
+            nuevos_map=nuevos_map, n_nuevos=n_nuevos,
         )
 
     @app.route("/rowa/export")
@@ -215,3 +248,19 @@ def init_app(app):
         if not egreso:
             abort(404)
         return render_template("rowa_egreso.html", e=egreso, meta=_TIPOS.get(egreso["tipo"]))
+
+    @app.route("/rowa/nuevo/<article_id>/toggle", methods=["POST"])
+    @login_required
+    def rowa_nuevo_toggle(article_id):
+        with get_db() as session:
+            r = session.query(RowaNuevo).filter_by(article_id=article_id).first()
+            if not r:
+                return jsonify({"ok": False, "error": "No encontrado"}), 404
+            r.confirmado = not r.confirmado
+            r.fecha_alta = date.today() if r.confirmado else None
+            session.commit()
+            return jsonify({
+                "ok": True,
+                "confirmado": r.confirmado,
+                "fecha_alta": r.fecha_alta.isoformat() if r.fecha_alta else None,
+            })
