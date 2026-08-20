@@ -1413,6 +1413,10 @@ class PedidoEmitido(Base):
     cargado_por     = Column(String(50), nullable=True)
     # Sigla que identifica desde dónde se disparó el pedido (P.Dia.Drog, P.Dia.Lab, etc).
     origen          = Column(String(20), nullable=True, index=True)
+    # Factura descargada automáticamente del portal de la droguería.
+    factura_id      = Column(Integer, ForeignKey('facturas.id', ondelete='SET NULL'),
+                              nullable=True, index=True)
+    nro_remito_kh   = Column(String(50), nullable=True)  # Nro remito Kellerhoff
     drogueria       = relationship('Provider')
     items           = relationship('PedidoEmitidoItem', back_populates='pedido',
                                    cascade='all, delete-orphan')
@@ -4147,6 +4151,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS confirmada_en TIMESTAMP",
         "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS oferta_dto DECIMAL(6,2)",
         "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS oferta_min INTEGER",
+        "ALTER TABLE pedido_emitido ADD COLUMN IF NOT EXISTS factura_id INTEGER REFERENCES facturas(id) ON DELETE SET NULL",
+        "ALTER TABLE pedido_emitido ADD COLUMN IF NOT EXISTS nro_remito_kh VARCHAR(50)",
     ):
         try:
             conn.execute(text(ddl))

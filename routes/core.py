@@ -89,9 +89,11 @@ def init_app(app):
         pdf_pendiente = request.args.get('pdf_pendiente', '')
         doc_pendiente_id = request.args.get('doc_pendiente_id', '', type=int)
         proceso_id = request.args.get('proceso_id', '', type=int)
+        import os
         return render_template('ingresos.html', providers=get_providers(solo_drog_activas=True), config=get_config(),
                                pdf_pendiente=pdf_pendiente, doc_pendiente_id=doc_pendiente_id or '',
-                               proceso_id=proceso_id or '')
+                               proceso_id=proceso_id or '',
+                               kellerhoff_provider_id=os.environ.get('KELLERHOFF_PROVIDER_ID', '1'))
 
     @app.route('/settings')
     def settings():

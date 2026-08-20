@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% set nav_active = "ingresos" %}
+{% block title %}Sync Kellerhoff{% endblock %}
+
+{% block main %}
+<div class="p-4 md:p-6 max-w-3xl mx-auto space-y-5">
+
+  <div class="flex items-center gap-3">
+    <a href="{{ url_for('ingresos') }}" class="text-xs text-[#6d9082] hover:text-white">← Ingresos</a>
+    <h1 class="text-xl font-bold">Ciclo de compra · Kellerhoff</h1>
+  </div>
+
+  {% if not credenciales_ok %}
+  <div class="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3 text-sm text-amber-300">
+    ⚠ Faltan las variables de entorno <code>KELLERHOFF_USER</code> y <code>KELLERHOFF_PASS</code>.
+    Agregálas en el <code>docker-compose.yml</code> o en el archivo <code>.env</code>.
+  </div>
+  {% endif %}
+
+  {# ── Panel de sincronización ── #}
+  <div class="rounded-xl border border-[#214635] bg-white/[0.02] p-4 space-y-4">
+    <h2 class="text-sm font-semibold">Bajar comprobantes del portal</h2>
+
+    <div class="flex items-end gap-3">
+      <div>
+        <label class="block text-xs text-[#6d9082] mb-1">Rango (días hacia atrás)</label>
+        <input id="inp-dias" type="number" value="7" min="1" max="60"
+               class="w-24 bg-[#2c2c2e] border border-[#3a3a3c] rounded-lg px-3 py-1.5 text-sm text-center">
+      </div>
+      <button id="btn-sync"
+              {% if not credenciales_ok %}disabled{% endif %}
+              onclick="iniciarSync()"
+              class="px-4 py-1.5 rounded-lg text-sm font-semibold bg-emerald-600 hover:bg-emerald-500
+                     disabled:opacity-40 disabled:cursor-not-allowed transition">
+        ▶ Sincronizar
+      </button>
+      <span id="sync-spinner" class="hidden text-xs text-[#6d9082] animate-pulse">Conectando…</span>
+    </div>
+
+    {# Resultado del último sync #}
+    <div id="resultado" class="hidden rounded-lg border border-[#214635] bg-black/20 px-4 py-3 text-xs space-y-1">
+    </div>
+  </div>
+
+  {# ── Pedidos abiertos sin factura ── #}
+  {% if pendientes %}
+  <div class="rounded-xl border border-[#214635] bg-white/[0.02] overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-[#214635]">
+      <h2 class="text-sm font-semibold">Pedidos Kellerhoff sin factura ({{ pendientes|length }})</h2>
+    </div>
+    <table class="w-full text-xs">
+      <thead class="text-[10px] uppercase text-[#6d9082] bg-black/20">
+        <tr>
+          <th class="text-left px-4 py-2">Fecha pedido</th>
+          <th class="text-right px-4 py-2">Artículos</th>
+          <th class="text-right px-4 py-2">Unidades</th>
+          <th class="px-4 py-2"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pendientes %}
+        <tr class="border-t border-[#214635] hover:bg-white/[0.02]">
+          <td class="px-4 py-2 font-mono">{{ p.fecha }}</td>
+          <td class="px-4 py-2 text-right font-mono">{{ p.items }}</td>
+          <td class="px-4 py-2 text-right font-mono">{{ p.unidades }}</td>
+          <td class="px-4 py-2 text-right">
+            <a href="{{ url_for('api_drogueria_pedidos_emitidos', prov_id=1) }}"
+               class="text-[10px] text-[#6d9082] hover:text-white">ver →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-sm text-[#6d9082]">No hay pedidos Kellerhoff abiertos sin factura.</p>
+  {% endif %}
+
+  {# ── Último resultado (si ya hubo un sync) ── #}
+  {% if sync_estado.ultimo %}
+  <p class="text-xs text-[#6d9082]">Último sync: {{ sync_estado.ultimo }}</p>
+  {% endif %}
+
+</div>
+
+<script>
+let _polling = null;
+
+async function iniciarSync() {
+  const btn = document.getElementById('btn-sync');
+  const spinner = document.getElementById('sync-spinner');
+  const dias = document.getElementById('inp-dias').value;
+  btn.disabled = true;
+  spinner.classList.remove('hidden');
+  setResultado(null);
+
+  const fd = new FormData();
+  fd.append('dias', dias);
+  const r = await fetch('{{ url_for("kellerhoff_sync_ejecutar") }}', {method: 'POST', body: fd});
+  const data = await r.json();
+  if (!data.ok) {
+    spinner.classList.add('hidden');
+    btn.disabled = false;
+    setResultado({ok: false, error: data.error});
+    return;
+  }
+  // Polling hasta que termine
+  _polling = setInterval(pollEstado, 1500);
+}
+
+async function pollEstado() {
+  const r = await fetch('{{ url_for("kellerhoff_sync_estado") }}');
+  const data = await r.json();
+  if (!data.corriendo) {
+    clearInterval(_polling);
+    document.getElementById('sync-spinner').classList.add('hidden');
+    document.getElementById('btn-sync').disabled = false;
+    setResultado(data.resultado);
+  } else {
+    document.getElementById('sync-spinner').textContent = 'Descargando…';
+  }
+}
+
+function setResultado(r) {
+  const el = document.getElementById('resultado');
+  if (!r) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  if (!r.ok) {
+    el.innerHTML = `<span class="text-rose-400">✗ ${r.error || 'Error desconocido'}</span>`;
+    return;
+  }
+  const errHtml = r.errores && r.errores.length
+    ? `<div class="text-amber-400 mt-1">⚠ ${r.errores.length} error(es): ${r.errores.slice(0,3).join(' · ')}</div>`
+    : '';
+  el.innerHTML = `
+    <div class="text-emerald-400 font-semibold">✓ Sync completado</div>
+    <div class="text-[#a9ccbd] mt-1">
+      ${r.comprobantes} comprobante(s) encontrados ·
+      ${r.creados} nuevo(s) ·
+      ${r.enriquecidos} enriquecido(s) ·
+      ${r.ligados} ligado(s) a pedido
+    </div>${errHtml}
+  `;
+}
+</script>
+{% endblock %}
