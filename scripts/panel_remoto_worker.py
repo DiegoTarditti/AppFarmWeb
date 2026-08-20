@@ -41,6 +41,16 @@ try:
 except (TypeError, ValueError):
     SEG = DEFAULT_SEG
 
+# URL local del web para el health-check (localhost, no la URL de polling que
+# puede ser Render). Los comandos que reinician el web se confirman por acá.
+HEALTH_URL = os.environ.get('PANEL_REMOTO_HEALTH_URL', 'http://localhost:5000/')
+HEALTH_TIMEOUT = 120  # s a esperar que el web vuelva tras un restart
+# Comandos que reinician/recrean el container web: no alcanza con el exit code
+# de `docker compose restart` (vuelve antes de que gunicorn escuche), y además
+# el web está caído justo cuando iríamos a reportar. Para estos confirmamos por
+# health-check y reintentamos el reporte.
+REINICIA_WEB = {'pull_restart', 'restart', 'restart_full', 'actualizar'}
+
 
 # ── Whitelist de comandos ─────────────────────────────────────────────
 # Cada key es lo que el operador tipea en /admin/panel; el value es la
@@ -193,12 +203,53 @@ def reportar(cmd_id: int, estado: str, output: str, duracion_ms: int) -> None:
                  'User-Agent': 'PanelRemoto-Server'},
         method='POST',
     )
+    # Reintentos: si el comando reinició el web, el endpoint de reporte puede
+    # tardar unos segundos en volver a atender. Sin esto el resultado se perdía
+    # y el comando quedaba "en proceso" hasta el timeout de 10 min.
+    for intento in range(1, 7):
+        try:
+            urllib.request.urlopen(req, timeout=15).close()
+            return
+        except urllib.error.HTTPError as e:
+            log(f'reportar {cmd_id}: HTTP {e.code} {e.reason}')
+            return  # el server respondió (aunque sea error) → no reintentar
+        except (urllib.error.URLError, OSError) as e:
+            log(f'reportar {cmd_id} intento {intento}/6: {e}')
+            time.sleep(5)
+    log(f'reportar {cmd_id}: no se pudo entregar el resultado tras 6 intentos')
+
+
+def web_vivo() -> bool:
+    """True si el web local responde algo por HTTP (302/401/200 = está arriba).
+    Solo es False si la conexión se rechaza o hace timeout (web caído)."""
+    req = urllib.request.Request(
+        HEALTH_URL, method='GET', headers={'User-Agent': 'PanelRemoto-Health'})
     try:
-        urllib.request.urlopen(req, timeout=15).close()
-    except urllib.error.HTTPError as e:
-        log(f'reportar {cmd_id}: HTTP {e.code} {e.reason}')
-    except (urllib.error.URLError, OSError) as e:
-        log(f'reportar {cmd_id}: {e}')
+        urllib.request.urlopen(req, timeout=5).close()
+        return True
+    except urllib.error.HTTPError:
+        return True  # responde HTTP aunque sea 4xx/3xx → gunicorn está vivo
+    except (urllib.error.URLError, OSError):
+        return False
+
+
+def esperar_web_sano(timeout: int = HEALTH_TIMEOUT, intervalo: int = 3) -> bool:
+    """Espera a que el web vuelva tras un restart. True si respondió a tiempo."""
+    fin = time.time() + timeout
+    while time.time() < fin:
+        if web_vivo():
+            return True
+        time.sleep(intervalo)
+    return web_vivo()
+
+
+def _commit_actual() -> str:
+    try:
+        r = subprocess.run('git rev-parse --short HEAD', shell=True, cwd=CWD,
+                           capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() or '?'
+    except Exception:  # noqa: BLE001
+        return '?'
 
 
 def tick() -> None:
@@ -215,6 +266,18 @@ def tick() -> None:
         estado, output = 'error', f'Comando "{cmd_name}" no está en el whitelist.'
     else:
         estado, output = ejecutar_pasos(steps)
+        # Comandos que reinician el web: el éxito real es que gunicorn vuelva a
+        # atender. Confirmamos por health-check (no por el exit del restart) y
+        # dejamos el commit para trazabilidad. Esto también da tiempo a que el
+        # web esté arriba para poder recibir el reporte.
+        if estado == 'ok' and cmd_name in REINICIA_WEB:
+            log(f'esperando que el web vuelva (health {HEALTH_URL})…')
+            if esperar_web_sano():
+                output += f'\n[web sano tras restart · commit {_commit_actual()}]'
+            else:
+                estado = 'error'
+                output += (f'\n[web NO respondió en {HEALTH_TIMEOUT}s tras el '
+                           f'restart — revisar logs]')
     dur_ms = int((time.time() - t0) * 1000)
     log(f'✔ #{cmd_id} {estado} en {dur_ms} ms')
     reportar(cmd_id, estado, output, dur_ms)
