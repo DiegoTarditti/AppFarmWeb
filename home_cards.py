@@ -114,6 +114,18 @@ ACCIONES_HOME = [
         'fg_default': '#B45309',
     },
     {
+        'id': 'gerente',
+        'titulo': 'Panel del gerente',
+        'desc': 'KPIs estratégicos, alertas de quiebre y atajos a todos los informes',
+        'endpoint': 'gerente_index',
+        'emoji': '📋',
+        'tone': 'info',
+        'badge_key': None,
+        'icono_path': 'M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
+        'bg_default': '#DBEAFE',
+        'fg_default': '#1D4ED8',
+    },
+    {
         'id': 'productos',
         'titulo': 'Productos',
         'desc': 'Catálogo master con códigos y PVP',
