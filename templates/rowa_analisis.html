@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% set nav_active = "rowa" %}
+{% block title %}Análisis Rowa{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block main %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+.tile { cursor:pointer; border-radius:.5rem; border:1px solid; padding:.75rem 1rem; transition:box-shadow .15s; }
+.tile:hover { box-shadow:0 0 0 1px currentColor; }
+.tile.active { box-shadow:0 0 0 2px currentColor; }
+.tile-riesgo       { border-color:rgba(248,113,113,.35); background:rgba(248,113,113,.08); color:#f87171; }
+.tile-bien_cargado { border-color:rgba(16,185,129,.35);  background:rgba(16,185,129,.08);  color:#10b981; }
+.tile-sobrestock   { border-color:rgba(251,191,36,.35);  background:rgba(251,191,36,.08);  color:#fbbf24; }
+.tile-ajustado     { border-color:rgba(107,114,128,.35); background:rgba(107,114,128,.08); color:#9ca3af; }
+.rot-alta      { background:#10b98120; color:#10b981; border:1px solid #10b98140; border-radius:.25rem; padding:0 .35rem; }
+.rot-media     { background:#38bdf820; color:#38bdf8; border:1px solid #38bdf840; border-radius:.25rem; padding:0 .35rem; }
+.rot-baja      { background:#fbbf2420; color:#fbbf24; border:1px solid #fbbf2440; border-radius:.25rem; padding:0 .35rem; }
+.rot-durmiente { background:#6b728020; color:#9ca3af; border:1px solid #6b728040; border-radius:.25rem; padding:0 .35rem; }
+</style>
+
+<div class="p-4 md:p-6 max-w-[1200px] mx-auto">
+
+  {# ---- Header ---- #}
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+    <div>
+      <h1 class="text-xl font-bold">📊 Análisis del robot</h1>
+      {% if not sin_robot %}
+      <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-0.5">
+        Generado {{ generado.strftime('%d-%m-%y %H:%M') }} ·
+        {{ diag.articulos }} artículos · {{ diag.vol_ocupado_l }} L ocupados
+      </p>
+      {% endif %}
+    </div>
+    <div class="flex gap-2">
+      <a href="{{ url_for('rowa_dashboard') }}"
+         class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">← Dashboard</a>
+      {% if not sin_robot %}
+      <a href="{{ url_for('rowa_analisis', refresh=1) }}"
+         class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">↻ Actualizar</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if sin_robot %}
+  <div class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-6 text-center">
+    <div class="text-3xl mb-2">🔌</div>
+    <p class="font-semibold">No se pudo conectar al robot.</p>
+    {% if error %}<p class="text-[11px] text-[color:var(--ds-text-mute)] mt-2 font-mono">{{ error }}</p>{% endif %}
+  </div>
+  {% else %}
+
+  {# ---- Fila 1: Donut + Tiles ---- #}
+  <div class="grid md:grid-cols-2 gap-4 mb-5">
+
+    {# Donut: espacio por rotación #}
+    <div class="rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.02] p-4">
+      <h2 class="text-sm font-semibold mb-3 text-[color:var(--ds-text-mute)] uppercase tracking-wide">Espacio por rotación</h2>
+      <div class="flex items-center gap-6">
+        <div class="relative" style="width:160px;height:160px;flex-shrink:0">
+          <canvas id="donut-rot" width="160" height="160"></canvas>
+          <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span class="text-xl font-bold">{{ diag.vol_ocupado_l }}L</span>
+            <span class="text-[10px] text-[color:var(--ds-text-mute)]">total</span>
+          </div>
+        </div>
+        <div class="flex flex-col gap-2 flex-1">
+          {% for d in donut_data %}
+          <div class="flex items-center gap-2 text-sm">
+            <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:{{ d.color }}"></span>
+            <span>{{ d.label }}</span>
+            <span class="ml-auto font-mono text-[color:var(--ds-text-mute)] text-xs">{{ d.vol_l }} L</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {# 2x2 Tiles #}
+    <div>
+      <h2 class="text-sm font-semibold mb-3 text-[color:var(--ds-text-mute)] uppercase tracking-wide">
+        Diagnóstico — clic para filtrar
+      </h2>
+      <div class="grid grid-cols-2 gap-3 text-sm">
+
+        {# Sobrestock: baja rotación, exceso (al_deposito > 0) #}
+        <div class="tile tile-sobrestock" data-q="sobrestock">
+          <div class="flex items-start justify-between mb-1">
+            <span class="font-semibold">⚠ Sobrestock</span>
+            <span class="text-2xl font-bold ml-2">{{ q_stats.sobrestock.n }}</span>
+          </div>
+          <div class="text-[11px] opacity-70">Baja rotación con exceso de stock</div>
+          <div class="text-[11px] font-mono mt-1 opacity-80">{{ q_stats.sobrestock.vol_l }} L</div>
+        </div>
+
+        {# Bien cargado: alta rotación, cobertura OK #}
+        <div class="tile tile-bien_cargado" data-q="bien_cargado">
+          <div class="flex items-start justify-between mb-1">
+            <span class="font-semibold">✓ Bien cargado</span>
+            <span class="text-2xl font-bold ml-2">{{ q_stats.bien_cargado.n }}</span>
+          </div>
+          <div class="text-[11px] opacity-70">Alta rotación, cobertura suficiente</div>
+          <div class="text-[11px] font-mono mt-1 opacity-80">{{ q_stats.bien_cargado.vol_l }} L</div>
+        </div>
+
+        {# Bien ajustado: baja rotación, stock mínimo (OK) #}
+        <div class="tile tile-ajustado" data-q="ajustado">
+          <div class="flex items-start justify-between mb-1">
+            <span class="font-semibold">✓ Bien ajustado</span>
+            <span class="text-2xl font-bold ml-2">{{ q_stats.ajustado.n }}</span>
+          </div>
+          <div class="text-[11px] opacity-70">Baja rotación, stock lean</div>
+          <div class="text-[11px] font-mono mt-1 opacity-80">{{ q_stats.ajustado.vol_l }} L</div>
+        </div>
+
+        {# Riesgo: alta rotación, cobertura ≤7d o sin stock #}
+        <div class="tile tile-riesgo" data-q="riesgo">
+          <div class="flex items-start justify-between mb-1">
+            <span class="font-semibold">🔴 Riesgo ruptura</span>
+            <span class="text-2xl font-bold ml-2">{{ q_stats.riesgo.n }}</span>
+          </div>
+          <div class="text-[11px] opacity-70">Alta rotación, cobertura ≤{{ cobertura_umbral }}d</div>
+          <div class="text-[11px] font-mono mt-1 opacity-80">{{ q_stats.riesgo.vol_l }} L</div>
+        </div>
+
+      </div>
+      <p class="text-[10px] text-[color:var(--ds-text-mute)] mt-2">
+        Umbral cobertura: {{ cobertura_umbral }} días · Umbral rotación: Alta/Media ↔ Baja/Durmiente
+      </p>
+    </div>
+  </div>
+
+  {# ---- Scatter ---- #}
+  <div class="rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.02] p-4 mb-5">
+    <div class="flex items-center justify-between mb-3 gap-3 flex-wrap">
+      <h2 id="scatter-titulo" class="text-sm font-semibold">Todos los artículos</h2>
+      <span id="scatter-count" class="text-xs text-[color:var(--ds-text-mute)]"></span>
+    </div>
+    <div style="position:relative;height:320px">
+      <canvas id="scatter-chart"></canvas>
+    </div>
+  </div>
+
+  {# ---- Tabla detalle ---- #}
+  <div class="rounded-lg border border-[color:var(--ds-surface-border)] overflow-x-auto">
+    <table class="w-full text-xs" id="scatter-tabla">
+      <thead class="bg-white/5 text-[10px] uppercase text-[color:var(--ds-text-mute)]">
+        <tr>
+          <th class="text-left px-3 py-2">Producto</th>
+          <th class="text-center px-3 py-2">Rotación</th>
+          <th class="text-right px-3 py-2">Cobertura</th>
+          <th class="text-right px-3 py-2">U/Mes</th>
+          <th class="text-right px-3 py-2">Vol cm³</th>
+        </tr>
+      </thead>
+      <tbody id="scatter-tbody"></tbody>
+    </table>
+  </div>
+
+  {% endif %}
+</div>
+
+<script>
+var DONUT_DATA = {{ donut_data | tojson }};
+var SCATTER_ALL = {{ scatter_all | tojson }};
+
+var QDEFS = {
+  sobrestock:   { label: "Sobrestock",    color: "#fbbf24cc", border: "#d97706" },
+  bien_cargado: { label: "Bien cargado",  color: "#10b981cc", border: "#059669" },
+  ajustado:     { label: "Bien ajustado", color: "#6b7280cc", border: "#4b5563" },
+  riesgo:       { label: "Riesgo",        color: "#f87171cc", border: "#dc2626" },
+};
+
+// --- Donut ---
+(function() {
+  var ctx = document.getElementById('donut-rot');
+  if (!ctx) return;
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: DONUT_DATA.map(function(d) { return d.label; }),
+      datasets: [{
+        data: DONUT_DATA.map(function(d) { return d.vol_l; }),
+        backgroundColor: DONUT_DATA.map(function(d) { return d.color; }),
+        borderWidth: 0,
+        hoverOffset: 6,
+      }],
+    },
+    options: {
+      cutout: '68%',
+      animation: { duration: 500 },
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: {
+          label: function(ctx) { return ' ' + ctx.label + ': ' + ctx.raw + ' L'; }
+        }
+      }},
+    },
+  });
+})();
+
+// --- Scatter ---
+var scatterChart = null;
+var activeQ = null;
+
+function buildDatasets(filterQ) {
+  var qs = filterQ ? [filterQ] : Object.keys(QDEFS);
+  return qs.map(function(q) {
+    return {
+      label: QDEFS[q].label,
+      data: SCATTER_ALL[q] || [],
+      backgroundColor: QDEFS[q].color,
+      borderColor: QDEFS[q].border,
+      borderWidth: 0.5,
+      pointRadius: filterQ ? 5 : 3,
+      pointHoverRadius: 8,
+    };
+  });
+}
+
+function renderScatter(filterQ) {
+  var ctx = document.getElementById('scatter-chart');
+  if (!ctx) return;
+
+  var titulo = filterQ ? (QDEFS[filterQ] ? QDEFS[filterQ].label : filterQ) : 'Todos los artículos';
+  var el = document.getElementById('scatter-titulo');
+  if (el) el.textContent = titulo;
+
+  if (scatterChart) { scatterChart.destroy(); scatterChart = null; }
+
+  scatterChart = new Chart(ctx, {
+    type: 'scatter',
+    data: { datasets: buildDatasets(filterQ) },
+    options: {
+      animation: false,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { color: '#9ca3af', boxWidth: 10, padding: 12, font: { size: 11 } },
+        },
+        tooltip: {
+          callbacks: {
+            label: function(c) {
+              var p = c.raw;
+              return [
+                p.nombre,
+                'Rotación: ' + p.rotacion + (p.nuevo ? ' ✨ Nuevo' : ''),
+                'Cobertura: ' + (p.cob !== null ? p.cob + ' d' : '—'),
+                'U/Mes: ' + p.x,
+                'Vol: ' + p.vol + ' cm³',
+              ];
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'U/Mes (ventas)', color: '#9ca3af', font: { size: 11 } },
+          min: 0,
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          ticks: { color: '#6b7280', font: { size: 10 } },
+        },
+        y: {
+          title: { display: true, text: 'Cobertura (días)', color: '#9ca3af', font: { size: 11 } },
+          min: 0,
+          max: 63,
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          ticks: {
+            color: '#6b7280',
+            font: { size: 10 },
+            callback: function(v) { return v === 60 ? '60+ d' : v; },
+          },
+        },
+      },
+    },
+  });
+
+  renderTabla(filterQ);
+}
+
+function renderTabla(filterQ) {
+  var ORDER = { riesgo: 0, sobrestock: 1, bien_cargado: 2, ajustado: 3 };
+  var qs = filterQ ? [filterQ] : Object.keys(QDEFS);
+  var rows = [];
+  qs.forEach(function(q) {
+    (SCATTER_ALL[q] || []).forEach(function(p) { rows.push({ q: q, p: p }); });
+  });
+  rows.sort(function(a, b) {
+    if (ORDER[a.q] !== ORDER[b.q]) return ORDER[a.q] - ORDER[b.q];
+    return (a.p.nombre || '').localeCompare(b.p.nombre || '');
+  });
+
+  var tbody = document.getElementById('scatter-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = rows.map(function(row) {
+    var p = row.p;
+    var rotCls = 'rot-' + p.rotacion.toLowerCase();
+    var cobStr = p.cob !== null ? p.cob + 'd' : '—';
+    var newBadge = p.nuevo ? ' <span style="font-size:9px;vertical-align:middle">✨</span>' : '';
+    return '<tr class="border-t border-white/5 hover:bg-white/[0.02]">'
+      + '<td class="px-3 py-1 text-left">' + p.nombre + newBadge + '</td>'
+      + '<td class="px-3 py-1 text-center"><span class="' + rotCls + ' text-[10px]">' + p.rotacion + '</span></td>'
+      + '<td class="px-3 py-1 text-right font-mono">' + cobStr + '</td>'
+      + '<td class="px-3 py-1 text-right font-mono">' + p.x + '</td>'
+      + '<td class="px-3 py-1 text-right font-mono">' + p.vol + '</td>'
+      + '</tr>';
+  }).join('');
+
+  var cnt = document.getElementById('scatter-count');
+  if (cnt) cnt.textContent = rows.length + ' artículos';
+}
+
+// Wire tiles
+document.querySelectorAll('.tile').forEach(function(tile) {
+  tile.addEventListener('click', function() {
+    var q = this.dataset.q;
+    document.querySelectorAll('.tile').forEach(function(t) { t.classList.remove('active'); });
+    if (activeQ === q) {
+      activeQ = null;
+    } else {
+      activeQ = q;
+      this.classList.add('active');
+    }
+    renderScatter(activeQ);
+  });
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('scatter-chart')) renderScatter(null);
+});
+</script>
+{% endblock %}
