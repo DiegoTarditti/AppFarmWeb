@@ -123,6 +123,7 @@
             <th class="text-right px-3 py-2">Al depósito</th>
             <th class="text-right px-3 py-2">Libera</th>
             <th class="text-left px-3 py-2">Recomendación</th>
+            <th class="text-center px-3 py-2 w-16" title="¿Es realmente un producto nuevo en el mercado?">¿Nuevo?</th>
           </tr>
         </thead>
         <tbody>
@@ -153,6 +154,18 @@
             <td class="px-3 py-1.5 text-right text-amber-300">{{ f.al_deposito }}</td>
             <td class="px-3 py-1.5 text-right font-mono">{{ (f.al_deposito * f.vol_unit_cm3) | round | int }} cm³</td>
             <td class="px-3 py-1.5 text-[color:var(--ds-text-mute)]">{{ f.recomendacion }}</td>
+            <td class="px-3 py-1.5 text-center">
+              {% if f.es_nuevo %}
+              <input type="checkbox" class="rowa-nuevo-chk cursor-pointer"
+                     data-aid="{{ f.article_id }}"
+                     {{ 'checked' if not _nr or _nr.confirmado else '' }}
+                     onchange="rowaToggleNuevo(this)"
+                     title="{{ ('Alta ' + _nr.fecha_alta.strftime('%d-%m-%y')) if _nr and _nr.fecha_alta else 'Detectado como nuevo' }}">
+              <div class="text-[9px] text-[color:var(--ds-text-mute)] mt-0.5 leading-none" id="rn-fecha-{{ f.article_id | replace('/', '-') }}">
+                {{ _nr.fecha_alta.strftime('%d-%m-%y') if _nr and _nr.fecha_alta else '' }}
+              </div>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -179,49 +192,6 @@
             <td class="px-3 py-1.5">{{ f.prox_venc.strftime('%Y-%m-%d') if f.prox_venc }}</td>
             <td class="px-3 py-1.5 text-right {% if f.dias_prox_venc < 30 %}text-rose-400 font-bold{% endif %}">{{ f.dias_prox_venc }}</td>
             <td class="px-3 py-1.5 text-right">{{ f.packs_venc_alerta }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-  {% endif %}
-
-  {# ---- Nuevas incorporaciones ---- #}
-  {% if nuevos_map %}
-  <section class="mb-8">
-    <h2 class="text-sm font-bold mb-1 flex items-center gap-2">✨ Nuevas incorporaciones
-      <span class="text-[11px] font-normal text-[color:var(--ds-text-mute)]">
-        artículos detectados con todos sus packs ≤90 días en el robot</span>
-    </h2>
-    <p class="text-[11px] text-[color:var(--ds-text-mute)] mb-2">
-      Tildados por defecto — destildá los falsos positivos (artículos que ya existían y se reabastecieron).</p>
-    <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)]">
-      <table class="w-full text-sm">
-        <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
-          <tr>
-            <th class="px-3 py-2 w-8 text-center">¿Nuevo?</th>
-            <th class="text-left px-3 py-2">Producto</th>
-            <th class="text-left px-3 py-2">EAN</th>
-            <th class="text-left px-3 py-2">Fecha alta est.</th>
-            <th class="text-left px-3 py-2">Detectado</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for aid, r in nuevos_map.items() %}
-          <tr class="border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]"
-              id="rn-row-{{ loop.index }}">
-            <td class="px-3 py-1.5 text-center">
-              <input type="checkbox" class="rowa-nuevo-chk cursor-pointer"
-                     data-aid="{{ aid }}"
-                     {{ 'checked' if r.confirmado else '' }}
-                     onchange="rowaToggleNuevo(this)"></td>
-            <td class="px-3 py-1.5 font-medium">{{ r.nombre or '—' }}</td>
-            <td class="px-3 py-1.5 font-mono text-xs text-[color:var(--ds-text-mute)]">{{ r.ean or '—' }}</td>
-            <td class="px-3 py-1.5 text-xs" id="rn-fecha-{{ aid | replace('/', '-') }}">
-              {{ r.fecha_alta.strftime('%Y-%m-%d') if r.fecha_alta else '—' }}</td>
-            <td class="px-3 py-1.5 text-xs text-[color:var(--ds-text-mute)]">
-              {{ r.detectado_en.strftime('%Y-%m-%d') if r.detectado_en else '—' }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -299,9 +269,14 @@
       chk.disabled = false;
       if (!d.ok) { chk.checked = !chk.checked; return; }
       chk.checked = d.confirmado;
-      // Actualizar fecha en la tabla
+      // Actualizar fecha en la tabla (ISO YYYY-MM-DD → DD-MM-YY)
       var fd = document.getElementById('rn-fecha-' + aid.replace(/\//g, '-'));
-      if (fd) fd.textContent = d.fecha_alta || '—';
+      if (fd) {
+        if (d.fecha_alta) {
+          var p = d.fecha_alta.split('-');
+          fd.textContent = p[2] + '-' + p[1] + '-' + p[0].slice(2);
+        } else { fd.textContent = ''; }
+      }
       // Mostrar/ocultar badge en la tabla de acción
       document.querySelectorAll('.rowa-nuevo-badge[data-aid="' + aid + '"]').forEach(function(b) {
         b.style.display = d.confirmado ? '' : 'none';
