@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-20 17:26 · rama `feat/rowa-nuevos-tabla` · commit `b47d519`
+Generado: 2026-08-20 18:48 · rama `feat/rowa-nuevos-tabla` · commit `df09cfd`
 
 **783 rutas** en 75 archivos · **126 modelos** · **21 syncs** · **32 services** · **11 parsers**
 
@@ -389,32 +389,32 @@ Generado: 2026-08-20 17:26 · rama `feat/rowa-nuevos-tabla` · commit `b47d519`
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/api/drogueria/<int:prov_id>/pedidos-emitidos` | GET | [`api_drogueria_pedidos_emitidos`](../routes/compras_dia.py#L586) |
-| `/api/lab-drog/asignar-bulk` | POST | [`api_lab_drog_asignar_bulk`](../routes/compras_dia.py#L2167) |
-| `/api/lab-drog/toggle` | POST | [`api_lab_drog_toggle`](../routes/compras_dia.py#L2140) |
-| `/api/matriz/drog-config` | POST | [`api_matriz_drog_config`](../routes/compras_dia.py#L2121) |
-| `/api/matriz/drog-visible` | POST | [`api_matriz_drog_visible`](../routes/compras_dia.py#L2108) |
+| `/api/lab-drog/asignar-bulk` | POST | [`api_lab_drog_asignar_bulk`](../routes/compras_dia.py#L2172) |
+| `/api/lab-drog/toggle` | POST | [`api_lab_drog_toggle`](../routes/compras_dia.py#L2145) |
+| `/api/matriz/drog-config` | POST | [`api_matriz_drog_config`](../routes/compras_dia.py#L2126) |
+| `/api/matriz/drog-visible` | POST | [`api_matriz_drog_visible`](../routes/compras_dia.py#L2113) |
 | `/api/pedido-emitido/<int:pedido_id>` | DELETE | [`api_pedido_emitido_borrar`](../routes/compras_dia.py#L652) |
-| `/api/pedido-emitido/<int:pedido_id>/export-plantilla` | GET | [`api_pedido_emitido_export_plantilla`](../routes/compras_dia.py#L2578) |
-| `/api/pedido-emitido/<int:pedido_id>/export-xls` | GET | [`api_pedido_emitido_export_xls`](../routes/compras_dia.py#L2803) |
-| `/api/pedido-emitido/<int:pedido_id>/importar-xls` | POST | [`api_pedido_importar_xls`](../routes/compras_dia.py#L2510) |
-| `/api/pedido-emitido/<int:pedido_id>/mapear-ean` | POST | [`api_pedido_mapear_ean`](../routes/compras_dia.py#L2441) |
-| `/api/pedido-emitido/<int:pedido_id>/recepcion` | POST | [`api_pedido_recepcion`](../routes/compras_dia.py#L2402) |
+| `/api/pedido-emitido/<int:pedido_id>/export-plantilla` | GET | [`api_pedido_emitido_export_plantilla`](../routes/compras_dia.py#L2583) |
+| `/api/pedido-emitido/<int:pedido_id>/export-xls` | GET | [`api_pedido_emitido_export_xls`](../routes/compras_dia.py#L2808) |
+| `/api/pedido-emitido/<int:pedido_id>/importar-xls` | POST | [`api_pedido_importar_xls`](../routes/compras_dia.py#L2515) |
+| `/api/pedido-emitido/<int:pedido_id>/mapear-ean` | POST | [`api_pedido_mapear_ean`](../routes/compras_dia.py#L2446) |
+| `/api/pedido-emitido/<int:pedido_id>/recepcion` | POST | [`api_pedido_recepcion`](../routes/compras_dia.py#L2407) |
 | `/api/pedidos-emitidos/todos` | GET | [`api_pedidos_emitidos_todos`](../routes/compras_dia.py#L610) |
-| `/api/pedidos/dia/buscar-producto` | GET | [`api_compras_dia_buscar_producto`](../routes/compras_dia.py#L1844) |
+| `/api/pedidos/dia/buscar-producto` | GET | [`api_compras_dia_buscar_producto`](../routes/compras_dia.py#L1849) |
 | `/api/pedidos/dia/countdown` | GET | [`api_compras_dia_countdown`](../routes/compras_dia.py#L666) |
-| `/api/pedidos/dia/emitir` | POST | [`api_compras_dia_emitir`](../routes/compras_dia.py#L2206) |
+| `/api/pedidos/dia/emitir` | POST | [`api_compras_dia_emitir`](../routes/compras_dia.py#L2211) |
 | `/api/pedidos/dia/horarios/<int:proveedor_id>` | GET/POST/DELETE | [`api_horarios_crud`](../routes/compras_dia.py#L688) |
-| `/api/producto/<int:prod_id>/excluir` | POST | [`api_producto_excluir`](../routes/compras_dia.py#L2917) |
-| `/api/producto/<int:prod_id>/reactivar` | POST | [`api_producto_reactivar`](../routes/compras_dia.py#L2938) |
-| `/api/usuarios-pedidos` | GET/POST | [`api_usuarios_pedidos`](../routes/compras_dia.py#L2876) |
-| `/api/usuarios-pedidos/<int:uid>` | DELETE | [`api_usuarios_pedidos_borrar`](../routes/compras_dia.py#L2906) |
-| `/compras/armar/exportar-minimos` | GET | [`compras_armar_exportar_minimos`](../routes/compras_dia.py#L1652) |
+| `/api/producto/<int:prod_id>/excluir` | POST | [`api_producto_excluir`](../routes/compras_dia.py#L2922) |
+| `/api/producto/<int:prod_id>/reactivar` | POST | [`api_producto_reactivar`](../routes/compras_dia.py#L2943) |
+| `/api/usuarios-pedidos` | GET/POST | [`api_usuarios_pedidos`](../routes/compras_dia.py#L2881) |
+| `/api/usuarios-pedidos/<int:uid>` | DELETE | [`api_usuarios_pedidos_borrar`](../routes/compras_dia.py#L2911) |
+| `/compras/armar/exportar-minimos` | GET | [`compras_armar_exportar_minimos`](../routes/compras_dia.py#L1657) |
 | `/compras/laboratorio` | GET | [`compras_laboratorio`](../routes/compras_dia.py#L375) |
 | `/compras/laboratorio/<int:obs_lab_id>/comprar-modulos` | POST | [`compras_laboratorio_comprar_modulos`](../routes/compras_dia.py#L465) |
-| `/compras/labs-drogerias` | GET | [`labs_drogerias_matriz`](../routes/compras_dia.py#L2041) |
-| `/compras/multi-lab` | GET | [`compras_multi_lab`](../routes/compras_dia.py#L1607) |
-| `/pedidos-emitidos` | GET | [`pedidos_emitidos_list`](../routes/compras_dia.py#L2287) |
-| `/pedidos-emitidos/<int:pedido_id>` | GET | [`pedido_emitido_detalle`](../routes/compras_dia.py#L2337) |
+| `/compras/labs-drogerias` | GET | [`labs_drogerias_matriz`](../routes/compras_dia.py#L2046) |
+| `/compras/multi-lab` | GET | [`compras_multi_lab`](../routes/compras_dia.py#L1612) |
+| `/pedidos-emitidos` | GET | [`pedidos_emitidos_list`](../routes/compras_dia.py#L2292) |
+| `/pedidos-emitidos/<int:pedido_id>` | GET | [`pedido_emitido_detalle`](../routes/compras_dia.py#L2342) |
 | `/pedidos/dia` | GET | [`compras_dia`](../routes/compras_dia.py#L129) |
 | `/pedidos/dia/armar` | GET | [`compras_dia_armar`](../routes/compras_dia.py#L747) |
 
@@ -1254,15 +1254,15 @@ Generado: 2026-08-20 17:26 · rama `feat/rowa-nuevos-tabla` · commit `b47d519`
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L80) |
-| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L469) |
+| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L483) |
 | `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L369) |
-| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L436) |
+| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L450) |
 | `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L265) |
 | `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L158) |
 | `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L211) |
 | `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L187) |
 | `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L273) |
-| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L546) |
+| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L560) |
 
 ### `routes/sucursales.py`
 
@@ -1297,12 +1297,12 @@ Generado: 2026-08-20 17:26 · rama `feat/rowa-nuevos-tabla` · commit `b47d519`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/config/tipos-pedido` | GET | [`tipos_pedido_list`](../routes/tipos_pedido.py#L128) |
-| `/config/tipos-pedido/<slug>/edit` | GET/POST | [`tipos_pedido_edit`](../routes/tipos_pedido.py#L140) |
-| `/config/tipos-pedido/<slug>/probar` | POST | [`tipos_pedido_probar`](../routes/tipos_pedido.py#L213) |
-| `/config/tipos-pedido/<slug>/restaurar` | POST | [`tipos_pedido_restaurar`](../routes/tipos_pedido.py#L268) |
-| `/config/tipos-pedido/<slug>/toggle` | POST | [`tipos_pedido_toggle`](../routes/tipos_pedido.py#L201) |
-| `/config/tipos-pedido/sim-producto` | GET | [`tipos_pedido_sim_producto`](../routes/tipos_pedido.py#L236) |
+| `/config/tipos-pedido` | GET | [`tipos_pedido_list`](../routes/tipos_pedido.py#L131) |
+| `/config/tipos-pedido/<slug>/edit` | GET/POST | [`tipos_pedido_edit`](../routes/tipos_pedido.py#L143) |
+| `/config/tipos-pedido/<slug>/probar` | POST | [`tipos_pedido_probar`](../routes/tipos_pedido.py#L219) |
+| `/config/tipos-pedido/<slug>/restaurar` | POST | [`tipos_pedido_restaurar`](../routes/tipos_pedido.py#L275) |
+| `/config/tipos-pedido/<slug>/toggle` | POST | [`tipos_pedido_toggle`](../routes/tipos_pedido.py#L207) |
+| `/config/tipos-pedido/sim-producto` | GET | [`tipos_pedido_sim_producto`](../routes/tipos_pedido.py#L243) |
 
 ### `routes/transferencias.py`
 
