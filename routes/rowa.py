@@ -541,3 +541,31 @@ def init_app(app):
             scatter_all=scatter_all,
             cobertura_umbral=COBERTURA_UMBRAL,
         )
+
+    @app.route("/rowa/snapshot/auto")
+    def rowa_snapshot_auto():
+        """Endpoint para cron externo: toma un snapshot del robot si el último
+        tiene más de 50 minutos. Sin login_required — acceso solo desde LAN."""
+        import os
+        token = os.environ.get("ROWA_SNAPSHOT_TOKEN", "")
+        if token and request.args.get("token") != token:
+            return jsonify({"ok": False, "error": "token inválido"}), 403
+        try:
+            data = _cargar()
+        except (RowaError, OSError) as e:
+            return jsonify({"ok": False, "error": f"robot no disponible: {e}"}), 502
+
+        with get_db() as session:
+            ultimo = (
+                session.query(RowaSnapshot.tomado_en)
+                .order_by(RowaSnapshot.tomado_en.desc())
+                .first()
+            )
+            ahora = datetime.now()
+            if ultimo and (ahora - ultimo[0]).total_seconds() < 3000:  # 50 min
+                return jsonify({"ok": True, "skipped": True,
+                                "ultimo": ultimo[0].isoformat()})
+            ts = _tomar_snapshot(session, data["filas"])
+
+        return jsonify({"ok": True, "skipped": False, "ts": ts.isoformat(),
+                        "articulos": len(data["filas"])})
