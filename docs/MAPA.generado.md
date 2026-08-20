@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-20 18:48 · rama `feat/rowa-nuevos-tabla` · commit `df09cfd`
+Generado: 2026-08-20 19:18 · rama `feat/rowa-nuevos-tabla` · commit `b1f09f3`
 
-**783 rutas** en 75 archivos · **126 modelos** · **21 syncs** · **32 services** · **11 parsers**
+**784 rutas** en 76 archivos · **126 modelos** · **21 syncs** · **32 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -695,6 +695,12 @@ Generado: 2026-08-20 18:48 · rama `feat/rowa-nuevos-tabla` · commit `df09cfd`
 | `/api/flujo/aplicar-dto-default` | POST | [`flujo_aplicar_dto_default`](../routes/flujo_fondos.py#L189) |
 | `/api/flujo/cronograma-precarga` | GET | [`api_flujo_cronograma_precarga`](../routes/flujo_fondos.py#L202) |
 | `/finanzas/flujo` | GET | [`flujo_fondos`](../routes/flujo_fondos.py#L37) |
+
+### `routes/gerente.py`
+
+| Ruta | Métodos | Función |
+|---|---|---|
+| `/gerente` | GET | [`gerente_index`](../routes/gerente.py#L39) |
 
 ### `routes/help.py`
 

@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% set nav_active = "gerente" %}
+{% block title %}Panel del gerente{% endblock %}
+
+{% block main %}
+<div class="p-4 md:p-6 max-w-[1200px] mx-auto space-y-6">
+
+  {# ── Header ── #}
+  <div class="flex flex-wrap items-end justify-between gap-2">
+    <div>
+      <h1 class="text-2xl font-bold">{{ saludo }} 👋</h1>
+      <p class="text-sm text-[#6d9082] mt-0.5">{{ fecha_hoy }}</p>
+    </div>
+  </div>
+
+  {# ── KPIs ── #}
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+
+    {# Bajo mínimo #}
+    <a href="{{ url_for('informe_bajo_minimo') }}"
+       class="rounded-xl border p-4 flex flex-col gap-1 transition hover:brightness-110 cursor-pointer
+              {% if n_bajo_min > 0 %}border-rose-500/40 bg-rose-500/[0.07]{% else %}border-emerald-500/30 bg-emerald-500/[0.05]{% endif %}">
+      <div class="text-xs font-semibold uppercase tracking-wide
+                  {% if n_bajo_min > 0 %}text-rose-400{% else %}text-emerald-400{% endif %}">
+        Bajo mínimo
+      </div>
+      <div class="text-3xl font-bold {% if n_bajo_min > 0 %}text-rose-300{% else %}text-emerald-300{% endif %}">
+        {{ n_bajo_min }}
+      </div>
+      <div class="text-[11px] text-[#6d9082] mt-auto">
+        {% if n_bajo_min > 0 %}
+          ≈ ${{ perdida_estimada | int | string | replace('0','0') }} pérdida est.
+        {% else %}
+          Todo en orden ✓
+        {% endif %}
+      </div>
+    </a>
+
+    {# Quiebres inminentes #}
+    <a href="{{ url_for('informe_bajo_minimo') }}"
+       class="rounded-xl border p-4 flex flex-col gap-1 transition hover:brightness-110 cursor-pointer
+              {% if n_quiebres_7d > 0 %}border-amber-500/40 bg-amber-500/[0.07]{% else %}border-emerald-500/30 bg-emerald-500/[0.05]{% endif %}">
+      <div class="text-xs font-semibold uppercase tracking-wide
+                  {% if n_quiebres_7d > 0 %}text-amber-400{% else %}text-emerald-400{% endif %}">
+        Quiebres ≤7 días
+      </div>
+      <div class="text-3xl font-bold {% if n_quiebres_7d > 0 %}text-amber-300{% else %}text-emerald-300{% endif %}">
+        {{ n_quiebres_7d }}
+      </div>
+      <div class="text-[11px] text-[#6d9082] mt-auto">
+        {% if n_quiebres_7d > 0 %}productos con stock crítico{% else %}Sin riesgo inmediato{% endif %}
+      </div>
+    </a>
+
+    {# Facturación del mes #}
+    <div class="rounded-xl border border-[#214635] bg-white/[0.02] p-4 flex flex-col gap-1">
+      <div class="text-xs font-semibold uppercase tracking-wide text-[#6d9082]">
+        Facturación {{ mes_label }}
+      </div>
+      <div class="text-2xl font-bold truncate">
+        ${{ facturacion_mes | round(0) | int | arg_currency }}
+      </div>
+      <div class="text-[11px] mt-auto
+        {% if delta_pct is not none %}
+          {% if delta_pct >= 0 %}text-emerald-400{% else %}text-rose-400{% endif %}
+        {% else %}text-[#6d9082]{% endif %}">
+        {% if delta_pct is not none %}
+          {% if delta_pct >= 0 %}▲{% else %}▼{% endif %}
+          {{ delta_pct | abs | round(1) }}% vs mismo mes año anterior
+        {% else %}
+          Sin comparación disponible
+        {% endif %}
+      </div>
+    </div>
+
+    {# Robot Rowa #}
+    <a href="{{ url_for('rowa_dashboard') }}"
+       class="rounded-xl border p-4 flex flex-col gap-1 transition hover:brightness-110 cursor-pointer
+              {% if rowa_n_sin_stock > 0 %}border-amber-500/40 bg-amber-500/[0.07]{% else %}border-[#214635] bg-white/[0.02]{% endif %}">
+      <div class="text-xs font-semibold uppercase tracking-wide text-[#6d9082]">
+        Robot Rowa
+      </div>
+      {% if rowa_ts %}
+        <div class="text-2xl font-bold {% if rowa_n_sin_stock > 0 %}text-amber-300{% endif %}">
+          {{ rowa_n_sin_stock }} <span class="text-base font-normal text-[#6d9082]">sin stock</span>
+        </div>
+        <div class="text-[11px] text-[#6d9082] mt-auto">
+          {{ rowa_n_art }} art · hace {{ rowa_horas }}h
+        </div>
+      {% else %}
+        <div class="text-sm text-[#6d9082] mt-2">Sin datos aún</div>
+        <div class="text-[11px] text-[#6d9082] mt-auto">Snapshot pendiente</div>
+      {% endif %}
+    </a>
+
+  </div>
+
+  {# ── Alertas de quiebre ── #}
+  {% if alertas %}
+  <div class="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-amber-500/20 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-amber-300">⚠ Quiebres inminentes — cobertura ≤ 7 días</h2>
+      <a href="{{ url_for('informe_bajo_minimo') }}"
+         class="text-[11px] text-amber-400 hover:text-amber-200">Ver todos →</a>
+    </div>
+    <table class="w-full text-xs">
+      <thead class="text-[10px] uppercase text-[#6d9082] bg-black/20">
+        <tr>
+          <th class="text-left px-4 py-2">Producto</th>
+          <th class="text-left px-4 py-2 hidden sm:table-cell">Laboratorio</th>
+          <th class="text-right px-4 py-2">Stock</th>
+          <th class="text-right px-4 py-2">Cobertura</th>
+          <th class="px-4 py-2"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in alertas %}
+        <tr class="border-t border-amber-500/10 hover:bg-white/[0.02]">
+          <td class="px-4 py-2 font-medium">{{ a.desc }}</td>
+          <td class="px-4 py-2 text-[#6d9082] hidden sm:table-cell">{{ a.lab }}</td>
+          <td class="px-4 py-2 text-right font-mono">{{ a.stock }}</td>
+          <td class="px-4 py-2 text-right font-mono font-semibold
+                     {% if a.dias <= 2 %}text-rose-400{% elif a.dias <= 5 %}text-amber-400{% else %}text-yellow-400{% endif %}">
+            {{ a.dias }}d
+          </td>
+          <td class="px-4 py-2 text-right">
+            <a href="{{ url_for('consulta_producto') }}?q={{ a.desc }}"
+               class="text-[10px] text-[#6d9082] hover:text-white">ver →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {# ── Panel de atajos ── #}
+  <div>
+    <h2 class="text-xs font-bold uppercase tracking-widest text-[#6d9082] mb-3">Accesos rápidos</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+
+      {# Compras #}
+      <div class="rounded-xl border border-[#214635] bg-white/[0.02] p-3">
+        <p class="text-[10px] font-bold uppercase tracking-widest text-emerald-500 mb-2">🛒 Compras</p>
+        <div class="space-y-1">
+          <a href="{{ url_for('compras_dia') }}" class="atajo-btn">Pedido de reposición</a>
+          <a href="{{ url_for('pedido_prueba') }}" class="atajo-btn">Planificación estacional</a>
+          <a href="{{ url_for('purchase_index') }}" class="atajo-btn">Importar factura</a>
+          <a href="{{ url_for('transferencias') }}" class="atajo-btn">Transferencias entre sucursales</a>
+          <a href="{{ url_for('filtro_drogueria') }}" class="atajo-btn">Filtro droguería</a>
+          <a href="{{ url_for('ofertas_import_page') }}" class="atajo-btn">Importar ofertas</a>
+        </div>
+      </div>
+
+      {# Informes de stock #}
+      <div class="rounded-xl border border-[#214635] bg-white/[0.02] p-3">
+        <p class="text-[10px] font-bold uppercase tracking-widest text-emerald-500 mb-2">📊 Stock e informes</p>
+        <div class="space-y-1">
+          <a href="{{ url_for('informe_bajo_minimo') }}" class="atajo-btn">Bajo mínimo completo</a>
+          <a href="{{ url_for('informe_correcciones_minimos') }}" class="atajo-btn">Corrección de mínimos</a>
+          <a href="{{ url_for('dashboard') }}" class="atajo-btn">Dashboard operativo</a>
+          <a href="{{ url_for('bi_tablero') }}" class="atajo-btn">Tablero BI</a>
+          <a href="{{ url_for('informe_cadencias_resumen') }}" class="atajo-btn">Cadencias por lab</a>
+          <a href="{{ url_for('informe_drogas_sin_alternativa') }}" class="atajo-btn">Drogas sin alternativa</a>
+        </div>
+      </div>
+
+      {# Ventas #}
+      <div class="rounded-xl border border-[#214635] bg-white/[0.02] p-3">
+        <p class="text-[10px] font-bold uppercase tracking-widest text-emerald-500 mb-2">📈 Ventas</p>
+        <div class="space-y-1">
+          <a href="{{ url_for('informe_ventas_comparativa') }}" class="atajo-btn">Comparativa YoY</a>
+          <a href="{{ url_for('informes_ventas_vendedor') }}" class="atajo-btn">Ventas por vendedor</a>
+          <a href="{{ url_for('informe_estacionalidad_drogas') }}" class="atajo-btn">Estacionalidad drogas</a>
+          <a href="{{ url_for('planificacion_compras_mes') }}" class="atajo-btn">Planificación por capital</a>
+          <a href="{{ url_for('comparativa_ventas') }}" class="atajo-btn">Comparativa sucursales</a>
+        </div>
+      </div>
+
+      {# Robot + Consultas #}
+      <div class="rounded-xl border border-[#214635] bg-white/[0.02] p-3">
+        <p class="text-[10px] font-bold uppercase tracking-widest text-emerald-500 mb-2">🤖 Robot · Consultas</p>
+        <div class="space-y-1">
+          <a href="{{ url_for('rowa_dashboard') }}" class="atajo-btn">Dashboard robot</a>
+          <a href="{{ url_for('rowa_analisis') }}" class="atajo-btn">Análisis robot</a>
+          <a href="{{ url_for('rowa_carga') }}" class="atajo-btn">Carga robot</a>
+          <a href="{{ url_for('consulta_droga') }}" class="atajo-btn">Consulta por droga</a>
+          <a href="{{ url_for('consulta_lab') }}" class="atajo-btn">Consulta por laboratorio</a>
+          <a href="{{ url_for('tipos_pedido_list') }}" class="atajo-btn">Config tipos de pedido</a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<style>
+.atajo-btn {
+  display: block;
+  padding: .35rem .6rem;
+  border-radius: .4rem;
+  font-size: 12px;
+  color: #a9ccbd;
+  transition: background .12s, color .12s;
+}
+.atajo-btn:hover {
+  background: rgba(95,230,188,.07);
+  color: #eafaf3;
+}
+</style>
+{% endblock %}
