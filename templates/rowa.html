@@ -87,7 +87,8 @@
       <input id="rowa-buscar" type="search" placeholder="🔎 Buscar producto…" oninput="rowaFiltrar()"
              class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)] w-52">
       <select id="rowa-rotacion" onchange="rowaFiltrar()"
-              class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)]">
+              class="px-2 py-1 text-sm rounded border border-[color:var(--ds-surface-border)]"
+              style="background:#2c2c2e;color:inherit">
         <option value="">Toda rotación</option>
         <option value="Durmiente">Durmiente (0 ventas)</option>
         <option value="Baja">Baja</option>
@@ -95,7 +96,8 @@
         <option value="Alta">Alta</option>
       </select>
       <select id="rowa-reco" onchange="rowaFiltrar()"
-              class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)]">
+              class="px-2 py-1 text-sm rounded border border-[color:var(--ds-surface-border)]"
+              style="background:#2c2c2e;color:inherit">
         <option value="">Toda recomendación</option>
         <option value="Candidato a sacar del robot">Candidato a sacar</option>
         <option value="Reducir en robot (lento, ocupa lugar)">Reducir en robot</option>
@@ -103,7 +105,9 @@
         <option value="Revisar: 1u parada &gt;180d">Revisar 1u parada</option>
       </select>
       <label class="flex items-center gap-1 text-xs text-[color:var(--ds-text-mute)] cursor-pointer">
-        <input id="rowa-frio" type="checkbox" onchange="rowaFiltrar()"> ❄ Solo heladera</label>
+        <input id="rowa-nuevo" type="checkbox" onchange="rowaFiltrar()"> ✨ Solo nuevos (?)
+        {% if n_nuevos %}<span class="ml-1 text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded px-1">{{ n_nuevos }}</span>{% endif %}
+      </label>
       <span id="rowa-count" class="text-xs text-[color:var(--ds-text-mute)] ml-auto"></span>
     </div>
 
@@ -123,18 +127,25 @@
         </thead>
         <tbody>
           {% for f in accion %}
+          {% set _nr = nuevos_map.get(f.article_id) %}
           <tr class="rowa-fila border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]"
               data-nombre="{{ (f.nombre_obs or f.nombre or '')|lower }}"
               data-rotacion="{{ f.rotacion }}"
               data-reco="{{ f.recomendacion }}"
-              data-frio="{{ '1' if f.requiere_frio else '0' }}">
+              data-frio="{{ '1' if f.requiere_frio else '0' }}"
+              data-nuevo="{{ '1' if f.es_nuevo else '0' }}">
             <td class="px-3 py-1.5">
               {% if f.producto_observer %}<button type="button" onclick="rowaGrafico(this)"
                  data-obs="{{ f.producto_observer }}" data-nombre="{{ (f.nombre_obs or f.nombre or '') }}"
                  title="Ver movimiento (ventas 12m + 30d)"
                  class="mr-1 align-middle text-[color:var(--ds-mint)] hover:opacity-70">📊</button>{% endif %}
               {{ (f.nombre_obs or f.nombre or '')[:36] }}
-              {% if f.requiere_frio %}<span title="Cadena de frío">❄</span>{% endif %}</td>
+              {% if f.requiere_frio %}<span title="Cadena de frío">❄</span>{% endif %}
+              {% if f.es_nuevo %}
+              <span class="rowa-nuevo-badge inline-block text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded px-1 py-0 ml-1 align-middle"
+                    data-aid="{{ f.article_id }}"
+                    style="{{ '' if not _nr or _nr.confirmado else 'display:none' }}">NUEVO?</span>
+              {% endif %}</td>
             <td class="px-3 py-1.5">{{ f.rotacion }}</td>
             <td class="px-3 py-1.5 text-right font-mono">{{ f.unid_mes_est if f.unid_mes_est is not none else '—' }}</td>
             <td class="px-3 py-1.5 text-right">{{ f.cantidad }}</td>
@@ -168,6 +179,49 @@
             <td class="px-3 py-1.5">{{ f.prox_venc.strftime('%Y-%m-%d') if f.prox_venc }}</td>
             <td class="px-3 py-1.5 text-right {% if f.dias_prox_venc < 30 %}text-rose-400 font-bold{% endif %}">{{ f.dias_prox_venc }}</td>
             <td class="px-3 py-1.5 text-right">{{ f.packs_venc_alerta }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ---- Nuevas incorporaciones ---- #}
+  {% if nuevos_map %}
+  <section class="mb-8">
+    <h2 class="text-sm font-bold mb-1 flex items-center gap-2">✨ Nuevas incorporaciones
+      <span class="text-[11px] font-normal text-[color:var(--ds-text-mute)]">
+        artículos detectados con todos sus packs ≤90 días en el robot</span>
+    </h2>
+    <p class="text-[11px] text-[color:var(--ds-text-mute)] mb-2">
+      Tildados por defecto — destildá los falsos positivos (artículos que ya existían y se reabastecieron).</p>
+    <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)]">
+      <table class="w-full text-sm">
+        <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
+          <tr>
+            <th class="px-3 py-2 w-8 text-center">¿Nuevo?</th>
+            <th class="text-left px-3 py-2">Producto</th>
+            <th class="text-left px-3 py-2">EAN</th>
+            <th class="text-left px-3 py-2">Fecha alta est.</th>
+            <th class="text-left px-3 py-2">Detectado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for aid, r in nuevos_map.items() %}
+          <tr class="border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]"
+              id="rn-row-{{ loop.index }}">
+            <td class="px-3 py-1.5 text-center">
+              <input type="checkbox" class="rowa-nuevo-chk cursor-pointer"
+                     data-aid="{{ aid }}"
+                     {{ 'checked' if r.confirmado else '' }}
+                     onchange="rowaToggleNuevo(this)"></td>
+            <td class="px-3 py-1.5 font-medium">{{ r.nombre or '—' }}</td>
+            <td class="px-3 py-1.5 font-mono text-xs text-[color:var(--ds-text-mute)]">{{ r.ean or '—' }}</td>
+            <td class="px-3 py-1.5 text-xs" id="rn-fecha-{{ aid | replace('/', '-') }}">
+              {{ r.fecha_alta.strftime('%Y-%m-%d') if r.fecha_alta else '—' }}</td>
+            <td class="px-3 py-1.5 text-xs text-[color:var(--ds-text-mute)]">
+              {{ r.detectado_en.strftime('%Y-%m-%d') if r.detectado_en else '—' }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -212,24 +266,49 @@
   {# ---- Filtro client-side de la tabla "qué sacar/reducir" ---- #}
   <script>
   function rowaFiltrar() {
-    var q    = (document.getElementById('rowa-buscar').value || '').toLowerCase();
-    var rot  = document.getElementById('rowa-rotacion').value;
-    var reco = document.getElementById('rowa-reco').value;
-    var frio = document.getElementById('rowa-frio').checked;
+    var q     = (document.getElementById('rowa-buscar').value || '').toLowerCase();
+    var rot   = document.getElementById('rowa-rotacion').value;
+    var reco  = document.getElementById('rowa-reco').value;
+    var nuevo = document.getElementById('rowa-nuevo').checked;
     var vis = 0, total = 0;
     document.querySelectorAll('tr.rowa-fila').forEach(function (tr) {
       total++;
-      var ok = (!q    || (tr.dataset.nombre || '').indexOf(q) !== -1)
-            && (!rot  || tr.dataset.rotacion === rot)
-            && (!reco || tr.dataset.reco === reco)
-            && (!frio || tr.dataset.frio === '1');
+      var ok = (!q     || (tr.dataset.nombre || '').indexOf(q) !== -1)
+            && (!rot   || tr.dataset.rotacion === rot)
+            && (!reco  || tr.dataset.reco === reco)
+            && (!nuevo || tr.dataset.nuevo === '1');
       tr.style.display = ok ? '' : 'none';
       if (ok) vis++;
     });
     var c = document.getElementById('rowa-count');
     if (c) c.textContent = vis + ' de ' + total;
   }
-  document.addEventListener('DOMContentLoaded', rowaFiltrar);
+  document.addEventListener('DOMContentLoaded', function() {
+    if (document.getElementById('rowa-buscar')) rowaFiltrar();
+  });
+
+  function rowaToggleNuevo(chk) {
+    var aid = chk.dataset.aid;
+    chk.disabled = true;
+    fetch('/rowa/nuevo/' + encodeURIComponent(aid) + '/toggle', {
+      method: 'POST',
+      headers: {'X-Requested-With': 'XMLHttpRequest'}
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      chk.disabled = false;
+      if (!d.ok) { chk.checked = !chk.checked; return; }
+      chk.checked = d.confirmado;
+      // Actualizar fecha en la tabla
+      var fd = document.getElementById('rn-fecha-' + aid.replace(/\//g, '-'));
+      if (fd) fd.textContent = d.fecha_alta || '—';
+      // Mostrar/ocultar badge en la tabla de acción
+      document.querySelectorAll('.rowa-nuevo-badge[data-aid="' + aid + '"]').forEach(function(b) {
+        b.style.display = d.confirmado ? '' : 'none';
+      });
+    })
+    .catch(function() { chk.disabled = false; chk.checked = !chk.checked; });
+  }
 
   // Botón 📊 por fila: carga el gráfico dual del artículo y hace scroll al panel.
   function rowaGrafico(btn) {

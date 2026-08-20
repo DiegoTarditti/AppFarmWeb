@@ -85,6 +85,7 @@ class ArticuloAnalizado:
     al_deposito: int                 # cuántos mandar al depósito
     requiere_frio: bool = False      # se completa desde ObServer
     packs_venc_alerta: int = 0       # packs que vencen dentro de VENC_ALERTA_D
+    es_nuevo: bool = False           # proxy: todos los packs entraron hace ≤90d → artículo nuevo en el robot
     # -- se completan al cruzar con ObServer (services/rowa_observer.py) --
     producto_observer: int | None = None
     nombre_obs: str | None = None    # descripción del catálogo ObServer
@@ -186,6 +187,7 @@ def analizar_articulo(art, hoy: date | None = None) -> ArticuloAnalizado | None:
         sug_en_robot=sug,
         al_deposito=depo,
         packs_venc_alerta=packs_venc_alerta,
+        es_nuevo=bool(antigs) and antig_max <= 90,
     )
 
 

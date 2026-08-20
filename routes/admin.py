@@ -812,6 +812,9 @@ def init_app(app):
         'restart-cajas': '💳 AppCajas — Restart',
         'logs-cajas': '💳 AppCajas — Logs (50 líneas)',
         'status-cajas': '💳 AppCajas — Estado del service',
+        # Cartelera Badia (uvicorn systemd, API en CARTELERA_URL del agente)
+        'actualizar-cartelera': '📺 Cartelera — Actualizar (git pull + restart)',
+        'restart-cartelera': '📺 Cartelera — Restart',
     }
 
     @app.route('/admin/panel')

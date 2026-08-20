@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-19 21:46 · rama `feat/rowa-limpieza` · commit `aa450d3`
+Generado: 2026-08-20 15:36 · rama `feat/rowa-nuevos-tabla` · commit `fd1beb6`
 
-**778 rutas** en 75 archivos · **123 modelos** · **21 syncs** · **32 services** · **11 parsers**
+**779 rutas** en 75 archivos · **124 modelos** · **21 syncs** · **32 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -151,6 +151,7 @@ Generado: 2026-08-19 21:46 · rama `feat/rowa-limpieza` · commit `aa450d3`
 | `rendicion_lote` | `RendicionLote` | [2470](../database.py#L2470) |
 | `respuestas_rapidas` | `RespuestaRapida` | [2954](../database.py#L2954) |
 | `rol_filtro_obra_social` | `RolFiltroObraSocial` | [2582](../database.py#L2582) |
+| `rowa_nuevos` | `RowaNuevo` | [3117](../database.py#L3117) |
 | `rutas_reparto` | `RutaReparto` | [795](../database.py#L795) |
 | `stock_differences` | `StockDifference` | [1787](../database.py#L1787) |
 | `sucursales` | `Sucursal` | [1300](../database.py#L1300) |
@@ -176,12 +177,12 @@ Generado: 2026-08-19 21:46 · rama `feat/rowa-limpieza` · commit `aa450d3`
 | `/admin/cleanup-inactivos` | GET/POST | [`admin_cleanup_inactivos`](../routes/admin.py#L737) |
 | `/admin/cron-log` | GET | [`admin_cron_log`](../routes/admin.py#L403) |
 | `/admin/health` | GET | [`admin_health`](../routes/admin.py#L65) |
-| `/admin/panel` | GET | [`admin_panel`](../routes/admin.py#L819) |
-| `/admin/panel/comandos` | POST | [`admin_panel_encolar`](../routes/admin.py#L831) |
-| `/admin/panel/comandos/recientes` | GET | [`admin_panel_recientes`](../routes/admin.py#L858) |
+| `/admin/panel` | GET | [`admin_panel`](../routes/admin.py#L822) |
+| `/admin/panel/comandos` | POST | [`admin_panel_encolar`](../routes/admin.py#L834) |
+| `/admin/panel/comandos/recientes` | GET | [`admin_panel_recientes`](../routes/admin.py#L861) |
 | `/admin/reset-datos` | GET/POST | [`admin_reset_datos`](../routes/admin.py#L763) |
 | `/admin/seed-proveedores` | GET/POST | [`admin_seed_proveedores`](../routes/admin.py#L555) |
-| `/api/admin/actualizar` | POST | [`api_admin_actualizar`](../routes/admin.py#L970) |
+| `/api/admin/actualizar` | POST | [`api_admin_actualizar`](../routes/admin.py#L973) |
 | `/api/admin/alarmas` | GET | [`api_admin_alarmas`](../routes/admin.py#L389) |
 | `/api/admin/alarmas/probar-telegram` | POST | [`api_alarmas_probar_telegram`](../routes/admin.py#L501) |
 | `/api/admin/migrar/backfill-codigos-barra` | POST | [`api_migrar_backfill_codigos_barra`](../routes/admin.py#L571) |
@@ -194,8 +195,8 @@ Generado: 2026-08-19 21:46 · rama `feat/rowa-limpieza` · commit `aa450d3`
 | `/api/cron/recalcular-os-clientes` | POST | [`api_cron_recalcular_os_clientes`](../routes/admin.py#L659) |
 | `/api/dockerpanel-info` | GET | [`api_dockerpanel_info`](../routes/admin.py#L753) |
 | `/api/obs/recalcular-os-clientes` | POST | [`api_recalcular_os_clientes`](../routes/admin.py#L639) |
-| `/api/panel/comandos/<int:cmd_id>/resultado` | POST | [`api_panel_resultado`](../routes/admin.py#L944) |
-| `/api/panel/comandos/proximo` | GET | [`api_panel_proximo`](../routes/admin.py#L890) |
+| `/api/panel/comandos/<int:cmd_id>/resultado` | POST | [`api_panel_resultado`](../routes/admin.py#L947) |
+| `/api/panel/comandos/proximo` | GET | [`api_panel_proximo`](../routes/admin.py#L893) |
 | `/api/pedidos-nuevo/scope` | GET | [`api_pedidos_nuevo_scope`](../routes/admin.py#L290) |
 | `/pedidos-nuevo` | GET | [`pedidos_nuevo`](../routes/admin.py#L272) |
 
@@ -1251,10 +1252,11 @@ Generado: 2026-08-19 21:46 · rama `feat/rowa-limpieza` · commit `aa450d3`
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L80) |
-| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L213) |
-| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L106) |
-| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L159) |
-| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L135) |
+| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L246) |
+| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L139) |
+| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L192) |
+| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L168) |
+| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L254) |
 
 ### `routes/sucursales.py`
 
