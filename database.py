@@ -3114,6 +3114,37 @@ class WebProductoImagen(Base):
     subido_por    = Column(String(80), nullable=True)
 
 
+class RowaSnapshot(Base):
+    """Foto del stock del robot en un momento dado.
+
+    Se toma automáticamente al abrir /rowa/carga. Con dos o más snapshots
+    se puede calcular la tasa de salidas real por artículo (más precisa que
+    el proxy por antigüedad de packs).
+    """
+    __tablename__ = 'rowa_snapshots'
+    id         = Column(Integer, primary_key=True)
+    tomado_en  = Column(DateTime, nullable=False, default=now_ar, index=True)
+    article_id = Column(String(100), nullable=False, index=True)
+    cantidad   = Column(Integer, nullable=False)
+
+
+class RowaCarga(Base):
+    """Registro de cada sesión de carga al robot que hace Lisandro.
+
+    `sesion_id` agrupa todos los artículos cargados en la misma operación.
+    `cantidad` es lo que se metió físicamente al robot en esa sesión.
+    """
+    __tablename__ = 'rowa_cargas'
+    id          = Column(Integer, primary_key=True)
+    sesion_id   = Column(String(36), nullable=False, index=True)  # UUID
+    article_id  = Column(String(100), nullable=False, index=True)
+    ean         = Column(String(20), nullable=True)
+    nombre      = Column(String(300), nullable=True)
+    cantidad    = Column(Integer, nullable=False)
+    cargado_en  = Column(DateTime, nullable=False, default=now_ar, index=True)
+    usuario     = Column(String(80), nullable=True)
+
+
 class RowaNuevo(Base):
     """Memoria de artículos detectados como 'nuevos' en el robot Rowa.
 
@@ -3127,9 +3158,10 @@ class RowaNuevo(Base):
     article_id   = Column(String(100), nullable=False, unique=True, index=True)
     ean          = Column(String(20), nullable=True)
     nombre       = Column(String(300), nullable=True)
-    confirmado   = Column(Boolean, nullable=False, default=True, server_default='true')
-    fecha_alta   = Column(Date, nullable=True)
-    detectado_en = Column(DateTime, default=now_ar)
+    confirmado        = Column(Boolean, nullable=False, default=True, server_default='true')
+    fecha_alta        = Column(Date, nullable=True)
+    detectado_en      = Column(DateTime, default=now_ar)
+    obs_verificado_en = Column(DateTime, nullable=True)  # NULL = solo proxy de packs; seteado = ObServer ya analizó
 
 
 def init_db(database_url=None):
@@ -3193,7 +3225,7 @@ def init_db(database_url=None):
                         'respuestas_rapidas', 'informe_enviado',
                         'api_keys',
                         'web_rubros_publicados', 'web_producto_imagen',
-                        'rowa_nuevos')
+                        'rowa_nuevos', 'rowa_snapshots', 'rowa_cargas')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.

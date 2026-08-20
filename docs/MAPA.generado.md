@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-20 15:36 · rama `feat/rowa-nuevos-tabla` · commit `fd1beb6`
+Generado: 2026-08-20 16:22 · rama `feat/rowa-nuevos-tabla` · commit `5871a18`
 
-**779 rutas** en 75 archivos · **124 modelos** · **21 syncs** · **32 services** · **11 parsers**
+**782 rutas** en 75 archivos · **126 modelos** · **21 syncs** · **32 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -151,7 +151,9 @@ Generado: 2026-08-20 15:36 · rama `feat/rowa-nuevos-tabla` · commit `fd1beb6`
 | `rendicion_lote` | `RendicionLote` | [2470](../database.py#L2470) |
 | `respuestas_rapidas` | `RespuestaRapida` | [2954](../database.py#L2954) |
 | `rol_filtro_obra_social` | `RolFiltroObraSocial` | [2582](../database.py#L2582) |
-| `rowa_nuevos` | `RowaNuevo` | [3117](../database.py#L3117) |
+| `rowa_cargas` | `RowaCarga` | [3131](../database.py#L3131) |
+| `rowa_nuevos` | `RowaNuevo` | [3148](../database.py#L3148) |
+| `rowa_snapshots` | `RowaSnapshot` | [3117](../database.py#L3117) |
 | `rutas_reparto` | `RutaReparto` | [795](../database.py#L795) |
 | `stock_differences` | `StockDifference` | [1787](../database.py#L1787) |
 | `sucursales` | `Sucursal` | [1300](../database.py#L1300) |
@@ -1252,11 +1254,14 @@ Generado: 2026-08-20 15:36 · rama `feat/rowa-nuevos-tabla` · commit `fd1beb6`
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L80) |
-| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L246) |
-| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L139) |
-| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L192) |
-| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L168) |
-| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L254) |
+| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L469) |
+| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L369) |
+| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L436) |
+| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L265) |
+| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L158) |
+| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L211) |
+| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L187) |
+| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L273) |
 
 ### `routes/sucursales.py`
 

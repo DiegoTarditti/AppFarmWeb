@@ -127,6 +127,14 @@ def cruzar_con_observer(session, filas, hoy: date | None = None,
             f.nombre_obs = (p.descripcion_custom or p.descripcion or "").strip() or None
             f.tipo_venta = p.id_tipo_venta_control
 
+        # Refinar es_nuevo con historial real: si el primer mes con venta está
+        # hace más de 6 meses en el array de 12, el producto ya existía en el
+        # mercado antes de entrar al robot → falso positivo del proxy de packs.
+        if f.es_nuevo:
+            nz = next((i for i, v in enumerate(arr) if v > 0), None)
+            if nz is not None and nz < 6:
+                f.es_nuevo = False
+
         # Rotación por ventas reales + recomendación recalculada.
         f.rotacion = _clasificar_por_ventas(unid_mes, rot_alta, rot_media)
         f.rotacion_por_ventas = True

@@ -26,7 +26,7 @@ from datetime import date, datetime, timedelta
 from flask import Response, abort, jsonify, render_template, request
 from flask_login import login_required
 
-from database import RowaNuevo, get_db
+from database import RowaCarga, RowaNuevo, RowaSnapshot, get_db
 from services.rowa_analisis import analizar_alturas, analizar_stock, clean_ean, diagnosticar
 from services.rowa_client import RowaClient, RowaError
 from services.rowa_observer import cruzar_con_observer
@@ -86,13 +86,29 @@ def init_app(app):
         filas = data["filas"]
 
         # Upsert artículos nuevos y cargar el mapa completo desde DB.
+        # es_nuevo ya fue refinado por cruzar_con_observer usando ventas_arr:
+        # si el producto vendía hace >6 meses, es_nuevo=False (falso positivo del proxy).
         nuevos_map = {}
         try:
-            nuevos_actuales = [f for f in filas if f.es_nuevo]
+            filas_map = {f.article_id: f for f in filas}
+            ahora = datetime.now()
+            hoy = ahora.date()
             with get_db() as session:
-                hoy = date.today()
-                for f in nuevos_actuales:
-                    if not session.query(RowaNuevo).filter_by(article_id=f.article_id).first():
+                registros = session.query(RowaNuevo).all()
+                conocidos = {r.article_id for r in registros}
+
+                # Actualizar registros existentes sin verificación ObServer
+                for r in registros:
+                    f = filas_map.get(r.article_id)
+                    if f and f.ventas_arr and r.obs_verificado_en is None:
+                        fa = hoy - timedelta(days=f.antig_max_d) if f.antig_max_d > 0 else hoy
+                        r.confirmado = f.es_nuevo
+                        r.fecha_alta = fa if f.es_nuevo else None
+                        r.obs_verificado_en = ahora
+
+                # Insertar artículos nuevos detectados por primera vez
+                for f in filas:
+                    if f.es_nuevo and f.article_id not in conocidos:
                         fa = hoy - timedelta(days=f.antig_max_d) if f.antig_max_d > 0 else hoy
                         session.add(RowaNuevo(
                             article_id=f.article_id,
@@ -100,13 +116,16 @@ def init_app(app):
                             nombre=f.nombre_obs or f.nombre,
                             confirmado=True,
                             fecha_alta=fa,
+                            obs_verificado_en=ahora if f.ventas_arr else None,
                         ))
+
                 session.commit()
                 nuevos_map = {
                     r.article_id: {
                         "confirmado": r.confirmado,
                         "fecha_alta": r.fecha_alta,
                         "detectado_en": r.detectado_en,
+                        "obs_verificado_en": r.obs_verificado_en,
                         "ean": r.ean,
                         "nombre": r.nombre,
                     }
@@ -264,3 +283,261 @@ def init_app(app):
                 "confirmado": r.confirmado,
                 "fecha_alta": r.fecha_alta.isoformat() if r.fecha_alta else None,
             })
+
+    # ---- Snapshots y carga -----------------------------------------------
+
+    def _tomar_snapshot(session, filas) -> datetime:
+        """Guarda una foto del stock actual en rowa_snapshots. Devuelve el ts."""
+        ahora = datetime.now()
+        for f in filas:
+            session.add(RowaSnapshot(
+                tomado_en=ahora,
+                article_id=f.article_id,
+                cantidad=f.cantidad,
+            ))
+        session.commit()
+        return ahora
+
+    def _calcular_salidas_diarias(session, filas) -> dict[str, float]:
+        """Devuelve {article_id: salidas_por_dia} usando snapshots + cargas.
+
+        Toma los últimos 14 días de snapshots. El movimiento neto de un artículo
+        entre dos snapshots es: (cant_anterior - cant_posterior) + cargas_entre_medio.
+        Si no hay suficientes snapshots, usa unid_mes_est / 30 como fallback.
+        """
+        desde = datetime.now() - timedelta(days=14)
+
+        # Snapshots ordenados por tiempo
+        snaps_raw = (
+            session.query(RowaSnapshot)
+            .filter(RowaSnapshot.tomado_en >= desde)
+            .order_by(RowaSnapshot.tomado_en)
+            .all()
+        )
+
+        # Cargas en el mismo período (suman al stock → no son salidas)
+        cargas_raw = (
+            session.query(RowaCarga)
+            .filter(RowaCarga.cargado_en >= desde)
+            .all()
+        )
+
+        if not snaps_raw:
+            # Sin snapshots: fallback a unid_mes_est / 30
+            return {f.article_id: round((f.unid_mes_est or 0) / 30, 3) for f in filas}
+
+        # Agrupar por ts → {ts: {article_id: cantidad}}
+        from collections import defaultdict as _dd
+        por_ts: dict = _dd(dict)
+        for s in snaps_raw:
+            por_ts[s.tomado_en][s.article_id] = s.cantidad
+
+        ts_list = sorted(por_ts)
+        if len(ts_list) < 2:
+            return {f.article_id: round((f.unid_mes_est or 0) / 30, 3) for f in filas}
+
+        # Cargas entre snapshots → {(article_id, ts_ini, ts_fin): total_cargado}
+        cargas_por_aid: dict = _dd(float)
+        for c in cargas_raw:
+            cargas_por_aid[c.article_id] += c.cantidad
+
+        # Salidas acumuladas por artículo en el período
+        salidas_total: dict = _dd(float)
+        primer_ts = ts_list[0]
+        ultimo_ts = ts_list[-1]
+
+        for aid in {s.article_id for s in snaps_raw}:
+            q_ini = por_ts[primer_ts].get(aid)
+            q_fin = por_ts[ultimo_ts].get(aid)
+            if q_ini is None or q_fin is None:
+                continue
+            cargado = cargas_por_aid.get(aid, 0)
+            salidas = (q_ini - q_fin) + cargado
+            salidas_total[aid] = max(salidas, 0)
+
+        dias = max((ultimo_ts - primer_ts).total_seconds() / 86400, 1)
+        result: dict[str, float] = {}
+        for f in filas:
+            if f.article_id in salidas_total:
+                result[f.article_id] = round(salidas_total[f.article_id] / dias, 3)
+            else:
+                result[f.article_id] = round((f.unid_mes_est or 0) / 30, 3)
+        return result
+
+    @app.route("/rowa/carga")
+    @login_required
+    def rowa_carga():
+        try:
+            data = _cargar(refresh=bool(request.args.get("refresh")))
+        except (RowaError, OSError) as e:
+            return render_template("rowa_carga.html", sin_robot=True, error=str(e))
+
+        filas = data["filas"]
+
+        with get_db() as session:
+            # Auto-snapshot si el último tiene más de 1 hora
+            ultimo_snap = (
+                session.query(RowaSnapshot.tomado_en)
+                .order_by(RowaSnapshot.tomado_en.desc())
+                .first()
+            )
+            snap_ts = None
+            if not ultimo_snap or (datetime.now() - ultimo_snap[0]).total_seconds() > 3600:
+                snap_ts = _tomar_snapshot(session, filas)
+            else:
+                snap_ts = ultimo_snap[0]
+
+            salidas_dia = _calcular_salidas_diarias(session, filas)
+
+            # Última sesión de carga
+            ultima_carga = (
+                session.query(RowaCarga.cargado_en)
+                .order_by(RowaCarga.cargado_en.desc())
+                .first()
+            )
+
+        # Construir lista de carga con cobertura
+        items = []
+        for f in filas:
+            sal = salidas_dia.get(f.article_id, 0)
+            if sal > 0:
+                cobertura = round(f.cantidad / sal)
+            elif f.cantidad == 0:
+                cobertura = 0
+            else:
+                cobertura = 999  # sin salidas conocidas
+
+            urgencia = 0 if f.cantidad == 0 else (1 if cobertura <= 3 else (2 if cobertura <= 7 else 3))
+            items.append({
+                "article_id": f.article_id,
+                "ean": f.ean or "",
+                "nombre": f.nombre_obs or f.nombre or "",
+                "cantidad": f.cantidad,
+                "salidas_dia": sal,
+                "cobertura": cobertura,
+                "urgencia": urgencia,
+                "sug_cargar": f.sug_en_robot - f.cantidad if f.sug_en_robot > f.cantidad else 0,
+            })
+
+        items.sort(key=lambda x: (x["urgencia"], x["cobertura"]))
+
+        return render_template(
+            "rowa_carga.html",
+            sin_robot=False,
+            items=items,
+            snap_ts=snap_ts,
+            ultima_carga=ultima_carga[0] if ultima_carga else None,
+            n_criticos=sum(1 for i in items if i["urgencia"] < 2),
+            generado=data["generado"],
+        )
+
+    @app.route("/rowa/carga/registrar", methods=["POST"])
+    @login_required
+    def rowa_carga_registrar():
+        payload = request.get_json(silent=True) or {}
+        items = payload.get("items") or []
+        if not items:
+            return jsonify({"ok": False, "error": "Sin artículos"}), 400
+
+        sid = str(uuid.uuid4())
+        usuario = getattr(request, "current_user", None)
+        usuario_str = getattr(usuario, "username", None) if usuario else None
+
+        with get_db() as session:
+            for it in items:
+                try:
+                    cant = int(it.get("cantidad") or 0)
+                except (TypeError, ValueError):
+                    cant = 0
+                if cant <= 0:
+                    continue
+                session.add(RowaCarga(
+                    sesion_id=sid,
+                    article_id=str(it.get("article_id") or ""),
+                    ean=it.get("ean") or None,
+                    nombre=it.get("nombre") or None,
+                    cantidad=cant,
+                    usuario=usuario_str,
+                ))
+            session.commit()
+
+        _CACHE["payload"] = None  # forzar recarga del robot en el próximo acceso
+        return jsonify({"ok": True, "sesion_id": sid})
+
+    @app.route("/rowa/analisis")
+    @login_required
+    def rowa_analisis():
+        try:
+            data = _cargar(refresh=bool(request.args.get("refresh")))
+        except (RowaError, OSError) as e:
+            return render_template("rowa_analisis.html", sin_robot=True, error=str(e))
+
+        filas = data["filas"]
+        try:
+            with get_db() as session:
+                salidas_dia = _calcular_salidas_diarias(session, filas)
+        except Exception:
+            salidas_dia = {f.article_id: round((f.unid_mes_est or 0) / 30, 3) for f in filas}
+
+        COBERTURA_UMBRAL = 7
+
+        donut_vols: dict[str, float] = {"Alta": 0.0, "Media": 0.0, "Baja": 0.0, "Durmiente": 0.0}
+        q_items: dict[str, list] = {"sobrestock": [], "bien_cargado": [], "ajustado": [], "riesgo": []}
+
+        for f in filas:
+            donut_vols[f.rotacion] = donut_vols.get(f.rotacion, 0.0) + f.vol_total_cm3
+            sal = salidas_dia.get(f.article_id, 0)
+            cob = f.cantidad / sal if sal > 0 else (0.0 if f.cantidad == 0 else 999.0)
+            alta_venta = f.rotacion in ("Alta", "Media")
+            if alta_venta:
+                if f.cantidad == 0 or cob <= COBERTURA_UMBRAL:
+                    q_items["riesgo"].append((f, cob))
+                else:
+                    q_items["bien_cargado"].append((f, cob))
+            else:
+                if f.al_deposito > 0:
+                    q_items["sobrestock"].append((f, cob))
+                else:
+                    q_items["ajustado"].append((f, cob))
+
+        donut_data = [
+            {"label": "Alta",      "vol_l": round(donut_vols["Alta"] / 1000, 1),      "color": "#10b981"},
+            {"label": "Media",     "vol_l": round(donut_vols["Media"] / 1000, 1),     "color": "#38bdf8"},
+            {"label": "Baja",      "vol_l": round(donut_vols["Baja"] / 1000, 1),      "color": "#fbbf24"},
+            {"label": "Durmiente", "vol_l": round(donut_vols["Durmiente"] / 1000, 1), "color": "#9ca3af"},
+        ]
+
+        def _pts(pairs):
+            return [
+                {
+                    "x": round(f.unid_mes_est or 0, 1),
+                    "y": round(min(cob, 60), 1),
+                    "nombre": (f.nombre_obs or f.nombre or "")[:45],
+                    "rotacion": f.rotacion,
+                    "vol": round(f.vol_total_cm3),
+                    "aid": f.article_id,
+                    "cob": round(cob, 1) if cob < 900 else None,
+                    "nuevo": f.es_nuevo,
+                }
+                for f, cob in pairs
+            ]
+
+        scatter_all = {q: _pts(pairs) for q, pairs in q_items.items()}
+        q_stats = {
+            q: {
+                "n": len(pairs),
+                "vol_l": round(sum(f.vol_total_cm3 for f, _ in pairs) / 1000, 1),
+            }
+            for q, pairs in q_items.items()
+        }
+
+        return render_template(
+            "rowa_analisis.html",
+            sin_robot=False,
+            diag=data["diag"],
+            generado=data["generado"],
+            donut_data=donut_data,
+            q_stats=q_stats,
+            scatter_all=scatter_all,
+            cobertura_umbral=COBERTURA_UMBRAL,
+        )

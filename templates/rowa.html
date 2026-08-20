@@ -21,6 +21,10 @@
     </div>
     {% if not sin_robot %}
     <div class="flex flex-wrap items-center gap-2">
+      <a href="{{ url_for('rowa_analisis') }}"
+         class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">📊 Análisis</a>
+      <a href="{{ url_for('rowa_carga') }}"
+         class="px-3 py-1.5 rounded text-sm bg-[color:var(--ds-mint)] text-black font-semibold">📦 Carga del día</a>
       <a href="{{ url_for('rowa_limpieza', tipo='vencimiento') }}"
          class="px-3 py-1.5 rounded text-sm border border-amber-500/40 text-amber-300 hover:bg-amber-500/10">⏰ Limpiar vencimientos</a>
       <a href="{{ url_for('rowa_limpieza', tipo='rotacion') }}"
@@ -160,7 +164,7 @@
                      data-aid="{{ f.article_id }}"
                      {{ 'checked' if not _nr or _nr.confirmado else '' }}
                      onchange="rowaToggleNuevo(this)"
-                     title="{{ ('Alta ' + _nr.fecha_alta.strftime('%d-%m-%y')) if _nr and _nr.fecha_alta else 'Detectado como nuevo' }}">
+                     title="{{ ('Alta ' + _nr.fecha_alta.strftime('%d-%m-%y') + (' · verificado ObServer' if _nr.obs_verificado_en else ' · solo proxy packs')) if _nr and _nr.fecha_alta else ('Verificado ObServer' if _nr and _nr.obs_verificado_en else 'Proxy: packs ≤90d, sin historial ObServer') }}">
               <div class="text-[9px] text-[color:var(--ds-text-mute)] mt-0.5 leading-none" id="rn-fecha-{{ f.article_id | replace('/', '-') }}">
                 {{ _nr.fecha_alta.strftime('%d-%m-%y') if _nr and _nr.fecha_alta else '' }}
               </div>

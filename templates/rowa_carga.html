@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% set nav_active = "rowa" %}
+{% block title %}Carga Rowa{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block main %}
+<div class="p-4 md:p-6 max-w-[1100px] mx-auto">
+
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+    <div>
+      <h1 class="text-xl font-bold flex items-center gap-2">🤖 Carga del robot</h1>
+      {% if not sin_robot %}
+      <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-0.5">
+        Snapshot {{ snap_ts.strftime('%d-%m-%y %H:%M') if snap_ts }} ·
+        {% if ultima_carga %}Última carga {{ ultima_carga.strftime('%d-%m-%y %H:%M') }}{% else %}Sin cargas registradas{% endif %}
+      </p>
+      {% endif %}
+    </div>
+    {% if not sin_robot %}
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{{ url_for('rowa_dashboard') }}"
+         class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">← Dashboard</a>
+      <a href="{{ url_for('rowa_carga', refresh=1) }}"
+         class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">↻ Actualizar</a>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if sin_robot %}
+  <div class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-6 text-center">
+    <div class="text-3xl mb-2">🔌</div>
+    <p class="font-semibold">No se pudo conectar al robot.</p>
+    {% if error %}<p class="text-[11px] text-[color:var(--ds-text-mute)] mt-2 font-mono">{{ error }}</p>{% endif %}
+  </div>
+  {% else %}
+
+  {# ---- KPIs ---- #}
+  <div class="grid grid-cols-3 gap-3 mb-5">
+    {% set n_cero = items | selectattr('cantidad', 'eq', 0) | list | length %}
+    {% set n_urg  = items | selectattr('urgencia', 'eq', 1) | list | length %}
+    <div class="rounded-lg border border-rose-500/40 bg-rose-500/10 p-3">
+      <div class="text-[11px] text-rose-300 uppercase tracking-wide">Sin stock</div>
+      <div class="text-2xl font-bold text-rose-300 mt-1">{{ n_cero }}</div>
+    </div>
+    <div class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+      <div class="text-[11px] text-amber-300 uppercase tracking-wide">Cobertura ≤3 días</div>
+      <div class="text-2xl font-bold text-amber-300 mt-1">{{ n_urg }}</div>
+    </div>
+    <div class="rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.02] p-3">
+      <div class="text-[11px] text-[color:var(--ds-text-mute)] uppercase tracking-wide">Total artículos</div>
+      <div class="text-2xl font-bold mt-1">{{ items | length }}</div>
+    </div>
+  </div>
+
+  {# ---- Filtros ---- #}
+  <div class="flex flex-wrap items-center gap-2 mb-3">
+    <input id="carga-buscar" type="search" placeholder="🔎 Buscar…" oninput="cargaFiltrar()"
+           class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)] w-48">
+    <label class="flex items-center gap-1 text-xs text-[color:var(--ds-text-mute)] cursor-pointer">
+      <input id="carga-criticos" type="checkbox" onchange="cargaFiltrar()" checked> 🔴 Solo críticos</label>
+    <span id="carga-count" class="text-xs text-[color:var(--ds-text-mute)] ml-auto"></span>
+  </div>
+
+  {# ---- Tabla ---- #}
+  <form id="carga-form">
+  <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)] mb-4">
+    <table class="w-full text-sm" id="carga-tabla">
+      <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
+        <tr>
+          <th class="text-left px-3 py-2">Producto</th>
+          <th class="text-right px-3 py-2">Stock</th>
+          <th class="text-right px-3 py-2">Sal/día</th>
+          <th class="text-right px-3 py-2">Cobertura</th>
+          <th class="text-right px-3 py-2 w-28">Cargar</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in items %}
+        {% set urg_cls = 'bg-rose-500/10' if it.cantidad == 0 else ('bg-amber-500/10' if it.urgencia == 1 else ('bg-yellow-500/5' if it.urgencia == 2 else '')) %}
+        <tr class="carga-fila border-t border-[color:var(--ds-surface-border)] {{ urg_cls }}"
+            data-nombre="{{ it.nombre | lower }}"
+            data-urgencia="{{ it.urgencia }}"
+            data-aid="{{ it.article_id }}"
+            data-ean="{{ it.ean }}"
+            data-nombre-orig="{{ it.nombre }}">
+          <td class="px-3 py-1.5">
+            {% if it.cantidad == 0 %}
+              <span class="inline-block w-1.5 h-1.5 rounded-full bg-rose-400 mr-1.5 align-middle"></span>
+            {% elif it.urgencia == 1 %}
+              <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5 align-middle"></span>
+            {% elif it.urgencia == 2 %}
+              <span class="inline-block w-1.5 h-1.5 rounded-full bg-yellow-400 mr-1.5 align-middle"></span>
+            {% else %}
+              <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-600 mr-1.5 align-middle"></span>
+            {% endif %}
+            {{ it.nombre[:45] }}
+          </td>
+          <td class="px-3 py-1.5 text-right font-mono {% if it.cantidad == 0 %}text-rose-400 font-bold{% endif %}">
+            {{ it.cantidad }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-[color:var(--ds-text-mute)]">
+            {{ '%.2f' | format(it.salidas_dia) if it.salidas_dia else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono
+            {% if it.cobertura == 0 %}text-rose-400 font-bold
+            {% elif it.cobertura <= 3 %}text-amber-300
+            {% elif it.cobertura <= 7 %}text-yellow-300
+            {% elif it.cobertura == 999 %}text-[color:var(--ds-text-mute)]
+            {% endif %}">
+            {% if it.cobertura == 999 %}—{% elif it.cobertura == 0 %}0d{% else %}{{ it.cobertura }}d{% endif %}
+          </td>
+          <td class="px-3 py-1 text-right">
+            <input type="number" min="0" step="1"
+                   class="carga-qty w-20 px-2 py-0.5 text-right text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)] focus:border-[color:var(--ds-mint)] focus:outline-none"
+                   placeholder="{{ it.sug_cargar if it.sug_cargar else '' }}"
+                   data-aid="{{ it.article_id }}"
+                   onchange="cargaMarcar(this)">
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  </form>
+
+  <div class="flex items-center justify-between gap-4">
+    <p class="text-[11px] text-[color:var(--ds-text-mute)]">
+      Completá las cantidades que vas a cargar y confirmá. Solo se registran las filas con valor.</p>
+    <button onclick="cargaConfirmar()"
+            class="px-5 py-2 rounded bg-[color:var(--ds-mint)] text-black font-semibold text-sm hover:opacity-90">
+      ✓ Confirmar carga
+    </button>
+  </div>
+
+  <div id="carga-ok" class="hidden mt-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 text-center">
+    <p class="font-semibold text-emerald-300">✓ Carga registrada correctamente.</p>
+    <p class="text-xs text-[color:var(--ds-text-mute)] mt-1">Actualizá la página para ver el stock actualizado.</p>
+  </div>
+
+  {% endif %}
+
+  <script>
+  function cargaFiltrar() {
+    var q    = (document.getElementById('carga-buscar').value || '').toLowerCase();
+    var crit = document.getElementById('carga-criticos').checked;
+    var vis = 0, total = 0;
+    document.querySelectorAll('tr.carga-fila').forEach(function(tr) {
+      total++;
+      var ok = (!q    || (tr.dataset.nombre || '').indexOf(q) !== -1)
+            && (!crit || parseInt(tr.dataset.urgencia) < 3);
+      tr.style.display = ok ? '' : 'none';
+      if (ok) vis++;
+    });
+    var c = document.getElementById('carga-count');
+    if (c) c.textContent = vis + ' de ' + total;
+  }
+
+  function cargaMarcar(inp) {
+    var tr = inp.closest('tr');
+    if (parseInt(inp.value) > 0) {
+      tr.classList.add('ring-1', 'ring-[color:var(--ds-mint)]', 'ring-inset');
+    } else {
+      tr.classList.remove('ring-1', 'ring-[color:var(--ds-mint)]', 'ring-inset');
+    }
+  }
+
+  function cargaConfirmar() {
+    var items = [];
+    document.querySelectorAll('.carga-qty').forEach(function(inp) {
+      var v = parseInt(inp.value);
+      if (v > 0) {
+        var tr = inp.closest('tr');
+        items.push({
+          article_id: tr.dataset.aid,
+          ean:        tr.dataset.ean,
+          nombre:     tr.dataset.nombreOrig,
+          cantidad:   v,
+        });
+      }
+    });
+    if (!items.length) {
+      alert('Ingresá al menos una cantidad antes de confirmar.');
+      return;
+    }
+    fetch('/rowa/carga/registrar', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({items: items}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) {
+        document.getElementById('carga-ok').classList.remove('hidden');
+        document.querySelectorAll('.carga-qty').forEach(function(inp) {
+          inp.value = '';
+          inp.closest('tr').classList.remove('ring-1', 'ring-[color:var(--ds-mint)]', 'ring-inset');
+        });
+        window.scrollTo({top: 0, behavior: 'smooth'});
+      } else {
+        alert('Error: ' + (d.error || 'desconocido'));
+      }
+    })
+    .catch(function() { alert('Error de red al registrar la carga.'); });
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    if (document.getElementById('carga-buscar')) cargaFiltrar();
+  });
+  </script>
+</div>
+{% endblock %}
