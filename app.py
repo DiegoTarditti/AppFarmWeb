@@ -101,7 +101,9 @@ def exigir_login():
                       # Tienda pública (catálogo OTC + pedido por WhatsApp).
                       # Diego 2026-06-24. Kill switch via Config.tienda_activa.
                       'tienda_home', 'tienda_catalogo', 'tienda_producto',
-                      'tienda_pedir', 'tienda_upload_file'}
+                      'tienda_pedir', 'tienda_upload_file',
+                      # Cron LAN: snapshot automático del robot Rowa (sin sesión, LAN only).
+                      'rowa_snapshot_auto'}
     if request.endpoint in rutas_publicas or request.endpoint is None:
         return None
     # API pública (auth por X-Api-Key, no por sesión Flask-Login).
