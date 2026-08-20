@@ -603,6 +603,7 @@ def calcular_sugerido_dia_actual(session, producto_observer_id, id_farmacia,
 
     # Llamar al motor compartido.
     cfg = cargar_config('REPOSICION') or {}
+    _meses_con_venta = sum(1 for v in ventas_arr[:11] if v > 0)
     result = calcular_a_pedir(cfg, {
         'daily_rate': daily_rate,
         'min_efectivo': min_efectivo,
@@ -613,5 +614,6 @@ def calcular_sugerido_dia_actual(session, producto_observer_id, id_farmacia,
         'pack_quantity': None,
         'u12m': u12m_int,
         'sin_mov': sin_mov,
+        'es_nuevo': _meses_con_venta < 6,
     })
     return int(result.get('a_pedir', 0))

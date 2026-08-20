@@ -149,6 +149,15 @@ def calcular_a_pedir(cfg, ctx):
         return {'a_pedir': 0, 'ideal': 0,
                 'regla_usada': 'sin_rotacion', 'override_aplicado': False}
 
+    # Baja venta anual: si u12m < umbral Y stock == 0 → no reponer automáticamente.
+    # (Solo se pide a droguería si alguien lo necesita puntualmente.)
+    # Excepción: es_nuevo=True → historial incompleto, no penalizar todavía.
+    umbral_va = int(cfg.get('umbral_ventas_anuales') or 0)
+    if umbral_va > 0 and u12m < umbral_va and stock == 0 and not ctx.get('es_nuevo', False):
+        return {'a_pedir': 0, 'ideal': 0,
+                'regla_usada': f'baja_venta_anual_{u12m}u<{umbral_va}_no_reponer',
+                'override_aplicado': False}
+
     # Override por producto. `cant_fija_efecto` (default 'override') decide la
     # POLÍTICA cuando override_producto='cantidad_reposicion_fija' y el producto
     # tiene cantidad fija seteada:
