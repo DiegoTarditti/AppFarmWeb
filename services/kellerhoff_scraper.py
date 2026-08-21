@@ -211,6 +211,9 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
         href = link_el.get_attribute('href') if link_el else None
 
         nro_kh = t[3] if len(t) > 3 else ''
+        # Saltear filas de pie/encabezado (sin número de comprobante válido)
+        if not _RE_NRO_KH.match(nro_kh.strip()):
+            continue
         comp = {
             'fecha':          _parse_fecha(t[0]),
             'clase_doc':      t[1].upper() if len(t) > 1 else 'FAC',
@@ -243,14 +246,22 @@ def _detalle_comprobante(page, comp: dict) -> list[dict]:
     page.wait_for_load_state('networkidle')
 
     # Estructura típica Kellerhoff: BARCODE DESC CANT PRECIO_PUB DTO% PRECIO_UNIT IMPORTE
-    # TODO: ajustar índices si el layout del detalle difiere
-    filas = page.query_selector_all('table tbody tr')
+    # Igual que en la lista: tables[0] = datos, otras tablas = pie de página
+    import logging
+    log = logging.getLogger(__name__)
+    todas_tablas = page.query_selector_all('table')
+    log.warning('[KH] Detalle %s: %d tabla(s)', comp.get('nro_comp_kh', '?'), len(todas_tablas))
+    tabla_items = todas_tablas[0] if todas_tablas else None
+    filas = tabla_items.query_selector_all('tbody tr') if tabla_items else []
     items = []
     for fila in filas:
         celdas = fila.query_selector_all('td')
         if len(celdas) < 3:
             continue
         t = [c.inner_text().strip() for c in celdas]
+        # Saltear filas de pie de página (contienen "Desarrollo" o "Diseño")
+        if any(w in cell for cell in t for w in ('Desarrollo', 'Diseño', 'Diseño')):
+            continue
         item = {
             'barcode':         t[0] if len(t) > 0 else '',
             'descripcion':     t[1] if len(t) > 1 else '',
@@ -263,6 +274,7 @@ def _detalle_comprobante(page, comp: dict) -> list[dict]:
         if not item['barcode'] and not item['descripcion']:
             continue
         items.append(item)
+    log.warning('[KH] Detalle %s: %d ítem(s)', comp.get('nro_comp_kh', '?'), len(items))
     return items
 
 
