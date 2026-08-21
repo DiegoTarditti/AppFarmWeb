@@ -836,11 +836,19 @@ def init_app(app):
 
             # Ventas 12m por producto (agregado para tabla).
             # Incluye monto para derivar PVP estimado = m12m / u12m.
+            # Filtra a los ÚLTIMOS 12 MESES. Antes sumaba TODO el historial: un
+            # producto con 1 venta vieja (>12m) leía u12m inflado y la regla
+            # baja_venta_anual (u12m < umbral) no cortaba cuando debía (ej.:
+            # ENTRESTO x60 leía 6 en vez de 5 y proponía comprar 1 estando en 0).
+            _t12 = _date.today()
+            _cm12 = _t12.year * 12 + (_t12.month - 1) - 11
+            _cutoff12 = (_cm12 // 12) * 100 + (_cm12 % 12) + 1  # YYYYMM de hace 12m
             v12_q = (session.query(
                 ObsVentaMensual.producto_observer.label('pid'),
                 func.sum(ObsVentaMensual.unidades).label('u12m'),
                 func.sum(ObsVentaMensual.monto).label('m12m'),
-            ).group_by(ObsVentaMensual.producto_observer).subquery())
+            ).filter((ObsVentaMensual.anio * 100 + ObsVentaMensual.mes) >= _cutoff12)
+              .group_by(ObsVentaMensual.producto_observer).subquery())
 
             # Ventas ayer y última semana por producto.
             from helpers import excluir_no_medicamentos_ovd, ventas_periodo_filter
@@ -1692,11 +1700,16 @@ def init_app(app):
                 func.sum(ObsStock.minimo).label('minimo'),
             ).filter(ObsStock.minimo.isnot(None), ObsStock.minimo > 0)
               .group_by(ObsStock.producto_observer).subquery())
-            # u12m total
+            # u12m de los ÚLTIMOS 12 MESES (antes sumaba todo el historial;
+            # ver nota en la otra definición de v12_q más arriba).
+            _t12e = _date.today()
+            _cm12e = _t12e.year * 12 + (_t12e.month - 1) - 11
+            _cutoff12e = (_cm12e // 12) * 100 + (_cm12e % 12) + 1  # YYYYMM de hace 12m
             v12_q = (session.query(
                 ObsVentaMensual.producto_observer.label('pid'),
                 func.sum(ObsVentaMensual.unidades).label('u12m'),
-            ).group_by(ObsVentaMensual.producto_observer).subquery())
+            ).filter((ObsVentaMensual.anio * 100 + ObsVentaMensual.mes) >= _cutoff12e)
+              .group_by(ObsVentaMensual.producto_observer).subquery())
 
             base = (session.query(
                 ObsProducto.observer_id.label('pid'),
