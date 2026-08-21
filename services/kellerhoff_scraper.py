@@ -90,21 +90,56 @@ def _login(page) -> None:
 # ── Listar comprobantes ────────────────────────────────────────────────────────
 
 def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
+    import logging
+    log = logging.getLogger(__name__)
+
     page.goto(f'{KH_URL}/ctacte/ConsultaDeComprobantes')
     page.wait_for_load_state('networkidle')
+    page.screenshot(path='/tmp/kh_01_comprobantes.png')
+    log.warning('[KH] URL actual tras nav: %s', page.url)
+    log.warning('[KH] Título: %s', page.title())
 
-    # Seleccionar radio "Fecha"
-    page.click('input[type=radio][value="Fecha"]')  # TODO: verificar value exacto
+    # Intentar seleccionar radio "Fecha" (ignorar si no existe)
+    radio = page.query_selector('#radioFecha')
+    if radio:
+        radio.click()
+        log.warning('[KH] Radio Fecha clickeado')
+    else:
+        log.warning('[KH] Radio Fecha NO encontrado — se continúa sin filtro')
 
-    # Campo de rango: "14/08/2026 - 20/08/2026" (un solo campo de texto)
+    page.screenshot(path='/tmp/kh_02_radio.png')
+
+    # Campo de rango de fecha
     rango = f'{desde.strftime("%d/%m/%Y")} - {hasta.strftime("%d/%m/%Y")}'
-    campo = page.query_selector('input[name*="echa"], input[id*="echa"], input[type=text]')
+    campo = page.query_selector('#ComprobanteFecha')
     if campo:
         campo.triple_click()
         campo.fill(rango)
+        log.warning('[KH] Rango escrito: %s', rango)
+    else:
+        log.warning('[KH] Campo fecha NO encontrado')
 
-    page.click('button:has-text("CONSULTAR"), input[value*="CONSULTAR"]')
-    page.wait_for_load_state('networkidle')
+    page.screenshot(path='/tmp/kh_03_fecha.png')
+
+    # Botón consultar
+    boton = page.query_selector('#btnConsultarFecha')
+    if boton:
+        boton.click()
+        # El resultado carga por AJAX — esperar a que aparezcan filas o pasen 8s
+        try:
+            page.wait_for_selector('table tbody tr', timeout=8000)
+        except Exception:
+            pass
+        log.warning('[KH] Botón consultar clickeado')
+    else:
+        log.warning('[KH] Botón CONSULTAR no encontrado')
+
+    page.screenshot(path='/tmp/kh_04_resultado.png')
+
+    # Dump HTML de la tabla para debug
+    tabla_html = page.inner_html('table') if page.query_selector('table') else '(sin tabla)'
+    log.warning('[KH] Tablas en página: %d', len(page.query_selector_all('table')))
+    log.warning('[KH] HTML tabla (500 chars): %s', tabla_html[:500])
 
     filas = page.query_selector_all('table tbody tr')
     comps = []
