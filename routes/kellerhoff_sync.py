@@ -16,7 +16,7 @@ KELLERHOFF_CUIT = '30539756490'
 
 # Estado de ejecución del scraper (in-memory, un thread a la vez)
 _sync_lock = threading.Lock()
-_sync_estado: dict = {'corriendo': False, 'ultimo': None, 'resultado': None}
+_sync_estado: dict = {'corriendo': False, 'ultimo': None, 'resultado': None, 'msg': ''}
 
 
 def init_app(app):
@@ -102,17 +102,29 @@ def init_app(app):
 
 # ── Lógica de sincronización ───────────────────────────────────────────────────
 
+def _msg(texto: str) -> None:
+    """Actualiza el mensaje visible en el UI durante el sync."""
+    import logging
+    _sync_estado['msg'] = texto
+    logging.getLogger(__name__).warning('[KH-SYNC] %s', texto)
+
+
 def _sincronizar(desde: date, hasta: date) -> dict:
     from services.kellerhoff_scraper import scrape_comprobantes
 
-    comprobantes = scrape_comprobantes(desde, hasta)
+    _msg(f'Iniciando Chromium… (rango {desde} → {hasta})')
+    comprobantes = scrape_comprobantes(desde, hasta, _msg)
+    _msg(f'Scraping completo: {len(comprobantes)} comprobante(s) encontrados')
+
     creados = 0
     enriquecidos = 0
     ligados = 0
     errores = []
 
     with get_db() as session:
-        for comp in comprobantes:
+        for i, comp in enumerate(comprobantes, 1):
+            nro = comp.get('nro_comp_kh', '?')
+            _msg(f'Procesando {i}/{len(comprobantes)}: {nro}')
             try:
                 inv = _get_or_create_invoice(session, comp)
                 if inv is None:
@@ -136,7 +148,7 @@ def _sincronizar(desde: date, hasta: date) -> dict:
                 session.commit()
             except Exception as e:
                 session.rollback()
-                errores.append(f"{comp.get('nro_comp', '?')}: {e}")
+                errores.append(f"{nro}: {e}")
 
     return {
         'ok': True,

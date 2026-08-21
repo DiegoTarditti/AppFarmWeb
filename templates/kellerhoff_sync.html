@@ -126,9 +126,7 @@ async function pollEstado() {
     document.getElementById('btn-sync').disabled = false;
     setResultado(data.resultado);
   } else {
-    const msgs = ['Iniciando Chromium…', 'Conectando al portal…', 'Descargando comprobantes…', 'Procesando ítems…'];
-    const idx = Math.floor(Date.now() / 3000) % msgs.length;
-    document.getElementById('sync-progress-msg').textContent = msgs[idx];
+    if (data.msg) document.getElementById('sync-progress-msg').textContent = data.msg;
   }
 }
 

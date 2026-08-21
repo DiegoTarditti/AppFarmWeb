@@ -36,9 +36,10 @@ KH_USER = os.environ.get('KELLERHOFF_USER', '')
 KH_PASS = os.environ.get('KELLERHOFF_PASS', '')
 
 
-def scrape_comprobantes(desde: date, hasta: date) -> list[dict]:
+def scrape_comprobantes(desde: date, hasta: date, status_cb=None) -> list[dict]:
     """
     Retorna lista de comprobantes en el rango [desde, hasta].
+    status_cb: callable(str) opcional para reportar progreso al caller.
 
     Cada dict:
         nro_remito     str   '0047R00260141'
@@ -57,14 +58,24 @@ def scrape_comprobantes(desde: date, hasta: date) -> list[dict]:
     """
     from playwright.sync_api import sync_playwright
 
+    def _cb(msg):
+        if status_cb:
+            status_cb(msg)
+
     with sync_playwright() as p:
+        _cb('Iniciando Chromium…')
         browser = p.chromium.launch(headless=True)
         ctx = browser.new_context()
         page = ctx.new_page()
         try:
+            _cb('Conectando al portal Kellerhoff…')
             _login(page)
+            _cb('Login OK — cargando comprobantes…')
             comps = _listar_comprobantes(page, desde, hasta)
-            for comp in comps:
+            _cb(f'Lista obtenida: {len(comps)} comprobante(s). Bajando detalles…')
+            for i, comp in enumerate(comps, 1):
+                nro = comp.get('nro_comp_kh', '?')
+                _cb(f'Detalle {i}/{len(comps)}: {nro}')
                 try:
                     comp['items'] = _detalle_comprobante(page, comp)
                 except Exception as e:
