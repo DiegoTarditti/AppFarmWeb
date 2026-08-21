@@ -159,28 +159,17 @@
             {% endif %}
         </div>
 
-        <!-- Form alta manual -->
-        <form id="form-add-provider" method="post" action="{{ url_for('provider_create_manual') }}"
-              class="add-form hidden mb-4">
-            <div class="flex-1 min-w-[200px]">
-                <label class="ds-label">Razón social</label>
-                <input name="razon_social" required placeholder="Ej. DROGUERÍA NUEVA S.A." class="ds-input">
+        <!-- Form alta manual (usa el form unificado _provider_form.html) -->
+        <form id="form-add-provider" method="post" action="{{ url_for('provider_save') }}"
+              class="card hidden mb-4" style="padding:16px 18px;">
+            <input type="hidden" name="return_to" value="providers">
+            <input type="hidden" name="tipo_filter" value="{{ tipo_filter }}">
+            {% with p = {} %}{% include '_provider_form.html' %}{% endwith %}
+            <div class="flex justify-end gap-2 mt-4">
+                <button type="button" onclick="document.getElementById('form-add-provider').classList.add('hidden')"
+                        class="btn btn-ghost btn-sm">Cancelar</button>
+                <button type="submit" class="btn btn-mint btn-sm">Crear</button>
             </div>
-            <div style="width:170px;">
-                <label class="ds-label">CUIT (opcional)</label>
-                <input name="cuit" placeholder="30-12345678-9" class="ds-input" style="font-family:ui-monospace,monospace;">
-            </div>
-            <div style="width:160px;">
-                <label class="ds-label">Tipo</label>
-                <select name="tipo" class="ds-select">
-                    <option value="drogueria" {% if tipo_filter == 'drogueria' or not tipo_filter %}selected{% endif %}>Droguería</option>
-                    <option value="laboratorio" {% if tipo_filter == 'laboratorio' %}selected{% endif %}>Laboratorio</option>
-                    <option value="otro" {% if tipo_filter == 'otro' %}selected{% endif %}>Otro</option>
-                </select>
-            </div>
-            <button type="submit" class="btn btn-mint">Crear</button>
-            <button type="button" onclick="document.getElementById('form-add-provider').classList.add('hidden')"
-                    class="btn btn-ghost btn-sm">Cancelar</button>
         </form>
 
         <!-- Lista -->
@@ -289,97 +278,14 @@
                     </div>
                 </div>
 
-                <!-- Form de edición (oculto) -->
+                <!-- Form de edición (oculto) — usa el form unificado _provider_form.html -->
                 <form id="edit-{{ p.id }}" class="hidden"
-                      method="post" action="{{ url_for('provider_edit', provider_id=p.id) }}"
+                      method="post" action="{{ url_for('provider_save') }}"
                       style="padding: 18px; background: rgba(0,0,0,.18); border-top: 1px solid var(--ds-line);">
-                    <div class="grid grid-cols-3 gap-3">
-                        <div>
-                            <label class="ds-label">Razón social</label>
-                            <input type="text" name="razon_social" value="{{ p.razon_social }}" class="ds-input">
-                        </div>
-                        <div>
-                            <label class="ds-label">CUIT</label>
-                            <input type="text" name="cuit" value="{{ p.cuit }}" class="ds-input" style="font-family:ui-monospace,monospace;">
-                        </div>
-                        <div>
-                            <label class="ds-label">Parser (sin .py)</label>
-                            <input type="text" name="parser_file" value="{{ p.parser_file }}" class="ds-input" style="font-family:ui-monospace,monospace;">
-                        </div>
-                    </div>
-                    <div class="mt-3">
-                        <label class="ds-label">Carpeta de facturas (ruta predeterminada)</label>
-                        <input type="text" name="ruta_facturas" value="{{ p.ruta_facturas }}"
-                               placeholder="C:\AppFarmacia\Facturas\Kellerhoff"
-                               class="ds-input" style="font-family:ui-monospace,monospace;">
-                    </div>
-                    <div class="mt-3 grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="ds-label">Estrategia de cruce con ERP</label>
-                            <select name="match_strategy" class="ds-select">
-                                <option value="barcode" {% if p.match_strategy != 'descripcion' %}selected{% endif %}>Código de barra (por defecto)</option>
-                                <option value="descripcion" {% if p.match_strategy == 'descripcion' %}selected{% endif %}>Nombre / descripción del medicamento</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="ds-label">Tipo de proveedor</label>
-                            <select name="tipo" class="ds-select">
-                                <option value="drogueria" {% if p.tipo == 'drogueria' %}selected{% endif %}>Droguería</option>
-                                <option value="laboratorio" {% if p.tipo == 'laboratorio' %}selected{% endif %}>Laboratorio</option>
-                                <option value="otro" {% if p.tipo == 'otro' %}selected{% endif %}>Otro</option>
-                            </select>
-                        </div>
-                    </div>
-                    {% if p.tipo == 'drogueria' %}
-                    <div class="mt-3 grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="ds-label">Descuento con transfer (%)</label>
-                            <input type="number" name="descuento_con_transfer" step="0.01" min="0" max="100"
-                                   value="{{ p.descuento_con_transfer or '' }}" placeholder="ej: 31.03" class="ds-input">
-                        </div>
-                        <div>
-                            <label class="ds-label">Descuento sin transfer (%)</label>
-                            <input type="number" name="descuento_sin_transfer" step="0.01" min="0" max="100"
-                                   value="{{ p.descuento_sin_transfer or '' }}" placeholder="ej: 28.50" class="ds-input">
-                        </div>
-                    </div>
-                    <div class="mt-3" style="border-top:1px dashed var(--ds-line); padding-top:12px;">
-                        <label class="ds-label" style="opacity:.85;">Filtro droguería — archivo de pedido</label>
-                        <div class="grid grid-cols-4 gap-3 mt-1">
-                            <div>
-                                <label class="ds-label">Formato</label>
-                                <select name="formato_archivo" class="ds-select">
-                                    <option value="" {% if not p.formato_archivo %}selected{% endif %}>(ninguno)</option>
-                                    <option value="ped" {% if p.formato_archivo == 'ped' %}selected{% endif %}>.ped (Kellerhoff)</option>
-                                    <option value="txt20j" {% if p.formato_archivo == 'txt20j' %}selected{% endif %}>.txt (20 de Junio)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="ds-label">Cód. cliente</label>
-                                <input type="text" name="codcli" value="{{ p.codcli }}" placeholder="2440" class="ds-input" style="font-family:ui-monospace,monospace;">
-                            </div>
-                            <div>
-                                <label class="ds-label">Sufijo</label>
-                                <input type="text" name="sufijo" value="{{ p.sufijo }}" placeholder="KEL" class="ds-input" style="font-family:ui-monospace,monospace;">
-                            </div>
-                            <div>
-                                <label class="ds-label">Carpeta destino</label>
-                                <input type="text" name="carpeta_filtro" value="{{ p.carpeta_filtro }}" placeholder="P:\Kellerhoff" class="ds-input" style="font-family:ui-monospace,monospace;">
-                            </div>
-                        </div>
-                    </div>
-                    {% endif %}
+                    <input type="hidden" name="id" value="{{ p.id }}">
+                    <input type="hidden" name="return_to" value="providers">
                     <input type="hidden" name="tipo_filter" value="{{ tipo_filter }}">
-                    <div class="mt-4 flex items-center gap-2">
-                        <input type="hidden" name="grabar_productos" value="0">
-                        <input type="checkbox" id="gp-{{ p.id }}" name="grabar_productos" value="1"
-                               {% if p.grabar_productos != 0 %}checked{% endif %}
-                               style="accent-color:var(--ds-mint); width:15px; height:15px;">
-                        <label for="gp-{{ p.id }}" class="text-sm cursor-pointer select-none" style="color:var(--ds-text-soft);">
-                            Grabar códigos de barra en tabla de productos al importar facturas
-                        </label>
-                        <span class="text-xs" style="color:var(--ds-text-mute);">(desactivar para Pharmos y proveedores sin EAN real)</span>
-                    </div>
+                    {% include '_provider_form.html' %}
                     <div class="flex justify-end gap-2 mt-4">
                         <button type="button" onclick="closeEdit({{ p.id }})" class="btn btn-ghost btn-sm">Cancelar</button>
                         <button type="submit" class="btn btn-mint btn-sm">Guardar</button>

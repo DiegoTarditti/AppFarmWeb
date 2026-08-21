@@ -11,10 +11,8 @@ from flask import flash, redirect, render_template, request, url_for
 from flask_login import login_required
 
 import database
+from helpers import CONDICIONES_IVA
 from services.cuenta_corriente import saldos_por_proveedor
-
-CONDICIONES_IVA = ['Responsable Inscripto', 'Monotributo', 'Exento',
-                   'Consumidor Final', 'No Categorizado']
 
 # Tipos de cuenta/forma de pago de contabilidad (para importar y conciliar).
 TIPOS_CUENTA_PAGO = [
@@ -60,6 +58,20 @@ def init_app(app):
                     'saldo': s.get('saldo', 0.0),
                     'total_prefac': s.get('total_prefac', 0.0),
                     'ultimo_mov': ultimo.strftime('%d/%m/%Y') if ultimo else '',
+                    # Campos operativos: el modal usa el form unificado, así que
+                    # necesita poder editarlos aunque esta pantalla sea contable.
+                    'parser_file': p.parser_file or '',
+                    'match_strategy': p.match_strategy or 'barcode',
+                    'ruta_facturas': p.ruta_facturas or '',
+                    'grabar_productos': p.grabar_productos if p.grabar_productos is not None else 1,
+                    'descuento_con_transfer': (float(p.descuento_con_transfer)
+                                               if p.descuento_con_transfer is not None else ''),
+                    'descuento_sin_transfer': (float(p.descuento_sin_transfer)
+                                               if p.descuento_sin_transfer is not None else ''),
+                    'codcli': p.codcli or '',
+                    'formato_archivo': p.formato_archivo or '',
+                    'sufijo': p.sufijo or '',
+                    'carpeta_filtro': p.carpeta_filtro or '',
                 })
 
             if q:
