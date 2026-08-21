@@ -36,7 +36,8 @@ KH_USER = os.environ.get('KELLERHOFF_USER', '')
 KH_PASS = os.environ.get('KELLERHOFF_PASS', '')
 
 
-def scrape_comprobantes(desde: date, hasta: date, status_cb=None) -> list[dict]:
+def scrape_comprobantes(desde: date, hasta: date, status_cb=None,
+                        skip_nros: set | None = None) -> list[dict]:
     """
     Retorna lista de comprobantes en el rango [desde, hasta].
     status_cb: callable(str) opcional para reportar progreso al caller.
@@ -72,15 +73,22 @@ def scrape_comprobantes(desde: date, hasta: date, status_cb=None) -> list[dict]:
             _login(page)
             _cb('Login OK — cargando comprobantes…')
             comps = _listar_comprobantes(page, desde, hasta)
-            _cb(f'Lista obtenida: {len(comps)} comprobante(s). Bajando detalles…')
-            for i, comp in enumerate(comps, 1):
+            _skip = skip_nros or set()
+            nuevos = [c for c in comps if c.get('nro_comp_arca') not in _skip]
+            _cb(f'Lista obtenida: {len(comps)} comprobante(s) ({len(nuevos)} nuevos). Bajando detalles…')
+            for i, comp in enumerate(nuevos, 1):
                 nro = comp.get('nro_comp_kh', '?')
-                _cb(f'Detalle {i}/{len(comps)}: {nro}')
+                _cb(f'Detalle {i}/{len(nuevos)}: {nro}')
                 try:
                     comp['items'] = _detalle_comprobante(page, comp)
                 except Exception as e:
                     comp['items'] = []
                     comp['_error_detalle'] = str(e)
+            # Comprobantes ya existentes: no re-navegar, items vacíos (ya están en DB)
+            for comp in comps:
+                if comp.get('nro_comp_arca') in _skip:
+                    comp['items'] = []
+                    comp['_ya_existe'] = True
             return comps
         finally:
             browser.close()

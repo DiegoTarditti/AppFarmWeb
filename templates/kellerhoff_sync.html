@@ -88,6 +88,60 @@
   <p class="text-xs text-[#6d9082]">Último sync: {{ sync_estado.ultimo }}</p>
   {% endif %}
 
+  {# ── Facturas Kellerhoff en DB ── #}
+  {% if facturas %}
+  <div class="rounded-xl border border-[#214635] bg-white/[0.02] overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-[#214635] flex items-center justify-between">
+      <h2 class="text-sm font-semibold">Comprobantes en sistema ({{ facturas|length }})</h2>
+    </div>
+    <table class="w-full text-xs">
+      <thead class="text-[10px] uppercase text-[#6d9082] bg-black/20">
+        <tr>
+          <th class="text-left px-4 py-2">Fecha</th>
+          <th class="text-left px-4 py-2">Nº Comprobante</th>
+          <th class="text-center px-4 py-2">Tipo</th>
+          <th class="text-right px-4 py-2">Artículos</th>
+          <th class="text-right px-4 py-2">Total</th>
+          <th class="text-center px-4 py-2">Origen</th>
+          <th class="px-4 py-2"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in facturas %}
+        <tr class="border-t border-[#214635] hover:bg-white/[0.02]">
+          <td class="px-4 py-2 font-mono text-[#a9ccbd]">{{ f.fecha }}</td>
+          <td class="px-4 py-2 font-mono">{{ f.numero }}</td>
+          <td class="px-4 py-2 text-center">
+            {% if f.tipo == 'NCR' %}
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-900/40 text-rose-300">NCR</span>
+            {% else %}
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-900/40 text-emerald-300">FAC</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 text-right font-mono">{{ f.articulos }}</td>
+          <td class="px-4 py-2 text-right font-mono {% if f.total and f.total < 0 %}text-rose-400{% else %}text-emerald-400{% endif %}">
+            {% if f.total %}$ {{ '%.2f'|format(f.total) }}{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-2 text-center">
+            {% if f.origen == 'kh_portal' %}
+            <span class="text-[10px] text-amber-400">portal</span>
+            {% elif f.origen == 'arca' %}
+            <span class="text-[10px] text-sky-400">ARCA</span>
+            {% else %}
+            <span class="text-[10px] text-[#6d9082]">{{ f.origen }}</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 text-right">
+            <a href="{{ url_for('results', id=f.id) }}"
+               class="text-[10px] text-[#6d9082] hover:text-white">ver →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
 </div>
 
 <script>
