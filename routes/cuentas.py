@@ -130,7 +130,11 @@ def _leer_comprobantes_arca(raw_bytes):
 
 def init_app(app):
 
-    @app.route('/cuentas-corrientes')
+    # El extracto se movió de /cuentas-corrientes a /cuentas-corrientes/extracto
+    # cuando el módulo pasó a llamarse "Cuentas corrientes": la raíz es ahora el
+    # landing del módulo (contabilidad_index). El endpoint sigue siendo
+    # `cuentas_corrientes`, así que los url_for de los templates no cambian.
+    @app.route('/cuentas-corrientes/extracto')
     def cuentas_corrientes():
         with database.get_db() as session:
             prov_list = get_providers()

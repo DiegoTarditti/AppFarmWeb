@@ -32,7 +32,7 @@ def _get(pid):
 def test_ambas_pantallas_rinden_y_apuntan_al_mismo_endpoint(client):
     _crear_provider(razon_social='DROGUERIA UNO', cuit='30-11111111-1')
     r1 = client.get('/providers')
-    r2 = client.get('/contabilidad/proveedores')
+    r2 = client.get('/cuentas-corrientes/proveedores')
     assert r1.status_code == 200
     assert r2.status_code == 200
     assert '/provider/save' in r1.get_data(as_text=True)
@@ -70,7 +70,7 @@ def test_alta_desde_contabilidad_vuelve_a_contabilidad(client):
         'condicion_iva': 'Monotributo',
     })
     assert r.status_code == 302
-    assert '/contabilidad/proveedores' in r.headers['Location']
+    assert '/cuentas-corrientes/proveedores' in r.headers['Location']
     with database.get_db() as s:
         p = s.query(database.Provider).filter_by(razon_social='ESTUDIO CONTABLE').first()
     assert p is not None and p.condicion_iva == 'Monotributo'
