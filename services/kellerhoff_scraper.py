@@ -100,7 +100,7 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
     log.warning('[KH] Título: %s', page.title())
 
     # Intentar seleccionar radio "Fecha" (ignorar si no existe)
-    radio = page.query_selector('input[type=radio][value="Fecha"]')
+    radio = page.query_selector('#radioFecha')
     if radio:
         radio.click()
         log.warning('[KH] Radio Fecha clickeado')
