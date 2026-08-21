@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-20 22:28 · rama `fix/kh-daterangepicker` · commit `a18d869`
+Generado: 2026-08-20 23:15 · rama `fix/kh-daterangepicker` · commit `c687c03`
 
 **788 rutas** en 77 archivos · **126 modelos** · **21 syncs** · **33 services** · **11 parsers**
 
@@ -828,9 +828,9 @@ Generado: 2026-08-20 22:28 · rama `fix/kh-daterangepicker` · commit `a18d869`
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/kellerhoff/sync` | GET | [`kellerhoff_sync`](../routes/kellerhoff_sync.py#L26) |
-| `/kellerhoff/sync/ejecutar` | POST | [`kellerhoff_sync_ejecutar`](../routes/kellerhoff_sync.py#L55) |
-| `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L81) |
-| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L86) |
+| `/kellerhoff/sync/ejecutar` | POST | [`kellerhoff_sync_ejecutar`](../routes/kellerhoff_sync.py#L75) |
+| `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L101) |
+| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L106) |
 
 ### `routes/laboratorios.py`
 
