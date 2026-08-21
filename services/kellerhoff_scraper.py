@@ -111,10 +111,7 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
 
     # Campo de rango de fecha
     rango = f'{desde.strftime("%d/%m/%Y")} - {hasta.strftime("%d/%m/%Y")}'
-    campo = page.query_selector('input[name*="echa"], input[id*="echa"]')
-    if not campo:
-        # Fallback: primer input tipo text visible
-        campo = page.query_selector('input[type=text]:visible')
+    campo = page.query_selector('#ComprobanteFecha')
     if campo:
         campo.triple_click()
         campo.fill(rango)
@@ -125,11 +122,7 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
     page.screenshot(path='/tmp/kh_03_fecha.png')
 
     # Botón consultar
-    boton = page.query_selector('button:has-text("CONSULTAR")')
-    if not boton:
-        boton = page.query_selector('input[value*="CONSULTAR"]')
-    if not boton:
-        boton = page.query_selector('button[type=submit]')
+    boton = page.query_selector('#btnConsultarFecha')
     if boton:
         boton.click()
         page.wait_for_load_state('networkidle')
