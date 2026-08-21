@@ -17,6 +17,51 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Kellerhoff sync: parsear ítems de factura SIN IA (2026-08-20)
+
+**Contexto de la sesión 2026-08-20**: el sync del portal Kellerhoff (`/kellerhoff/sync`) ya
+baja y guarda los comprobantes correctamente (totales, fechas, tipos). Lo que no funciona
+es que las facturas quedan con **0 artículos** — el detalle de ítems no se parsea.
+
+**Lo que se intentó y hay que continuar / limpiar:**
+
+1. **`_detalle_via_html`** (`services/kellerhoff_scraper.py:390`): fallback que busca en
+   las tablas HTML de la página de detalle del portal la columna con barcode (7-14 dígitos).
+   Nunca encontró ítems en ninguna factura real. Causa no confirmada — puede ser que la tabla
+   se renderice con JS después del `networkidle`, o que el layout de columnas sea distinto al
+   esperado, o que el HTML de detalle cambie según el tipo de comprobante (FAC vs NCR).
+   **Investigar con screenshot + HTML dump de la página de detalle antes de asumir la estructura.**
+
+2. **`_detalle_via_pdf`** (`services/kellerhoff_scraper.py:324`): descarga el PDF del portal
+   con Playwright `expect_download` y llama a `factura_ia` (Claude Vision).
+   **El usuario rechazó usar IA para esto.** La función está en la rama pero NO debe usarse.
+
+**Qué hacer mañana:**
+- **Opción A (preferida si PDF)**: usar el download del PDF (la parte de Playwright ya está
+  implementada en `_detalle_via_pdf`) pero reemplazar `factura_ia` por regex/OCR:
+  - Click en botón PDF del portal → `page.expect_download()` → bytes del PDF
+  - Parsear con `helpers.extract_text_with_ocr_fallback` + regex estilo Kellerhoff
+  - El layout del PDF Kellerhoff que se vio en sesión: `BARCODE CANT DESC PRECIO_PUB %DTO PRECIO_UNIT IMPORTE`
+  - Regex: `^(\d{7,14})\s+(\d+)\s+(.+?)\s+[\d.,]+\s+([\d.,]+)\s+([\d.,]+)%?\s+([\d.,]+)\s+([\d.,]+)$`
+  - Números en formato **argentino** en el PDF (punto=miles, coma=decimal) — distinto al portal web (US format)
+
+- **Opción B (antes de codear)**: agregar en `_detalle_comprobante` un screenshot + dump del
+  HTML de la página de detalle para ver exactamente qué estructura tiene y si los ítems están
+  en el DOM o se cargan por AJAX. Solo 2-3 líneas de debug antes de cualquier otro cambio.
+
+**Estado del código en la rama `fix/kh-url-for-show-results`:**
+- `_detalle_via_pdf` y `_detalle_via_html` existen — la primera hay que reemplazarla o quitar
+- La rama tiene además: url_for fix, theme-emerald, filtro footer, limit 200, parse_dec US ← esos sí mergear
+- Antes de mergear: limpiar `_detalle_via_pdf` o dejarla sin llamar (la `_detalle_via_html` como fallback es inocua)
+
+**Trampa de números**: el portal web Kellerhoff usa formato **US** (coma=miles, punto=decimal):
+`$230,261.36` → 230261.36. Los PDFs probablemente usen formato **argentino** (punto=miles, coma=decimal).
+Hay que verificar contra un PDF real antes de escribir el parser.
+
+**Costo de opción IA (por si se reconsidera)**: ~$0.0015/PDF (Haiku 4.5). 91 PDFs ≈ $0.14.
+
+---
+
 ## ⏳ Pendiente — Pedidos: contemplar rotación ínfima (venta anual < 0.5 u/mes) (2026-08-19)
 
 Al armar pedidos, agregar una condición para los productos con **promedio de
