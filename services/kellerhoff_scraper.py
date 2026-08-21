@@ -156,26 +156,34 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
     boton = page.query_selector('#btnConsultarFecha')
     if boton:
         boton.click()
-        # Esperar a que aparezca una celda con fecha (dd/mm/yyyy) en la tabla de resultados
+        # Esperar que la tabla tenga más de 2 filas (asegura que el AJAX cargó datos reales)
         try:
-            page.wait_for_selector('td:has-text("/")', timeout=10000)
+            page.wait_for_function(
+                "document.querySelectorAll('table')[0].querySelectorAll('tbody tr').length > 2",
+                timeout=15000,
+            )
         except Exception:
-            pass
-        try:
-            page.wait_for_load_state('networkidle', timeout=5000)
-        except Exception:
-            pass
+            # Fallback: networkidle
+            try:
+                page.wait_for_load_state('networkidle', timeout=8000)
+            except Exception:
+                pass
         log.warning('[KH] Botón consultar clickeado')
     else:
         log.warning('[KH] Botón CONSULTAR no encontrado')
 
     page.screenshot(path='/tmp/kh_04_resultado.png')
 
-    # Hay 2 tablas: [0] = comprobantes, [1] = pie de página — usar siempre la primera
+    # Hay 2 tablas: [0] = comprobantes, [1] = pie de página
     todas_tablas = page.query_selector_all('table')
     log.warning('[KH] Tablas en página: %d', len(todas_tablas))
     tabla_datos = todas_tablas[0] if todas_tablas else None
     filas = tabla_datos.query_selector_all('tbody tr') if tabla_datos else []
+    log.warning('[KH] Filas en tabla[0]: %d', len(filas))
+    # Log primeras 3 filas para diagnóstico
+    for i, fila in enumerate(filas[:3]):
+        t = [c.inner_text().strip()[:20] for c in fila.query_selector_all('td')]
+        log.warning('[KH] Fila[%d]: %s', i, t)
     comps = []
     for fila in filas:
         celdas = fila.query_selector_all('td')
