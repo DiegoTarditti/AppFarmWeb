@@ -109,13 +109,33 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
 
     page.screenshot(path='/tmp/kh_02_radio.png')
 
-    # Campo de rango de fecha
-    rango = f'{desde.strftime("%d/%m/%Y")} - {hasta.strftime("%d/%m/%Y")}'
+    # Campo de rango de fecha (es un daterangepicker — fill() solo no alcanza)
+    desde_str = desde.strftime('%d/%m/%Y')
+    hasta_str = hasta.strftime('%d/%m/%Y')
+    rango = f'{desde_str} - {hasta_str}'
     campo = page.query_selector('#ComprobanteFecha')
     if campo:
-        campo.triple_click()
-        campo.fill(rango)
-        log.warning('[KH] Rango escrito: %s', rango)
+        # Setear via JS para disparar los eventos del plugin daterangepicker
+        page.evaluate(f"""
+            (function() {{
+                var el = document.getElementById('ComprobanteFecha');
+                el.value = '{rango}';
+                // Disparar eventos que el daterangepicker escucha
+                ['input', 'change', 'apply.daterangepicker'].forEach(function(ev) {{
+                    el.dispatchEvent(new Event(ev, {{bubbles: true}}));
+                }});
+                // Si usa jQuery daterangepicker, setear via API
+                if (window.$ && $(el).data('daterangepicker')) {{
+                    $(el).data('daterangepicker').setStartDate('{desde_str}');
+                    $(el).data('daterangepicker').setEndDate('{hasta_str}');
+                    $(el).val('{rango}');
+                }}
+            }})();
+        """)
+        log.warning('[KH] Rango escrito via JS: %s', rango)
+        # Verificar que quedó el valor correcto
+        val_actual = campo.input_value()
+        log.warning('[KH] Valor campo fecha tras set: %s', val_actual)
     else:
         log.warning('[KH] Campo fecha NO encontrado')
 
@@ -124,10 +144,15 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
     # Botón consultar
     boton = page.query_selector('#btnConsultarFecha')
     if boton:
-        boton.click()
-        # El resultado carga por AJAX — esperar a que aparezcan filas o pasen 8s
+        # Esperar respuesta AJAX específica de Kellerhoff (más confiable que networkidle)
         try:
-            page.wait_for_selector('table tbody tr', timeout=8000)
+            with page.expect_response(lambda r: 'ConsultaDeComprobantes' in r.url or
+                                      r.request.method == 'POST', timeout=10000):
+                boton.click()
+        except Exception:
+            boton.click()
+        try:
+            page.wait_for_load_state('networkidle', timeout=8000)
         except Exception:
             pass
         log.warning('[KH] Botón consultar clickeado')
