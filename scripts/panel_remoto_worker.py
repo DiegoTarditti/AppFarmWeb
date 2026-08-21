@@ -100,6 +100,14 @@ WHITELIST: dict[str, list[tuple[str, str]]] = {
     'restart-cajas':    [('systemctl restart appcajasbadia', 'restart')],
     'logs-cajas':       [('journalctl -u appcajasbadia -n 50 --no-pager', 'logs')],
     'status-cajas':     [('systemctl status appcajasbadia --no-pager', 'status')],
+    # ── Cartelera digital (repo aparte, docker compose en /opt/cartelera-badia) ──
+    # El codigo va montado como volumen (./app:/app), asi que alcanza con
+    # restart y no hace falta rebuild. El -f con la ruta del compose evita
+    # depender del cwd, que aca es APPFARMWEB_DIR (/root/appfarmweb).
+    'actualizar-cartelera': [
+        ('git -C /opt/cartelera-badia pull', 'pull'),
+        ('docker compose -f /opt/cartelera-badia/docker-compose.yml restart', 'restart'),
+    ],
 }
 
 
