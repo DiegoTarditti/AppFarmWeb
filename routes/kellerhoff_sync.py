@@ -47,7 +47,7 @@ def init_app(app):
                 session.query(Invoice)
                 .filter(Invoice.proveedor_cuit.like(f'%{KELLERHOFF_CUIT[-8:]}%'))
                 .order_by(Invoice.fecha.desc())
-                .limit(30)
+                .limit(200)
                 .all()
             )
             facturas_data = [

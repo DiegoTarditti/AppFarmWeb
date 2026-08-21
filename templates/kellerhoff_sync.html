@@ -1,147 +1,183 @@
 {% extends "base.html" %}
 {% set nav_active = "ingresos" %}
-{% block title %}Sync Kellerhoff{% endblock %}
+{% block title %}Ciclo de compra · Kellerhoff{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+  .list-card { padding: 0; overflow: hidden; }
+  .list-card__head {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--ds-line);
+    background: rgba(95,230,188,.04);
+  }
+  .list-card__body { overflow: auto; max-height: 60vh; }
+  .list-card__body table { width: 100%; font-size: 13px; }
+  .list-card__body thead { position: sticky; top: 0; z-index: 5; }
+  .list-card__body thead th {
+    padding: 10px 16px;
+    font-size: 10px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; text-align: left;
+    background: var(--ds-surface);
+  }
+  .list-card__body tbody td { padding: 10px 16px; border-bottom: 1px solid var(--ds-line); }
+  .list-card__body tbody tr:last-child td { border-bottom: 0; }
+  .list-card__body tbody tr { transition: background-color .15s; }
+  .list-card__body tbody tr:hover { background: rgba(95,230,188,.04); }
+  .mono-xs { font-family: ui-monospace, monospace; font-size: 11px; color: var(--ds-text-mute); }
+  .th-right, .td-right { text-align: right; }
+  .th-center, .td-center { text-align: center; }
+
+  @keyframes kh-slide {
+    0%   { margin-left: -40%; }
+    50%  { margin-left: 100%; }
+    100% { margin-left: -40%; }
+  }
+</style>
+{% endblock %}
 
 {% block main %}
-<div class="p-4 md:p-6 max-w-3xl mx-auto space-y-5">
+<div class="flex-1 py-6 px-6 overflow-auto">
+<div class="max-w-5xl mx-auto space-y-6">
 
-  <div class="flex items-center gap-3">
-    <a href="{{ url_for('ingresos') }}" class="text-xs text-[#6d9082] hover:text-white">← Ingresos</a>
-    <h1 class="text-xl font-bold">Ciclo de compra · Kellerhoff</h1>
-  </div>
+  <header class="page-header">
+    <div class="page-header__left">
+      <a href="{{ url_for('ingresos') }}" class="section-label" style="margin-bottom:4px;">← Ingresos</a>
+      <h1 class="page-header__title">Ciclo de compra · <span class="glow-text">Kellerhoff</span></h1>
+      <p class="page-header__subtitle">Sincronización automática con el portal de la droguería</p>
+    </div>
+  </header>
 
+  {# ── Alerta credenciales ── #}
   {% if not credenciales_ok %}
-  <div class="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3 text-sm text-amber-300">
-    ⚠ Faltan las variables de entorno <code>KELLERHOFF_USER</code> y <code>KELLERHOFF_PASS</code>.
-    Agregálas en el <code>docker-compose.yml</code> o en el archivo <code>.env</code>.
+  <div class="card" style="border-color:var(--ds-orange);background:rgba(234,88,12,.06);padding:14px 18px;">
+    <p class="text-sm" style="color:var(--ds-orange);">
+      ⚠ Faltan las variables de entorno <code>KELLERHOFF_USER</code> y <code>KELLERHOFF_PASS</code>.
+    </p>
   </div>
   {% endif %}
 
-  {# ── Panel de sincronización ── #}
-  <div class="rounded-xl border border-[#214635] bg-white/[0.02] p-4 space-y-4">
-    <h2 class="text-sm font-semibold">Bajar comprobantes del portal</h2>
+  {# ── Panel de sync ── #}
+  <div class="card" style="padding:20px 24px;">
+    <h2 class="section-label" style="margin-bottom:16px;">Bajar comprobantes del portal</h2>
 
     <div class="flex items-end gap-3">
       <div>
-        <label class="block text-xs text-[#6d9082] mb-1">Rango (días hacia atrás)</label>
+        <label class="block" style="font-size:11px;color:var(--ds-text-mute);margin-bottom:6px;">Rango (días hacia atrás)</label>
         <input id="inp-dias" type="number" value="7" min="1" max="60"
-               class="w-24 bg-[#2c2c2e] border border-[#3a3a3c] rounded-lg px-3 py-1.5 text-sm text-center text-white">
+               style="width:80px;text-align:center;background:var(--ds-surface-2);border:1px solid var(--ds-line);border-radius:var(--ds-r-sm);padding:6px 10px;font-size:13px;color:var(--ds-text);">
       </div>
       <button id="btn-sync"
               {% if not credenciales_ok %}disabled{% endif %}
               onclick="iniciarSync()"
-              class="px-4 py-1.5 rounded-lg text-sm font-semibold bg-emerald-600 hover:bg-emerald-500
-                     disabled:opacity-40 disabled:cursor-not-allowed transition">
+              class="btn btn-secondary">
         ▶ Sincronizar
       </button>
-      <span id="sync-spinner" class="hidden text-xs text-[#6d9082] animate-pulse">Procesando…</span>
-    </div>
-    <div id="sync-progress" class="hidden mt-3">
-      <div class="w-full bg-[#3a3a3c] rounded-full h-1.5 overflow-hidden">
-        <div class="h-1.5 rounded-full bg-emerald-500 animate-[progress_2s_ease-in-out_infinite]"
-             style="width:40%;animation:kh-slide 1.5s ease-in-out infinite"></div>
-      </div>
-      <p id="sync-progress-msg" class="text-xs text-[#6d9082] mt-1">Iniciando Chromium…</p>
+      <span id="sync-spinner" class="hidden" style="font-size:12px;color:var(--ds-text-mute);">Procesando…</span>
     </div>
 
-    {# Resultado del último sync #}
-    <div id="resultado" class="hidden rounded-lg border border-[#214635] bg-black/20 px-4 py-3 text-xs space-y-1">
+    <div id="sync-progress" class="hidden" style="margin-top:14px;">
+      <div style="height:4px;background:var(--ds-line);border-radius:2px;overflow:hidden;">
+        <div style="height:4px;border-radius:2px;background:var(--ds-mint);width:40%;animation:kh-slide 1.5s ease-in-out infinite;"></div>
+      </div>
+      <p id="sync-progress-msg" style="font-size:12px;color:var(--ds-text-mute);margin-top:6px;">Iniciando Chromium…</p>
     </div>
+
+    <div id="resultado" class="hidden" style="margin-top:14px;padding:12px 16px;border-radius:var(--ds-r-sm);border:1px solid var(--ds-line);background:var(--ds-surface-2);font-size:13px;"></div>
   </div>
 
   {# ── Pedidos abiertos sin factura ── #}
   {% if pendientes %}
-  <div class="rounded-xl border border-[#214635] bg-white/[0.02] overflow-hidden">
-    <div class="px-4 py-2.5 border-b border-[#214635]">
-      <h2 class="text-sm font-semibold">Pedidos Kellerhoff sin factura ({{ pendientes|length }})</h2>
+  <div class="card list-card">
+    <div class="list-card__head">
+      <span style="font-size:13px;font-weight:600;">Pedidos Kellerhoff sin factura ({{ pendientes|length }})</span>
     </div>
-    <table class="w-full text-xs">
-      <thead class="text-[10px] uppercase text-[#6d9082] bg-black/20">
-        <tr>
-          <th class="text-left px-4 py-2">Fecha pedido</th>
-          <th class="text-right px-4 py-2">Artículos</th>
-          <th class="text-right px-4 py-2">Unidades</th>
-          <th class="px-4 py-2"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for p in pendientes %}
-        <tr class="border-t border-[#214635] hover:bg-white/[0.02]">
-          <td class="px-4 py-2 font-mono">{{ p.fecha }}</td>
-          <td class="px-4 py-2 text-right font-mono">{{ p.items }}</td>
-          <td class="px-4 py-2 text-right font-mono">{{ p.unidades }}</td>
-          <td class="px-4 py-2 text-right">
-            <a href="{{ url_for('api_drogueria_pedidos_emitidos', prov_id=1) }}"
-               class="text-[10px] text-[#6d9082] hover:text-white">ver →</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="list-card__body">
+      <table>
+        <thead><tr>
+          <th>Fecha pedido</th>
+          <th class="th-right">Artículos</th>
+          <th class="th-right">Unidades</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+          {% for p in pendientes %}
+          <tr>
+            <td class="mono-xs">{{ p.fecha }}</td>
+            <td class="td-right mono-xs">{{ p.items }}</td>
+            <td class="td-right mono-xs">{{ p.unidades }}</td>
+            <td class="td-right">
+              <a href="{{ url_for('api_drogueria_pedidos_emitidos', prov_id=1) }}"
+                 style="font-size:11px;color:var(--ds-text-mute);" class="hover:text-mint">ver →</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
   {% else %}
-  <p class="text-sm text-[#6d9082]">No hay pedidos Kellerhoff abiertos sin factura.</p>
+  <p style="font-size:13px;color:var(--ds-text-mute);">No hay pedidos Kellerhoff abiertos sin factura.</p>
   {% endif %}
 
-  {# ── Último resultado (si ya hubo un sync) ── #}
-  {% if sync_estado.ultimo %}
-  <p class="text-xs text-[#6d9082]">Último sync: {{ sync_estado.ultimo }}</p>
-  {% endif %}
-
-  {# ── Facturas Kellerhoff en DB ── #}
+  {# ── Comprobantes en sistema ── #}
   {% if facturas %}
-  <div class="rounded-xl border border-[#214635] bg-white/[0.02] overflow-hidden">
-    <div class="px-4 py-2.5 border-b border-[#214635] flex items-center justify-between">
-      <h2 class="text-sm font-semibold">Comprobantes en sistema ({{ facturas|length }})</h2>
+  <div class="card list-card">
+    <div class="list-card__head">
+      <span style="font-size:13px;font-weight:600;">Comprobantes en sistema ({{ facturas|length }})</span>
+      {% if sync_estado.ultimo %}
+      <span style="font-size:11px;color:var(--ds-text-mute);margin-left:12px;">Último sync: {{ sync_estado.ultimo }}</span>
+      {% endif %}
     </div>
-    <table class="w-full text-xs">
-      <thead class="text-[10px] uppercase text-[#6d9082] bg-black/20">
-        <tr>
-          <th class="text-left px-4 py-2">Fecha</th>
-          <th class="text-left px-4 py-2">Nº Comprobante</th>
-          <th class="text-center px-4 py-2">Tipo</th>
-          <th class="text-right px-4 py-2">Artículos</th>
-          <th class="text-right px-4 py-2">Total</th>
-          <th class="text-center px-4 py-2">Origen</th>
-          <th class="px-4 py-2"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for f in facturas %}
-        <tr class="border-t border-[#214635] hover:bg-white/[0.02]">
-          <td class="px-4 py-2 font-mono text-[#a9ccbd]">{{ f.fecha }}</td>
-          <td class="px-4 py-2 font-mono">{{ f.numero }}</td>
-          <td class="px-4 py-2 text-center">
-            {% if f.tipo == 'NCR' %}
-            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-900/40 text-rose-300">NCR</span>
-            {% else %}
-            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-900/40 text-emerald-300">FAC</span>
-            {% endif %}
-          </td>
-          <td class="px-4 py-2 text-right font-mono">{{ f.articulos }}</td>
-          <td class="px-4 py-2 text-right font-mono {% if f.total and f.total < 0 %}text-rose-400{% else %}text-emerald-400{% endif %}">
-            {% if f.total %}$ {{ '%.2f'|format(f.total) }}{% else %}—{% endif %}
-          </td>
-          <td class="px-4 py-2 text-center">
-            {% if f.origen == 'kh_portal' %}
-            <span class="text-[10px] text-amber-400">portal</span>
-            {% elif f.origen == 'arca' %}
-            <span class="text-[10px] text-sky-400">ARCA</span>
-            {% else %}
-            <span class="text-[10px] text-[#6d9082]">{{ f.origen }}</span>
-            {% endif %}
-          </td>
-          <td class="px-4 py-2 text-right">
-            <a href="{{ url_for('show_results', invoice_id=f.id) }}"
-               class="text-[10px] text-[#6d9082] hover:text-white">ver →</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="list-card__body">
+      <table>
+        <thead><tr>
+          <th>Fecha</th>
+          <th>Nº Comprobante</th>
+          <th class="th-center">Tipo</th>
+          <th class="th-right">Artículos</th>
+          <th class="th-right">Total</th>
+          <th class="th-center">Origen</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+          {% for f in facturas %}
+          <tr>
+            <td class="mono-xs">{{ f.fecha }}</td>
+            <td class="mono-xs">{{ f.numero }}</td>
+            <td class="td-center">
+              {% if f.tipo == 'NCR' %}
+              <span class="badge badge-danger">NCR</span>
+              {% else %}
+              <span class="badge badge-mint">FAC</span>
+              {% endif %}
+            </td>
+            <td class="td-right mono-xs">{{ f.articulos }}</td>
+            <td class="td-right mono-xs" style="{% if f.total and f.total < 0 %}color:var(--ds-danger);{% else %}color:var(--ds-mint);{% endif %}">
+              {% if f.total %}$ {{ '%.2f'|format(f.total) }}{% else %}—{% endif %}
+            </td>
+            <td class="td-center">
+              {% if f.origen == 'kh_portal' %}
+              <span style="font-size:11px;color:var(--ds-orange);">portal</span>
+              {% elif f.origen == 'arca' %}
+              <span style="font-size:11px;color:var(--ds-info, #60a5fa);">ARCA</span>
+              {% else %}
+              <span style="font-size:11px;color:var(--ds-text-mute);">{{ f.origen }}</span>
+              {% endif %}
+            </td>
+            <td class="td-right">
+              <a href="{{ url_for('show_results', invoice_id=f.id) }}"
+                 style="font-size:11px;color:var(--ds-text-mute);">ver →</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
   {% endif %}
 
+</div>
 </div>
 
 <script>
@@ -179,6 +215,7 @@ async function pollEstado() {
     document.getElementById('sync-progress').classList.add('hidden');
     document.getElementById('btn-sync').disabled = false;
     setResultado(data.resultado);
+    if (data.resultado && data.resultado.ok) setTimeout(() => location.reload(), 1500);
   } else {
     if (data.msg) document.getElementById('sync-progress-msg').textContent = data.msg;
   }
@@ -189,15 +226,15 @@ function setResultado(r) {
   if (!r) { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
   if (!r.ok) {
-    el.innerHTML = `<span class="text-rose-400">✗ ${r.error || 'Error desconocido'}</span>`;
+    el.innerHTML = `<span style="color:var(--ds-danger);">✗ ${r.error || 'Error desconocido'}</span>`;
     return;
   }
   const errHtml = r.errores && r.errores.length
-    ? `<div class="text-amber-400 mt-1">⚠ ${r.errores.length} error(es): ${r.errores.slice(0,3).join(' · ')}</div>`
+    ? `<div style="color:var(--ds-orange);margin-top:6px;">⚠ ${r.errores.length} error(es): ${r.errores.slice(0,3).join(' · ')}</div>`
     : '';
   el.innerHTML = `
-    <div class="text-emerald-400 font-semibold">✓ Sync completado</div>
-    <div class="text-[#a9ccbd] mt-1">
+    <div style="color:var(--ds-mint);font-weight:600;">✓ Sync completado</div>
+    <div style="color:var(--ds-text-soft);margin-top:4px;">
       ${r.comprobantes} comprobante(s) encontrados ·
       ${r.creados} nuevo(s) ·
       ${r.enriquecidos} enriquecido(s) ·
@@ -206,11 +243,4 @@ function setResultado(r) {
   `;
 }
 </script>
-<style>
-@keyframes kh-slide {
-  0%   { margin-left: -40%; }
-  50%  { margin-left: 100%; }
-  100% { margin-left: -40%; }
-}
-</style>
 {% endblock %}
