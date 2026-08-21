@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-21 08:46 · rama `feat/provider-form-unificado` · commit `5c68ec2`
+Generado: 2026-08-21 13:25 · rama `feat/rename-cuentas-corrientes` · commit `f92d3e7`
 
-**789 rutas** en 77 archivos · **126 modelos** · **21 syncs** · **33 services** · **11 parsers**
+**793 rutas** en 77 archivos · **126 modelos** · **21 syncs** · **33 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -492,16 +492,20 @@ Generado: 2026-08-21 08:46 · rama `feat/provider-form-unificado` · commit `5c6
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/contabilidad` | GET | [`contabilidad_index`](../routes/contabilidad.py#L30) |
-| `/contabilidad/formas-pago` | GET | [`contabilidad_formas_pago`](../routes/contabilidad.py#L117) |
-| `/contabilidad/formas-pago/<int:cuenta_id>/movimientos` | GET | [`contabilidad_forma_pago_movimientos`](../routes/contabilidad.py#L162) |
-| `/contabilidad/formas-pago/guardar` | POST | [`contabilidad_forma_pago_guardar`](../routes/contabilidad.py#L132) |
-| `/contabilidad/pagos` | GET | [`contabilidad_pagos`](../routes/contabilidad.py#L202) |
-| `/contabilidad/pagos/<int:pago_id>/delete` | POST | [`contabilidad_pago_delete`](../routes/contabilidad.py#L305) |
-| `/contabilidad/pagos/guardar` | POST | [`contabilidad_pago_guardar`](../routes/contabilidad.py#L236) |
-| `/contabilidad/pagos/nuevo` | GET | [`contabilidad_pago_nuevo`](../routes/contabilidad.py#L218) |
-| `/contabilidad/proveedores` | GET | [`contabilidad_proveedores`](../routes/contabilidad.py#L35) |
-| `/contabilidad/proveedores/guardar` | POST | [`contabilidad_proveedor_guardar`](../routes/contabilidad.py#L87) |
+| `/contabilidad` | GET | [`contabilidad_legacy_redirect`](../routes/contabilidad.py#L48) |
+| `/contabilidad/formas-pago` | GET | [`contabilidad_legacy_redirect`](../routes/contabilidad.py#L48) |
+| `/contabilidad/pagos` | GET | [`contabilidad_legacy_redirect`](../routes/contabilidad.py#L48) |
+| `/contabilidad/proveedores` | GET | [`contabilidad_legacy_redirect`](../routes/contabilidad.py#L48) |
+| `/cuentas-corrientes` | GET | [`contabilidad_index`](../routes/contabilidad.py#L30) |
+| `/cuentas-corrientes/formas-pago` | GET | [`contabilidad_formas_pago`](../routes/contabilidad.py#L144) |
+| `/cuentas-corrientes/formas-pago/<int:cuenta_id>/movimientos` | GET | [`contabilidad_forma_pago_movimientos`](../routes/contabilidad.py#L189) |
+| `/cuentas-corrientes/formas-pago/guardar` | POST | [`contabilidad_forma_pago_guardar`](../routes/contabilidad.py#L159) |
+| `/cuentas-corrientes/pagos` | GET | [`contabilidad_pagos`](../routes/contabilidad.py#L229) |
+| `/cuentas-corrientes/pagos/<int:pago_id>/delete` | POST | [`contabilidad_pago_delete`](../routes/contabilidad.py#L332) |
+| `/cuentas-corrientes/pagos/guardar` | POST | [`contabilidad_pago_guardar`](../routes/contabilidad.py#L263) |
+| `/cuentas-corrientes/pagos/nuevo` | GET | [`contabilidad_pago_nuevo`](../routes/contabilidad.py#L245) |
+| `/cuentas-corrientes/proveedores` | GET | [`contabilidad_proveedores`](../routes/contabilidad.py#L62) |
+| `/cuentas-corrientes/proveedores/guardar` | POST | [`contabilidad_proveedor_guardar`](../routes/contabilidad.py#L114) |
 
 ### `routes/converter.py`
 
@@ -559,12 +563,12 @@ Generado: 2026-08-21 08:46 · rama `feat/provider-form-unificado` · commit `5c6
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/comprobantes/importar` | GET/POST | [`comprobantes_importar`](../routes/cuentas.py#L158) |
-| `/cuentas-corrientes` | GET | [`cuentas_corrientes`](../routes/cuentas.py#L134) |
-| `/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/delete` | POST | [`cuenta_corriente_delete`](../routes/cuentas.py#L313) |
-| `/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/edit-obs` | POST | [`cuenta_corriente_edit_obs`](../routes/cuentas.py#L347) |
-| `/provider/<int:provider_id>/cuenta-corriente/add` | POST | [`cuenta_corriente_add`](../routes/cuentas.py#L277) |
-| `/provider/<int:provider_id>/cuenta-corriente/conciliar` | POST | [`cuenta_corriente_conciliar`](../routes/cuentas.py#L327) |
+| `/comprobantes/importar` | GET/POST | [`comprobantes_importar`](../routes/cuentas.py#L162) |
+| `/cuentas-corrientes/extracto` | GET | [`cuentas_corrientes`](../routes/cuentas.py#L138) |
+| `/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/delete` | POST | [`cuenta_corriente_delete`](../routes/cuentas.py#L317) |
+| `/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/edit-obs` | POST | [`cuenta_corriente_edit_obs`](../routes/cuentas.py#L351) |
+| `/provider/<int:provider_id>/cuenta-corriente/add` | POST | [`cuenta_corriente_add`](../routes/cuentas.py#L281) |
+| `/provider/<int:provider_id>/cuenta-corriente/conciliar` | POST | [`cuenta_corriente_conciliar`](../routes/cuentas.py#L331) |
 
 ### `routes/dashboard.py`
 

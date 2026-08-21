@@ -25,12 +25,39 @@ TIPOS_CUENTA_PAGO = [
 
 def init_app(app):
 
-    @app.route('/contabilidad')
+    @app.route('/cuentas-corrientes')
     @login_required
     def contabilidad_index():
+        # Compatibilidad: hasta el rename, /cuentas-corrientes ERA el extracto.
+        # Un favorito viejo con ?proveedor=N tiene que seguir cayendo ahí.
+        if request.args.get('proveedor'):
+            return redirect(url_for('cuentas_corrientes',
+                                    proveedor=request.args.get('proveedor')))
         return render_template('contabilidad_index.html')
 
+    # ── Redirects 301 de las URLs viejas /contabilidad* ─────────────────────
+    # El módulo se renombró a "Cuentas corrientes" y sus URLs pasaron a
+    # /cuentas-corrientes*. Los endpoints (nombres de función) no cambiaron, así
+    # que los url_for de los templates ya apuntan a las nuevas. Estos shims son
+    # solo para bookmarks/enlaces viejos que quedaron con /contabilidad*.
+    @app.route('/contabilidad')
     @app.route('/contabilidad/proveedores')
+    @app.route('/contabilidad/pagos')
+    @app.route('/contabilidad/formas-pago')
+    @login_required
+    def contabilidad_legacy_redirect():
+        # request.path es /contabilidad[/xxx]; el destino es el mismo bajo
+        # /cuentas-corrientes. Se resuelve por el endpoint correspondiente.
+        mapa = {
+            '/contabilidad': 'contabilidad_index',
+            '/contabilidad/proveedores': 'contabilidad_proveedores',
+            '/contabilidad/pagos': 'contabilidad_pagos',
+            '/contabilidad/formas-pago': 'contabilidad_formas_pago',
+        }
+        destino = mapa.get(request.path, 'contabilidad_index')
+        return redirect(url_for(destino), code=301)
+
+    @app.route('/cuentas-corrientes/proveedores')
     @login_required
     def contabilidad_proveedores():
         q = (request.args.get('q') or '').strip().lower()
@@ -82,7 +109,7 @@ def init_app(app):
                                proveedores=data, q=request.args.get('q', ''),
                                condiciones_iva=CONDICIONES_IVA)
 
-    @app.route('/contabilidad/proveedores/guardar', methods=['POST'])
+    @app.route('/cuentas-corrientes/proveedores/guardar', methods=['POST'])
     @login_required
     def contabilidad_proveedor_guardar():
         pid = request.form.get('id', type=int)
@@ -112,7 +139,7 @@ def init_app(app):
         return redirect(url_for('contabilidad_proveedores'))
 
     # ── Formas de pago (cuentas de banco / MercadoPago / efectivo) ──────────
-    @app.route('/contabilidad/formas-pago')
+    @app.route('/cuentas-corrientes/formas-pago')
     @login_required
     def contabilidad_formas_pago():
         with database.get_db() as session:
@@ -127,7 +154,7 @@ def init_app(app):
                                cuentas=data, tipos=TIPOS_CUENTA_PAGO,
                                tipos_lbl=tipos_lbl)
 
-    @app.route('/contabilidad/formas-pago/guardar', methods=['POST'])
+    @app.route('/cuentas-corrientes/formas-pago/guardar', methods=['POST'])
     @login_required
     def contabilidad_forma_pago_guardar():
         cid = request.form.get('id', type=int)
@@ -157,7 +184,7 @@ def init_app(app):
                 flash(f'Error: {e}')
         return redirect(url_for('contabilidad_formas_pago'))
 
-    @app.route('/contabilidad/formas-pago/<int:cuenta_id>/movimientos')
+    @app.route('/cuentas-corrientes/formas-pago/<int:cuenta_id>/movimientos')
     @login_required
     def contabilidad_forma_pago_movimientos(cuenta_id):
         with database.get_db() as session:
@@ -197,7 +224,7 @@ def init_app(app):
                             'conforme': inv.conforme_pago})
         return out
 
-    @app.route('/contabilidad/pagos')
+    @app.route('/cuentas-corrientes/pagos')
     @login_required
     def contabilidad_pagos():
         with database.get_db() as session:
@@ -213,7 +240,7 @@ def init_app(app):
                      'n_facturas': len(pg.aplicaciones)} for pg in pagos]
         return render_template('contabilidad_pagos.html', pagos=data)
 
-    @app.route('/contabilidad/pagos/nuevo')
+    @app.route('/cuentas-corrientes/pagos/nuevo')
     @login_required
     def contabilidad_pago_nuevo():
         proveedor_id = request.args.get('proveedor', type=int)
@@ -231,7 +258,7 @@ def init_app(app):
                                provider=prov, facturas=facturas, cuentas=cuentas,
                                hoy=_dt.now().strftime('%Y-%m-%d'))
 
-    @app.route('/contabilidad/pagos/guardar', methods=['POST'])
+    @app.route('/cuentas-corrientes/pagos/guardar', methods=['POST'])
     @login_required
     def contabilidad_pago_guardar():
         proveedor_id = request.form.get('proveedor_id', type=int)
@@ -300,7 +327,7 @@ def init_app(app):
                 return redirect(url_for('contabilidad_pago_nuevo', proveedor=proveedor_id))
         return redirect(url_for('contabilidad_pagos'))
 
-    @app.route('/contabilidad/pagos/<int:pago_id>/delete', methods=['POST'])
+    @app.route('/cuentas-corrientes/pagos/<int:pago_id>/delete', methods=['POST'])
     @login_required
     def contabilidad_pago_delete(pago_id):
         with database.get_db() as session:

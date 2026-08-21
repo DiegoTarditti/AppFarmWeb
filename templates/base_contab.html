@@ -18,14 +18,14 @@
       <a href="{{ url_for('contabilidad_index') }}"
          style="display:flex; align-items:center; gap:8px; text-decoration:none; padding:2px 8px;">
         <span style="font-size:18px;">📊</span>
-        <span class="glow-text" style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px;">Contabilidad</span>
+        <span class="glow-text" style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px;">Cuentas corrientes</span>
       </a>
       <span style="width:1px; height:22px; background:var(--ds-line-2); margin:0 8px;"></span>
 
       {% set _menu = [
           ('inicio',      'Inicio',            url_for('contabilidad_index'),        True),
           ('proveedores', 'Proveedores',       url_for('contabilidad_proveedores'),  True),
-          ('ctacte',      'Cuentas corrientes',url_for('cuentas_corrientes'),        True),
+          ('ctacte',      'Extracto',          url_for('cuentas_corrientes'),        True),
           ('formas_pago', 'Formas de pago',    url_for('contabilidad_formas_pago'),  True),
           ('pagos',       'Pagos',             url_for('contabilidad_pagos'),        True),
           ('rubros',      'Rubros',            '#',                            False),

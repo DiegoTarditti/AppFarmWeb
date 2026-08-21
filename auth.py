@@ -128,9 +128,13 @@ PERFILES = {
     },
     # Módulo de contabilidad standalone: proveedores, cuentas corrientes,
     # importar comprobantes ARCA y (pronto) rubros / pagos / libro de IVA.
+    # El perfil se sigue llamando 'contabilidad' internamente (clave estable,
+    # guardada en Usuario.perfiles_json), pero de cara al usuario el módulo es
+    # "Cuentas corrientes". Se mantiene el prefijo /contabilidad en la lista para
+    # que los redirects 301 de las URLs viejas sigan pasando el gating.
     'contabilidad': {
-        'label': 'Contabilidad', 'icono': '📊',
-        'url': '/contabilidad',
+        'label': 'Cuentas corrientes', 'icono': '📊',
+        'url': '/cuentas-corrientes',
         'prefijos': ['/contabilidad', '/cuentas-corrientes', '/comprobantes',
                      '/providers', '/provider/', '/api/proveedores'],
     },

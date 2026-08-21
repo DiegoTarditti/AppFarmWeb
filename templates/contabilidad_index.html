@@ -1,12 +1,12 @@
 {% extends "base_contab.html" %}
 {% set contab_active = 'inicio' %}
 
-{% block title %}Contabilidad — {{ config.farmacia_nombre }}{% endblock %}
+{% block title %}Cuentas corrientes — {{ config.farmacia_nombre }}{% endblock %}
 
 {% block contab %}
   <header class="page-header" style="margin-bottom:18px;">
-    <h1 class="page-header__title">Módulo de <span class="glow-text">Contabilidad</span></h1>
-    <p class="page-header__subtitle">Comprobantes de ARCA, cuentas corrientes y pagos a proveedores.</p>
+    <h1 class="page-header__title">Módulo de <span class="glow-text">Cuentas corrientes</span></h1>
+    <p class="page-header__subtitle">Comprobantes de ARCA, saldo por proveedor y pagos.</p>
   </header>
 
   <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -22,12 +22,12 @@
       </div>
     </a>
 
-    {# ── Cuentas corrientes ── #}
+    {# ── Extracto / saldo por proveedor ── #}
     <a href="{{ url_for('cuentas_corrientes') }}" class="card card-action">
       <div class="action-content">
         <div class="icon-tile icon-tile-info">💳</div>
         <div class="action-content__body">
-          <div class="action-content__title">Cuentas corrientes</div>
+          <div class="action-content__title">Extracto</div>
           <div class="action-content__desc">Saldo por proveedor: facturas, notas de crédito y pagos.</div>
         </div>
       </div>
