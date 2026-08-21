@@ -40,7 +40,7 @@ PERMISOS_POR_ROL = {
         'dashboard': 'ver', 'procesos': 'ver', 'pedidos': 'ver',
         'facturas': 'ver', 'productos': 'ver',
     },
-    # Rol acotado a /compras/dia (armado de pedidos a droguerías).
+    # Rol acotado a /pedidos/dia (armado de pedidos a droguerías).
     'pedidos': {
         'pedidos': 'editar',
     },
@@ -109,7 +109,7 @@ PERFILES = {
     },
     'pedidos_drog': {
         'label': 'Pedidos a Droguerías', 'icono': '📦',
-        'url': '/compras/dia',
+        'url': '/pedidos/dia',
         'prefijos': ['/compras/', '/pedidos/', '/api/compras/', '/api/pedidos/',
                      '/pedidos-emitidos', '/api/pedido-emitido/', '/api/producto/',
                      '/api/observer-product/', '/api/lab-drog/'],
