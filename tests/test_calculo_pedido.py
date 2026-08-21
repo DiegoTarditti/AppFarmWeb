@@ -86,14 +86,17 @@ class TestOverrideYGuards:
         assert r['a_pedir'] == 0
         assert 'baja_venta_anual' in r['regla_usada']
 
-    def test_baja_venta_anual_stock_cero_es_nuevo_repone(self):
-        """Producto nuevo (< 6 meses de historial) queda exento de la regla."""
+    def test_baja_venta_anual_ignora_es_nuevo(self):
+        """es_nuevo ya NO exime: con datos de venta no se puede distinguir un
+        producto nuevo de uno viejo que casi no se vende, así que en stock 0 y
+        venta baja NO se repone, valga es_nuevo lo que valga."""
         cfg = {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
                'umbral_ventas_anuales': 6}
         r = calcular_a_pedir(cfg, {'daily_rate': 0.5, 'min_efectivo': 2, 'u12m': 3,
                                    'sin_mov': False, 'stock_actual': 0, 'es_nuevo': True,
                                    'dias_cobertura_fijo': 4})
-        assert r['a_pedir'] > 0
+        assert r['a_pedir'] == 0
+        assert 'baja_venta_anual' in r['regla_usada']
 
     def test_baja_venta_anual_con_stock_repone_normal(self):
         """Si hay stock > 0 la regla no aplica (no está en 0)."""

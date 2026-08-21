@@ -332,7 +332,7 @@
                     <input type="number" name="umbral_ventas_anuales" min="0" max="999"
                            value="{{ tipo.config.umbral_ventas_anuales or 0 }}" class="tp-input"
                            placeholder="6" oninput="simular()">
-                    <div class="tp-field-help">Si el producto vendió <b>menos de este valor en 12 meses</b> y llega a <b>stock 0</b>, no se repone automáticamente (se pide a droguería solo si alguien lo necesita). Excepción: productos nuevos con historial &lt; 6 meses. 0 = desactivado.</div>
+                    <div class="tp-field-help">Si el producto vendió <b>menos de este valor en 12 meses</b> y llega a <b>stock 0</b>, no se repone automáticamente (se pide a droguería solo si alguien lo necesita). Aplica por igual a productos nuevos o viejos: sólo cuenta si vende o no vende. 0 = desactivado.</div>
                 </div>
             </div>
         </div>

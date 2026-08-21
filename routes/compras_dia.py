@@ -1222,10 +1222,6 @@ def init_app(app):
                 # init_db), caemos a COMPRA_LAB (mismo criterio "cubrir N días").
                 if not _cfg and _tipo_slug == 'MULTI_LAB':
                     _cfg = cargar_config('COMPRA_LAB') or {}
-                # Producto "nuevo": < 6 meses con ventas en los últimos 12.
-                # Exime de la regla baja_venta_anual para no penalizar historial incompleto.
-                _meses_con_venta = sum(1 for v in ventas_arr[:11] if v > 0)
-                _es_nuevo = _meses_con_venta < 6
                 _ctx_base = {
                     'daily_rate': daily_rate,
                     'min_efectivo': min_efectivo,
@@ -1238,7 +1234,6 @@ def init_app(app):
                     'pvp': pvp_est,
                     'rotacion': rotacion_cls,
                     'ventas_mensuales': ventas_arr,
-                    'es_nuevo': _es_nuevo,
                 }
                 _result = calcular_a_pedir(_cfg, _ctx_base)
                 a_pedir = _result['a_pedir']
