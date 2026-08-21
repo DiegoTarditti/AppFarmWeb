@@ -78,12 +78,12 @@ def scrape_comprobantes(desde: date, hasta: date) -> list[dict]:
 # ── Login ─────────────────────────────────────────────────────────────────────
 
 def _login(page) -> None:
-    # TODO: ajustar URL y selectores con las pruebas reales de Playwright
     page.goto(f'{KH_URL}/Account/Login')
     page.wait_for_load_state('networkidle')
-    page.fill('#UserName', KH_USER)   # TODO: verificar name/id
-    page.fill('#Password', KH_PASS)   # TODO: verificar name/id
-    page.click('input[type=submit], button[type=submit]')
+    page.fill('#login_name', KH_USER)
+    page.fill('#login_password', KH_PASS)
+    # Botón con reCAPTCHA v3 (background, no bloquea headless en este portal)
+    page.click('#botonIniciarSesion')
     page.wait_for_load_state('networkidle')
 
 

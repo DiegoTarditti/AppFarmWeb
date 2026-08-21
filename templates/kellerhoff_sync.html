@@ -25,7 +25,7 @@
       <div>
         <label class="block text-xs text-[#6d9082] mb-1">Rango (días hacia atrás)</label>
         <input id="inp-dias" type="number" value="7" min="1" max="60"
-               class="w-24 bg-[#2c2c2e] border border-[#3a3a3c] rounded-lg px-3 py-1.5 text-sm text-center">
+               class="w-24 bg-[#2c2c2e] border border-[#3a3a3c] rounded-lg px-3 py-1.5 text-sm text-center text-white">
       </div>
       <button id="btn-sync"
               {% if not credenciales_ok %}disabled{% endif %}
@@ -34,7 +34,14 @@
                      disabled:opacity-40 disabled:cursor-not-allowed transition">
         ▶ Sincronizar
       </button>
-      <span id="sync-spinner" class="hidden text-xs text-[#6d9082] animate-pulse">Conectando…</span>
+      <span id="sync-spinner" class="hidden text-xs text-[#6d9082] animate-pulse">Procesando…</span>
+    </div>
+    <div id="sync-progress" class="hidden mt-3">
+      <div class="w-full bg-[#3a3a3c] rounded-full h-1.5 overflow-hidden">
+        <div class="h-1.5 rounded-full bg-emerald-500 animate-[progress_2s_ease-in-out_infinite]"
+             style="width:40%;animation:kh-slide 1.5s ease-in-out infinite"></div>
+      </div>
+      <p id="sync-progress-msg" class="text-xs text-[#6d9082] mt-1">Iniciando Chromium…</p>
     </div>
 
     {# Resultado del último sync #}
@@ -92,6 +99,7 @@ async function iniciarSync() {
   const dias = document.getElementById('inp-dias').value;
   btn.disabled = true;
   spinner.classList.remove('hidden');
+  document.getElementById('sync-progress').classList.remove('hidden');
   setResultado(null);
 
   const fd = new FormData();
@@ -100,11 +108,11 @@ async function iniciarSync() {
   const data = await r.json();
   if (!data.ok) {
     spinner.classList.add('hidden');
+    document.getElementById('sync-progress').classList.add('hidden');
     btn.disabled = false;
     setResultado({ok: false, error: data.error});
     return;
   }
-  // Polling hasta que termine
   _polling = setInterval(pollEstado, 1500);
 }
 
@@ -114,10 +122,13 @@ async function pollEstado() {
   if (!data.corriendo) {
     clearInterval(_polling);
     document.getElementById('sync-spinner').classList.add('hidden');
+    document.getElementById('sync-progress').classList.add('hidden');
     document.getElementById('btn-sync').disabled = false;
     setResultado(data.resultado);
   } else {
-    document.getElementById('sync-spinner').textContent = 'Descargando…';
+    const msgs = ['Iniciando Chromium…', 'Conectando al portal…', 'Descargando comprobantes…', 'Procesando ítems…'];
+    const idx = Math.floor(Date.now() / 3000) % msgs.length;
+    document.getElementById('sync-progress-msg').textContent = msgs[idx];
   }
 }
 
@@ -143,4 +154,11 @@ function setResultado(r) {
   `;
 }
 </script>
+<style>
+@keyframes kh-slide {
+  0%   { margin-left: -40%; }
+  50%  { margin-left: 100%; }
+  100% { margin-left: -40%; }
+}
+</style>
 {% endblock %}
