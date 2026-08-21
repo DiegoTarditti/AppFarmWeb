@@ -43,11 +43,31 @@ def init_app(app):
                  'items': p.total_items, 'unidades': p.total_unidades}
                 for p in pendientes
             ]
+            facturas_kh = (
+                session.query(Invoice)
+                .filter(Invoice.proveedor_cuit.like(f'%{KELLERHOFF_CUIT[-8:]}%'))
+                .order_by(Invoice.fecha.desc())
+                .limit(30)
+                .all()
+            )
+            facturas_data = [
+                {
+                    'id': f.id,
+                    'numero': f.numero_factura,
+                    'fecha': f.fecha.strftime('%d/%m/%Y') if f.fecha else '',
+                    'tipo': f.tipo_comprobante or 'FAC',
+                    'total': f.total,
+                    'articulos': f.total_articulos or 0,
+                    'origen': f.origen or 'manual',
+                }
+                for f in facturas_kh
+            ]
         return render_template(
             'kellerhoff_sync.html',
             credenciales_ok=credenciales_ok,
             sync_estado=_sync_estado,
             pendientes=pendientes_data,
+            facturas=facturas_data,
         )
 
     @app.route('/kellerhoff/sync/ejecutar', methods=['POST'])
@@ -112,8 +132,17 @@ def _msg(texto: str) -> None:
 def _sincronizar(desde: date, hasta: date) -> dict:
     from services.kellerhoff_scraper import scrape_comprobantes
 
+    # Pre-cargar nros ya en DB para no re-navegar páginas de detalle
+    with get_db() as session:
+        rows = (
+            session.query(Invoice.numero_factura)
+            .filter(Invoice.proveedor_cuit.like(f'%{KELLERHOFF_CUIT[-8:]}%'))
+            .all()
+        )
+        _nros_db = {r[0] for r in rows}
+
     _msg(f'Iniciando Chromium… (rango {desde} → {hasta})')
-    comprobantes = scrape_comprobantes(desde, hasta, _msg)
+    comprobantes = scrape_comprobantes(desde, hasta, _msg, skip_nros=_nros_db)
     _msg(f'Scraping completo: {len(comprobantes)} comprobante(s) encontrados')
 
     creados = 0
@@ -130,10 +159,11 @@ def _sincronizar(desde: date, hasta: date) -> dict:
                 if inv is None:
                     continue
 
+                es_nuevo = comp.get('_ya_existe') is None
                 if not inv.items:
                     _crear_items(session, inv, comp['items'])
                     if comp['items']:
-                        if inv.id is None:
+                        if es_nuevo:
                             creados += 1
                         else:
                             enriquecidos += 1
