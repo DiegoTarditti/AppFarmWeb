@@ -78,7 +78,7 @@ def scrape_comprobantes(desde: date, hasta: date) -> list[dict]:
 # ── Login ─────────────────────────────────────────────────────────────────────
 
 def _login(page) -> None:
-    page.goto(f'{KH_URL}/Account/Login')
+    page.goto(f'{KH_URL}/Home/Index', wait_until='domcontentloaded')
     page.wait_for_load_state('networkidle')
     page.fill('#login_name', KH_USER)
     page.fill('#login_password', KH_PASS)
@@ -144,15 +144,14 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
     # Botón consultar
     boton = page.query_selector('#btnConsultarFecha')
     if boton:
-        # Esperar respuesta AJAX específica de Kellerhoff (más confiable que networkidle)
+        boton.click()
+        # Esperar a que aparezca una celda con fecha (dd/mm/yyyy) en la tabla de resultados
         try:
-            with page.expect_response(lambda r: 'ConsultaDeComprobantes' in r.url or
-                                      r.request.method == 'POST', timeout=10000):
-                boton.click()
+            page.wait_for_selector('td:has-text("/")', timeout=10000)
         except Exception:
-            boton.click()
+            pass
         try:
-            page.wait_for_load_state('networkidle', timeout=8000)
+            page.wait_for_load_state('networkidle', timeout=5000)
         except Exception:
             pass
         log.warning('[KH] Botón consultar clickeado')
@@ -161,12 +160,11 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
 
     page.screenshot(path='/tmp/kh_04_resultado.png')
 
-    # Dump HTML de la tabla para debug
-    tabla_html = page.inner_html('table') if page.query_selector('table') else '(sin tabla)'
-    log.warning('[KH] Tablas en página: %d', len(page.query_selector_all('table')))
-    log.warning('[KH] HTML tabla (500 chars): %s', tabla_html[:500])
-
-    filas = page.query_selector_all('table tbody tr')
+    # Hay 2 tablas: [0] = comprobantes, [1] = pie de página — usar siempre la primera
+    todas_tablas = page.query_selector_all('table')
+    log.warning('[KH] Tablas en página: %d', len(todas_tablas))
+    tabla_datos = todas_tablas[0] if todas_tablas else None
+    filas = tabla_datos.query_selector_all('tbody tr') if tabla_datos else []
     comps = []
     for fila in filas:
         celdas = fila.query_selector_all('td')
