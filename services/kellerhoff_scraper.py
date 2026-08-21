@@ -320,12 +320,12 @@ def _parse_int(s: str) -> int:
 
 
 def _parse_dec(s: str) -> float:
+    """Números del portal Kellerhoff: formato US (coma=miles, punto=decimal).
+    Ej: '$230,261.36' → 230261.36
+    """
     try:
         s = s.strip().replace('\xa0', '').replace(' ', '').replace('$', '')
-        if ',' in s and '.' in s:
-            s = s.replace('.', '').replace(',', '.')
-        elif ',' in s:
-            s = s.replace(',', '.')
+        s = s.replace(',', '')   # quitar separador de miles
         return float(s) if s else 0.0
     except (ValueError, AttributeError):
         return 0.0
