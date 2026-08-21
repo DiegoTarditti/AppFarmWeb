@@ -125,7 +125,11 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
     boton = page.query_selector('#btnConsultarFecha')
     if boton:
         boton.click()
-        page.wait_for_load_state('networkidle')
+        # El resultado carga por AJAX — esperar a que aparezcan filas o pasen 8s
+        try:
+            page.wait_for_selector('table tbody tr', timeout=8000)
+        except Exception:
+            pass
         log.warning('[KH] Botón consultar clickeado')
     else:
         log.warning('[KH] Botón CONSULTAR no encontrado')
