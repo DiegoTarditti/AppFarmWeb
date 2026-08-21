@@ -151,9 +151,12 @@ def calcular_a_pedir(cfg, ctx):
 
     # Baja venta anual: si u12m < umbral Y stock == 0 → no reponer automáticamente.
     # (Solo se pide a droguería si alguien lo necesita puntualmente.)
-    # Excepción: es_nuevo=True → historial incompleto, no penalizar todavía.
+    # NO hay excepción por "producto nuevo": con datos de venta no se puede
+    # distinguir un producto nuevo de uno viejo que casi no se vende (los dos
+    # tienen poco historial), y en ese caso NO queremos reponer igual. La decisión
+    # se toma sólo por si vende o no vende (u12m vs umbral).
     umbral_va = int(cfg.get('umbral_ventas_anuales') or 0)
-    if umbral_va > 0 and u12m < umbral_va and stock == 0 and not ctx.get('es_nuevo', False):
+    if umbral_va > 0 and u12m < umbral_va and stock == 0:
         return {'a_pedir': 0, 'ideal': 0,
                 'regla_usada': f'baja_venta_anual_{u12m}u<{umbral_va}_no_reponer',
                 'override_aplicado': False}
