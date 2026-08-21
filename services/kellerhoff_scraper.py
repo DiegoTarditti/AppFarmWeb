@@ -89,13 +89,20 @@ def scrape_comprobantes(desde: date, hasta: date, status_cb=None) -> list[dict]:
 # ── Login ─────────────────────────────────────────────────────────────────────
 
 def _login(page) -> None:
+    import logging
+    log = logging.getLogger(__name__)
     page.goto(f'{KH_URL}/Home/Index', wait_until='domcontentloaded')
     page.wait_for_load_state('networkidle')
     page.fill('#login_name', KH_USER)
     page.fill('#login_password', KH_PASS)
-    # Botón con reCAPTCHA v3 (background, no bloquea headless en este portal)
     page.click('#botonIniciarSesion')
+    # Esperar que la URL cambie — el login exitoso redirige a /mvc/Buscador
+    try:
+        page.wait_for_url(lambda url: '/Home/Index' not in url, timeout=15000)
+    except Exception:
+        pass
     page.wait_for_load_state('networkidle')
+    log.warning('[KH] URL post-login: %s', page.url)
 
 
 # ── Listar comprobantes ────────────────────────────────────────────────────────
