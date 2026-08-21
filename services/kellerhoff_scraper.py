@@ -245,36 +245,15 @@ def _detalle_comprobante(page, comp: dict) -> list[dict]:
     page.goto(url)
     page.wait_for_load_state('networkidle')
 
-    # Estructura típica Kellerhoff: BARCODE DESC CANT PRECIO_PUB DTO% PRECIO_UNIT IMPORTE
-    # Igual que en la lista: tables[0] = datos, otras tablas = pie de página
     import logging
+    import os
+    import re as _re
     log = logging.getLogger(__name__)
-    todas_tablas = page.query_selector_all('table')
-    log.warning('[KH] Detalle %s: %d tabla(s)', comp.get('nro_comp_kh', '?'), len(todas_tablas))
-    tabla_items = todas_tablas[0] if todas_tablas else None
-    filas = tabla_items.query_selector_all('tbody tr') if tabla_items else []
-    items = []
-    for fila in filas:
-        celdas = fila.query_selector_all('td')
-        if len(celdas) < 3:
-            continue
-        t = [c.inner_text().strip() for c in celdas]
-        # Saltear filas de pie de página (contienen "Desarrollo" o "Diseño")
-        if any(w in cell for cell in t for w in ('Desarrollo', 'Diseño', 'Diseño')):
-            continue
-        item = {
-            'barcode':         t[0] if len(t) > 0 else '',
-            'descripcion':     t[1] if len(t) > 1 else '',
-            'cantidad':        _parse_int(t[2]) if len(t) > 2 else 0,
-            'precio_pub':      _parse_dec(t[3]) if len(t) > 3 else 0.0,
-            'dto_pct':         _parse_dec(t[4]) if len(t) > 4 else 0.0,
-            'precio_unitario': _parse_dec(t[5]) if len(t) > 5 else 0.0,
-            'importe':         _parse_dec(t[-1]),
-        }
-        if not item['barcode'] and not item['descripcion']:
-            continue
-        items.append(item)
-    log.warning('[KH] Detalle %s: %d ítem(s)', comp.get('nro_comp_kh', '?'), len(items))
+    nro = comp.get('nro_comp_kh', '?')
+
+    items = _detalle_via_pdf(page, comp, log) or _detalle_via_html(page, comp, log)
+    if not items:
+        log.warning('[KH-DET] %s: sin ítems', nro)
     return items
 
 
@@ -329,3 +308,114 @@ def _parse_dec(s: str) -> float:
         return float(s) if s else 0.0
     except (ValueError, AttributeError):
         return 0.0
+
+
+def _to_float(v) -> float:
+    if v is None:
+        return 0.0
+    try:
+        return float(str(v).replace(',', '.'))
+    except (ValueError, TypeError):
+        return 0.0
+
+
+# ── Detalle via PDF + factura_ia ──────────────────────────────────────────────
+
+def _detalle_via_pdf(page, comp: dict, log) -> list[dict]:
+    """Descarga el PDF del comprobante del portal y lo parsea con factura_ia."""
+    import os
+    import tempfile
+
+    from services import factura_ia
+
+    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        log.warning('[KH-PDF] ANTHROPIC_API_KEY no seteada — skip pdf')
+        return []
+
+    nro = comp.get('nro_comp_kh', '?')
+
+    pdf_btn = (
+        page.query_selector('a[onclick*="generarPDF"]') or
+        page.query_selector('a.btn_download') or
+        page.query_selector('button[onclick*="PDF"]')
+    )
+    if not pdf_btn:
+        log.warning('[KH-PDF] %s: botón PDF no encontrado en %s', nro, page.url)
+        return []
+
+    pdf_path = os.path.join(tempfile.gettempdir(), f'kh_{nro}.pdf')
+    try:
+        with page.expect_download(timeout=30000) as dl_info:
+            pdf_btn.click()
+        dl_info.value.save_as(pdf_path)
+        log.warning('[KH-PDF] %s: PDF descargado (%d bytes)', nro, os.path.getsize(pdf_path))
+    except Exception as e:
+        log.warning('[KH-PDF] %s: error descargando PDF: %s', nro, e)
+        return []
+
+    try:
+        with open(pdf_path, 'rb') as f:
+            pdf_bytes = f.read()
+        data, usage = factura_ia.extraer_factura_json(pdf_bytes, api_key)
+        items = []
+        for it in (data.get('detalle') or []):
+            qty = it.get('cantidad')
+            try:
+                qty = int(float(str(qty).replace(',', '.'))) if qty is not None else 0
+            except (ValueError, TypeError):
+                qty = 0
+            items.append({
+                'barcode':         str(it.get('codigo_barra') or '').strip(),
+                'descripcion':     str(it.get('descripcion') or '').strip(),
+                'cantidad':        qty,
+                'precio_pub':      _to_float(it.get('precio_publico')),
+                'dto_pct':         _to_float(it.get('dto_pct')),
+                'precio_unitario': _to_float(it.get('precio_unitario')),
+                'importe':         _to_float(it.get('importe')),
+            })
+        log.warning('[KH-PDF] %s: factura_ia → %d ítem(s) (input_tokens=%s)',
+                    nro, len(items), getattr(usage, 'input_tokens', '?'))
+        return items
+    except Exception as e:
+        log.warning('[KH-PDF] %s: error en factura_ia: %s', nro, e)
+        return []
+    finally:
+        try:
+            os.unlink(pdf_path)
+        except OSError:
+            pass
+
+
+# ── Detalle via HTML (fallback si no hay API key) ────────────────────────────
+
+def _detalle_via_html(page, comp: dict, log) -> list[dict]:
+    """Extrae ítems de la tabla HTML del portal (fallback sin ANTHROPIC_API_KEY)."""
+    import re as _re
+    nro = comp.get('nro_comp_kh', '?')
+    _RE_BC = _re.compile(r'^\d{7,14}$')
+    for ti, tabla in enumerate(page.query_selector_all('table')):
+        items = []
+        for fila in tabla.query_selector_all('tr'):
+            celdas = fila.query_selector_all('td')
+            if len(celdas) < 6:
+                continue
+            t = [c.inner_text().strip() for c in celdas]
+            if not _RE_BC.match(t[0]):
+                continue
+            desc_parts = t[2:len(t) - 4]
+            desc = ' '.join(p for p in desc_parts if p not in ('WEB', 'TRZ', '')).strip()
+            items.append({
+                'barcode':         t[0],
+                'descripcion':     desc,
+                'cantidad':        _parse_int(t[1]),
+                'precio_pub':      _parse_dec(t[-4]),
+                'dto_pct':         _parse_dec(t[-3]),
+                'precio_unitario': _parse_dec(t[-2]),
+                'importe':         _parse_dec(t[-1]),
+            })
+        if items:
+            log.warning('[KH-HTML] %s: tabla[%d] → %d ítem(s)', nro, ti, len(items))
+            return items
+    log.warning('[KH-HTML] %s: sin ítems en ninguna tabla', nro)
+    return []
