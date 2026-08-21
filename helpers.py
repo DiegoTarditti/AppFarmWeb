@@ -114,6 +114,11 @@ ALLOWED_EXTENSIONS = {'pdf', 'xlsx', 'xls'}
 CONVERTER_DIR = os.path.join(UPLOAD_FOLDER, 'converter')
 PURCHASE_FOLDER = os.path.join(UPLOAD_FOLDER, 'purchase')
 
+# Condiciones de IVA de un proveedor (dato contable). Compartido por el form
+# unificado de proveedor: lo usan /providers y /contabilidad/proveedores.
+CONDICIONES_IVA = ['Responsable Inscripto', 'Monotributo', 'Exento',
+                   'Consumidor Final', 'No Categorizado']
+
 # Las 3 entidades unificadas (ver project_entidades.md)
 PARTNER_TIPOS = ('laboratorio', 'drogueria', 'proveedor')
 PLANTILLA_FORMATOS = ('xlsx', 'txt_fijo', 'csv')

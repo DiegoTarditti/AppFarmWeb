@@ -1,0 +1,137 @@
+{#
+  Formulario ÚNICO de proveedor (operativo + contable). Solo los campos —
+  el <form> y los botones los pone quien lo incluye. Lo usan /providers (edición
+  inline por fila y alta) y /contabilidad/proveedores (modal).
+
+  Sin `id`/`for` a propósito: se renderiza N veces en la misma página (una por
+  fila en /providers), así que los IDs colisionarían. Las etiquetas envuelven el
+  input (`<label>texto <input></label>`), que no necesita `for`.
+
+  Espera:
+    p               dict del proveedor, o {} para alta. Se lee con p.get(...).
+    condiciones_iva lista de opciones de IVA (helpers.CONDICIONES_IVA).
+
+  Los `has_*` hidden avisan a provider_save que ESTA sección viajó en el POST:
+  un checkbox/campo ausente no se distingue de uno destildado, así que sin el
+  marcador guardar desde una pantalla que no muestra la sección la borraría.
+  (Misma trampa que en AppOdonto; ver CLAUDE.md de aquel repo.)
+#}
+<input type="hidden" name="has_core" value="1">
+
+<div class="grid grid-cols-3 gap-3">
+  <label class="block">
+    <span class="ds-label">Razón social</span>
+    <input type="text" name="razon_social" value="{{ p.get('razon_social', '') }}"
+           class="ds-input" required>
+  </label>
+  <label class="block">
+    <span class="ds-label">CUIT</span>
+    <input type="text" name="cuit" value="{{ p.get('cuit', '') }}"
+           class="ds-input" style="font-family:ui-monospace,monospace;" placeholder="30-12345678-9">
+  </label>
+  <label class="block">
+    <span class="ds-label">Tipo</span>
+    <select name="tipo" class="ds-select">
+      {% set _t = p.get('tipo', 'drogueria') %}
+      <option value="drogueria"   {% if _t == 'drogueria' %}selected{% endif %}>Droguería</option>
+      <option value="laboratorio" {% if _t == 'laboratorio' %}selected{% endif %}>Laboratorio</option>
+      <option value="proveedor"   {% if _t == 'proveedor' %}selected{% endif %}>Proveedor (servicios)</option>
+      <option value="otro"        {% if _t == 'otro' %}selected{% endif %}>Otro</option>
+    </select>
+  </label>
+</div>
+
+{# ── Datos contables ────────────────────────────────────────────────────── #}
+<div class="grid grid-cols-2 gap-3 mt-3">
+  <label class="block">
+    <span class="ds-label">Condición IVA</span>
+    <select name="condicion_iva" class="ds-select">
+      <option value="">— sin especificar —</option>
+      {% for c in condiciones_iva %}
+      <option value="{{ c }}" {% if p.get('condicion_iva') == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="block">
+    <span class="ds-label">Domicilio</span>
+    <input type="text" name="domicilio" value="{{ p.get('domicilio', '') }}" class="ds-input">
+  </label>
+</div>
+
+{# ── Datos operativos (ingreso de facturas) ─────────────────────────────── #}
+<div class="grid grid-cols-2 gap-3 mt-3">
+  <label class="block">
+    <span class="ds-label">Parser (sin .py)</span>
+    <input type="text" name="parser_file" value="{{ p.get('parser_file', '') }}"
+           class="ds-input" style="font-family:ui-monospace,monospace;">
+  </label>
+  <label class="block">
+    <span class="ds-label">Estrategia de cruce con ERP</span>
+    <select name="match_strategy" class="ds-select">
+      <option value="barcode"     {% if p.get('match_strategy') != 'descripcion' %}selected{% endif %}>Código de barra (por defecto)</option>
+      <option value="descripcion" {% if p.get('match_strategy') == 'descripcion' %}selected{% endif %}>Nombre / descripción</option>
+    </select>
+  </label>
+</div>
+
+<label class="block mt-3">
+  <span class="ds-label">Carpeta de facturas (ruta predeterminada)</span>
+  <input type="text" name="ruta_facturas" value="{{ p.get('ruta_facturas', '') }}"
+         class="ds-input" style="font-family:ui-monospace,monospace;"
+         placeholder="C:\AppFarmacia\Facturas\Kellerhoff">
+</label>
+
+<div class="flex items-center gap-2 mt-3">
+  <input type="hidden" name="has_grabar_productos" value="1">
+  <input type="hidden" name="grabar_productos" value="0">
+  <label class="flex items-center gap-2 cursor-pointer select-none" style="color:var(--ds-text-soft);">
+    <input type="checkbox" name="grabar_productos" value="1"
+           {% if p.get('grabar_productos', 1) != 0 %}checked{% endif %}
+           style="accent-color:var(--ds-mint); width:15px; height:15px;">
+    <span class="text-sm">Grabar códigos de barra en tabla de productos al importar</span>
+  </label>
+  <span class="text-xs" style="color:var(--ds-text-mute);">(desactivar para Pharmos y proveedores sin EAN real)</span>
+</div>
+
+{# ── Opciones de droguería (descuentos + filtro de pedido) ───────────────── #}
+<details class="mt-3" {% if p.get('tipo', 'drogueria') == 'drogueria' and (p.get('descuento_con_transfer') or p.get('codcli')) %}open{% endif %}>
+  <summary class="ds-label" style="cursor:pointer;">Opciones de droguería (descuentos y filtro de pedido)</summary>
+  <input type="hidden" name="has_drogueria" value="1">
+  <div class="grid grid-cols-2 gap-3 mt-2">
+    <label class="block">
+      <span class="ds-label">Descuento con transfer (%)</span>
+      <input type="number" name="descuento_con_transfer" step="0.01" min="0" max="100"
+             value="{{ p.get('descuento_con_transfer') or '' }}" placeholder="ej: 31.03" class="ds-input">
+    </label>
+    <label class="block">
+      <span class="ds-label">Descuento sin transfer (%)</span>
+      <input type="number" name="descuento_sin_transfer" step="0.01" min="0" max="100"
+             value="{{ p.get('descuento_sin_transfer') or '' }}" placeholder="ej: 28.50" class="ds-input">
+    </label>
+  </div>
+  <div class="grid grid-cols-4 gap-3 mt-2">
+    <label class="block">
+      <span class="ds-label">Formato archivo</span>
+      <select name="formato_archivo" class="ds-select">
+        <option value=""       {% if not p.get('formato_archivo') %}selected{% endif %}>(ninguno)</option>
+        <option value="ped"    {% if p.get('formato_archivo') == 'ped' %}selected{% endif %}>.ped (Kellerhoff)</option>
+        <option value="txt20j" {% if p.get('formato_archivo') == 'txt20j' %}selected{% endif %}>.txt (20 de Junio)</option>
+      </select>
+    </label>
+    <label class="block">
+      <span class="ds-label">Cód. cliente</span>
+      <input type="text" name="codcli" value="{{ p.get('codcli', '') }}" placeholder="2440"
+             class="ds-input" style="font-family:ui-monospace,monospace;">
+    </label>
+    <label class="block">
+      <span class="ds-label">Sufijo</span>
+      <input type="text" name="sufijo" value="{{ p.get('sufijo', '') }}" placeholder="KEL"
+             class="ds-input" style="font-family:ui-monospace,monospace;">
+    </label>
+    <label class="block">
+      <span class="ds-label">Carpeta destino</span>
+      <input type="text" name="carpeta_filtro" value="{{ p.get('carpeta_filtro', '') }}" placeholder="P:\Kellerhoff"
+             class="ds-input" style="font-family:ui-monospace,monospace;">
+    </label>
+  </div>
+</details>

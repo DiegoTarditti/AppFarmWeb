@@ -297,6 +297,34 @@ matcher. Se reusan sus primitivas, que son duck-typed sobre `.descripcion`.
 - `tipo_comprobante='NCR'` → sign=-1, los montos se guardan negativos en DB. `tipo_comprobante='FAC'` → sign=1 (default).
 - `dto` en `InvoiceItem` es DECIMAL(6,2), se guarda solo si el parser lo extrae.
 
+## Formulario unificado de proveedor (2026-08-21)
+
+Un solo alta/edición de `Provider` para toda la app: `POST /provider/save`
+(`provider_save` en `routes/providers.py`) + el partial `templates/_provider_form.html`.
+Lo usan **las dos** pantallas: `/providers` (edición inline por fila + alta) y
+`/contabilidad/proveedores` (modal). Antes cada una editaba la mitad de los
+campos del mismo proveedor. Las dos listas quedan, con sus columnas propias
+(contabilidad muestra saldo; operativa muestra facturas/parser).
+
+Trampas que dejó el diseño, leer antes de tocar:
+
+- **Marcadores `has_*`**: el partial emite `has_core` / `has_grabar_productos` /
+  `has_drogueria`. `_aplicar_campos_provider` aplica cada sección **solo si su
+  marcador viajó**. Un checkbox destildado o un campo ausente no se distinguen
+  de una pantalla que no mostró la sección; sin el marcador, guardar desde una
+  pantalla que la omite **borraría** esos datos. Si agregás un form nuevo que
+  postee a `/provider/save`, incluí los `has_*` de las secciones que muestre
+  (le pasó a `providers_activos.html`, que perdía el CUIT sin `has_core`).
+- **`grabar_productos` con `getlist`, no `get`**: el checkbox manda un hidden
+  `'0'` y, si está tildado, además un `'1'` con el mismo `name`. `form.get()`
+  devuelve el **primero** (`'0'`), así que el patrón viejo `get()=='1'` leía 0
+  aunque estuviera tildado — editar un proveedor apagaba `grabar_productos` en
+  silencio (bug preexistente, arreglado acá). Usar `'1' in form.getlist(...)`.
+- **`Provider.tipo` incluye `'proveedor'`**: los proveedores creados por el
+  import ARCA quedan con `tipo='proveedor'` (no drogueria/laboratorio/otro). El
+  select del partial lo incluye; si no, editar uno de esos lo pisaba a
+  'drogueria'. `_aplicar_campos_provider` acepta los 4 valores.
+
 ## Tabla Producto (master)
 
 - Se puebla automáticamente desde: `process_upload` (ErpStock + InvoiceItems), `apply_mapping` (upsert ERP + add alt), `purchase_save_order` (ítems del pedido), `order_save_module_matches` (match manual).

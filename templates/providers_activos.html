@@ -61,6 +61,8 @@
     <!-- Form alta manual (mismo endpoint que providers.html) -->
     <form id="form-add-prov-act" method="post" action="{{ url_for('provider_create_manual') }}"
           class="hidden bg-white border-2 border-emerald-300 rounded-xl p-3 mb-4 flex flex-wrap items-end gap-3">
+        {# has_core: sin este marcador, provider_save no aplicaría el CUIT al crear. #}
+        <input type="hidden" name="has_core" value="1">
         <div class="flex-1 min-w-[220px]">
             <label class="text-[10px] font-semibold text-[#888] uppercase block">Razón social</label>
             <input name="razon_social" required placeholder="Ej. DROGUERÍA NUEVA S.A."

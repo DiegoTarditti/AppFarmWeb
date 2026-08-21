@@ -10,14 +10,60 @@ import database
 from data_extract import extract_provider_name_from_pdf, parse_invoice_pdf
 from database import Producto
 from helpers import (
+    CONDICIONES_IVA,
     UPLOAD_FOLDER,
     _ensure_parser_file,
     _make_parser_slug,
+    _normalizar_nombre_entidad,
     allowed_file,
     drogueria_defaults,
     get_providers,
     pdf_de_carpeta_proveedor,
 )
+
+
+def _aplicar_campos_provider(prov, form):
+    """Escribe en `prov` los campos que vengan en `form`. Núcleo del form
+    unificado: lo comparten /providers y /contabilidad/proveedores.
+
+    Cada bloque se aplica SOLO si su marcador `has_*` viaja en el POST. Un
+    checkbox destildado o un campo ausente no se distinguen de una pantalla que
+    no muestra esa sección; sin el marcador, guardar desde una pantalla que
+    omite la sección borraría esos datos. (Ver _provider_form.html.)
+    """
+    if form.get('has_core'):
+        prov.razon_social = (form.get('razon_social') or prov.razon_social or '').strip() \
+            or prov.razon_social
+        prov.cuit = (form.get('cuit') or '').strip() or None
+        prov.domicilio = (form.get('domicilio') or '').strip()[:200] or None
+        prov.condicion_iva = (form.get('condicion_iva') or '').strip()[:30] or None
+        prov.parser_file = (form.get('parser_file') or '').strip() or None
+        prov.ruta_facturas = (form.get('ruta_facturas') or '').strip() or None
+        ms = form.get('match_strategy', 'barcode')
+        prov.match_strategy = ms if ms in ('barcode', 'descripcion') else 'barcode'
+        tipo = (form.get('tipo') or '').strip().lower()
+        if tipo in ('drogueria', 'laboratorio', 'proveedor', 'otro'):
+            prov.tipo = tipo
+
+    if form.get('has_grabar_productos'):
+        # getlist, no get: el checkbox manda un hidden '0' y, si está tildado,
+        # además un '1' con el mismo name. form.get() devuelve el PRIMERO ('0'),
+        # así que el patrón viejo `get()=='1'` leía 0 aunque estuviera tildado
+        # (bug preexistente: editar un proveedor apagaba grabar_productos).
+        prov.grabar_productos = 1 if '1' in form.getlist('grabar_productos') else 0
+
+    if form.get('has_drogueria'):
+        for field in ('descuento_con_transfer', 'descuento_sin_transfer'):
+            raw = (form.get(field) or '').replace(',', '.').strip()
+            try:
+                setattr(prov, field, float(raw) if raw else None)
+            except ValueError:
+                pass
+        prov.codcli = (form.get('codcli') or '').strip() or None
+        fmt = (form.get('formato_archivo') or '').strip().lower()
+        prov.formato_archivo = fmt if fmt in ('ped', 'txt20j') else None
+        prov.sufijo = (form.get('sufijo') or '').strip() or None
+        prov.carpeta_filtro = (form.get('carpeta_filtro') or '').strip() or None
 
 
 def init_app(app):
@@ -321,10 +367,16 @@ def init_app(app):
                     'id': p.id,
                     'razon_social': p.razon_social,
                     'cuit': p.cuit or '',
+                    'domicilio': p.domicilio or '',
+                    'condicion_iva': p.condicion_iva or '',
                     'parser_file': p.parser_file or '',
                     'ruta_facturas': p.ruta_facturas or '',
                     'match_strategy': p.match_strategy,
                     'grabar_productos': p.grabar_productos if p.grabar_productos is not None else 1,
+                    'descuento_con_transfer': (float(p.descuento_con_transfer)
+                                               if p.descuento_con_transfer is not None else ''),
+                    'descuento_sin_transfer': (float(p.descuento_sin_transfer)
+                                               if p.descuento_sin_transfer is not None else ''),
                     'tipo': p.tipo or 'drogueria',
                     'invoice_count': invoice_count,
                     'claim_count': claim_count,
@@ -338,7 +390,8 @@ def init_app(app):
                     'sufijo': p.sufijo or _dd.get('sufijo', ''),
                     'carpeta_filtro': p.carpeta_filtro or '',
                 })
-        return render_template('providers.html', providers=provider_data, tipo_filter=tipo_filter)
+        return render_template('providers.html', providers=provider_data,
+                               tipo_filter=tipo_filter, condiciones_iva=CONDICIONES_IVA)
 
     @app.route('/provider/<int:provider_id>/parser-preview', methods=['POST'])
     def provider_parser_preview(provider_id):
@@ -385,70 +438,71 @@ def init_app(app):
             'items': items,
         }
 
-    @app.route('/provider/create', methods=['POST'])
-    def provider_create_manual():
-        """Crea un Provider (drogueria/laboratorio/otro) desde el form de
-        /providers. Si ya existe uno con razon_social normalizada igual,
-        no duplica."""
-        razon_social = (request.form.get('razon_social') or '').strip()
-        cuit = (request.form.get('cuit') or '').strip()
-        tipo = (request.form.get('tipo') or 'drogueria').strip()
-        if tipo not in ('drogueria', 'laboratorio', 'otro'):
-            tipo = 'drogueria'
+    def _redir_provider(return_to, provider_id=None):
+        """Vuelve a la pantalla desde la que se guardó (campo return_to)."""
+        if return_to == 'contabilidad':
+            return redirect(url_for('contabilidad_proveedores'))
+        return redirect(url_for('providers_list',
+                                tipo=request.form.get('tipo_filter') or None))
+
+    def _guardar_provider(form, pid):
+        """Núcleo del alta/edición. `pid` None = alta; con valor = edición.
+        Devuelve el redirect ya armado según `return_to` del form."""
+        return_to = form.get('return_to') or 'providers'
+        razon_social = (form.get('razon_social') or '').strip()
         if not razon_social:
             flash('Razón social obligatoria.')
-            return redirect(url_for('providers_list'))
+            return _redir_provider(return_to)
+
         with database.get_db() as session:
-            from helpers import _normalizar_nombre_entidad
+            if pid:
+                prov = session.get(database.Provider, pid)
+                if not prov:
+                    flash('Proveedor no encontrado.')
+                    return _redir_provider(return_to)
+                _aplicar_campos_provider(prov, form)
+                session.commit()
+                flash(f'Guardado: {prov.razon_social}.')
+                return _redir_provider(return_to)
+
+            # Alta: no duplicar por razón social normalizada.
             norm_nuevo = _normalizar_nombre_entidad(razon_social)
             for p in session.query(database.Provider).all():
                 if _normalizar_nombre_entidad(p.razon_social) == norm_nuevo:
                     flash(f'Ya existe el proveedor: "{p.razon_social}". No se creó duplicado.')
-                    return redirect(url_for('providers_list', tipo=tipo))
+                    return _redir_provider(return_to)
+            tipo = (form.get('tipo') or 'drogueria').strip().lower()
+            if tipo not in ('drogueria', 'laboratorio', 'otro'):
+                tipo = 'drogueria'
             prov = database.Provider(
-                razon_social=razon_social,
-                cuit=cuit or None,
-                tipo=tipo,
-                activo=True,
-                matriz_visible=(tipo == 'drogueria'),
-                match_strategy='barcode',
+                razon_social=razon_social, tipo=tipo, activo=True,
+                matriz_visible=(tipo == 'drogueria'), match_strategy='barcode',
             )
             session.add(prov)
+            _aplicar_campos_provider(prov, form)
             session.commit()
-            flash(f'Creado: {prov.razon_social} ({tipo}).')
-        return redirect(url_for('providers_list', tipo=tipo))
+            flash(f'Creado: {prov.razon_social} ({prov.tipo}).')
+        return _redir_provider(return_to)
+
+    @app.route('/provider/save', methods=['POST'])
+    def provider_save():
+        """Alta/edición unificada de proveedor (operativo + contable).
+
+        Un solo endpoint para las dos pantallas: /providers y
+        /contabilidad/proveedores postean acá con el mismo form
+        (_provider_form.html). `id` vacío = alta; con `id` = edición. Vuelve a
+        la pantalla de origen según `return_to`.
+        """
+        return _guardar_provider(request.form, request.form.get('id', type=int))
+
+    # Rutas viejas: siguen andando por si algún form/enlace no migró.
+    @app.route('/provider/create', methods=['POST'])
+    def provider_create_manual():
+        return _guardar_provider(request.form, None)
 
     @app.route('/provider/<int:provider_id>/edit', methods=['POST'])
     def provider_edit(provider_id):
-        with database.get_db() as session:
-            provider = session.get(database.Provider, provider_id)
-            if not provider:
-                flash('Proveedor no encontrado.')
-                return redirect(url_for('providers_list'))
-            provider.razon_social = request.form.get('razon_social', provider.razon_social).strip() or provider.razon_social
-            provider.cuit = request.form.get('cuit', provider.cuit or '').strip() or None
-            provider.parser_file = request.form.get('parser_file', provider.parser_file or '').strip() or None
-            provider.ruta_facturas = request.form.get('ruta_facturas', '').strip() or None
-            ms = request.form.get('match_strategy', 'barcode')
-            provider.match_strategy = ms if ms in ('barcode', 'descripcion') else 'barcode'
-            provider.grabar_productos = 1 if request.form.get('grabar_productos') == '1' else 0
-            tipo = (request.form.get('tipo') or '').strip().lower()
-            if tipo in ('drogueria', 'laboratorio', 'otro'):
-                provider.tipo = tipo
-            for field in ('descuento_con_transfer', 'descuento_sin_transfer'):
-                raw = (request.form.get(field) or '').replace(',', '.').strip()
-                try:
-                    setattr(provider, field, float(raw) if raw else None)
-                except ValueError:
-                    pass
-            # Filtro droguería: config del archivo de pedido.
-            provider.codcli = (request.form.get('codcli') or '').strip() or None
-            fmt = (request.form.get('formato_archivo') or '').strip().lower()
-            provider.formato_archivo = fmt if fmt in ('ped', 'txt20j') else None
-            provider.sufijo = (request.form.get('sufijo') or '').strip() or None
-            provider.carpeta_filtro = (request.form.get('carpeta_filtro') or '').strip() or None
-            session.commit()
-        return redirect(url_for('providers_list', tipo=request.form.get('tipo_filter') or None))
+        return _guardar_provider(request.form, provider_id)
 
     @app.route('/provider/<int:provider_id>/delete', methods=['POST'])
     def provider_delete(provider_id):

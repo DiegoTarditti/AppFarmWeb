@@ -55,7 +55,7 @@
           <td style="padding:9px 14px; text-align:right; white-space:nowrap;">
             <a href="{{ url_for('cuentas_corrientes', proveedor=p.id) }}" class="btn btn-secondary btn-sm" title="Cuenta corriente">CC</a>
             <button type="button" class="btn btn-secondary btn-sm"
-                    onclick='editarProveedor({{ {"id":p.id,"razon_social":p.razon_social,"cuit":p.cuit,"domicilio":p.domicilio,"condicion_iva":p.condicion_iva}|tojson }})'>Editar</button>
+                    onclick='editarProveedor({{ p|tojson }})'>Editar</button>
           </td>
         </tr>
         {% else %}
@@ -71,34 +71,17 @@
     <span style="color:#5FE6BC;">verde = a favor</span>.
   </p>
 
-  {# ── Modal alta / edición ─────────────────────────────────────────────── #}
+  {# ── Modal alta / edición (form unificado _provider_form.html) ─────────── #}
   <div id="prov-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:80; align-items:center; justify-content:center; padding:16px;"
        onclick="if(event.target===this) cerrarModal()">
     <div style="background:var(--ds-surface); border:1px solid var(--ds-line-2); border-radius:var(--ds-r-lg);
-                width:100%; max-width:460px; padding:22px; box-shadow:var(--ds-shadow-lg);">
+                width:100%; max-width:640px; max-height:90vh; overflow:auto; padding:22px; box-shadow:var(--ds-shadow-lg);">
       <h2 id="prov-modal-title" style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:17px; color:var(--ds-text); margin:0 0 16px;">Nuevo proveedor</h2>
-      <form method="POST" action="{{ url_for('contabilidad_proveedor_guardar') }}" style="display:flex; flex-direction:column; gap:12px;">
-        <input type="hidden" name="id" id="f-id">
-        <label style="font-size:12px; color:var(--ds-text-soft);">Razón social *
-          <input type="text" name="razon_social" id="f-razon" required
-                 style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
-        </label>
-        <label style="font-size:12px; color:var(--ds-text-soft);">CUIT
-          <input type="text" name="cuit" id="f-cuit" placeholder="30-12345678-9"
-                 style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
-        </label>
-        <label style="font-size:12px; color:var(--ds-text-soft);">Condición IVA
-          <select name="condicion_iva" id="f-condiva"
-                  style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
-            <option value="">— sin especificar —</option>
-            {% for c in condiciones_iva %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
-          </select>
-        </label>
-        <label style="font-size:12px; color:var(--ds-text-soft);">Domicilio
-          <input type="text" name="domicilio" id="f-domicilio"
-                 style="width:100%; margin-top:4px; background:var(--ds-bg); border:1px solid var(--ds-line-2); color:var(--ds-text); border-radius:var(--ds-r-sm); padding:8px 10px; font-size:13px;">
-        </label>
-        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:6px;">
+      <form id="prov-form" method="POST" action="{{ url_for('provider_save') }}">
+        <input type="hidden" name="return_to" value="contabilidad">
+        <input type="hidden" name="id" value="">
+        {% with p = {} %}{% include '_provider_form.html' %}{% endwith %}
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
           <button type="button" onclick="cerrarModal()" class="btn btn-secondary btn-sm">Cancelar</button>
           <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
         </div>
@@ -108,25 +91,47 @@
 
   <script>
     const modal = document.getElementById('prov-modal');
+    const provForm = document.getElementById('prov-form');
+
+    // Setea un campo del form por su name. Cubre input/select (value) y
+    // checkbox (checked). Silencioso si el campo no está en el form.
+    function setCampo(name, val) {
+      const el = provForm.querySelector('[name="' + name + '"]:not([type=hidden])')
+              || provForm.querySelector('[name="' + name + '"]');
+      if (!el) return;
+      if (el.type === 'checkbox') el.checked = (String(val) !== '0' && val !== false && val != null && val !== '');
+      else el.value = (val == null ? '' : val);
+    }
+
+    // Deja el form como "nuevo": limpia todo lo que el usuario pueda haber
+    // dejado de una edición anterior (el modal es único y se reusa).
+    function limpiarForm() {
+      provForm.querySelector('[name="id"]').value = '';
+      provForm.querySelectorAll('input:not([type=hidden]), select').forEach(el => {
+        if (el.type === 'checkbox') el.checked = (el.name === 'grabar_productos');
+        else el.value = '';
+      });
+    }
+
     function abrirModal() {
       document.getElementById('prov-modal-title').textContent = 'Nuevo proveedor';
-      document.getElementById('f-id').value = '';
-      document.getElementById('f-razon').value = '';
-      document.getElementById('f-cuit').value = '';
-      document.getElementById('f-condiva').value = '';
-      document.getElementById('f-domicilio').value = '';
+      limpiarForm();
+      // Alta desde contabilidad: por defecto 'otro' (proveedor de servicios),
+      // no droguería — acá se cargan proveedores contables, no droguerías.
+      setCampo('tipo', 'otro');
       modal.style.display = 'flex';
-      document.getElementById('f-razon').focus();
+      provForm.querySelector('[name="razon_social"]').focus();
     }
+
     function editarProveedor(p) {
       document.getElementById('prov-modal-title').textContent = 'Editar proveedor';
-      document.getElementById('f-id').value = p.id;
-      document.getElementById('f-razon').value = p.razon_social || '';
-      document.getElementById('f-cuit').value = p.cuit || '';
-      document.getElementById('f-condiva').value = p.condicion_iva || '';
-      document.getElementById('f-domicilio').value = p.domicilio || '';
+      limpiarForm();
+      provForm.querySelector('[name="id"]').value = p.id;
+      // Rellena TODOS los campos del form unificado con lo que trae la fila.
+      Object.keys(p).forEach(k => setCampo(k, p[k]));
       modal.style.display = 'flex';
     }
+
     function cerrarModal() { modal.style.display = 'none'; }
     document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarModal(); });
   </script>
