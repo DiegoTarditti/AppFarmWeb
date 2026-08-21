@@ -1698,21 +1698,22 @@ duplicación real era el *cálculo* y el *alta de proveedor*.
 - 19 tests nuevos en `tests/test_cuenta_corriente.py`, incluidos los de
   **paridad extracto ↔ listado**. Suite completa verde (980).
 
-### ⏳ Pendiente de la Fase A
+### ✅ Fase A completa (2026-08-21)
 
-- **Formulario de proveedor unificado**: hoy hay dos altas del mismo `Provider`
-  — `/providers` (operativa: parser, match_strategy) y
-  `/contabilidad/proveedores` (contable: condición IVA). Diego eligió **una
-  sola pantalla con todos los campos**.
-- **Rename del módulo a "Cuentas corrientes"**: URLs `/cuentas-corrientes/*`
-  con **redirect 301** desde `/contabilidad/*`. Ojo con dos cosas:
-  1. los **prefijos del perfil** en `auth.py` (~línea 134) hay que actualizarlos
-     o el gating deja afuera a los operadores de contabilidad;
-  2. el landing del módulo y el extracto se pelean por `/cuentas-corrientes`.
-     Plan: la raíz es el landing, el extracto pasa a
-     `/cuentas-corrientes/extracto`, y si llega `?proveedor=N` a la raíz se
-     redirige al extracto (así sigue andando el link del sidebar en
-     `base.html:955` y los favoritos viejos).
+- **Formulario de proveedor unificado** (PR #304): un solo `POST /provider/save`
+  + partial `templates/_provider_form.html` con todos los campos (operativo +
+  contable), usado por `/providers` y `/cuentas-corrientes/proveedores`. Las dos
+  listas quedan. De paso se arreglaron dos bugs preexistentes: `grabar_productos`
+  se apagaba solo al editar (hidden-primero + `get()`), y `providers_activos.html`
+  perdía el CUIT al crear. Trampas documentadas en CLAUDE.md (marcadores `has_*`,
+  `getlist`, `tipo='proveedor'`).
+- **Rename a "Cuentas corrientes"** (PR #305): URLs `/contabilidad*` →
+  `/cuentas-corrientes*`, endpoints intactos (los url_for no cambiaron). El
+  extracto se movió a `/cuentas-corrientes/extracto`; la raíz es el landing y
+  redirige al extracto si viene `?proveedor=N`. 301 desde los `/contabilidad*`
+  viejos. auth.py ya whitelisteaba los dos prefijos, así que el gating no se
+  tocó (solo `url`+`label` del perfil). El ítem de menú "Cuentas corrientes"
+  (extracto) pasó a "Extracto" para no chocar con el nombre del módulo.
 
 ### ✅ Decidido: la PREFAC no suma al saldo (Diego, 2026-07-21)
 
