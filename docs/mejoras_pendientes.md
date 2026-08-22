@@ -47,6 +47,31 @@ se re-verificó esta sesión contra el sitio real.
 
 ---
 
+## ⏳ Pendiente — 3 items abiertos del sync de Kellerhoff (2026-08-21)
+
+1. **`ProcesoCompra` vs `PedidoEmitido` — dos modelos para el mismo concepto.**
+   El endpoint `/converter/<token>/enviar-a-proceso` (`routes/converter.py:941`) crea un
+   `ProcesoCompra` tipo `'drogueria'` al importar una factura a mano. El sync automático de
+   Kellerhoff (`routes/kellerhoff_sync.py`) usa `PedidoEmitido` + `_match_pedido` para lo
+   mismo — "pedido emitido a droguería". Nunca se resolvió cuál es el modelo vivo, y ahora
+   que el sync también escribe en `PagoAjusteCC`/`Anunciante`, vale la pena resolver esto
+   antes de que la lógica de cta cte tenga que mirar 3 lugares distintos para lo mismo.
+   Relacionado con las preguntas de dominio abiertas en `docs/refactor_3_entidades.md`.
+
+2. **Sync real contra el portal en vivo — sin probar.** Todo el pipeline de esta sesión
+   (`kellerhoff_analizador.py`, ruteo a `PagoAjusteCC`/`Invoice`, faltantes) se validó con
+   PDFs ya descargados y contra Postgres local — nunca corrió un sync end-to-end contra
+   `kellerhoff.com.ar` real. El único riesgo conocido: si el selector del botón "PDF" del
+   portal cambió, `_detalle_via_pdf` vuelve silenciosamente al fallback HTML (que nunca
+   encontró ítems, ver entrada de abajo).
+
+3. **Convención de signo de `PagoAjusteCC.tipo='AJUSTE_NEG'` para NC financieras — sin
+   validar con Diego.** Se asumió que un recupero reduce lo que el anunciante "debe" en su
+   cta cte con la farmacia; puede ser el sentido opuesto. Revisar antes de confiar en el
+   saldo que muestre esa cuenta corriente.
+
+---
+
 ## ⏳ Pendiente original — Kellerhoff sync: parsear ítems de factura SIN IA (2026-08-20)
 
 **Contexto de la sesión 2026-08-20**: el sync del portal Kellerhoff (`/kellerhoff/sync`) ya
