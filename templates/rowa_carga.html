@@ -85,6 +85,8 @@
            class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)] w-48">
     <label class="flex items-center gap-1 text-xs text-[color:var(--ds-text-mute)] cursor-pointer">
       <input id="carga-criticos" type="checkbox" onchange="cargaFiltrar()" checked> 🔴 Solo críticos</label>
+    <label class="flex items-center gap-1 text-xs text-[color:var(--ds-text-mute)] cursor-pointer">
+      <input id="carga-aumentos" type="checkbox" onchange="cargaFiltrar()"> 📈 Solo con aumentos</label>
     <select id="carga-lab" onchange="cargaFiltrar()"
             class="px-2 py-1 text-sm rounded border border-[color:var(--ds-surface-border)]"
             style="background:#2c2c2e;color:inherit">
@@ -121,7 +123,8 @@
             data-aid="{{ it.article_id }}"
             data-ean="{{ it.ean }}"
             data-nombre-orig="{{ it.nombre }}"
-            data-lab="{{ it.laboratorio }}">
+            data-lab="{{ it.laboratorio }}"
+            data-aumento="{{ '1' if it.tipo_aumento else '0' }}">
           <td class="px-3 py-1.5">
             {% if it.cantidad == 0 %}
               <span class="inline-block w-1.5 h-1.5 rounded-full bg-rose-400 mr-1.5 align-middle"></span>
@@ -132,10 +135,11 @@
             {% else %}
               <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-600 mr-1.5 align-middle"></span>
             {% endif %}
+            {% set _aum_color = {'ingreso_detectado': 'text-rose-400', 'carga_parcial': 'text-amber-300', 'carga': 'text-emerald-400'} %}
             <button type="button" onclick="rowaStockGrafico(this)"
                data-aid="{{ it.article_id }}" data-nombre="{{ it.nombre }}"
-               title="Ver historial de stock del robot (snapshots)"
-               class="mr-1 align-middle text-[color:var(--ds-mint)] hover:opacity-70">📈</button>
+               title="{{ 'Ingreso sin registrar detectado' if it.tipo_aumento == 'ingreso_detectado' else ('Carga parcial detectada' if it.tipo_aumento == 'carga_parcial' else ('Carga registrada' if it.tipo_aumento == 'carga' else 'Ver historial de stock del robot (snapshots)')) }}"
+               class="mr-1 align-middle hover:opacity-70 {{ _aum_color.get(it.tipo_aumento, 'text-[color:var(--ds-mint)]') }}">📈</button>
             {{ it.nombre[:45] }}
           </td>
           <td class="px-3 py-1.5 text-[color:var(--ds-text-mute)]">{{ it.laboratorio or '—' }}</td>
@@ -189,12 +193,14 @@
   function cargaFiltrar() {
     var q    = (document.getElementById('carga-buscar').value || '').toLowerCase();
     var crit = document.getElementById('carga-criticos').checked;
+    var aum  = document.getElementById('carga-aumentos').checked;
     var lab  = document.getElementById('carga-lab').value;
     var vis = 0, total = 0;
     document.querySelectorAll('tr.carga-fila').forEach(function(tr) {
       total++;
       var ok = (!q    || (tr.dataset.nombre || '').indexOf(q) !== -1)
             && (!crit || parseInt(tr.dataset.urgencia) < 3)
+            && (!aum  || tr.dataset.aumento === '1')
             && (!lab  || tr.dataset.lab === lab);
       tr.style.display = ok ? '' : 'none';
       if (ok) vis++;
