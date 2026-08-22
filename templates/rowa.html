@@ -108,6 +108,14 @@
         <option value="Bajar cantidad interna">Bajar cantidad interna</option>
         <option value="Revisar: 1u parada &gt;180d">Revisar 1u parada</option>
       </select>
+      <select id="rowa-lab" onchange="rowaFiltrar()"
+              class="px-2 py-1 text-sm rounded border border-[color:var(--ds-surface-border)]"
+              style="background:#2c2c2e;color:inherit">
+        <option value="">Todo laboratorio</option>
+        {% for lab in labs_disponibles %}
+        <option value="{{ lab }}">{{ lab }}</option>
+        {% endfor %}
+      </select>
       <label class="flex items-center gap-1 text-xs text-[color:var(--ds-text-mute)] cursor-pointer">
         <input id="rowa-nuevo" type="checkbox" onchange="rowaFiltrar()"> ✨ Solo nuevos (?)
         {% if n_nuevos %}<span class="ml-1 text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded px-1">{{ n_nuevos }}</span>{% endif %}
@@ -120,11 +128,14 @@
         <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
           <tr>
             <th class="text-left px-3 py-2">Producto</th>
+            <th class="text-left px-3 py-2">Laboratorio</th>
             <th class="text-left px-3 py-2">Rotación</th>
             <th class="text-right px-3 py-2">u/mes</th>
             <th class="text-right px-3 py-2">En robot</th>
+            <th class="text-right px-3 py-2">Depósito</th>
+            <th class="text-right px-3 py-2">Total</th>
             <th class="text-right px-3 py-2">Sugerido</th>
-            <th class="text-right px-3 py-2">Al depósito</th>
+            <th class="text-right px-3 py-2">Sacar</th>
             <th class="text-right px-3 py-2">Libera</th>
             <th class="text-left px-3 py-2">Recomendación</th>
             <th class="text-center px-3 py-2 w-16" title="¿Es realmente un producto nuevo en el mercado?">¿Nuevo?</th>
@@ -138,7 +149,8 @@
               data-rotacion="{{ f.rotacion }}"
               data-reco="{{ f.recomendacion }}"
               data-frio="{{ '1' if f.requiere_frio else '0' }}"
-              data-nuevo="{{ '1' if f.es_nuevo else '0' }}">
+              data-nuevo="{{ '1' if f.es_nuevo else '0' }}"
+              data-lab="{{ f.laboratorio or '' }}">
             <td class="px-3 py-1.5">
               {% if f.producto_observer %}<button type="button" onclick="rowaGrafico(this)"
                  data-obs="{{ f.producto_observer }}" data-nombre="{{ (f.nombre_obs or f.nombre or '') }}"
@@ -151,9 +163,12 @@
                     data-aid="{{ f.article_id }}"
                     style="{{ '' if not _nr or _nr.confirmado else 'display:none' }}">NUEVO?</span>
               {% endif %}</td>
+            <td class="px-3 py-1.5 text-[color:var(--ds-text-mute)]">{{ f.laboratorio or '—' }}</td>
             <td class="px-3 py-1.5">{{ f.rotacion }}</td>
             <td class="px-3 py-1.5 text-right font-mono">{{ f.unid_mes_est if f.unid_mes_est is not none else '—' }}</td>
             <td class="px-3 py-1.5 text-right">{{ f.cantidad }}</td>
+            <td class="px-3 py-1.5 text-right font-mono">{{ f.stock_deposito if f.stock_deposito is not none else '—' }}</td>
+            <td class="px-3 py-1.5 text-right font-mono">{{ f.stock_total if f.stock_total is not none else '—' }}</td>
             <td class="px-3 py-1.5 text-right text-emerald-300">{{ f.sug_en_robot }}</td>
             <td class="px-3 py-1.5 text-right text-amber-300">{{ f.al_deposito }}</td>
             <td class="px-3 py-1.5 text-right font-mono">{{ (f.al_deposito * f.vol_unit_cm3) | round | int }} cm³</td>
@@ -244,13 +259,15 @@
     var rot   = document.getElementById('rowa-rotacion').value;
     var reco  = document.getElementById('rowa-reco').value;
     var nuevo = document.getElementById('rowa-nuevo').checked;
+    var lab   = document.getElementById('rowa-lab').value;
     var vis = 0, total = 0;
     document.querySelectorAll('tr.rowa-fila').forEach(function (tr) {
       total++;
       var ok = (!q     || (tr.dataset.nombre || '').indexOf(q) !== -1)
             && (!rot   || tr.dataset.rotacion === rot)
             && (!reco  || tr.dataset.reco === reco)
-            && (!nuevo || tr.dataset.nuevo === '1');
+            && (!nuevo || tr.dataset.nuevo === '1')
+            && (!lab   || tr.dataset.lab === lab);
       tr.style.display = ok ? '' : 'none';
       if (ok) vis++;
     });

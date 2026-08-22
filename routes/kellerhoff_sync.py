@@ -9,7 +9,8 @@ from flask import jsonify, render_template, request
 from flask_login import login_required
 
 import database
-from database import Invoice, InvoiceItem, PedidoEmitido, get_db
+from database import FacturaFaltante, Invoice, InvoiceItem, PagoAjusteCC, PedidoEmitido, get_db
+from services.kellerhoff_analizador import resolver_anunciante
 
 KELLERHOFF_PROVIDER_ID = int(os.environ.get('KELLERHOFF_PROVIDER_ID', '1'))
 KELLERHOFF_CUIT = '30539756490'
@@ -132,7 +133,9 @@ def _msg(texto: str) -> None:
 def _sincronizar(desde: date, hasta: date) -> dict:
     from services.kellerhoff_scraper import scrape_comprobantes
 
-    # Pre-cargar nros ya en DB para no re-navegar páginas de detalle
+    # Pre-cargar nros ya en DB para no re-navegar páginas de detalle: tanto
+    # facturas/NCR de mercadería (Invoice) como NC financieras ya registradas
+    # (PagoAjusteCC.numero_comprobante con anunciante_id seteado).
     with get_db() as session:
         rows = (
             session.query(Invoice.numero_factura)
@@ -140,6 +143,12 @@ def _sincronizar(desde: date, hasta: date) -> dict:
             .all()
         )
         _nros_db = {r[0] for r in rows}
+        rows_nc = (
+            session.query(PagoAjusteCC.numero_comprobante)
+            .filter(PagoAjusteCC.anunciante_id.isnot(None))
+            .all()
+        )
+        _nros_db |= {r[0] for r in rows_nc if r[0]}
 
     _msg(f'Iniciando Chromium… (rango {desde} → {hasta})')
     comprobantes = scrape_comprobantes(desde, hasta, _msg, skip_nros=_nros_db)
@@ -148,6 +157,8 @@ def _sincronizar(desde: date, hasta: date) -> dict:
     creados = 0
     enriquecidos = 0
     ligados = 0
+    nc_financieras = 0
+    faltantes_registrados = 0
     errores = []
 
     with get_db() as session:
@@ -155,6 +166,14 @@ def _sincronizar(desde: date, hasta: date) -> dict:
             nro = comp.get('nro_comp_kh', '?')
             _msg(f'Procesando {i}/{len(comprobantes)}: {nro}')
             try:
+                analisis = comp.get('analisis') or {'categoria': 'factura'}
+
+                if analisis.get('categoria') == 'nc_financiera':
+                    if _crear_pago_ajuste_nc(session, comp, analisis):
+                        nc_financieras += 1
+                    session.commit()
+                    continue
+
                 inv = _get_or_create_invoice(session, comp)
                 if inv is None:
                     continue
@@ -167,6 +186,8 @@ def _sincronizar(desde: date, hasta: date) -> dict:
                             creados += 1
                         else:
                             enriquecidos += 1
+                    faltantes_registrados += _crear_faltantes(
+                        session, inv, analisis.get('faltantes') or [])
 
                 pedido = _match_pedido(session, inv, comp)
                 if pedido and not pedido.factura_id:
@@ -186,8 +207,65 @@ def _sincronizar(desde: date, hasta: date) -> dict:
         'creados': creados,
         'enriquecidos': enriquecidos,
         'ligados': ligados,
+        'nc_financieras': nc_financieras,
+        'faltantes_registrados': faltantes_registrados,
         'errores': errores,
     }
+
+
+def _crear_pago_ajuste_nc(session, comp: dict, analisis: dict) -> bool:
+    """NC financiera (recupero de publicidad/descuento de un anunciante) →
+    PagoAjusteCC vinculado a Anunciante, NUNCA a Invoice/InvoiceItem (no hay
+    mercadería, es un ajuste monetario). Devuelve False si ya estaba cargada.
+    """
+    nro = comp.get('nro_comp_arca') or _normalizar_nro(comp.get('nro_comp_kh', ''))
+    if not nro:
+        return False
+    ya_existe = (
+        session.query(PagoAjusteCC)
+        .filter(
+            PagoAjusteCC.numero_comprobante == nro,
+            PagoAjusteCC.anunciante_id.isnot(None),
+        )
+        .first()
+    )
+    if ya_existe:
+        return False
+
+    anunciante = resolver_anunciante(session, analisis.get('anunciante_nombre', ''))
+    if anunciante is None:
+        return False
+
+    session.add(PagoAjusteCC(
+        anunciante_id=anunciante.id,
+        # Convención por defecto (sin validar con el usuario): un recupero
+        # reduce lo que el anunciante "debe" en su cta cte con la farmacia.
+        # Revisar si en la práctica el signo esperado es el opuesto.
+        tipo='AJUSTE_NEG',
+        fecha=comp['fecha'],
+        monto=abs(comp.get('total', 0)),
+        numero_comprobante=nro,
+        observaciones=analisis.get('concepto', ''),
+    ))
+    return True
+
+
+def _crear_faltantes(session, inv: Invoice, faltantes: list[dict]) -> int:
+    """Ítems de '*** PRODUCTOS EN FALTA MOMENTANEA ***' → FacturaFaltante.
+    Nunca suman a factura_items ni al total (ver database.FacturaFaltante)."""
+    n = 0
+    for f in faltantes:
+        desc = (f.get('descripcion') or '').strip()
+        if not desc:
+            continue
+        session.add(FacturaFaltante(
+            factura_id=inv.id,
+            codigo_barra=(f.get('codigo_barra') or '')[:20] or None,
+            cantidad=f.get('cantidad') or 0,
+            descripcion=desc[:150],
+        ))
+        n += 1
+    return n
 
 
 def _get_or_create_invoice(session, comp: dict) -> Invoice | None:

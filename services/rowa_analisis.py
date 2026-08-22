@@ -92,6 +92,9 @@ class ArticuloAnalizado:
     tipo_venta: str | None = None    # L=libre, R=receta, A=archivada, ...
     ventas_arr: list = field(default_factory=list)  # 12 meses de unidades
     rotacion_por_ventas: bool = False  # True si la rotación salió de ventas reales
+    laboratorio: str | None = None   # ObsLaboratorio.descripcion
+    stock_total: int | None = None   # ObsStock.stock_actual (robot + depósito)
+    stock_deposito: int | None = None  # stock_total - cantidad (en robot)
 
 
 def clasificar_rotacion(antig_prom_d: int) -> str:

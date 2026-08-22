@@ -1,0 +1,134 @@
+{# Panel de historial de stock del robot (snapshots) con eventos de ingreso.
+
+   Uso:
+     1. Chart.js ya debe estar cargado (rowa_carga.html lo trae).
+     2. {% include '_grafico_rowa_stock.html' %} donde quieras el panel.
+     3. Llamar `cargarGraficoRowaStock(articleId, nombre)` desde el click de una fila.
+
+   Datos: /rowa/api/producto/<article_id>/historial-stock
+#}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<div id="rowa-stock-panel" class="bg-white border border-surface-border rounded-xl px-4 py-3 mb-4 shadow-sm">
+    <div class="flex items-center justify-between mb-2 gap-2">
+        <p id="rowa-stock-titulo" class="text-sm font-semibold text-[#1e1e1e] truncate flex-1 min-w-0">
+            Click en 📈 de un producto para ver su historial de stock
+        </p>
+        <div class="flex items-center gap-3 text-[10px]">
+            <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-full" style="background:#10b981"></span>Carga registrada</span>
+            <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-full" style="background:#fbbf24"></span>Carga parcial</span>
+            <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-full" style="background:#f87171"></span>Ingreso sin registrar</span>
+        </div>
+    </div>
+    <div class="bg-white border border-surface-border rounded-lg relative" style="height:220px">
+        <canvas id="rowa-stock-canvas"></canvas>
+        <p id="rowa-stock-empty" class="absolute inset-0 flex items-center justify-center text-xs text-[#bbb]">(sin selección)</p>
+    </div>
+</div>
+
+<script>
+(function() {
+    let _chart = null;
+    const _isDark = document.body.classList.contains('theme-emerald');
+    const _T = _isDark ? {
+        text:'#ECFDF5', soft:'#B8D4C9', mute:'#86A89C',
+        line:'rgba(95,230,188,.10)', line2:'rgba(95,230,188,.22)', surface:'#103D31',
+        stock:'#7DD3FC',
+    } : {
+        text:'#1e1e1e', soft:'#555', mute:'#888',
+        line:'#e8e8e8', line2:'#e0e0e0', surface:'#fff',
+        stock:'#3b82f6',
+    };
+    const _EVT = {
+        carga:            {label:'Carga registrada',      color:'#10b981', pointStyle:'rectRot'},
+        carga_parcial:    {label:'Carga parcial',          color:'#fbbf24', pointStyle:'triangle'},
+        ingreso_detectado:{label:'Ingreso sin registrar',  color:'#f87171', pointStyle:'rectRot'},
+    };
+
+    function _fmtTs(iso) {
+        const d = new Date(iso);
+        return d.toLocaleDateString('es-AR', {day:'2-digit', month:'2-digit'}) + ' '
+             + d.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'});
+    }
+
+    function _error(msg) {
+        const e = document.getElementById('rowa-stock-empty');
+        e.textContent = msg; e.classList.remove('hidden');
+        if (_chart) { _chart.destroy(); _chart = null; }
+    }
+
+    function _render(d) {
+        const labels = d.puntos.map(p => _fmtTs(p.ts));
+        const stockData = d.puntos.map(p => p.stock);
+        const eventosPorTs = {};
+        d.eventos.forEach(e => { eventosPorTs[e.ts] = e; });
+
+        const datasets = [{
+            type: 'line', label: 'Stock en robot', data: stockData,
+            borderColor: _T.stock, backgroundColor: _T.stock,
+            borderWidth: 2, pointRadius: 3, pointHoverRadius: 6, tension: 0.15, fill: false, order: 3,
+        }];
+
+        Object.keys(_EVT).forEach(tipo => {
+            const def = _EVT[tipo];
+            const serie = d.puntos.map(p => {
+                const ev = eventosPorTs[p.ts];
+                return (ev && ev.tipo === tipo) ? p.stock : null;
+            });
+            const hay = serie.some(v => v !== null);
+            if (!hay) return;
+            datasets.push({
+                type: 'line', label: def.label, data: serie,
+                borderColor: def.color, backgroundColor: def.color,
+                showLine: false, pointStyle: def.pointStyle,
+                pointRadius: 8, pointHoverRadius: 11, order: 1,
+            });
+        });
+
+        if (_chart) _chart.destroy();
+        const ctx = document.getElementById('rowa-stock-canvas').getContext('2d');
+        _chart = new Chart(ctx, {
+            data: {labels, datasets},
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: {mode: 'index', intersect: false},
+                plugins: {
+                    legend: {labels: {color: _T.soft, font: {size: 9, weight: '600'}, boxWidth: 12, padding: 6}},
+                    tooltip: {
+                        backgroundColor: _T.surface, titleColor: _T.text, bodyColor: _T.soft,
+                        borderColor: _T.line2, borderWidth: 1, padding: 8,
+                        callbacks: {
+                            afterBody: function(items) {
+                                const ts = d.puntos[items[0].dataIndex].ts;
+                                const ev = eventosPorTs[ts];
+                                if (!ev) return '';
+                                return `+${ev.delta}u (registrado: ${ev.cargado_registrado}u)`;
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: {grid: {display: false}, ticks: {color: _T.soft, font: {size: 9}}},
+                    y: {grid: {color: _T.line}, ticks: {color: _T.soft, font: {size: 9}}, beginAtZero: true},
+                },
+            },
+        });
+    }
+
+    async function _cargar(articleId) {
+        document.getElementById('rowa-stock-empty').classList.add('hidden');
+        try {
+            const r = await fetch(`/rowa/api/producto/${encodeURIComponent(articleId)}/historial-stock`, {credentials: 'same-origin'});
+            const d = await r.json();
+            if (!d.ok) { _error(d.error || 'Sin datos'); return; }
+            _render(d);
+        } catch (e) { _error('Error de red'); }
+    }
+
+    window.cargarGraficoRowaStock = function(articleId, nombre) {
+        if (!articleId) return;
+        document.getElementById('rowa-stock-titulo').textContent = nombre || ('#' + articleId);
+        _cargar(articleId);
+    };
+})();
+</script>

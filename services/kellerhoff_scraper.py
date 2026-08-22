@@ -80,13 +80,16 @@ def scrape_comprobantes(desde: date, hasta: date, status_cb=None,
                 nro = comp.get('nro_comp_kh', '?')
                 _cb(f'Detalle {i}/{len(nuevos)}: {nro}')
                 try:
-                    comp['items'] = _detalle_comprobante(page, comp)
+                    analisis = _detalle_comprobante(page, comp)
                 except Exception as e:
-                    comp['items'] = []
+                    analisis = {'categoria': 'factura', 'items': [], 'faltantes': []}
                     comp['_error_detalle'] = str(e)
+                comp['analisis'] = analisis
+                comp['items'] = analisis.get('items', [])
             # Comprobantes ya existentes: no re-navegar, items vacíos (ya están en DB)
             for comp in comps:
                 if comp.get('nro_comp_arca') in _skip:
+                    comp['analisis'] = {'categoria': 'factura', 'items': [], 'faltantes': []}
                     comp['items'] = []
                     comp['_ya_existe'] = True
             return comps
@@ -234,27 +237,35 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
     return comps
 
 
-# ── Detalle de un comprobante (ítems) ─────────────────────────────────────────
+# ── Detalle de un comprobante (clasificación + ítems) ─────────────────────────
 
-def _detalle_comprobante(page, comp: dict) -> list[dict]:
+def _detalle_comprobante(page, comp: dict) -> dict:
+    """Descarga el PDF y lo clasifica/parsea vía `kellerhoff_analizador`.
+
+    Devuelve el dict de `analizar_pdf`: {'categoria': 'nc_financiera', ...}
+    o {'categoria': 'factura', 'items': [...], 'faltantes': [...]}.
+    Si no se pudo bajar el PDF, cae al fallback HTML (solo ítems, sin
+    clasificación de NC financiera — hoy nunca encontró nada, ver CLAUDE.md).
+    """
     href = comp.get('_href')
     if not href:
-        return []
+        return {'categoria': 'factura', 'items': [], 'faltantes': []}
 
     url = href if href.startswith('http') else f'{KH_URL}{href}'
     page.goto(url)
     page.wait_for_load_state('networkidle')
 
     import logging
-    import os
-    import re as _re
     log = logging.getLogger(__name__)
     nro = comp.get('nro_comp_kh', '?')
 
-    items = _detalle_via_pdf(page, comp, log) or _detalle_via_html(page, comp, log)
-    if not items:
+    analisis = _detalle_via_pdf(page, comp, log)
+    if analisis is None:
+        items = _detalle_via_html(page, comp, log)
+        analisis = {'categoria': 'factura', 'items': items, 'faltantes': []}
+    if analisis['categoria'] == 'factura' and not analisis.get('items'):
         log.warning('[KH-DET] %s: sin ítems', nro)
-    return items
+    return analisis
 
 
 # ── Conversión de número de comprobante ───────────────────────────────────────
@@ -310,28 +321,20 @@ def _parse_dec(s: str) -> float:
         return 0.0
 
 
-def _to_float(v) -> float:
-    if v is None:
-        return 0.0
-    try:
-        return float(str(v).replace(',', '.'))
-    except (ValueError, TypeError):
-        return 0.0
+# ── Detalle via PDF + parser regex/clasificador ───────────────────────────────
 
+def _detalle_via_pdf(page, comp: dict, log) -> dict | None:
+    """Descarga el PDF del comprobante y lo clasifica/parsea con
+    `services.kellerhoff_analizador` (regex, sin IA — ver CLAUDE.md).
 
-# ── Detalle via PDF + factura_ia ──────────────────────────────────────────────
-
-def _detalle_via_pdf(page, comp: dict, log) -> list[dict]:
-    """Descarga el PDF del comprobante del portal y lo parsea con factura_ia."""
+    Devuelve None si no se pudo ni descargar el PDF (el caller cae al
+    fallback HTML). Un PDF descargado que da 0 ítems reales SÍ devuelve dict
+    (no None) — eso es una NC financiera o factura vacía real, no una falla.
+    """
     import os
     import tempfile
 
-    from services import factura_ia
-
-    api_key = os.environ.get('ANTHROPIC_API_KEY')
-    if not api_key:
-        log.warning('[KH-PDF] ANTHROPIC_API_KEY no seteada — skip pdf')
-        return []
+    from services import kellerhoff_analizador
 
     nro = comp.get('nro_comp_kh', '?')
 
@@ -342,7 +345,7 @@ def _detalle_via_pdf(page, comp: dict, log) -> list[dict]:
     )
     if not pdf_btn:
         log.warning('[KH-PDF] %s: botón PDF no encontrado en %s', nro, page.url)
-        return []
+        return None
 
     pdf_path = os.path.join(tempfile.gettempdir(), f'kh_{nro}.pdf')
     try:
@@ -352,34 +355,19 @@ def _detalle_via_pdf(page, comp: dict, log) -> list[dict]:
         log.warning('[KH-PDF] %s: PDF descargado (%d bytes)', nro, os.path.getsize(pdf_path))
     except Exception as e:
         log.warning('[KH-PDF] %s: error descargando PDF: %s', nro, e)
-        return []
+        return None
 
     try:
-        with open(pdf_path, 'rb') as f:
-            pdf_bytes = f.read()
-        data, usage = factura_ia.extraer_factura_json(pdf_bytes, api_key)
-        items = []
-        for it in (data.get('detalle') or []):
-            qty = it.get('cantidad')
-            try:
-                qty = int(float(str(qty).replace(',', '.'))) if qty is not None else 0
-            except (ValueError, TypeError):
-                qty = 0
-            items.append({
-                'barcode':         str(it.get('codigo_barra') or '').strip(),
-                'descripcion':     str(it.get('descripcion') or '').strip(),
-                'cantidad':        qty,
-                'precio_pub':      _to_float(it.get('precio_publico')),
-                'dto_pct':         _to_float(it.get('dto_pct')),
-                'precio_unitario': _to_float(it.get('precio_unitario')),
-                'importe':         _to_float(it.get('importe')),
-            })
-        log.warning('[KH-PDF] %s: factura_ia → %d ítem(s) (input_tokens=%s)',
-                    nro, len(items), getattr(usage, 'input_tokens', '?'))
-        return items
+        analisis = kellerhoff_analizador.analizar_pdf(pdf_path)
+        if analisis['categoria'] == 'nc_financiera':
+            log.warning('[KH-PDF] %s: NC financiera → %s', nro, analisis['anunciante_nombre'])
+        else:
+            log.warning('[KH-PDF] %s: factura → %d ítem(s), %d faltante(s)',
+                        nro, len(analisis['items']), len(analisis['faltantes']))
+        return analisis
     except Exception as e:
-        log.warning('[KH-PDF] %s: error en factura_ia: %s', nro, e)
-        return []
+        log.warning('[KH-PDF] %s: error parseando PDF: %s', nro, e)
+        return None
     finally:
         try:
             os.unlink(pdf_path)

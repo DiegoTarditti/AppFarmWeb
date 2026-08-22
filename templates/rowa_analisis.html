@@ -134,7 +134,17 @@
   <div class="rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.02] p-4 mb-5">
     <div class="flex items-center justify-between mb-3 gap-3 flex-wrap">
       <h2 id="scatter-titulo" class="text-sm font-semibold">Todos los artículos</h2>
-      <span id="scatter-count" class="text-xs text-[color:var(--ds-text-mute)]"></span>
+      <div class="flex items-center gap-2">
+        <select id="rowa-an-lab" onchange="renderScatter(activeQ)"
+                class="px-2 py-1 text-xs rounded border border-[color:var(--ds-surface-border)]"
+                style="background:#2c2c2e;color:inherit">
+          <option value="">Todo laboratorio</option>
+          {% for lab in labs_disponibles %}
+          <option value="{{ lab }}">{{ lab }}</option>
+          {% endfor %}
+        </select>
+        <span id="scatter-count" class="text-xs text-[color:var(--ds-text-mute)]"></span>
+      </div>
     </div>
     <div style="position:relative;height:320px">
       <canvas id="scatter-chart"></canvas>
@@ -147,9 +157,12 @@
       <thead class="bg-white/5 text-[10px] uppercase text-[color:var(--ds-text-mute)]">
         <tr>
           <th class="text-left px-3 py-2">Producto</th>
+          <th class="text-left px-3 py-2">Laboratorio</th>
           <th class="text-center px-3 py-2">Rotación</th>
           <th class="text-right px-3 py-2">Cobertura</th>
           <th class="text-right px-3 py-2">U/Mes</th>
+          <th class="text-right px-3 py-2">Depósito</th>
+          <th class="text-right px-3 py-2">Total</th>
           <th class="text-right px-3 py-2">Vol cm³</th>
         </tr>
       </thead>
@@ -202,12 +215,22 @@ var QDEFS = {
 var scatterChart = null;
 var activeQ = null;
 
+function labFiltro() {
+  var el = document.getElementById('rowa-an-lab');
+  return el ? el.value : '';
+}
+
+function porLab(pts) {
+  var lab = labFiltro();
+  return lab ? pts.filter(function(p) { return p.laboratorio === lab; }) : pts;
+}
+
 function buildDatasets(filterQ) {
   var qs = filterQ ? [filterQ] : Object.keys(QDEFS);
   return qs.map(function(q) {
     return {
       label: QDEFS[q].label,
-      data: SCATTER_ALL[q] || [],
+      data: porLab(SCATTER_ALL[q] || []),
       backgroundColor: QDEFS[q].color,
       borderColor: QDEFS[q].border,
       borderWidth: 0.5,
@@ -279,14 +302,15 @@ function renderScatter(filterQ) {
 }
 
 function renderTabla(filterQ) {
-  var ORDER = { riesgo: 0, sobrestock: 1, bien_cargado: 2, ajustado: 3 };
   var qs = filterQ ? [filterQ] : Object.keys(QDEFS);
   var rows = [];
   qs.forEach(function(q) {
-    (SCATTER_ALL[q] || []).forEach(function(p) { rows.push({ q: q, p: p }); });
+    porLab(SCATTER_ALL[q] || []).forEach(function(p) { rows.push({ q: q, p: p }); });
   });
+  // Orden: 1º laboratorio, 2º producto alfabético.
   rows.sort(function(a, b) {
-    if (ORDER[a.q] !== ORDER[b.q]) return ORDER[a.q] - ORDER[b.q];
+    var la = a.p.laboratorio || '~', lb = b.p.laboratorio || '~';
+    if (la !== lb) return la.localeCompare(lb);
     return (a.p.nombre || '').localeCompare(b.p.nombre || '');
   });
 
@@ -299,9 +323,12 @@ function renderTabla(filterQ) {
     var newBadge = p.nuevo ? ' <span style="font-size:9px;vertical-align:middle">✨</span>' : '';
     return '<tr class="border-t border-white/5 hover:bg-white/[0.02]">'
       + '<td class="px-3 py-1 text-left">' + p.nombre + newBadge + '</td>'
+      + '<td class="px-3 py-1 text-left" style="color:var(--ds-text-mute)">' + (p.laboratorio || '—') + '</td>'
       + '<td class="px-3 py-1 text-center"><span class="' + rotCls + ' text-[10px]">' + p.rotacion + '</span></td>'
       + '<td class="px-3 py-1 text-right font-mono">' + cobStr + '</td>'
       + '<td class="px-3 py-1 text-right font-mono">' + p.x + '</td>'
+      + '<td class="px-3 py-1 text-right font-mono">' + (p.stock_deposito !== null && p.stock_deposito !== undefined ? p.stock_deposito : '—') + '</td>'
+      + '<td class="px-3 py-1 text-right font-mono">' + (p.stock_total !== null && p.stock_total !== undefined ? p.stock_total : '—') + '</td>'
       + '<td class="px-3 py-1 text-right font-mono">' + p.vol + '</td>'
       + '</tr>';
   }).join('');
