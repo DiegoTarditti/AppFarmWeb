@@ -75,7 +75,7 @@ def cruzar_con_observer(session, filas, hoy: date | None = None,
         rot_media = rot_media if rot_media is not None else _m
 
     # Import local para no acoplar el import del módulo a la DB.
-    from database import ObsCodigoBarras, ObsProducto
+    from database import ObsCodigoBarras, ObsLaboratorio, ObsProducto, ObsStock
     from services.farmacia import farmacia_operativa
     from services.pedido_estacional import obtener_ventas_arr_bulk
 
@@ -108,6 +108,21 @@ def cruzar_con_observer(session, filas, hoy: date | None = None,
             ObsProducto.observer_id.in_(set(ean_prod.values())))
     }
 
+    lab_ids = {p.laboratorio_observer for p in info.values() if p.laboratorio_observer}
+    labs_map = {
+        l.observer_id: l.descripcion
+        for l in session.query(ObsLaboratorio).filter(ObsLaboratorio.observer_id.in_(lab_ids))
+    } if lab_ids else {}
+
+    # Stock de ObServer = agregado de TODA la farmacia (robot + depósito, ver
+    # docstring del módulo). Depósito = ese total menos lo que hay en el robot.
+    stock_map = {
+        s.producto_observer: s.stock_actual
+        for s in session.query(ObsStock).filter(
+            ObsStock.id_farmacia == id_farmacia,
+            ObsStock.producto_observer.in_(set(ean_prod.values())))
+    }
+
     matcheados = 0
     for f in filas:
         pid = ean_prod.get(f.ean)
@@ -126,6 +141,10 @@ def cruzar_con_observer(session, filas, hoy: date | None = None,
             f.requiere_frio = bool(p.requiere_cadena_frio)
             f.nombre_obs = (p.descripcion_custom or p.descripcion or "").strip() or None
             f.tipo_venta = p.id_tipo_venta_control
+            f.laboratorio = labs_map.get(p.laboratorio_observer)
+
+        f.stock_total = stock_map.get(pid)
+        f.stock_deposito = (f.stock_total - f.cantidad) if f.stock_total is not None else None
 
         # Refinar es_nuevo con historial real: si el primer mes con venta está
         # hace más de 6 meses en el array de 12, el producto ya existía en el

@@ -17,7 +17,37 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
-## ⏳ Pendiente — Kellerhoff sync: parsear ítems de factura SIN IA (2026-08-20)
+## ✅ Kellerhoff sync: parsear ítems SIN IA + clasificador de comprobantes (2026-08-21)
+
+**Implementado (sesión 2026-08-21)**, validado contra los 90 comprobantes reales bajados
+del portal ese día (facturas, NCR y NC financieras) + 2 PDFs reales del repo:
+
+- `services/kellerhoff_analizador.py` (nuevo): clasifica cada PDF en `nc_financiera`
+  (renglón único "RECUPERO NC ...", sin barcode — recupero de publicidad/descuento de un
+  laboratorio/anunciante) vs `factura` (ítems reales, vía el parser regex ya existente
+  `parsers/droguer_a_kellerhoff_s_a.py` — el que se había retirado el 2026-05-26 seguía
+  andando perfecto). Todo por reglas deterministas, **sin IA** — el vocabulario visto en
+  90 comprobantes reales fue 100% cubierto por regex, cero casos ambiguos.
+- **`Anunciante`** (modelo nuevo, `database.py`) + `PagoAjusteCC.anunciante_id` (nullable,
+  `proveedor_id` se relajó a nullable): segunda cuenta corriente, separada de la de
+  droguerías, para los recuperos financieros. Se auto-crea por nombre normalizado (sin
+  whitelist) — "aprende" solo. **Convención de signo (`tipo='AJUSTE_NEG'`) sin validar con
+  Diego** — revisar si el sentido esperado es el opuesto antes de confiar en el saldo.
+- **Faltantes** (`*** PRODUCTOS EN FALTA MOMENTANEA ***`): se reusa `FacturaFaltante`
+  (ya existía para el flujo IA del converter) en vez de un modelo nuevo.
+- `routes/kellerhoff_sync.py::_sincronizar`: rutea cada comprobante — `nc_financiera` →
+  `PagoAjusteCC`+`Anunciante` (nunca Invoice), `factura` → el flujo de siempre
+  (Invoice+InvoiceItem) + faltantes.
+- Validado end-to-end contra Postgres local (dedup de NC repetida, ítems + faltantes
+  reales de un PDF de Kellerhoff). Suite completa (997 tests) sigue verde.
+
+**Pendiente real**: correr el sync contra el portal en vivo — todo lo de arriba se probó
+con PDFs ya descargados, pero el click al botón "PDF" del portal (`_detalle_via_pdf`) no
+se re-verificó esta sesión contra el sitio real.
+
+---
+
+## ⏳ Pendiente original — Kellerhoff sync: parsear ítems de factura SIN IA (2026-08-20)
 
 **Contexto de la sesión 2026-08-20**: el sync del portal Kellerhoff (`/kellerhoff/sync`) ya
 baja y guarda los comprobantes correctamente (totales, fechas, tipos). Lo que no funciona

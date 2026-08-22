@@ -52,6 +52,8 @@
     </div>
   </div>
 
+  {% include '_grafico_rowa_stock.html' %}
+
   {# ---- Historial snapshots ---- #}
   {% if snap_historial %}
   <details class="mb-4 rounded-lg border border-[color:var(--ds-surface-border)] overflow-hidden">
@@ -83,6 +85,14 @@
            class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)] w-48">
     <label class="flex items-center gap-1 text-xs text-[color:var(--ds-text-mute)] cursor-pointer">
       <input id="carga-criticos" type="checkbox" onchange="cargaFiltrar()" checked> 🔴 Solo críticos</label>
+    <select id="carga-lab" onchange="cargaFiltrar()"
+            class="px-2 py-1 text-sm rounded border border-[color:var(--ds-surface-border)]"
+            style="background:#2c2c2e;color:inherit">
+      <option value="">Todo laboratorio</option>
+      {% for lab in labs_disponibles %}
+      <option value="{{ lab }}">{{ lab }}</option>
+      {% endfor %}
+    </select>
     <span id="carga-count" class="text-xs text-[color:var(--ds-text-mute)] ml-auto"></span>
   </div>
 
@@ -93,7 +103,10 @@
       <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
         <tr>
           <th class="text-left px-3 py-2">Producto</th>
-          <th class="text-right px-3 py-2">Stock</th>
+          <th class="text-left px-3 py-2">Laboratorio</th>
+          <th class="text-right px-3 py-2">Robot</th>
+          <th class="text-right px-3 py-2">Depósito</th>
+          <th class="text-right px-3 py-2">Total</th>
           <th class="text-right px-3 py-2">Sal/día</th>
           <th class="text-right px-3 py-2">Cobertura</th>
           <th class="text-right px-3 py-2 w-28">Cargar</th>
@@ -107,7 +120,8 @@
             data-urgencia="{{ it.urgencia }}"
             data-aid="{{ it.article_id }}"
             data-ean="{{ it.ean }}"
-            data-nombre-orig="{{ it.nombre }}">
+            data-nombre-orig="{{ it.nombre }}"
+            data-lab="{{ it.laboratorio }}">
           <td class="px-3 py-1.5">
             {% if it.cantidad == 0 %}
               <span class="inline-block w-1.5 h-1.5 rounded-full bg-rose-400 mr-1.5 align-middle"></span>
@@ -118,10 +132,19 @@
             {% else %}
               <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-600 mr-1.5 align-middle"></span>
             {% endif %}
+            <button type="button" onclick="rowaStockGrafico(this)"
+               data-aid="{{ it.article_id }}" data-nombre="{{ it.nombre }}"
+               title="Ver historial de stock del robot (snapshots)"
+               class="mr-1 align-middle text-[color:var(--ds-mint)] hover:opacity-70">📈</button>
             {{ it.nombre[:45] }}
           </td>
+          <td class="px-3 py-1.5 text-[color:var(--ds-text-mute)]">{{ it.laboratorio or '—' }}</td>
           <td class="px-3 py-1.5 text-right font-mono {% if it.cantidad == 0 %}text-rose-400 font-bold{% endif %}">
             {{ it.cantidad }}</td>
+          <td class="px-3 py-1.5 text-right font-mono">
+            {{ it.stock_deposito if it.stock_deposito is not none else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono">
+            {{ it.stock_total if it.stock_total is not none else '—' }}</td>
           <td class="px-3 py-1.5 text-right font-mono text-[color:var(--ds-text-mute)]">
             {{ '%.2f' | format(it.salidas_dia) if it.salidas_dia else '—' }}</td>
           <td class="px-3 py-1.5 text-right font-mono
@@ -166,16 +189,26 @@
   function cargaFiltrar() {
     var q    = (document.getElementById('carga-buscar').value || '').toLowerCase();
     var crit = document.getElementById('carga-criticos').checked;
+    var lab  = document.getElementById('carga-lab').value;
     var vis = 0, total = 0;
     document.querySelectorAll('tr.carga-fila').forEach(function(tr) {
       total++;
       var ok = (!q    || (tr.dataset.nombre || '').indexOf(q) !== -1)
-            && (!crit || parseInt(tr.dataset.urgencia) < 3);
+            && (!crit || parseInt(tr.dataset.urgencia) < 3)
+            && (!lab  || tr.dataset.lab === lab);
       tr.style.display = ok ? '' : 'none';
       if (ok) vis++;
     });
     var c = document.getElementById('carga-count');
     if (c) c.textContent = vis + ' de ' + total;
+  }
+
+  function rowaStockGrafico(btn) {
+    if (window.cargarGraficoRowaStock) {
+      window.cargarGraficoRowaStock(btn.dataset.aid, btn.dataset.nombre || '');
+    }
+    var panel = document.getElementById('rowa-stock-panel');
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   function cargaMarcar(inp) {

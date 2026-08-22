@@ -134,14 +134,15 @@ def init_app(app):
         except Exception:
             pass
 
-        # Orden para operar: primero lo accionable (mayor espacio a liberar).
+        # Orden para operar: por laboratorio y, dentro de cada uno, alfabético.
         accion = sorted(
             [f for f in filas if f.al_deposito > 0],
-            key=lambda f: f.al_deposito * f.vol_unit_cm3, reverse=True)
+            key=lambda f: (f.laboratorio or "~", (f.nombre_obs or f.nombre or "").lower()))
         vencimientos = sorted(
             [f for f in filas if f.dias_prox_venc is not None and f.packs_venc_alerta],
             key=lambda f: f.dias_prox_venc)
         n_nuevos = sum(1 for v in nuevos_map.values() if v["confirmado"])
+        labs_disponibles = sorted({f.laboratorio for f in accion if f.laboratorio})
         return render_template(
             "rowa.html",
             sin_robot=False,
@@ -151,6 +152,7 @@ def init_app(app):
             accion=accion, vencimientos=vencimientos,
             n_accion=len(accion), n_venc=len(vencimientos),
             nuevos_map=nuevos_map, n_nuevos=n_nuevos,
+            labs_disponibles=labs_disponibles,
         )
 
     @app.route("/rowa/export")
@@ -425,7 +427,10 @@ def init_app(app):
                 "article_id": f.article_id,
                 "ean": f.ean or "",
                 "nombre": f.nombre_obs or f.nombre or "",
+                "laboratorio": f.laboratorio or "",
                 "cantidad": f.cantidad,
+                "stock_deposito": f.stock_deposito,
+                "stock_total": f.stock_total,
                 "salidas_dia": sal,
                 "cobertura": cobertura,
                 "urgencia": urgencia,
@@ -433,6 +438,7 @@ def init_app(app):
             })
 
         items.sort(key=lambda x: (x["urgencia"], x["cobertura"]))
+        labs_disponibles = sorted({i["laboratorio"] for i in items if i["laboratorio"]})
 
         return render_template(
             "rowa_carga.html",
@@ -443,6 +449,7 @@ def init_app(app):
             n_criticos=sum(1 for i in items if i["urgencia"] < 2),
             generado=data["generado"],
             snap_historial=snap_historial,
+            labs_disponibles=labs_disponibles,
         )
 
     @app.route("/rowa/carga/registrar", methods=["POST"])
@@ -477,6 +484,55 @@ def init_app(app):
 
         _CACHE["payload"] = None  # forzar recarga del robot en el próximo acceso
         return jsonify({"ok": True, "sesion_id": sid})
+
+    @app.route("/rowa/api/producto/<article_id>/historial-stock")
+    @login_required
+    def rowa_historial_stock(article_id):
+        """Serie de stock del robot por snapshot + eventos de aumento detectados,
+        clasificados según si coinciden con una carga registrada en `/carga`
+        (RowaCarga) o no (ingreso sin registrar — el gap que rompe salidas/día)."""
+        with get_db() as session:
+            snaps = (
+                session.query(RowaSnapshot)
+                .filter(RowaSnapshot.article_id == article_id)
+                .order_by(RowaSnapshot.tomado_en)
+                .all()
+            )
+            cargas = (
+                session.query(RowaCarga)
+                .filter(RowaCarga.article_id == article_id)
+                .order_by(RowaCarga.cargado_en)
+                .all()
+            )
+
+        if not snaps:
+            return jsonify({"ok": False, "error": "Sin snapshots para este artículo todavía."})
+
+        puntos = [{"ts": s.tomado_en.isoformat(), "stock": s.cantidad} for s in snaps]
+
+        eventos = []
+        for prev, cur in zip(snaps, snaps[1:]):
+            delta = cur.cantidad - prev.cantidad
+            if delta <= 0:
+                continue
+            cargado = sum(
+                c.cantidad for c in cargas
+                if prev.tomado_en < c.cargado_en <= cur.tomado_en
+            )
+            if cargado >= delta:
+                tipo = "carga"
+            elif cargado > 0:
+                tipo = "carga_parcial"
+            else:
+                tipo = "ingreso_detectado"
+            eventos.append({
+                "ts": cur.tomado_en.isoformat(),
+                "delta": delta,
+                "cargado_registrado": cargado,
+                "tipo": tipo,
+            })
+
+        return jsonify({"ok": True, "article_id": article_id, "puntos": puntos, "eventos": eventos})
 
     @app.route("/rowa/analisis")
     @login_required
@@ -532,6 +588,9 @@ def init_app(app):
                     "aid": f.article_id,
                     "cob": round(cob, 1) if cob < 900 else None,
                     "nuevo": f.es_nuevo,
+                    "laboratorio": f.laboratorio or "",
+                    "stock_deposito": f.stock_deposito,
+                    "stock_total": f.stock_total,
                 }
                 for f, cob in pairs
             ]
@@ -544,6 +603,7 @@ def init_app(app):
             }
             for q, pairs in q_items.items()
         }
+        labs_disponibles = sorted({f.laboratorio for f in filas if f.laboratorio})
 
         return render_template(
             "rowa_analisis.html",
@@ -554,6 +614,7 @@ def init_app(app):
             q_stats=q_stats,
             scatter_all=scatter_all,
             cobertura_umbral=COBERTURA_UMBRAL,
+            labs_disponibles=labs_disponibles,
         )
 
     @app.route("/rowa/snapshot/auto")

@@ -2167,11 +2167,37 @@ class ProcesoCompra(Base):
     )
 
 
+class Anunciante(Base):
+    """Laboratorio/programa que origina un recupero financiero (NC de droguería
+    tipo 'RECUPERO NC <concepto>') — distinto de `Laboratorio` (fabricante en
+    catálogo) y de `Provider` (droguería/otro): PAP, PRESERFAR, MEDIFE, etc. no
+    necesariamente matchean 1:1 con ninguna de esas dos tablas.
+
+    Se auto-crea: cuando el clasificador de comprobantes ve un concepto nuevo
+    en una NC financiera, da de alta la fila acá (get_or_create por nombre
+    normalizado) sin intervención manual — así "aprende" sin tabla de reglas
+    aparte.
+    """
+    __tablename__ = 'anunciantes'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(120), nullable=False, unique=True)
+    creado_en = Column(DateTime, default=now_ar)
+
+
 class PagoAjusteCC(Base):
-    """Pagos y ajustes de cuenta corriente de proveedores."""
+    """Pagos y ajustes de cuenta corriente — de proveedores (droguería/otro) O
+    de anunciantes (recuperos financieros vía NC, ver `Anunciante`).
+
+    Exactamente uno de `proveedor_id` / `anunciante_id` va seteado por fila —
+    son dos cuentas corrientes separadas que comparten tabla. `proveedor_id`
+    se relajó a nullable para permitir filas de anunciante; las lecturas
+    existentes (`services/cuenta_corriente.py`) siguen filtrando por
+    `proveedor_id` y no ven las filas de anunciante (proveedor_id NULL ahí).
+    """
     __tablename__ = 'pagos_ajustes_cc'
     id = Column(Integer, primary_key=True)
-    proveedor_id = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'), nullable=False)
+    proveedor_id = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'), nullable=True)
+    anunciante_id = Column(Integer, ForeignKey('anunciantes.id', ondelete='CASCADE'), nullable=True)
     tipo = Column(String(10), nullable=False)  # PAGO, AJUSTE_POS, AJUSTE_NEG
     fecha = Column(Date, nullable=False)
     monto = Column(DECIMAL(14, 2), nullable=False)
@@ -2180,6 +2206,7 @@ class PagoAjusteCC(Base):
     conciliado = Column(Boolean, nullable=False, default=False)
     creado_en = Column(DateTime, default=now_ar)
     proveedor = relationship('Provider')
+    anunciante = relationship('Anunciante')
 
 
 class DocumentoPendiente(Base):
@@ -3229,7 +3256,8 @@ def init_db(database_url=None):
                         'respuestas_rapidas', 'informe_enviado',
                         'api_keys',
                         'web_rubros_publicados', 'web_producto_imagen',
-                        'rowa_nuevos', 'rowa_snapshots', 'rowa_cargas')
+                        'rowa_nuevos', 'rowa_snapshots', 'rowa_cargas',
+                        'anunciantes')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -4747,6 +4775,17 @@ def _pg_add_columns(conn):
         )
     """))
     conn.execute(text("ALTER TABLE pagos_ajustes_cc ADD COLUMN IF NOT EXISTS conciliado BOOLEAN NOT NULL DEFAULT false"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS anunciantes (
+            id SERIAL PRIMARY KEY,
+            nombre VARCHAR(120) NOT NULL UNIQUE,
+            creado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    # Cta cte de anunciantes (recuperos NC): proveedor_id pasa a nullable +
+    # nueva FK anunciante_id. Ver Anunciante/PagoAjusteCC en el modelo.
+    conn.execute(text("ALTER TABLE pagos_ajustes_cc ALTER COLUMN proveedor_id DROP NOT NULL"))
+    conn.execute(text("ALTER TABLE pagos_ajustes_cc ADD COLUMN IF NOT EXISTS anunciante_id INTEGER REFERENCES anunciantes(id) ON DELETE CASCADE"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS cuentas_pago (
             id SERIAL PRIMARY KEY,
