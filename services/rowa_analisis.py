@@ -244,6 +244,41 @@ RANGOS_ALTURA = [(0, 20), (20, 30), (30, 40), (40, 50), (50, 60), (60, 80), (80,
 SEPARACIONES = [145, 104, 80, 60, 50, 40]
 
 
+_PRIORIDAD_TIPO_EVENTO = {"ingreso_detectado": 0, "carga_parcial": 1, "carga": 2}
+
+
+def clasificar_eventos_stock(snaps: list[tuple[datetime, int]],
+                             cargas: list[tuple[datetime, int]]) -> list[dict]:
+    """Compara snapshots consecutivos (ordenados) y clasifica cada aumento de
+    stock según si coincide con una carga registrada (`RowaCarga`) en esa
+    ventana de tiempo o no (`ingreso_detectado` — el gap que rompe salidas/día).
+
+    `snaps`: [(tomado_en, cantidad), ...] ordenados por tomado_en.
+    `cargas`: [(cargado_en, cantidad), ...] del mismo artículo.
+    """
+    eventos = []
+    for (prev_ts, prev_cant), (cur_ts, cur_cant) in zip(snaps, snaps[1:]):
+        delta = cur_cant - prev_cant
+        if delta <= 0:
+            continue
+        cargado = sum(cant for ts, cant in cargas if prev_ts < ts <= cur_ts)
+        if cargado >= delta:
+            tipo = "carga"
+        elif cargado > 0:
+            tipo = "carga_parcial"
+        else:
+            tipo = "ingreso_detectado"
+        eventos.append({"ts": cur_ts, "delta": delta, "cargado_registrado": cargado, "tipo": tipo})
+    return eventos
+
+
+def peor_tipo_evento(eventos: list[dict]) -> str | None:
+    """El tipo más 'grave' entre una lista de eventos (ingreso_detectado > carga_parcial > carga)."""
+    if not eventos:
+        return None
+    return min((e["tipo"] for e in eventos), key=lambda t: _PRIORIDAD_TIPO_EVENTO.get(t, 99))
+
+
 def analizar_alturas(articulos, margen_mm: int = 15) -> dict:
     """Distribución de alturas de packs para decidir separación de estantes."""
     alturas = [p.height_mm for a in articulos for p in a.packs if p.height_mm]

@@ -27,7 +27,14 @@ from flask import Response, abort, jsonify, render_template, request
 from flask_login import login_required
 
 from database import RowaCarga, RowaNuevo, RowaSnapshot, get_db
-from services.rowa_analisis import analizar_alturas, analizar_stock, clean_ean, diagnosticar
+from services.rowa_analisis import (
+    analizar_alturas,
+    analizar_stock,
+    clasificar_eventos_stock,
+    clean_ean,
+    diagnosticar,
+    peor_tipo_evento,
+)
 from services.rowa_client import RowaClient, RowaError
 from services.rowa_observer import cruzar_con_observer
 
@@ -391,6 +398,29 @@ def init_app(app):
 
             salidas_dia = _calcular_salidas_diarias(session, filas)
 
+            # Eventos de aumento de stock por artículo (carga/parcial/ingreso sin
+            # registrar), para el filtro "solo con aumentos" — una sola pasada
+            # sobre todos los snapshots/cargas en vez de N queries por artículo.
+            snaps_por_art: dict[str, list[tuple[datetime, int]]] = defaultdict(list)
+            for aid, ts, cant in (
+                session.query(RowaSnapshot.article_id, RowaSnapshot.tomado_en, RowaSnapshot.cantidad)
+                .order_by(RowaSnapshot.tomado_en)
+                .all()
+            ):
+                snaps_por_art[aid].append((ts, cant))
+            cargas_por_art: dict[str, list[tuple[datetime, int]]] = defaultdict(list)
+            for aid, ts, cant in (
+                session.query(RowaCarga.article_id, RowaCarga.cargado_en, RowaCarga.cantidad)
+                .order_by(RowaCarga.cargado_en)
+                .all()
+            ):
+                cargas_por_art[aid].append((ts, cant))
+            tipo_aumento_por_art = {
+                aid: peor_tipo_evento(clasificar_eventos_stock(snaps, cargas_por_art.get(aid, [])))
+                for aid, snaps in snaps_por_art.items()
+                if len(snaps) >= 2
+            }
+
             # Última sesión de carga
             ultima_carga = (
                 session.query(RowaCarga.cargado_en)
@@ -435,6 +465,7 @@ def init_app(app):
                 "cobertura": cobertura,
                 "urgencia": urgencia,
                 "sug_cargar": f.sug_en_robot - f.cantidad if f.sug_en_robot > f.cantidad else 0,
+                "tipo_aumento": tipo_aumento_por_art.get(f.article_id),
             })
 
         items.sort(key=lambda x: (x["urgencia"], x["cobertura"]))
@@ -509,28 +540,12 @@ def init_app(app):
             return jsonify({"ok": False, "error": "Sin snapshots para este artículo todavía."})
 
         puntos = [{"ts": s.tomado_en.isoformat(), "stock": s.cantidad} for s in snaps]
-
-        eventos = []
-        for prev, cur in zip(snaps, snaps[1:]):
-            delta = cur.cantidad - prev.cantidad
-            if delta <= 0:
-                continue
-            cargado = sum(
-                c.cantidad for c in cargas
-                if prev.tomado_en < c.cargado_en <= cur.tomado_en
-            )
-            if cargado >= delta:
-                tipo = "carga"
-            elif cargado > 0:
-                tipo = "carga_parcial"
-            else:
-                tipo = "ingreso_detectado"
-            eventos.append({
-                "ts": cur.tomado_en.isoformat(),
-                "delta": delta,
-                "cargado_registrado": cargado,
-                "tipo": tipo,
-            })
+        eventos = clasificar_eventos_stock(
+            [(s.tomado_en, s.cantidad) for s in snaps],
+            [(c.cargado_en, c.cantidad) for c in cargas],
+        )
+        for e in eventos:
+            e["ts"] = e["ts"].isoformat()
 
         return jsonify({"ok": True, "article_id": article_id, "puntos": puntos, "eventos": eventos})
 
