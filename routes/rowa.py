@@ -165,8 +165,12 @@ def init_app(app):
         # laboratorios tiene que salir de la tabla que se muestra: si saliera de
         # `accion`, en la vista completa faltarian labs.
         labs_disponibles = sorted({f.laboratorio for f in tabla if f.laboratorio})
+        with get_db() as session:
+            syncs = _frescura_syncs(session)
+
         return render_template(
             "rowa.html",
+            syncs=syncs,
             sin_robot=False,
             robot=data["robot"], diag=data["diag"], alturas=data["alturas"],
             cruce=data["cruce"], generado=data["generado"],
@@ -233,6 +237,149 @@ def init_app(app):
             "rowa_limpieza.html", sin_robot=False, tipo=tipo, meta=_TIPOS[tipo],
             robot=data["robot"], generado=data["generado"],
             candidatos=cand, n=len(cand), boca=BOCA_EGRESO)
+
+    # Cuanto puede envejecer cada sync antes de que el numero deje de servir.
+    # El stock es el critico: el deposito se calcula como stock_total - robot, asi
+    # que con datos viejos la planilla manda a buscar mercaderia que ya se vendio.
+    # La capacidad, en cambio, cambia cada muchos meses.
+    FRESCURA_MIN = {"stock": 60, "rowa_productos": 24 * 60, "ventas_mensuales": 24 * 60}
+
+    def _frescura_syncs(session):
+        """Edad de cada sync que alimenta el modulo. Devuelve lista de dicts."""
+        from database import ObsSyncLog, now_ar
+        out = []
+        for entidad, tope in FRESCURA_MIN.items():
+            ult = (session.query(ObsSyncLog)
+                   .filter(ObsSyncLog.entidad == entidad, ObsSyncLog.error.is_(None))
+                   .order_by(ObsSyncLog.ejecutado_en.desc()).first())
+            minutos = (int((now_ar() - ult.ejecutado_en).total_seconds() // 60)
+                       if ult and ult.ejecutado_en else None)
+            out.append({
+                "entidad": entidad,
+                "minutos": minutos,
+                "nunca": ult is None,
+                # None (nunca corrido) cuenta como viejo: sin ese dato no hay
+                # planilla posible, y callarlo seria peor que avisarlo.
+                "viejo": minutos is None or minutos > tope,
+                "tope_min": tope,
+            })
+        return out
+
+    def _salidas_para_planilla(session, filas):
+        """Salidas diarias por producto_observer, de las dos fuentes.
+
+        Devuelve (mapa, dias_ventana). El mapa trae (snapshot, observer) sin
+        mezclar: la mezcla y su ponderación viven en `services/rowa_planilla`,
+        que es lógica pura y se testea sola.
+        """
+        desde = datetime.now() - timedelta(days=14)
+        snaps = (session.query(RowaSnapshot)
+                 .filter(RowaSnapshot.tomado_en >= desde)
+                 .order_by(RowaSnapshot.tomado_en).all())
+        serie = defaultdict(list)
+        for x in snaps:
+            serie[x.article_id].append((x.tomado_en, x.cantidad))
+        ts = sorted({x.tomado_en for x in snaps})
+        dias_ventana = (max((ts[-1] - ts[0]).total_seconds() / 86400, 1)
+                        if len(ts) >= 2 else 0.0)
+
+        out = {}
+        for f in filas:
+            if not f.producto_observer:
+                continue
+            sr = serie.get(f.article_id, [])
+            # Bajas entre snapshots consecutivos, igual que
+            # `_calcular_salidas_diarias`: comparar extremos subestima 3,4x.
+            snap = (sum(max(p - q, 0) for (_, p), (_, q) in zip(sr, sr[1:])) / dias_ventana
+                    if len(sr) >= 2 and dias_ventana else None)
+            v = f.ventas_arr or []
+            # u3m/día: los 3 meses completos recientes, sin el mes en curso que
+            # está a medio andar.
+            obs = (sum(v[-4:-1]) / (3 * 30.42)) if len(v) >= 12 else None
+            out[f.producto_observer] = (snap, obs, f.cantidad, f.nombre_obs or f.nombre)
+        return out, dias_ventana
+
+    @app.route("/rowa/planilla")
+    @login_required
+    def rowa_planilla():
+        """Planilla de carga: qué mover del depósito al robot.
+
+        Se arma desde ObServer y no desde el robot: `stock_info()` sólo devuelve
+        artículos que tienen packs adentro, así que partir de ahí pierde el caso
+        más fuerte — robot en CERO con mercadería esperando en el depósito.
+
+        La lógica vive en `services/rowa_planilla`; acá sólo se junta la entrada.
+        """
+        from sqlalchemy import func as _f
+
+        from database import (
+            ObsLaboratorio,
+            ObsProducto,
+            ObsRowaProducto,
+            ObsStock,
+        )
+        from services.rowa_planilla import DIAS_AUTONOMIA, construir_planilla
+
+        dias = request.args.get("dias", type=int) or DIAS_AUTONOMIA
+        dias = max(1, min(dias, 60))
+
+        try:
+            data = _cargar(refresh=bool(request.args.get("refresh")))
+        except (RowaError, OSError) as e:
+            return render_template("rowa_planilla.html", sin_robot=True, error=str(e))
+
+        filas = data["filas"]
+        with get_db() as session:
+            salidas, dias_ventana = _salidas_para_planilla(session, filas)
+
+            maximos = dict(session.query(ObsRowaProducto.producto_observer,
+                                          ObsRowaProducto.cantidad_maxima).all())
+            stock_obs = {r.pid: int(r.stock or 0) for r in
+                         session.query(ObsStock.producto_observer.label("pid"),
+                                        _f.sum(ObsStock.stock_actual).label("stock"))
+                         .group_by(ObsStock.producto_observer).all()}
+            prods = {p.observer_id: (p.descripcion, p.laboratorio_observer)
+                     for p in session.query(ObsProducto)
+                     .filter(ObsProducto.fecha_baja.is_(None)).all()}
+            labs = dict(session.query(ObsLaboratorio.observer_id,
+                                       ObsLaboratorio.descripcion).all())
+
+        articulos = []
+        for pid, cmax in maximos.items():
+            if pid not in prods:
+                continue
+            snap, obs, en_robot, nombre = salidas.get(pid, (None, None, 0, None))
+            desc, lab_id = prods[pid]
+            articulos.append({
+                "producto_observer": pid,
+                "nombre": nombre or desc,
+                "laboratorio": labs.get(lab_id) or "",
+                "ean": "",
+                "en_robot": en_robot,
+                "maximo": cmax,
+                "stock_total": stock_obs.get(pid),
+                "salidas_snapshot": snap,
+                "salidas_observer": obs,
+            })
+
+        planilla = construir_planilla(articulos, dias_ventana, dias)
+        labs_disponibles = sorted({f["laboratorio"] for f in planilla["filas"]
+                                   if f["laboratorio"]})
+        with get_db() as session:
+            syncs = _frescura_syncs(session)
+
+        return render_template(
+            "rowa_planilla.html",
+            syncs=syncs,
+            sin_robot=False,
+            generado=data["generado"],
+            filas=planilla["filas"],
+            totales=planilla["totales"],
+            labs_disponibles=labs_disponibles,
+            # Sin el sync corrido no hay maximos y la planilla sale vacia: se
+            # avisa en vez de mostrar una pantalla en blanco sin explicacion.
+            sin_sync=not maximos,
+        )
 
     @app.route("/rowa/diferencias")
     @login_required
