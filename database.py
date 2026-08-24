@@ -1842,6 +1842,13 @@ class ResumenProveedorItem(Base):
     total = Column(DECIMAL(14, 2))
     factura_id = Column(Integer, ForeignKey('facturas.id', ondelete='SET NULL'),
                         nullable=True)
+    # Las NC financieras (recuperos de publicidad) NO crean una `Invoice`: el
+    # sync las manda a `pagos_ajustes_cc` con `anunciante_id` y `proveedor_id`
+    # NULL, así que ni siquiera figuran en la cuenta corriente del proveedor.
+    # Sin este segundo enganche, un resumen con un recupero queda "pendiente"
+    # para siempre por un comprobante que está perfectamente bien procesado.
+    pago_ajuste_id = Column(Integer, ForeignKey('pagos_ajustes_cc.id', ondelete='SET NULL'),
+                            nullable=True)
     __table_args__ = (
         Index('idx_resumen_item_resumen', 'resumen_id'),
         Index('idx_resumen_item_clave', 'clave'),

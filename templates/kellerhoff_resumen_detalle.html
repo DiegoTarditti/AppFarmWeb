@@ -77,8 +77,12 @@
         <span>{{ items | length }}</span>
       </div>
       <div class="kpi__item">
-        <small>Ligados a facturas</small>
-        <span>{{ items | selectattr('factura_id') | list | length }}</span>
+        <small>Control</small>
+        {% if resumen.cerrado %}
+        <span style="color:#22c55e;">✓ cerrado</span>
+        {% else %}
+        <span style="color:var(--ds-orange);">{{ resumen.pendientes }} sin tildar</span>
+        {% endif %}
       </div>
       <div class="kpi__item">
         <small>1° vencimiento</small>
@@ -109,17 +113,27 @@
       <table>
         <thead>
           <tr>
+            <th class="th-center" style="width:34px;">✓</th>
             <th>Fecha</th>
             <th>Tipo</th>
             <th>Comprobante</th>
             <th>Remito</th>
             <th class="th-right">Total</th>
-            <th class="th-center">Nuestra factura</th>
+            <th class="th-center">Nuestro comprobante</th>
           </tr>
         </thead>
         <tbody>
           {% for it in items %}
-          <tr>
+          <tr {% if not it.tildado %}style="background:rgba(234,88,12,.05);"{% endif %}>
+            <td class="td-center">
+              {% if it.tildado %}
+              <span style="color:#22c55e;font-weight:700;"
+                    title="Controlado: encontramos este comprobante de nuestro lado">✓</span>
+              {% else %}
+              <span style="color:var(--ds-orange);font-weight:700;"
+                    title="Sin controlar: no encontramos este comprobante">○</span>
+              {% endif %}
+            </td>
             <td style="font-size:12px;">{{ it.fecha }}</td>
             <td>
               <span class="badge" style="{% if it.tipo == 'NCR' %}background:rgba(239,68,68,.14);color:#ef4444;{% else %}background:rgba(34,197,94,.14);color:#22c55e;{% endif %}">
@@ -134,10 +148,15 @@
             <td class="td-center">
               {% if it.factura_id %}
               <a href="{{ url_for('show_results', invoice_id=it.factura_id) }}"
-                 class="badge" style="background:rgba(59,130,246,.14);color:#3b82f6;">ver</a>
+                 class="badge" style="background:rgba(59,130,246,.14);color:#3b82f6;">factura</a>
+              {% elif it.pago_ajuste_id %}
+              <span class="badge" style="background:rgba(168,85,247,.14);color:#a855f7;"
+                    title="NC financiera: es un recupero de un anunciante, va a su cuenta corriente y no crea factura">
+                recupero
+              </span>
               {% else %}
               <span class="badge" style="background:rgba(234,88,12,.14);color:var(--ds-orange);"
-                    title="Kellerhoff te lo cobra y no está entre nuestras facturas: falta bajarlo del portal, o es un comprobante que no reconocemos">
+                    title="Kellerhoff te lo cobra y no lo encontramos de nuestro lado: falta bajarlo del portal, o es un comprobante que no reconocemos">
                 no está
               </span>
               {% endif %}

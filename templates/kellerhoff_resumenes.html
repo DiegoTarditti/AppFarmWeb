@@ -18,6 +18,11 @@
   .list-card__body tbody tr:hover { background: rgba(95,230,188,.04); }
   .mono-xs { font-family: ui-monospace, monospace; font-size: 12px; }
   .th-right, .td-right { text-align: right; }
+  .badge-estado { display:inline-block; padding:2px 8px; border-radius:5px;
+                  font-size:10px; font-weight:700; text-decoration:none; }
+  .barra { height:3px; border-radius:2px; background:var(--ds-line);
+           margin-top:5px; max-width:110px; overflow:hidden; }
+  .barra__fill { height:100%; border-radius:2px; }
 </style>
 {% endblock %}
 
@@ -66,7 +71,7 @@
             <th>Período</th>
             <th class="th-right">Total</th>
             <th>1° vencimiento</th>
-            <th class="th-right">Comprobantes</th>
+            <th>Control</th>
             <th>Importado</th>
           </tr>
         </thead>
@@ -88,12 +93,21 @@
               {% endif %}
             </td>
             <td style="font-size:12px;">{{ r.primer_vencimiento }}</td>
-            <td class="td-right" style="font-size:12px;">
-              {{ r.n_ligados }} / {{ r.n_items }}
-              {% if r.n_ligados < r.n_items %}
-              <span title="{{ r.n_items - r.n_ligados }} comprobante(s) del resumen no están entre nuestras facturas"
-                    style="color:var(--ds-orange);">⚠</span>
+            <td>
+              {% if r.cerrado %}
+              <span class="badge-estado" style="background:rgba(34,197,94,.14);color:#22c55e;"
+                    title="Los {{ r.n_items }} renglones están controlados">✓ cerrado</span>
+              {% else %}
+              <a href="{{ url_for('kellerhoff_resumen_detalle', resumen_id=r.id) }}"
+                 class="badge-estado" style="background:rgba(234,88,12,.14);color:var(--ds-orange);"
+                 title="{{ r.pendientes }} de {{ r.n_items }} renglones sin controlar">
+                {{ r.pendientes }} sin tildar
+              </a>
               {% endif %}
+              <div class="barra" title="{{ r.n_ligados }} de {{ r.n_items }} tildados">
+                <div class="barra__fill" style="width:{{ (100 * r.n_ligados / r.n_items) if r.n_items else 0 }}%;
+                     background:{{ '#22c55e' if r.cerrado else 'var(--ds-orange)' }};"></div>
+              </div>
             </td>
             <td style="font-size:11px;color:var(--ds-text-mute);">{{ r.importado_en }}</td>
           </tr>

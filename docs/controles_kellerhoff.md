@@ -175,6 +175,32 @@ NCR, que por definición no genera ingreso.
 
 ---
 
+### El tilde por renglón y el cierre de la semana
+
+`/kellerhoff/resumen/<id>` marca cada renglón con ✓ / ○ y el listado dice si la
+semana está **cerrada** o cuántos renglones quedan **sin tildar**. Es el mismo
+control que la columna de la cuenta corriente, pero mirado desde el otro lado:
+la columna contesta *"¿esta factura la cobraron?"* y el tilde *"¿terminé de
+controlar la semana?"*.
+
+El tilde **no es un booleano en la DB**: sale de `estado_item()`, que devuelve un
+check por control (`comprobante`, `ingreso`, `arca`, `pago`). Hoy sólo está
+implementado el primero; los otros devuelven `None` = *no evaluado*, que **no es
+lo mismo que False**, y por eso no bloquean el tilde. Cuando exista el eslabón 4
+se completa `ingreso` y el tilde se endurece solo — sin migración y sin tocar la
+UI.
+
+> ⚠ **Las NC financieras no crean `Invoice`.** Los recuperos de publicidad los
+> manda el sync a `pagos_ajustes_cc` con `anunciante_id`, y con `proveedor_id`
+> **NULL** — o sea que ni siquiera aparecen en la cuenta corriente del proveedor.
+> Si el tilde sólo mirara `facturas`, **un resumen con un recupero quedaría
+> pendiente para siempre** por un comprobante que está perfectamente bien
+> procesado, y con una semana así por mes la pantalla se vuelve mentira en dos
+> meses. Por eso `ResumenProveedorItem` tiene `pago_ajuste_id` además de
+> `factura_id`, y el cruce mira los dos lados.
+
+---
+
 ## Orden recomendado
 
 **1° el eslabón 4 (ingreso).** El más barato: implementar
@@ -193,6 +219,22 @@ paso saca del medio el lío de `erp_carga_id`.
 > ahora es casi nulo.
 
 ---
+
+## Pendiente
+
+- [ ] **El corte asume continuidad, pero se calcula como un máximo.**
+      `corte_resumenes` devuelve `max(periodo_hasta)`. Si se importan el S32 y el
+      S34 pero se saltea el S33, el corte queda al final del S34 y **toda la
+      semana del S33 se pinta ámbar** — que es exactamente el modo de falla que
+      el corte existe para evitar. Peor: el tooltip afirma "los resúmenes ya
+      cubren hasta el 28/08", que en ese caso es falso.
+      Se detecta comparando el `periodo_desde` de cada resumen contra el
+      `periodo_hasta` del anterior. Con eso se pueden excluir los rangos con
+      hueco de la regla ámbar, o mejor, mostrar un tercer estado: *"falta
+      importar el resumen de esa semana"* — que es una acción distinta a
+      *"reclamale a la droguería"*, y hoy la UI no las distingue.
+      _(Detectado en la review del PR #325. No bloqueante hasta que aparezca el
+      primer hueco real, pero el día que pase va a parecer un bug del cruce.)_
 
 ## Pendiente de verificar
 
