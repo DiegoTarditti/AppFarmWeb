@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Diferencias robot vs ObServer{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block main %}
+<div class="max-w-5xl mx-auto px-4 py-6">
+
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+    <div>
+      <h1 class="text-xl font-bold flex items-center gap-2">⚖ Diferencias robot vs ObServer</h1>
+      {% if not sin_robot %}
+      <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-0.5">
+        Generado {{ generado.strftime('%H:%M') }} ·
+        {{ n_comparables }} de {{ n_articulos }} artículos comparables</p>
+      {% endif %}
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{{ url_for('rowa_dashboard') }}"
+         class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">← Volver</a>
+      {% if not sin_robot %}
+      <a href="{{ url_for('rowa_diferencias', refresh=1) }}"
+         class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">↻ Actualizar</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if sin_robot %}
+  <div class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+    <p class="text-sm">No se pudo hablar con el robot.</p>
+    {% if error %}<p class="text-[11px] text-[color:var(--ds-text-mute)] mt-2 font-mono">{{ error }}</p>{% endif %}
+  </div>
+
+  {% elif not difs %}
+  <div class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4">
+    <p class="text-sm font-semibold">Todo cierra.</p>
+    <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-1">
+      Ningún artículo tiene más packs en el robot que stock en ObServer.</p>
+  </div>
+
+  {% else %}
+  {# Explicación arriba: sin esto el número no dice nada por sí solo. #}
+  <div class="rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.02] p-4 mb-5">
+    <p class="text-sm">
+      <b class="text-rose-300">{{ difs | length }} artículos</b> tienen más packs en el robot
+      que stock total en ObServer, por <b>{{ packs_dif }} packs</b>.
+    </p>
+    <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-2 leading-relaxed">
+      No debería pasar nunca: lo que está en el robot es <i>parte</i> del stock total, así que
+      robot ≤ total siempre. Cuando no cierra, o se cargó algo al robot sin registrarlo en
+      ObServer, o se descargó de ObServer sin sacarlo de la máquina.
+      Una diferencia de <b>1 pack</b> suele ser el desfasaje normal entre la venta y la
+      extracción física, y no vale la pena perseguirla salvo que se repita en los mismos
+      artículos día tras día.
+    </p>
+  </div>
+
+  {% if n_cero %}
+  <div class="rounded-lg border border-rose-500/40 bg-rose-500/10 p-4 mb-5">
+    <p class="text-sm font-semibold text-rose-200">
+      {{ n_cero }} con ObServer en cero — son los que más importan</p>
+    <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-1 leading-relaxed">
+      Para ObServer no existen: no se reponen ni se ofrecen en el mostrador, pero están
+      ocupando lugar adentro del robot. Van primeros en la lista.</p>
+  </div>
+  {% endif %}
+
+  <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)]">
+    <table class="w-full text-sm">
+      <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
+        <tr>
+          <th class="text-left px-3 py-2">Producto</th>
+          <th class="text-left px-3 py-2">Laboratorio</th>
+          <th class="text-left px-3 py-2 w-36">EAN</th>
+          <th class="text-right px-3 py-2 w-20">En robot</th>
+          <th class="text-right px-3 py-2 w-24">En ObServer</th>
+          <th class="text-right px-3 py-2 w-20">Diferencia</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in difs %}
+        <tr class="border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]
+                   {% if d.observer_en_cero %}bg-rose-500/[0.07]{% endif %}">
+          <td class="px-3 py-1.5">
+            {{ d.nombre }}
+            {% if d.observer_en_cero %}
+            <span class="ml-1 text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded px-1 align-middle">EN CERO</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-[color:var(--ds-text-mute)]">{{ d.laboratorio or '—' }}</td>
+          <td class="px-3 py-1.5 font-mono text-[11px] text-[color:var(--ds-text-mute)]">{{ d.ean or '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono">{{ d.en_robot }}</td>
+          <td class="px-3 py-1.5 text-right font-mono {% if d.observer_en_cero %}text-rose-300 font-bold{% endif %}">{{ d.en_observer }}</td>
+          <td class="px-3 py-1.5 text-right font-mono font-bold text-amber-300">+{{ d.exceso }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-[10px] text-[color:var(--ds-text-mute)] mt-4 italic">
+    El stock de ObServer se suma por farmacia sobre <code>obs_stock</code>, y se compara contra
+    los packs disponibles del robot (los que están en <code>NotAvailable</code> no cuentan).
+    El cruce robot ↔ ObServer es por EAN.
+  </p>
+  {% endif %}
+
+</div>
+{% endblock %}

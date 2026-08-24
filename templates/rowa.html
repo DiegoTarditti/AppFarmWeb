@@ -29,6 +29,8 @@
          class="px-3 py-1.5 rounded text-sm border border-amber-500/40 text-amber-300 hover:bg-amber-500/10">⏰ Limpiar vencimientos</a>
       <a href="{{ url_for('rowa_limpieza', tipo='rotacion') }}"
          class="px-3 py-1.5 rounded text-sm border border-amber-500/40 text-amber-300 hover:bg-amber-500/10">📦 Limpiar paralizados</a>
+      <a href="{{ url_for('rowa_diferencias') }}"
+         class="px-3 py-1.5 rounded text-sm border border-rose-500/40 text-rose-300 hover:bg-rose-500/10">⚖ Revisar diferencias</a>
       <a href="{{ url_for('rowa_dashboard', refresh=1) }}"
          class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">↻ Actualizar</a>
       <a href="{{ url_for('rowa_export_xlsx') }}"

@@ -234,6 +234,62 @@ def init_app(app):
             robot=data["robot"], generado=data["generado"],
             candidatos=cand, n=len(cand), boca=BOCA_EGRESO)
 
+    @app.route("/rowa/diferencias")
+    @login_required
+    def rowa_diferencias():
+        """Articulos donde el robot tiene MAS packs que el stock total de ObServer.
+
+        No deberia pasar nunca: lo que esta en el robot es parte del stock total,
+        asi que robot <= total siempre. Cuando no se cumple, o se cargo algo al
+        robot sin registrarlo en ObServer, o se descargo de ObServer sin sacarlo
+        de la maquina.
+
+        Medido el 24/8/2026: 24 articulos y 34 packs sobre 3.456 comparables
+        (0,7%). La mayoria son diferencias de 1 pack, que es el desfasaje normal
+        entre la venta y la extraccion fisica. Los que importan son dos grupos:
+
+          - ObServer en CERO con stock en el robot: para ObServer no existen, asi
+            que no se reponen ni se ofrecen en el mostrador, pero ocupan lugar.
+          - Diferencias grandes: no son desfasaje, son error de carga.
+        """
+        try:
+            data = _cargar(refresh=bool(request.args.get("refresh")))
+        except (RowaError, OSError) as e:
+            return render_template("rowa_diferencias.html", sin_robot=True, error=str(e))
+
+        filas = data["filas"]
+        comparables = [f for f in filas
+                       if f.producto_observer and f.stock_total is not None]
+        difs = []
+        for f in comparables:
+            exceso = f.cantidad - f.stock_total
+            if exceso > 0:
+                difs.append({
+                    "article_id": f.article_id,
+                    "producto_observer": f.producto_observer,
+                    "nombre": f.nombre_obs or f.nombre or "?",
+                    "laboratorio": f.laboratorio or "",
+                    "ean": f.ean or "",
+                    "en_robot": f.cantidad,
+                    "en_observer": f.stock_total,
+                    "exceso": exceso,
+                    "observer_en_cero": f.stock_total == 0,
+                })
+        # Primero los que ObServer da en cero (los que se pierden del circuito),
+        # despues por tamano de la diferencia.
+        difs.sort(key=lambda d: (not d["observer_en_cero"], -d["exceso"]))
+
+        return render_template(
+            "rowa_diferencias.html",
+            sin_robot=False,
+            generado=data["generado"],
+            difs=difs,
+            n_comparables=len(comparables),
+            n_articulos=len(filas),
+            packs_dif=sum(d["exceso"] for d in difs),
+            n_cero=sum(1 for d in difs if d["observer_en_cero"]),
+        )
+
     @app.route("/rowa/extraer", methods=["POST"])
     @login_required
     def rowa_extraer():
