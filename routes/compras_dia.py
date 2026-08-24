@@ -1058,6 +1058,15 @@ def init_app(app):
                     'cantidad_envase': int(r[7]) if r[7] else None,
                 } for r in rows}
 
+            # Mínimos fijados a mano. Tabla propia y no columna de `productos`
+            # porque el catálogo local cubre apenas el 8% de ObServer.
+            minimos_manuales = {}
+            if obs_pids:
+                minimos_manuales = dict(
+                    session.query(database.MinimoManual.producto_observer,
+                                   database.MinimoManual.valor)
+                    .filter(database.MinimoManual.producto_observer.in_(obs_pids)).all())
+
             # Modo multi-drog: necesitamos saber qué drog(s) cubre cada lab.
             # `labs_a_drogs[lab_id]` = lista de prov_ids que cubren ese lab.
             from collections import defaultdict
@@ -1203,16 +1212,26 @@ def init_app(app):
                 _i_start = max(0, _i_end - meses_rotacion)
                 u_rot = sum(ventas_arr[_i_start:_i_end])
 
-                # MÍN EFECTIVO: si Observer tiene el mínimo desactualizado y
-                # nuestro forecast (min_sugerido) difiere, usamos NUESTRO valor
-                # — no arrastramos el error. Se marca como `min_corregido` para
-                # que la UI lo muestre claramente.
-                if min_sugerencia in ('up', 'down') and min_sugerido > 0:
+                # MÍN EFECTIVO, por precedencia:
+                #   1. minimo_manual  — alguien lo decidió a mano y sabe algo que
+                #      el forecast no (una promo que viene, un cambio de envase).
+                #      Manda siempre; para volver al automático se borra.
+                #   2. min_sugerido   — si ObServer está desfasado, usamos NUESTRO
+                #      valor y no arrastramos el error. Se marca `min_corregido`.
+                #   3. min_actual     — el de ObServer.
+                _min_manual = minimos_manuales.get(r.pid)
+                if _min_manual and _min_manual > 0:
+                    min_efectivo = int(_min_manual)
+                    min_corregido = True
+                    min_manual_aplicado = True
+                elif min_sugerencia in ('up', 'down') and min_sugerido > 0:
                     min_efectivo = min_sugerido
                     min_corregido = True
+                    min_manual_aplicado = False
                 else:
                     min_efectivo = min_actual
                     min_corregido = False
+                    min_manual_aplicado = False
 
                 # Multi-drog: prov_ids que cubren este lab. drog_principal =
                 # el filtro `prov_id` (modo single drog) o el primero de la lista.
@@ -1306,6 +1325,7 @@ def init_app(app):
                     'minimo': min_actual,
                     'min_efectivo': min_efectivo,        # el que usamos para a_pedir
                     'min_corregido': min_corregido,      # True si reemplazamos el de Observer
+                    'min_manual': min_manual_aplicado,   # True si lo decidio una persona
                     'min_sugerido': min_sugerido,
                     'min_sugerencia': min_sugerencia,
                     'cobertura_d': cobertura_d,
