@@ -107,7 +107,7 @@ def _ejecutar_sync(app, modo='', skip_push=False, skip_match=False):
 
             orden = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
                      'productos', 'precios_vigentes', 'condiciones_comerciales',
-                     'stock', 'ventas_mensuales',
+                     'stock', 'rowa_productos', 'ventas_mensuales',
                      'grupos_clientes', 'categorias_clientes',
                      'obras_sociales', 'convenios', 'planes', 'clientes',
                      'colegios_medicos', 'medicos', 'medicos_matriculas',
@@ -396,6 +396,7 @@ def init_app(app):
                 'nombres_drogas':     session.query(database.ObsNombreDroga).count(),
                 'productos':          session.query(database.ObsProducto).count(),
                 'stock':              session.query(database.ObsStock).count(),
+                'rowa_productos':     session.query(database.ObsRowaProducto).count(),
                 'ventas_mensuales':   session.query(database.ObsVentaMensual).count(),
                 'obras_sociales':     session.query(database.ObsObraSocial).count(),
                 'convenios':          session.query(database.ObsConvenio).count(),
@@ -476,7 +477,7 @@ def init_app(app):
 
         # 'todo' corre en orden para respetar FKs
         orden = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
-                 'productos', 'stock', 'ventas_mensuales',
+                 'productos', 'stock', 'rowa_productos', 'ventas_mensuales',
                  'grupos_clientes', 'categorias_clientes',
                  'obras_sociales', 'convenios', 'planes', 'clientes',
                  'colegios_medicos', 'medicos', 'medicos_matriculas',

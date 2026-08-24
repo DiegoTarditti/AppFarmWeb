@@ -100,6 +100,13 @@
       <option value="diferencia">Sólo diferencias</option>
     </select>
     <span id="pl-count" class="text-xs text-[color:var(--ds-text-mute)] ml-auto"></span>
+    {# Los filtros son client-side: los botones los reenvian para que el papel
+       coincida con lo que se esta mirando en pantalla. #}
+    <a id="pl-pdf" href="#" onclick="return plBajar(this, 'pdf')"
+       class="px-2 py-1 text-xs rounded border border-[color:var(--ds-surface-border)] text-[color:var(--ds-text-mute)] hover:text-white"
+       title="Para imprimir y caminar el depósito">📄 PDF</a>
+    <a id="pl-xls" href="#" onclick="return plBajar(this, 'xlsx')"
+       class="px-2 py-1 text-xs rounded border border-[color:var(--ds-surface-border)] text-[color:var(--ds-text-mute)] hover:text-white">📊 Excel</a>
   </div>
 
   <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)]">
@@ -114,7 +121,7 @@
           <th class="text-right px-3 py-2 w-20">Sal/día</th>
           <th class="text-right px-3 py-2 w-20">Cobert.</th>
           <th class="text-right px-3 py-2 w-24 bg-[color:var(--ds-mint)]/10">A mover</th>
-          <th class="text-right px-3 py-2 w-20">si al máx</th>
+          <th class="text-right px-3 py-2 w-24" title="Cuántos packs habría que mover si se llenara hasta la Cantidad Máxima de ObServer">Hasta el máx</th>
           <th class="text-left px-3 py-2 w-44">Avisos</th>
         </tr>
       </thead>
@@ -155,7 +162,7 @@
 
   <p class="text-[10px] text-[color:var(--ds-text-mute)] mt-3 italic leading-relaxed">
     <b>A mover</b> es la cifra sugerida por la demanda, que es la que conviene ejecutar.
-    <b>Si al máx</b> es lo que pediría llenar hasta la Cantidad Máxima de ObServer, y queda
+    <b>Hasta el máx</b> es lo que pediría llenar hasta la Cantidad Máxima de ObServer, y queda
     de referencia. Las dos están limitadas por lo que haya en el depósito.
     Un artículo que aparece <i>parcial</i> una y otra vez no tiene un problema de carga:
     tiene el mínimo de compra corto.
@@ -165,6 +172,20 @@
 </div>
 
 <script>
+// Arma la URL de descarga con los filtros puestos ahora.
+function plBajar(a, fmt) {
+  var p = new URLSearchParams();
+  var q = (document.getElementById('pl-buscar').value || '').trim();
+  var lab = document.getElementById('pl-lab').value;
+  var av = document.getElementById('pl-aviso').value;
+  if (q) { p.set('q', q); }
+  if (lab) { p.set('lab', lab); }
+  if (av) { p.set('aviso', av); }
+  p.set('dias', {{ totales.dias_autonomia if totales else 7 }});
+  window.location.href = '/rowa/planilla/export.' + fmt + '?' + p.toString();
+  return false;
+}
+
 function plFiltrar() {
   var q = (document.getElementById('pl-buscar').value || '').toLowerCase();
   var lab = document.getElementById('pl-lab').value;
