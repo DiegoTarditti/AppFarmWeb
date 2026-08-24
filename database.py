@@ -3195,6 +3195,34 @@ class RowaNuevo(Base):
     obs_verificado_en = Column(DateTime, nullable=True)  # NULL = solo proxy de packs; seteado = ObServer ya analizó
 
 
+class MinimoManual(Base):
+    """Mínimo decidido a mano para un producto, por encima del cálculo.
+
+    ObServer no recalcula sus mínimos: al 24/8/2026, de 11.046 productos con
+    ventas, 2.705 tenían el mínimo corto y 394 pasado — esos 394 son ~$54,5 M
+    inmovilizados, con los 20 peores concentrando un tercio.
+
+    `calcular_min_sugerido` ya corrige eso en memoria en cada request, pero sin
+    persistir no hay forma de que una persona intervenga ("este va a moverse por
+    una promo, dejalo en 20") ni de distinguir un producto que viene mal hace
+    meses de uno que tuvo un mes raro.
+
+    VA EN TABLA PROPIA, NO EN `productos`: el catálogo local tiene 640 filas
+    contra los 5.009 productos de ObServer que tienen mínimo — apenas el 8%. Una
+    columna en `productos` no habría podido guardar la decisión para el 92%
+    restante, incluidos varios de los que más plata mueven.
+
+    La llave es `producto_observer`, igual que `obs_stock`. Borrar la fila
+    devuelve el producto al automático.
+    """
+    __tablename__ = 'minimos_manuales'
+    producto_observer = Column(Integer, primary_key=True, autoincrement=False)
+    valor             = Column(Integer, nullable=False)
+    motivo            = Column(String(200), nullable=True)
+    fijado_en         = Column(DateTime, nullable=False, default=now_ar)
+    fijado_por        = Column(String(80), nullable=True)
+
+
 def init_db(database_url=None):
     database_url = init_engine(database_url)
     if not database_url.startswith('sqlite'):

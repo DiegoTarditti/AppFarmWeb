@@ -134,7 +134,21 @@
   <div class="rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.02] p-4 mb-5">
     <div class="flex items-center justify-between mb-3 gap-3 flex-wrap">
       <h2 id="scatter-titulo" class="text-sm font-semibold">Todos los artículos</h2>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 flex-wrap">
+        {# Los tres filtran a la vez el scatter y la tabla de abajo: los dos
+           dibujan desde el mismo `filtrados()`. #}
+        <input id="rowa-an-buscar" type="search" placeholder="🔎 Buscar artículo…"
+               oninput="renderScatter(activeQ)"
+               class="px-2 py-1 text-xs rounded bg-white/5 border border-[color:var(--ds-surface-border)] w-44">
+        <select id="rowa-an-rot" onchange="renderScatter(activeQ)"
+                class="px-2 py-1 text-xs rounded border border-[color:var(--ds-surface-border)]"
+                style="background:#2c2c2e;color:inherit">
+          <option value="">Toda rotación</option>
+          <option value="Alta">Alta</option>
+          <option value="Media">Media</option>
+          <option value="Baja">Baja</option>
+          <option value="Durmiente">Durmiente</option>
+        </select>
         <select id="rowa-an-lab" onchange="renderScatter(activeQ)"
                 class="px-2 py-1 text-xs rounded border border-[color:var(--ds-surface-border)]"
                 style="background:#2c2c2e;color:inherit">
@@ -143,6 +157,9 @@
           <option value="{{ lab }}">{{ lab }}</option>
           {% endfor %}
         </select>
+        <button type="button" id="rowa-an-limpiar" onclick="limpiarFiltros()"
+                class="px-2 py-1 text-xs rounded border border-[color:var(--ds-surface-border)] text-[color:var(--ds-text-mute)] hover:text-white"
+                title="Quitar los tres filtros">Limpiar</button>
         <span id="scatter-count" class="text-xs text-[color:var(--ds-text-mute)]"></span>
       </div>
     </div>
@@ -215,14 +232,31 @@ var QDEFS = {
 var scatterChart = null;
 var activeQ = null;
 
-function labFiltro() {
-  var el = document.getElementById('rowa-an-lab');
+function valorDe(id) {
+  var el = document.getElementById(id);
   return el ? el.value : '';
 }
 
-function porLab(pts) {
-  var lab = labFiltro();
-  return lab ? pts.filter(function(p) { return p.laboratorio === lab; }) : pts;
+// Punto unico de filtrado: lo llaman buildDatasets (el scatter) y renderTabla,
+// asi que los dos muestran siempre el mismo conjunto.
+function filtrados(pts) {
+  var q   = valorDe('rowa-an-buscar').trim().toLowerCase();
+  var rot = valorDe('rowa-an-rot');
+  var lab = valorDe('rowa-an-lab');
+  if (!q && !rot && !lab) { return pts; }
+  return pts.filter(function(p) {
+    return (!lab || p.laboratorio === lab)
+        && (!rot || p.rotacion === rot)
+        && (!q   || (p.nombre || '').toLowerCase().indexOf(q) !== -1);
+  });
+}
+
+function limpiarFiltros() {
+  ['rowa-an-buscar', 'rowa-an-rot', 'rowa-an-lab'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) { el.value = ''; }
+  });
+  renderScatter(activeQ);
 }
 
 function buildDatasets(filterQ) {
@@ -230,7 +264,7 @@ function buildDatasets(filterQ) {
   return qs.map(function(q) {
     return {
       label: QDEFS[q].label,
-      data: porLab(SCATTER_ALL[q] || []),
+      data: filtrados(SCATTER_ALL[q] || []),
       backgroundColor: QDEFS[q].color,
       borderColor: QDEFS[q].border,
       borderWidth: 0.5,
@@ -305,7 +339,7 @@ function renderTabla(filterQ) {
   var qs = filterQ ? [filterQ] : Object.keys(QDEFS);
   var rows = [];
   qs.forEach(function(q) {
-    porLab(SCATTER_ALL[q] || []).forEach(function(p) { rows.push({ q: q, p: p }); });
+    filtrados(SCATTER_ALL[q] || []).forEach(function(p) { rows.push({ q: q, p: p }); });
   });
   // Orden: 1º laboratorio, 2º producto alfabético.
   rows.sort(function(a, b) {
