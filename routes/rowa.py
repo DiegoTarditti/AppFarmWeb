@@ -327,69 +327,52 @@ def init_app(app):
         return ahora
 
     def _calcular_salidas_diarias(session, filas) -> dict[str, float]:
-        """Devuelve {article_id: salidas_por_dia} usando snapshots + cargas.
+        """Devuelve {article_id: salidas_por_dia} a partir de los snapshots.
 
-        Toma los últimos 14 días de snapshots. El movimiento neto de un artículo
-        entre dos snapshots es: (cant_anterior - cant_posterior) + cargas_entre_medio.
-        Si no hay suficientes snapshots, usa unid_mes_est / 30 como fallback.
+        Suma las BAJAS entre snapshots consecutivos. Antes comparaba solo el
+        primero contra el ultimo y le sumaba las cargas registradas, y eso
+        subestimaba fuerte: un articulo que bajo de 10 a 2 y se repuso a 10
+        daba cero salidas. Medido contra el robot de Badia (24/8/2026, 26
+        snapshots en ~4 dias): por extremos 427 unidades, sumando bajas 1.469.
+
+        Ademas ya no depende de que alguien registre las cargas. En esos mismos
+        14 dias habia **cero** `RowaCarga` cargadas, asi que el termino que las
+        compensaba nunca sumaba nada y toda reposicion quedaba invisible. Con
+        este metodo los aumentos simplemente no se cuentan como salida, que es
+        lo correcto los registre alguien o no.
+
+        Sin al menos dos snapshots del articulo, cae al proxy unid_mes_est / 30.
         """
         desde = datetime.now() - timedelta(days=14)
 
-        # Snapshots ordenados por tiempo
         snaps_raw = (
             session.query(RowaSnapshot)
             .filter(RowaSnapshot.tomado_en >= desde)
             .order_by(RowaSnapshot.tomado_en)
             .all()
         )
-
-        # Cargas en el mismo período (suman al stock → no son salidas)
-        cargas_raw = (
-            session.query(RowaCarga)
-            .filter(RowaCarga.cargado_en >= desde)
-            .all()
-        )
-
         if not snaps_raw:
-            # Sin snapshots: fallback a unid_mes_est / 30
             return {f.article_id: round((f.unid_mes_est or 0) / 30, 3) for f in filas}
 
-        # Agrupar por ts → {ts: {article_id: cantidad}}
-        from collections import defaultdict as _dd
-        por_ts: dict = _dd(dict)
+        # {article_id: [(ts, cantidad), ...]} ya ordenado por la query.
+        serie_por_art: dict[str, list[tuple[datetime, int]]] = defaultdict(list)
         for s in snaps_raw:
-            por_ts[s.tomado_en][s.article_id] = s.cantidad
+            serie_por_art[s.article_id].append((s.tomado_en, s.cantidad))
 
-        ts_list = sorted(por_ts)
-        if len(ts_list) < 2:
+        ts_todos = sorted({s.tomado_en for s in snaps_raw})
+        if len(ts_todos) < 2:
             return {f.article_id: round((f.unid_mes_est or 0) / 30, 3) for f in filas}
+        dias = max((ts_todos[-1] - ts_todos[0]).total_seconds() / 86400, 1)
 
-        # Cargas entre snapshots → {(article_id, ts_ini, ts_fin): total_cargado}
-        cargas_por_aid: dict = _dd(float)
-        for c in cargas_raw:
-            cargas_por_aid[c.article_id] += c.cantidad
-
-        # Salidas acumuladas por artículo en el período
-        salidas_total: dict = _dd(float)
-        primer_ts = ts_list[0]
-        ultimo_ts = ts_list[-1]
-
-        for aid in {s.article_id for s in snaps_raw}:
-            q_ini = por_ts[primer_ts].get(aid)
-            q_fin = por_ts[ultimo_ts].get(aid)
-            if q_ini is None or q_fin is None:
-                continue
-            cargado = cargas_por_aid.get(aid, 0)
-            salidas = (q_ini - q_fin) + cargado
-            salidas_total[aid] = max(salidas, 0)
-
-        dias = max((ultimo_ts - primer_ts).total_seconds() / 86400, 1)
         result: dict[str, float] = {}
         for f in filas:
-            if f.article_id in salidas_total:
-                result[f.article_id] = round(salidas_total[f.article_id] / dias, 3)
-            else:
+            serie = serie_por_art.get(f.article_id, [])
+            if len(serie) < 2:
                 result[f.article_id] = round((f.unid_mes_est or 0) / 30, 3)
+                continue
+            bajas = sum(max(prev - cur, 0)
+                        for (_, prev), (_, cur) in zip(serie, serie[1:]))
+            result[f.article_id] = round(bajas / dias, 3)
         return result
 
     def _construir_items(session, filas):
@@ -504,12 +487,24 @@ def init_app(app):
                 .all()
             )
 
-        labs_disponibles = sorted({i["laboratorio"] for i in items if i["laboratorio"]})
+        # Se renderizaban los ~3.500 items siempre, con el checkbox "Solo
+        # criticos" tildado escondiendo el 96% del lado del navegador: 4 MB de
+        # HTML por visita para mostrar 222 renglones. Ahora el corte lo hace el
+        # servidor y `?todo=1` trae el resto.
+        ver_todo = request.args.get("todo") == "1"
+        tabla = items if ver_todo else [i for i in items if i["urgencia"] < 3]
+
+        # Del conjunto renderizado: los filtros client-side no pueden ofrecer un
+        # laboratorio que no esta en la tabla.
+        labs_disponibles = sorted({i["laboratorio"] for i in tabla if i["laboratorio"]})
 
         return render_template(
             "rowa_carga.html",
             sin_robot=False,
-            items=items,
+            items=tabla,
+            ver_todo=ver_todo,
+            n_total=len(items),
+            n_tabla=len(tabla),
             snap_ts=snap_ts,
             ultima_carga=ultima_carga[0] if ultima_carga else None,
             n_criticos=sum(1 for i in items if i["urgencia"] < 2),
