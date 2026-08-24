@@ -9,7 +9,7 @@ from datetime import datetime as _dt
 from flask import flash, redirect, render_template, request, url_for
 
 import database
-from helpers import get_providers
+from helpers import detalle_facturas, get_providers
 from services.cuenta_corriente import corte_resumenes, movimientos_proveedor
 
 # Códigos AFIP de Nota de Crédito → restan (haber). El resto (facturas, ND) suma (debe).

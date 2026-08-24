@@ -16,6 +16,7 @@ from helpers import (
     _make_parser_slug,
     _normalizar_nombre_entidad,
     allowed_file,
+    detalle_facturas,
     drogueria_defaults,
     get_providers,
     pdf_de_carpeta_proveedor,
@@ -539,7 +540,9 @@ def init_app(app):
                 (database.Invoice.proveedor_cuit == provider.cuit) |
                 (database.Invoice.proveedor_razon == provider.razon_social)
             ).order_by(database.Invoice.fecha.desc()).all()
-            return render_template('provider_invoices.html', provider=provider, invoices=invoices)
+            detalle = detalle_facturas(session, invoices)
+            return render_template('provider_invoices.html', provider=provider,
+                                   invoices=invoices, detalle=detalle)
 
     @app.route('/invoice/<int:invoice_id>/delete', methods=['POST'])
     def delete_invoice(invoice_id):

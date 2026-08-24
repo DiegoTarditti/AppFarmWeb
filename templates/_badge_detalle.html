@@ -1,0 +1,35 @@
+{# Detalle guardado vs. declarado por la factura.
+
+   Espera `d` = {'renglones': int, 'declarado': int, 'estado': str}, que arma
+   `helpers.detalle_facturas`. La key es `renglones` y no `items` porque en
+   Jinja `d.items` resuelve al método items() del dict (ver CLAUDE.md).
+   Lo usan las tres listas de facturas (proveedor,
+   portal Kellerhoff, cuenta corriente) para que el criterio de "está parseada"
+   sea uno solo y no tres — como pasó con el saldo, ver
+   `services/cuenta_corriente.py`.
+
+   Los estilos van inline a propósito: las tres pantallas usan sistemas de CSS
+   distintos (Tailwind en cuenta corriente, el design system en las otras), así
+   que depender de una clase obligaría a definirla en cada una. #}
+{%- set _base = 'display:inline-block;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;font-family:ui-monospace,monospace;' -%}
+{% if d.estado == 'vacia' %}
+<span style="{{ _base }}background:rgba(239,68,68,.14);color:#ef4444;"
+      title="Sin renglones de detalle{% if d.declarado %}: la factura declara {{ d.declarado }} artículo(s) y no se guardó ninguno — no se parseó el detalle{% else %}, y la factura tampoco declara cuántos debería tener{% endif %}">
+  {% if d.declarado %}0 / {{ d.declarado }}{% else %}sin detalle{% endif %}
+</span>
+{% elif d.estado == 'parcial' %}
+<span style="{{ _base }}background:rgba(234,88,12,.14);color:#ea580c;"
+      title="Se guardaron {{ d.renglones }} renglones pero la factura declara {{ d.declarado }}: el parseo quedó {{ 'incompleto' if d.renglones < d.declarado else 'con renglones de más (probable duplicación)' }}">
+  {{ d.renglones }} / {{ d.declarado }}
+</span>
+{% elif d.estado == 'sin_ref' %}
+<span style="{{ _base }}background:rgba(148,163,184,.16);color:#94a3b8;"
+      title="{{ d.renglones }} renglones guardados. La factura no declara un total de artículos, así que no hay contra qué verificarlo.">
+  {{ d.renglones }}
+</span>
+{% else %}
+<span style="{{ _base }}background:rgba(34,197,94,.14);color:#22c55e;"
+      title="Los {{ d.renglones }} renglones guardados coinciden con lo que declara la factura">
+  {{ d.renglones }}
+</span>
+{% endif %}

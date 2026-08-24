@@ -148,6 +148,10 @@ def movimientos_proveedor(session, provider):
                       .filter(database.StockDifference.factura_id.in_(inv_ids)).all()}
 
     resumenes_map = resumen_por_factura(session, provider, inv_ids)
+    # Import local: helpers importa `database` y este módulo lo importa a él;
+    # arriba del archivo daría import circular.
+    from helpers import detalle_facturas
+    detalle_map = detalle_facturas(session, invoices)
 
     for inv in invoices:
         debe, haber, informativo = clasificar_comprobante(
@@ -155,6 +159,7 @@ def movimientos_proveedor(session, provider):
         reclamo_est = reclamos_map.get(inv.id)
         movimientos.append({
             'resumen': resumenes_map.get(inv.id),
+            'detalle': detalle_map.get(inv.id),
             'fecha': inv.fecha,
             'fecha_proceso': inv.creado_en.strftime('%d/%m/%Y') if inv.creado_en else '',
             'tipo': inv.tipo_comprobante,
@@ -177,6 +182,7 @@ def movimientos_proveedor(session, provider):
         monto = float(pa.monto or 0)
         movimientos.append({
             'resumen': None,
+            'detalle': None,
             'fecha': pa.fecha,
             'fecha_proceso': '',
             'tipo': pa.tipo,
@@ -198,6 +204,7 @@ def movimientos_proveedor(session, provider):
                .order_by(database.Pago.fecha).all()):
         movimientos.append({
             'resumen': None,
+            'detalle': None,
             'fecha': pg.fecha,
             'fecha_proceso': '',
             'tipo': 'PAGO',
