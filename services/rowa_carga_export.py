@@ -110,7 +110,11 @@ def construir_pdf(items, generado: datetime | None = None) -> bytes:
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import cm
     from reportlab.platypus import (
-        KeepTogether, Paragraph, SimpleDocTemplate, Table, TableStyle,
+        KeepTogether,
+        Paragraph,
+        SimpleDocTemplate,
+        Table,
+        TableStyle,
     )
 
     generado = generado or datetime.now()
