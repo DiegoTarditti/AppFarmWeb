@@ -45,12 +45,33 @@
     </div>
   </header>
 
+  {% if resumen.cuadra is false %}
+  <div class="card" style="border-color:var(--ds-orange);background:rgba(234,88,12,.06);padding:14px 18px;">
+    <p class="text-sm" style="color:var(--ds-orange);">
+      ⚠ <strong>Este resumen no cierra.</strong> El PDF es autoconsistente, así que
+      la diferencia entre el total impreso y la suma de los renglones significa que
+      se leyó mal alguna línea al importar. Los importes de abajo pueden estar
+      incompletos — conviene reimportar el PDF o revisarlo a mano.
+    </p>
+  </div>
+  {% endif %}
+
   <div class="card" style="padding:18px 24px;">
     <div class="kpi">
       <div class="kpi__item">
         <small>Total resumen</small>
         <span>${{ '{:,.2f}'.format(resumen.total).replace(',', 'X').replace('.', ',').replace('X', '.') }}</span>
       </div>
+      {% if resumen.cuadra is false %}
+      <div class="kpi__item">
+        <small style="color:var(--ds-orange);">⚠ Suma de los renglones</small>
+        <span style="color:var(--ds-orange);">${{ '{:,.2f}'.format(resumen.total_calculado).replace(',', 'X').replace('.', ',').replace('X', '.') }}</span>
+      </div>
+      <div class="kpi__item">
+        <small style="color:var(--ds-orange);">Diferencia</small>
+        <span style="color:var(--ds-orange);">${{ '{:,.2f}'.format(resumen.diferencia).replace(',', 'X').replace('.', ',').replace('X', '.') }}</span>
+      </div>
+      {% endif %}
       <div class="kpi__item">
         <small>Comprobantes</small>
         <span>{{ items | length }}</span>

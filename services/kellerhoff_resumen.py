@@ -153,6 +153,7 @@ def importar_resumen(session, pdf_path, proveedor_id, pdf_filename=None):
     resumen.cierre = datos['cierre']
     resumen.generado_en = datos['generado_en']
     resumen.total = datos['total']
+    resumen.total_calculado = datos['total_calculado']
     resumen.primer_vencimiento = datos['primer_vencimiento']
     resumen.vencimientos_json = json.dumps(
         [{'fecha': v['fecha'].isoformat() if v['fecha'] else None,
@@ -175,12 +176,15 @@ def importar_resumen(session, pdf_path, proveedor_id, pdf_filename=None):
             ligados += 1
 
     session.commit()
-    cuadra = (datos['total'] is not None
-              and abs(datos['total'] - datos['total_calculado']) < 0.01)
-    if not cuadra:
-        log.warning('[KH-RESUMEN] %s no cuadra: impreso=%s calculado=%s',
-                    datos['numero'], datos['total'], datos['total_calculado'])
-    return dict(datos, resumen_id=resumen.id, ligados=ligados, cuadra=cuadra)
+    # `cuadra` sale del modelo, no de una variable local: el estado tiene que
+    # quedar en la fila para que se vea meses después en el listado y en el
+    # detalle, no sólo en el flash de este import.
+    if resumen.cuadra is False:
+        log.warning('[KH-RESUMEN] %s no cuadra: impreso=%s calculado=%s (dif %s)',
+                    datos['numero'], resumen.total, resumen.total_calculado,
+                    resumen.diferencia)
+    return dict(datos, resumen_id=resumen.id, ligados=ligados,
+                cuadra=resumen.cuadra, diferencia=resumen.diferencia)
 
 
 def _indice_facturas(session, proveedor_id):

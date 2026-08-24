@@ -128,6 +128,8 @@ def init_app(app):
                     'id': r.id, 'numero': r.numero,
                     'periodo': _fmt_periodo(r),
                     'total': float(r.total or 0),
+                    'cuadra': r.cuadra,
+                    'diferencia': r.diferencia,
                     'primer_vencimiento': (r.primer_vencimiento.strftime('%d/%m/%Y')
                                            if r.primer_vencimiento else ''),
                     'n_items': n_items, 'n_ligados': n_ligados,
@@ -159,11 +161,16 @@ def init_app(app):
 
         msg = (f"Resumen {res['numero']}: {len(res['items'])} comprobantes, "
                f"{res['ligados']} ligados a facturas nuestras.")
-        if not res['cuadra']:
-            # El PDF es autoconsistente; si no cierra, algún renglón se leyó mal.
-            flash(f"{msg} ⚠ El total impreso ({res['total']}) no coincide con la "
-                  f"suma de los renglones ({res['total_calculado']}) — revisá el PDF.",
+        # El aviso también queda guardado en la fila (ResumenProveedor.cuadra),
+        # así que cerrar el flash no borra el rastro.
+        if res['cuadra'] is False:
+            flash(f"{msg} ⚠ El total impreso (${res['total']:,.2f}) no coincide con "
+                  f"la suma de los renglones (${res['total_calculado']:,.2f}): faltan "
+                  f"${res['diferencia']:,.2f}. Se leyó mal alguna línea del PDF.",
                   'error')
+        elif res['cuadra'] is None:
+            flash(f"{msg} ⚠ No se pudo leer el TOTAL RESUMEN del PDF, así que no hay "
+                  f"con qué verificar que los renglones estén completos.", 'error')
         else:
             flash(msg, 'success')
         return redirect(url_for('kellerhoff_resumen_detalle', resumen_id=res['resumen_id']))
@@ -195,6 +202,9 @@ def init_app(app):
                 'id': r.id, 'numero': r.numero, 'periodo': _fmt_periodo(r),
                 'cierre': r.cierre or '',
                 'total': float(r.total or 0),
+                'total_calculado': float(r.total_calculado or 0),
+                'cuadra': r.cuadra,
+                'diferencia': r.diferencia,
                 'primer_vencimiento': (r.primer_vencimiento.strftime('%d/%m/%Y')
                                        if r.primer_vencimiento else ''),
                 'generado_en': (r.generado_en.strftime('%d/%m/%Y %H:%M')

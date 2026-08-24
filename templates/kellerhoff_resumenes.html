@@ -78,7 +78,15 @@
                  class="mono-xs" style="font-weight:700;">{{ r.numero }}</a>
             </td>
             <td style="font-size:12px;color:var(--ds-text-mute);">{{ r.periodo }}</td>
-            <td class="td-right mono-xs">${{ '{:,.2f}'.format(r.total).replace(',', 'X').replace('.', ',').replace('X', '.') }}</td>
+            <td class="td-right mono-xs">
+              ${{ '{:,.2f}'.format(r.total).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+              {% if r.cuadra is false %}
+              <span style="color:var(--ds-orange);font-weight:700;"
+                    title="El total impreso no coincide con la suma de los renglones (diferencia ${{ '%.2f'|format(r.diferencia or 0) }}): se leyó mal algún renglón del PDF">⚠</span>
+              {% elif r.cuadra is none %}
+              <span style="color:var(--ds-text-mute);" title="No se pudo leer el TOTAL RESUMEN del PDF">?</span>
+              {% endif %}
+            </td>
             <td style="font-size:12px;">{{ r.primer_vencimiento }}</td>
             <td class="td-right" style="font-size:12px;">
               {{ r.n_ligados }} / {{ r.n_items }}

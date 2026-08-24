@@ -209,3 +209,51 @@ def test_avisa_cuando_el_total_no_cierra(tmp_path):
         res = _importar(session, prov, tmp_path, texto=roto)
 
     assert res['cuadra'] is False
+
+
+def test_el_checksum_queda_guardado_en_la_fila(tmp_path):
+    """El estado tiene que sobrevivir al import, no vivir sólo en el flash.
+
+    Si sólo se devuelve en el dict, alguien cierra el aviso o recarga la página
+    y no queda ningún rastro de que el resumen se leyó mal — que es justo lo que
+    el checksum existe para evitar.
+    """
+    roto = RESUMEN_TXT.replace('22.09.2026 997.738,50', '22.09.2026 999.999,99')
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        session.commit()
+        res = _importar(session, prov, tmp_path, texto=roto)
+        session.expunge_all()          # forzar relectura desde la DB
+
+        guardado = session.get(database.ResumenProveedor, res['resumen_id'])
+        assert float(guardado.total) == 999999.99
+        assert float(guardado.total_calculado) == 997738.50
+        assert guardado.cuadra is False
+        assert round(guardado.diferencia, 2) == round(999999.99 - 997738.50, 2)
+
+
+def test_el_resumen_que_cierra_queda_marcado_como_que_cierra(tmp_path):
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+        session.expunge_all()
+
+        guardado = session.get(database.ResumenProveedor, res['resumen_id'])
+        assert guardado.cuadra is True
+        assert guardado.diferencia == 0
+
+
+def test_sin_total_impreso_el_checksum_dice_no_se_en_vez_de_no_cierra(tmp_path):
+    """"No pude leer el total" no es lo mismo que "el total no cierra"."""
+    sin_pie = RESUMEN_TXT.replace('1°Vencimiento TOTAL RESUMEN\n22.09.2026 997.738,50\n', '')
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        session.commit()
+        res = _importar(session, prov, tmp_path, texto=sin_pie)
+        session.expunge_all()
+
+        guardado = session.get(database.ResumenProveedor, res['resumen_id'])
+        assert guardado.total is None
+        assert guardado.cuadra is None
+        assert guardado.diferencia is None
