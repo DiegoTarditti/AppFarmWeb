@@ -6,6 +6,7 @@
 {% block nav_after_ingresos %}
         <a href="{{ url_for('batch_new') }}" class="{{ nav_sub }}">Batch de facturas</a>
         <a href="{{ url_for('claims_list') }}" class="{{ nav_sub }}">Reclamos</a>
+        <a href="{{ url_for('kellerhoff_sync') }}" class="{{ nav_sub }}">🔄 Portal Kellerhoff</a>
 {% endblock %}
 
 {% block main %}

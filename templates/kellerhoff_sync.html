@@ -83,6 +83,13 @@
       <p id="sync-progress-msg" style="font-size:12px;color:var(--ds-text-mute);margin-top:6px;">Iniciando Chromium…</p>
     </div>
 
+    {# Log en vivo del sync: cada línea del scraper (login, lista, y por
+       comprobante tipo+número+ítems). Se llena en pollEstado desde data.log. #}
+    <pre id="sync-log" class="hidden" style="margin-top:12px;max-height:320px;overflow-y:auto;
+         background:var(--ds-bg);border:1px solid var(--ds-line);border-radius:var(--ds-r-sm);
+         padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;
+         line-height:1.5;color:var(--ds-text-soft);white-space:pre-wrap;word-break:break-word;"></pre>
+
     <div id="resultado" class="hidden" style="margin-top:14px;padding:12px 16px;border-radius:var(--ds-r-sm);border:1px solid var(--ds-line);background:var(--ds-surface-2);font-size:13px;"></div>
   </div>
 
@@ -206,16 +213,27 @@ async function iniciarSync() {
   _polling = setInterval(pollEstado, 1500);
 }
 
+function pintarLog(lineas) {
+  if (!lineas || !lineas.length) return;
+  const el = document.getElementById('sync-log');
+  el.classList.remove('hidden');
+  const abajo = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+  el.textContent = lineas.join('\n');
+  if (abajo) el.scrollTop = el.scrollHeight;   // auto-scroll salvo que el usuario suba
+}
+
 async function pollEstado() {
   const r = await fetch('{{ url_for("kellerhoff_sync_estado") }}');
   const data = await r.json();
+  pintarLog(data.log);
   if (!data.corriendo) {
     clearInterval(_polling);
     document.getElementById('sync-spinner').classList.add('hidden');
     document.getElementById('sync-progress').classList.add('hidden');
     document.getElementById('btn-sync').disabled = false;
     setResultado(data.resultado);
-    if (data.resultado && data.resultado.ok) setTimeout(() => location.reload(), 1500);
+    // No recargamos automáticamente: dejamos el log a la vista. El listado de
+    // facturas se refresca con el botón o al recargar a mano.
   } else {
     if (data.msg) document.getElementById('sync-progress-msg').textContent = data.msg;
   }

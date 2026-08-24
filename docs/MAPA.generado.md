@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-21 23:05 · rama `feat/rowa-lab-cols-kellerhoff-analizador` · commit `e5dcf57`
+Generado: 2026-08-24 13:31 · rama `fix/kellerhoff-sync-navegacion-detalle` · commit `11bc9c9`
 
 **794 rutas** en 77 archivos · **127 modelos** · **21 syncs** · **34 services** · **11 parsers**
 
@@ -834,8 +834,8 @@ Generado: 2026-08-21 23:05 · rama `feat/rowa-lab-cols-kellerhoff-analizador` ·
 |---|---|---|
 | `/kellerhoff/sync` | GET | [`kellerhoff_sync`](../routes/kellerhoff_sync.py#L27) |
 | `/kellerhoff/sync/ejecutar` | POST | [`kellerhoff_sync_ejecutar`](../routes/kellerhoff_sync.py#L76) |
-| `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L102) |
-| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L107) |
+| `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L103) |
+| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L108) |
 
 ### `routes/laboratorios.py`
 

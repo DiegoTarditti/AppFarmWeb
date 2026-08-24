@@ -77,8 +77,9 @@ def scrape_comprobantes(desde: date, hasta: date, status_cb=None,
             nuevos = [c for c in comps if c.get('nro_comp_arca') not in _skip]
             _cb(f'Lista obtenida: {len(comps)} comprobante(s) ({len(nuevos)} nuevos). Bajando detalles…')
             for i, comp in enumerate(nuevos, 1):
-                nro = comp.get('nro_comp_kh', '?')
-                _cb(f'Detalle {i}/{len(nuevos)}: {nro}')
+                nro = comp.get('nro_comp_arca') or comp.get('nro_comp_kh', '?')
+                clase = comp.get('clase_doc', '?')
+                _cb(f'[{i}/{len(nuevos)}] {clase} {nro} — leyendo detalle…')
                 try:
                     analisis = _detalle_comprobante(page, comp)
                 except Exception as e:
@@ -86,6 +87,17 @@ def scrape_comprobantes(desde: date, hasta: date, status_cb=None,
                     comp['_error_detalle'] = str(e)
                 comp['analisis'] = analisis
                 comp['items'] = analisis.get('items', [])
+                # Línea de resultado por comprobante para el log en vivo.
+                if comp.get('_error_detalle'):
+                    _cb(f'[{i}/{len(nuevos)}] {clase} {nro} — ⚠ error: {comp["_error_detalle"][:60]}')
+                elif analisis.get('categoria') == 'nc_financiera':
+                    _cb(f'[{i}/{len(nuevos)}] {clase} {nro} — NC financiera → '
+                        f'{analisis.get("anunciante_nombre") or "anunciante ?"}')
+                else:
+                    n = len(analisis.get('items') or [])
+                    fal = len(analisis.get('faltantes') or [])
+                    extra = f', {fal} faltante(s)' if fal else ''
+                    _cb(f'[{i}/{len(nuevos)}] {clase} {nro} → {n} ítem(s){extra}')
             # Comprobantes ya existentes: no re-navegar, items vacíos (ya están en DB)
             for comp in comps:
                 if comp.get('nro_comp_arca') in _skip:
@@ -209,9 +221,18 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
             continue
         t = [c.inner_text().strip() for c in celdas]
 
-        # Link del Nº Comprobante (columna 3)
+        # Link del Nº Comprobante (columna 3). El detalle NO se abre por href
+        # (es '#') sino por el onclick verComprobanteEnPestaña(tipo,nro,fecha,cod)
+        # → POST a /ctacte/DetalleComprobantes. Capturamos esos args para
+        # navegar de verdad (ver _ir_a_detalle).
         link_el = celdas[3].query_selector('a') if len(celdas) > 3 else None
         href = link_el.get_attribute('href') if link_el else None
+        onclick = link_el.get_attribute('onclick') if link_el else None
+        detalle_args = None
+        if onclick:
+            m_oc = _RE_ONCLICK_DETALLE.search(onclick)
+            if m_oc:
+                detalle_args = m_oc.groups()   # (tipoDoc, numero, fecha, codUsuario)
 
         nro_kh = t[3] if len(t) > 3 else ''
         # Saltear filas de pie/encabezado (sin número de comprobante válido)
@@ -232,6 +253,7 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
             'percepcion_iva': _parse_dec(t[10]) if len(t) > 10 else 0.0,
             'total':          _parse_dec(t[11]) if len(t) > 11 else 0.0,
             '_href':          href,
+            '_detalle_args':  detalle_args,
         }
         comps.append(comp)
     return comps
@@ -239,38 +261,82 @@ def _listar_comprobantes(page, desde: date, hasta: date) -> list[dict]:
 
 # ── Detalle de un comprobante (clasificación + ítems) ─────────────────────────
 
-def _detalle_comprobante(page, comp: dict) -> dict:
-    """Descarga el PDF y lo clasifica/parsea vía `kellerhoff_analizador`.
+def _ir_a_detalle(page, comp: dict, log) -> bool:
+    """Abre la página de detalle del comprobante. Devuelve True si llegó.
 
-    Devuelve el dict de `analizar_pdf`: {'categoria': 'nc_financiera', ...}
-    o {'categoria': 'factura', 'items': [...], 'faltantes': [...]}.
-    Si no se pudo bajar el PDF, cae al fallback HTML (solo ítems, sin
-    clasificación de NC financiera — hoy nunca encontró nada, ver CLAUDE.md).
+    El portal NO usa una URL: el link hace onclick verComprobanteEnPestaña(...)
+    que POSTea a /ctacte/DetalleComprobantes y renderiza el detalle en la misma
+    página (SPA). Llamamos a esa función del sitio con los args capturados del
+    listado. Funciona en cadena (de un detalle al siguiente) sin volver al
+    listado. El detalle está listo cuando aparece el botón 'Generar PDF'.
     """
-    href = comp.get('_href')
-    if not href:
-        return {'categoria': 'factura', 'items': [], 'faltantes': []}
+    args = comp.get('_detalle_args')
+    nro = comp.get('nro_comp_kh', '?')
+    if not args:
+        log.warning('[KH-DET] %s: sin args de detalle (onclick no capturado)', nro)
+        return False
+    try:
+        page.evaluate(
+            "([t, n, f, c]) => verComprobanteEnPestaña(t, n, f, c)", list(args))
+        page.wait_for_selector('button[onclick*="generarPDF"]', timeout=20000)
+        return True
+    except Exception as e:
+        log.warning('[KH-DET] %s: no cargó el detalle: %s', nro, str(e)[:80])
+        return False
 
-    url = href if href.startswith('http') else f'{KH_URL}{href}'
-    page.goto(url)
-    page.wait_for_load_state('networkidle')
 
+def _detalle_comprobante(page, comp: dict) -> dict:
+    """Navega al detalle y extrae categoría + ítems + faltantes.
+
+    Ítems: de la TABLA HTML del detalle (limpia y consistente FAC/NCR). El PDF
+    se usa solo para clasificar `nc_financiera` y sacar faltantes (el analizador
+    regex ya validado); su parseo de ítems queda como fallback porque el texto
+    del PDF es inconsistente (columnas WEB/DTO/ref que ensucian el renglón).
+    """
     import logging
     log = logging.getLogger(__name__)
     nro = comp.get('nro_comp_kh', '?')
 
-    analisis = _detalle_via_pdf(page, comp, log)
-    if analisis is None:
-        items = _detalle_via_html(page, comp, log)
-        analisis = {'categoria': 'factura', 'items': items, 'faltantes': []}
-    if analisis['categoria'] == 'factura' and not analisis.get('items'):
-        log.warning('[KH-DET] %s: sin ítems', nro)
-    return analisis
+    if not _ir_a_detalle(page, comp, log):
+        return {'categoria': 'factura', 'items': [], 'faltantes': []}
+
+    items_html = _detalle_via_html(page, comp, log)
+
+    # Caso común (factura con mercadería): la tabla HTML ya trae los ítems, no
+    # hace falta bajar el PDF. Se saltea → el sync es órdenes de magnitud más
+    # rápido (un PDF por comprobante era el cuello de botella).
+    # (TODO: faltantes '*** PRODUCTOS EN FALTA ***' quedan sin capturar en este
+    #  camino; nunca funcionaron en prod porque la navegación estaba rota. Se
+    #  agregan cuando tengamos una muestra HTML de una factura con faltantes.)
+    if items_html:
+        return {'categoria': 'factura', 'items': items_html, 'faltantes': []}
+
+    # Sin ítems en el HTML → candidato a NC financiera (recupero, un solo
+    # renglón sin barcode). Ahí sí bajamos el PDF para clasificar con el
+    # analizador (nc_financiera + anunciante) o sacar faltantes/ítems de un
+    # layout raro como último recurso.
+    analisis_pdf = _detalle_via_pdf(page, comp, log) or {}
+    if analisis_pdf.get('categoria') == 'nc_financiera':
+        return analisis_pdf
+    items = analisis_pdf.get('items') or []
+    if not items:
+        log.warning('[KH-DET] %s: sin ítems (ni HTML ni PDF)', nro)
+    return {
+        'categoria': 'factura',
+        'items': items,
+        'faltantes': analisis_pdf.get('faltantes') or [],
+    }
 
 
 # ── Conversión de número de comprobante ───────────────────────────────────────
 
 _RE_NRO_KH = re.compile(r'^(\d+)[A-Za-z]+(\d+)$')
+
+# onclick del link de comprobante: verComprobanteEnPestaña('DG','0046A00061895',
+# '2026-08-19','1000002873'). El nombre lleva ñ; \w+ la cubre sin depender del
+# encoding del atributo.
+_RE_ONCLICK_DETALLE = re.compile(
+    r"verComprobanteEnPesta\w+\('([^']*)',\s*'([^']*)',\s*'([^']*)',\s*'([^']*)'\)")
 
 def _kh_nro_a_arca(nro: str) -> str:
     """
@@ -316,6 +382,18 @@ def _parse_dec(s: str) -> float:
     try:
         s = s.strip().replace('\xa0', '').replace(' ', '').replace('$', '')
         s = s.replace(',', '')   # quitar separador de miles
+        return float(s) if s else 0.0
+    except (ValueError, AttributeError):
+        return 0.0
+
+
+def _parse_dec_ar(s: str) -> float:
+    """Números de la TABLA DE DETALLE (formato argentino: punto=miles, coma=decimal).
+    Ej: '22.814,37' → 22814.37. Distinto al listado, que viene en formato US.
+    """
+    try:
+        s = s.strip().replace('\xa0', '').replace(' ', '').replace('$', '')
+        s = s.replace('.', '').replace(',', '.')
         return float(s) if s else 0.0
     except (ValueError, AttributeError):
         return 0.0
@@ -378,7 +456,15 @@ def _detalle_via_pdf(page, comp: dict, log) -> dict | None:
 # ── Detalle via HTML (fallback si no hay API key) ────────────────────────────
 
 def _detalle_via_html(page, comp: dict, log) -> list[dict]:
-    """Extrae ítems de la tabla HTML del portal (fallback sin ANTHROPIC_API_KEY)."""
+    """Ítems desde la tabla HTML del detalle. Fuente PRIMARIA de ítems.
+
+    Columnas reales (idénticas en FAC y NCR, verificado contra el portal):
+        BARCODE | DESCRIPCIÓN | CANT | PRECIO_PÚB | PRECIO_UNIT | IMPORTE
+    Números en formato argentino ('22.814,37'). Sin columna de DTO (a diferencia
+    del texto del PDF, que además trae tokens WEB/ref que ensucian el renglón —
+    por eso preferimos esta tabla). Se identifica la tabla por tener el barcode
+    (7-14 díg) en la primera celda, no por índice (el índice varía).
+    """
     import re as _re
     nro = comp.get('nro_comp_kh', '?')
     _RE_BC = _re.compile(r'^\d{7,14}$')
@@ -391,16 +477,17 @@ def _detalle_via_html(page, comp: dict, log) -> list[dict]:
             t = [c.inner_text().strip() for c in celdas]
             if not _RE_BC.match(t[0]):
                 continue
-            desc_parts = t[2:len(t) - 4]
-            desc = ' '.join(p for p in desc_parts if p not in ('WEB', 'TRZ', '')).strip()
+            # desc = todo entre barcode y los 4 últimos campos (cant, pub, unit, imp).
+            desc = ' '.join(p for p in t[1:len(t) - 4]
+                            if p not in ('WEB', 'TRZ', '')).strip()
             items.append({
                 'barcode':         t[0],
                 'descripcion':     desc,
-                'cantidad':        _parse_int(t[1]),
-                'precio_pub':      _parse_dec(t[-4]),
-                'dto_pct':         _parse_dec(t[-3]),
-                'precio_unitario': _parse_dec(t[-2]),
-                'importe':         _parse_dec(t[-1]),
+                'cantidad':        _parse_int(t[-4]),
+                'precio_pub':      _parse_dec_ar(t[-3]),
+                'dto_pct':         None,   # la tabla HTML no trae DTO
+                'precio_unitario': _parse_dec_ar(t[-2]),
+                'importe':         _parse_dec_ar(t[-1]),
             })
         if items:
             log.warning('[KH-HTML] %s: tabla[%d] → %d ítem(s)', nro, ti, len(items))

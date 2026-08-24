@@ -85,6 +85,7 @@ def init_app(app):
             try:
                 _sync_estado['corriendo'] = True
                 _sync_estado['resultado'] = None
+                _sync_estado['log'] = []   # log en vivo, arranca limpio cada corrida
                 resultado = _sincronizar(desde, hasta)
                 _sync_estado['resultado'] = resultado
                 _sync_estado['ultimo'] = datetime.now().strftime('%d/%m/%Y %H:%M')
@@ -124,9 +125,14 @@ def init_app(app):
 # ── Lógica de sincronización ───────────────────────────────────────────────────
 
 def _msg(texto: str) -> None:
-    """Actualiza el mensaje visible en el UI durante el sync."""
+    """Actualiza el mensaje visible + acumula el log en vivo que muestra la UI."""
     import logging
     _sync_estado['msg'] = texto
+    log = _sync_estado.setdefault('log', [])
+    log.append(texto)
+    # Cap defensivo: un sync largo no debe inflar la respuesta del endpoint.
+    if len(log) > 800:
+        del log[:len(log) - 800]
     logging.getLogger(__name__).warning('[KH-SYNC] %s', texto)
 
 
