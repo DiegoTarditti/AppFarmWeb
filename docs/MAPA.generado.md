@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-24 20:17 · rama `feat/resumen-tildes` · commit `cd3b491`
+Generado: 2026-08-24 20:17 · rama `feat/conteo-detalle-facturas` · commit `fcd4f8c`
 
 **802 rutas** en 77 archivos · **131 modelos** · **22 syncs** · **38 services** · **11 parsers**
 
@@ -838,13 +838,13 @@ Generado: 2026-08-24 20:17 · rama `feat/resumen-tildes` · commit `cd3b491`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/kellerhoff/resumen/<int:resumen_id>` | GET | [`kellerhoff_resumen_detalle`](../routes/kellerhoff_sync.py#L181) |
-| `/kellerhoff/resumenes` | GET | [`kellerhoff_resumenes`](../routes/kellerhoff_sync.py#L120) |
-| `/kellerhoff/resumenes/importar` | POST | [`kellerhoff_resumen_importar`](../routes/kellerhoff_sync.py#L144) |
+| `/kellerhoff/resumen/<int:resumen_id>` | GET | [`kellerhoff_resumen_detalle`](../routes/kellerhoff_sync.py#L184) |
+| `/kellerhoff/resumenes` | GET | [`kellerhoff_resumenes`](../routes/kellerhoff_sync.py#L123) |
+| `/kellerhoff/resumenes/importar` | POST | [`kellerhoff_resumen_importar`](../routes/kellerhoff_sync.py#L147) |
 | `/kellerhoff/sync` | GET | [`kellerhoff_sync`](../routes/kellerhoff_sync.py#L37) |
-| `/kellerhoff/sync/ejecutar` | POST | [`kellerhoff_sync_ejecutar`](../routes/kellerhoff_sync.py#L86) |
-| `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L113) |
-| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L233) |
+| `/kellerhoff/sync/ejecutar` | POST | [`kellerhoff_sync_ejecutar`](../routes/kellerhoff_sync.py#L89) |
+| `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L116) |
+| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L236) |
 
 ### `routes/laboratorios.py`
 
@@ -1170,32 +1170,32 @@ Generado: 2026-08-24 20:17 · rama `feat/resumen-tildes` · commit `cd3b491`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/api/invoice/probe-create` | POST | [`invoice_probe_create`](../routes/providers.py#L173) |
-| `/api/proveedor/<int:provider_id>/proximo-cierre` | GET | [`api_proximo_cierre`](../routes/providers.py#L811) |
-| `/api/proveedores/drog-activas` | GET | [`api_drog_activas`](../routes/providers.py#L73) |
-| `/api/provider/<int:provider_id>/activa-ped` | PATCH | [`api_provider_activa_ped`](../routes/providers.py#L88) |
-| `/api/provider/<int:provider_id>/descuento-sin-transfer` | PATCH | [`api_provider_descuento_sin_transfer`](../routes/providers.py#L102) |
-| `/api/provider/<int:provider_id>/folder-file/stage` | POST | [`provider_folder_file_stage`](../routes/providers.py#L279) |
-| `/api/provider/<int:provider_id>/folder-files` | GET | [`provider_folder_files`](../routes/providers.py#L638) |
-| `/api/provider/<int:provider_id>/invoices` | GET | [`api_provider_invoices`](../routes/providers.py#L123) |
-| `/invoice/<int:invoice_id>/delete` | POST | [`delete_invoice`](../routes/providers.py#L545) |
-| `/provider/<int:provider_id>/delete` | POST | [`provider_delete`](../routes/providers.py#L508) |
-| `/provider/<int:provider_id>/edit` | POST | [`provider_edit`](../routes/providers.py#L504) |
-| `/provider/<int:provider_id>/horarios` | GET/POST | [`provider_horarios`](../routes/providers.py#L763) |
-| `/provider/<int:provider_id>/invoices` | GET | [`provider_invoices`](../routes/providers.py#L532) |
-| `/provider/<int:provider_id>/mappings` | GET | [`provider_mappings`](../routes/providers.py#L580) |
-| `/provider/<int:provider_id>/mappings/<int:mapping_id>/delete` | POST | [`delete_mapping`](../routes/providers.py#L592) |
-| `/provider/<int:provider_id>/mappings/delete-all` | POST | [`delete_all_mappings`](../routes/providers.py#L628) |
-| `/provider/<int:provider_id>/parser-preview` | POST | [`provider_parser_preview`](../routes/providers.py#L397) |
-| `/provider/<int:provider_id>/parser-preview-saved` | POST | [`provider_parser_preview_saved`](../routes/providers.py#L305) |
-| `/provider/<int:provider_id>/parser-preview/export` | POST | [`provider_parser_preview_export`](../routes/providers.py#L252) |
-| `/provider/<int:provider_id>/plantilla` | GET/POST | [`provider_plantilla`](../routes/providers.py#L666) |
-| `/provider/create` | POST | [`provider_create_manual`](../routes/providers.py#L500) |
-| `/provider/create-from-peek` | POST | [`provider_create_from_peek`](../routes/providers.py#L220) |
-| `/provider/peek` | POST | [`provider_peek`](../routes/providers.py#L148) |
-| `/provider/save` | POST | [`provider_save`](../routes/providers.py#L488) |
-| `/providers` | GET | [`providers_list`](../routes/providers.py#L343) |
-| `/providers/activos` | GET/POST | [`providers_activos`](../routes/providers.py#L601) |
+| `/api/invoice/probe-create` | POST | [`invoice_probe_create`](../routes/providers.py#L174) |
+| `/api/proveedor/<int:provider_id>/proximo-cierre` | GET | [`api_proximo_cierre`](../routes/providers.py#L814) |
+| `/api/proveedores/drog-activas` | GET | [`api_drog_activas`](../routes/providers.py#L74) |
+| `/api/provider/<int:provider_id>/activa-ped` | PATCH | [`api_provider_activa_ped`](../routes/providers.py#L89) |
+| `/api/provider/<int:provider_id>/descuento-sin-transfer` | PATCH | [`api_provider_descuento_sin_transfer`](../routes/providers.py#L103) |
+| `/api/provider/<int:provider_id>/folder-file/stage` | POST | [`provider_folder_file_stage`](../routes/providers.py#L280) |
+| `/api/provider/<int:provider_id>/folder-files` | GET | [`provider_folder_files`](../routes/providers.py#L641) |
+| `/api/provider/<int:provider_id>/invoices` | GET | [`api_provider_invoices`](../routes/providers.py#L124) |
+| `/invoice/<int:invoice_id>/delete` | POST | [`delete_invoice`](../routes/providers.py#L548) |
+| `/provider/<int:provider_id>/delete` | POST | [`provider_delete`](../routes/providers.py#L509) |
+| `/provider/<int:provider_id>/edit` | POST | [`provider_edit`](../routes/providers.py#L505) |
+| `/provider/<int:provider_id>/horarios` | GET/POST | [`provider_horarios`](../routes/providers.py#L766) |
+| `/provider/<int:provider_id>/invoices` | GET | [`provider_invoices`](../routes/providers.py#L533) |
+| `/provider/<int:provider_id>/mappings` | GET | [`provider_mappings`](../routes/providers.py#L583) |
+| `/provider/<int:provider_id>/mappings/<int:mapping_id>/delete` | POST | [`delete_mapping`](../routes/providers.py#L595) |
+| `/provider/<int:provider_id>/mappings/delete-all` | POST | [`delete_all_mappings`](../routes/providers.py#L631) |
+| `/provider/<int:provider_id>/parser-preview` | POST | [`provider_parser_preview`](../routes/providers.py#L398) |
+| `/provider/<int:provider_id>/parser-preview-saved` | POST | [`provider_parser_preview_saved`](../routes/providers.py#L306) |
+| `/provider/<int:provider_id>/parser-preview/export` | POST | [`provider_parser_preview_export`](../routes/providers.py#L253) |
+| `/provider/<int:provider_id>/plantilla` | GET/POST | [`provider_plantilla`](../routes/providers.py#L669) |
+| `/provider/create` | POST | [`provider_create_manual`](../routes/providers.py#L501) |
+| `/provider/create-from-peek` | POST | [`provider_create_from_peek`](../routes/providers.py#L221) |
+| `/provider/peek` | POST | [`provider_peek`](../routes/providers.py#L149) |
+| `/provider/save` | POST | [`provider_save`](../routes/providers.py#L489) |
+| `/providers` | GET | [`providers_list`](../routes/providers.py#L344) |
+| `/providers/activos` | GET/POST | [`providers_activos`](../routes/providers.py#L604) |
 
 ### `routes/purchase.py`
 
