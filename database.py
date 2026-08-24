@@ -1786,7 +1786,13 @@ class ResumenProveedor(Base):
     periodo_hasta = Column(Date)
     cierre = Column(String(20))                      # 'Viernes'
     generado_en = Column(DateTime)
-    total = Column(DECIMAL(14, 2))
+    total = Column(DECIMAL(14, 2))                   # el TOTAL RESUMEN impreso
+    # Suma de los renglones que efectivamente parseamos. El PDF es
+    # autoconsistente, así que si no coincide con `total` se leyó mal algún
+    # renglón — y eso hay que poder verlo meses después, no sólo en el flash del
+    # import. Se guarda el NÚMERO y no un booleano "cuadra" para saber además de
+    # cuánto era la diferencia, que es lo que sirve para entender qué se rompió.
+    total_calculado = Column(DECIMAL(14, 2))
     primer_vencimiento = Column(Date)
     # Los vencimientos vienen agregados por fecha, NO por comprobante: el PDF no
     # dice cuál vence cuándo. Se guardan tal cual ([{fecha, importe}, ...]) en vez
@@ -1797,6 +1803,24 @@ class ResumenProveedor(Base):
     __table_args__ = (
         UniqueConstraint('proveedor_id', 'numero', name='uq_resumen_prov_numero'),
     )
+
+    @property
+    def cuadra(self):
+        """¿El total impreso coincide con la suma de los renglones parseados?
+
+        None si falta alguno de los dos (no se pudo leer): "no sé" no es lo
+        mismo que "no cierra".
+        """
+        if self.total is None or self.total_calculado is None:
+            return None
+        return abs(float(self.total) - float(self.total_calculado)) < 0.01
+
+    @property
+    def diferencia(self):
+        """Cuánto se perdió/sobró al parsear. 0 si cierra, None si falta un dato."""
+        if self.total is None or self.total_calculado is None:
+            return None
+        return float(self.total) - float(self.total_calculado)
 
 
 class ResumenProveedorItem(Base):
@@ -1818,6 +1842,13 @@ class ResumenProveedorItem(Base):
     total = Column(DECIMAL(14, 2))
     factura_id = Column(Integer, ForeignKey('facturas.id', ondelete='SET NULL'),
                         nullable=True)
+    # Las NC financieras (recuperos de publicidad) NO crean una `Invoice`: el
+    # sync las manda a `pagos_ajustes_cc` con `anunciante_id` y `proveedor_id`
+    # NULL, así que ni siquiera figuran en la cuenta corriente del proveedor.
+    # Sin este segundo enganche, un resumen con un recupero queda "pendiente"
+    # para siempre por un comprobante que está perfectamente bien procesado.
+    pago_ajuste_id = Column(Integer, ForeignKey('pagos_ajustes_cc.id', ondelete='SET NULL'),
+                            nullable=True)
     __table_args__ = (
         Index('idx_resumen_item_resumen', 'resumen_id'),
         Index('idx_resumen_item_clave', 'clave'),

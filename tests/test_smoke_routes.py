@@ -116,6 +116,8 @@ RUTAS_GET = [
     ('/health_web', 'health_web'),
     ('/settings', 'settings'),
     ('/ingresos', 'ingresos'),
+    ('/kellerhoff/sync', 'kellerhoff_sync'),
+    ('/kellerhoff/resumenes', 'kellerhoff_resumenes'),
 
     # Catálogos
     ('/providers', 'providers_list'),
@@ -211,6 +213,7 @@ RUTAS_CON_ID = [
     ('/laboratorio/1/ofertas-minimo', 'lab_ofertas_minimo'),
     ('/obras-sociales/catalogo/1', 'os_catalogo_detail'),
     ('/observer/factura/1/recepciones', 'observer_factura'),
+    ('/kellerhoff/resumen/1', 'kellerhoff_resumen_detalle'),
     ('/batch/1/results', 'batch_results'),
     ('/docs-pendientes/1/procesar', 'docs_pendientes_procesar'),
 ]
@@ -226,3 +229,68 @@ def test_ruta_con_id_no_revienta(smoke_client, path, descripcion):
         f'{path} ({descripcion}) devolvió 500.\n'
         f'Body: {resp.data[:500]!r}'
     )
+
+
+# ── Resúmenes de cuenta: render CON datos ────────────────────────────────────
+# Las rutas de arriba se piden con la DB vacía, así que nunca dibujan un
+# renglón. Estos dos ejercitan los badges de control, que es donde vive la
+# lógica nueva.
+
+def _sembrar_resumen(cerrado):
+    """Un resumen con 2 renglones; si `cerrado`, los dos ligados."""
+    from datetime import date
+    from unittest.mock import patch
+
+    import database
+    import services.kellerhoff_resumen as mod
+    from tests.test_kellerhoff_resumen import (
+        RESUMEN_TXT, _ajuste_nc, _factura, _proveedor,
+    )
+
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        if cerrado:
+            _factura(session, '00046-00279207', 915046.04)
+            _factura(session, '00046-00279939', 151817.02)
+            _ajuste_nc(session, '0046A00063591', 69124.56)
+        session.commit()
+        with patch.object(mod, 'parse_resumen_pdf',
+                          lambda _p: mod.parse_resumen_texto(RESUMEN_TXT)):
+            res = mod.importar_resumen(session, 'x.pdf', prov.id)
+        # El módulo lee KELLERHOFF_PROVIDER_ID del entorno; en el test el
+        # proveedor sembrado puede tener otro id.
+        import routes.kellerhoff_sync as ks
+        ks.KELLERHOFF_PROVIDER_ID = prov.id
+        return res['resumen_id'], date(2026, 8, 28)
+
+
+def test_listado_de_resumenes_dibuja_el_estado_de_la_semana(smoke_client):
+    _sembrar_resumen(cerrado=False)
+    resp = smoke_client.get('/kellerhoff/resumenes')
+    assert resp.status_code == 200
+    html = resp.data.decode('utf-8')
+    assert 'S34-2026' in html
+    assert 'sin tildar' in html, 'no se dibujó el pendiente de la semana'
+
+
+def test_detalle_marca_tildado_el_recupero_que_no_es_factura(smoke_client):
+    """La NC financiera no crea Invoice: se liga contra el ajuste de cta cte.
+    Si no, la semana no cerraría nunca."""
+    resumen_id, _ = _sembrar_resumen(cerrado=True)
+    resp = smoke_client.get(f'/kellerhoff/resumen/{resumen_id}')
+    assert resp.status_code == 200
+    html = resp.data.decode('utf-8')
+    assert 'recupero' in html, 'la NC financiera no se reconoció'
+    assert 'cerrado' in html, 'con todo ligado la semana tiene que cerrar'
+    # El badge "no está" tiene un title propio; buscar el texto suelto matchea
+    # un comentario del CSS de base.html.
+    assert 'Kellerhoff te lo cobra' not in html, 'quedó un renglón sin ligar'
+
+
+def test_los_vencimientos_salen_en_formato_argentino(smoke_client):
+    """Se guardan en ISO; la pantalla usa dd/mm/aaaa en todos lados y quedaban
+    '2026-09-22' al lado de fechas '22/08/2026'."""
+    resumen_id, _ = _sembrar_resumen(cerrado=True)
+    html = smoke_client.get(f'/kellerhoff/resumen/{resumen_id}').data.decode('utf-8')
+    assert '22/09/2026' in html
+    assert '2026-09-22' not in html

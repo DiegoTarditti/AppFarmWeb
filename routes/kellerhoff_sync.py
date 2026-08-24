@@ -123,14 +123,17 @@ def init_app(app):
             for r in (session.query(ResumenProveedor)
                       .filter_by(proveedor_id=KELLERHOFF_PROVIDER_ID)
                       .order_by(ResumenProveedor.periodo_desde.desc()).all()):
-                n_items, n_ligados = _contar_items(session, r.id)
+                n_items, n_ligados, cerrado = _contar_items(session, r.id)
                 resumenes.append({
                     'id': r.id, 'numero': r.numero,
                     'periodo': _fmt_periodo(r),
                     'total': float(r.total or 0),
+                    'cuadra': r.cuadra,
+                    'diferencia': r.diferencia,
                     'primer_vencimiento': (r.primer_vencimiento.strftime('%d/%m/%Y')
                                            if r.primer_vencimiento else ''),
                     'n_items': n_items, 'n_ligados': n_ligados,
+                    'cerrado': cerrado, 'pendientes': n_items - n_ligados,
                     'importado_en': (r.importado_en.strftime('%d/%m/%Y %H:%M')
                                      if r.importado_en else ''),
                 })
@@ -159,11 +162,16 @@ def init_app(app):
 
         msg = (f"Resumen {res['numero']}: {len(res['items'])} comprobantes, "
                f"{res['ligados']} ligados a facturas nuestras.")
-        if not res['cuadra']:
-            # El PDF es autoconsistente; si no cierra, algún renglón se leyó mal.
-            flash(f"{msg} ⚠ El total impreso ({res['total']}) no coincide con la "
-                  f"suma de los renglones ({res['total_calculado']}) — revisá el PDF.",
+        # El aviso también queda guardado en la fila (ResumenProveedor.cuadra),
+        # así que cerrar el flash no borra el rastro.
+        if res['cuadra'] is False:
+            flash(f"{msg} ⚠ El total impreso (${res['total']:,.2f}) no coincide con "
+                  f"la suma de los renglones (${res['total_calculado']:,.2f}): faltan "
+                  f"${res['diferencia']:,.2f}. Se leyó mal alguna línea del PDF.",
                   'error')
+        elif res['cuadra'] is None:
+            flash(f"{msg} ⚠ No se pudo leer el TOTAL RESUMEN del PDF, así que no hay "
+                  f"con qué verificar que los renglones estén completos.", 'error')
         else:
             flash(msg, 'success')
         return redirect(url_for('kellerhoff_resumen_detalle', resumen_id=res['resumen_id']))
@@ -179,6 +187,8 @@ def init_app(app):
                 flash('Resumen no encontrado', 'error')
                 return redirect(url_for('kellerhoff_resumenes'))
 
+            from services.kellerhoff_resumen import estado_item, item_tildado
+
             items = []
             for it in (session.query(ResumenProveedorItem)
                        .filter_by(resumen_id=r.id)
@@ -190,16 +200,30 @@ def init_app(app):
                     'numero_remito': it.numero_remito or '',
                     'total': float(it.total or 0),
                     'factura_id': it.factura_id,
+                    'pago_ajuste_id': it.pago_ajuste_id,
+                    'tildado': item_tildado(it),
+                    'checks': estado_item(it),
                 })
+            n_items, n_tildados, cerrado = _contar_items(session, r.id)
             cab = {
                 'id': r.id, 'numero': r.numero, 'periodo': _fmt_periodo(r),
                 'cierre': r.cierre or '',
                 'total': float(r.total or 0),
+                'total_calculado': float(r.total_calculado or 0),
+                'cuadra': r.cuadra,
+                'diferencia': r.diferencia,
                 'primer_vencimiento': (r.primer_vencimiento.strftime('%d/%m/%Y')
                                        if r.primer_vencimiento else ''),
                 'generado_en': (r.generado_en.strftime('%d/%m/%Y %H:%M')
                                 if r.generado_en else ''),
-                'vencimientos': _json.loads(r.vencimientos_json or '[]'),
+                # Se guardan en ISO, pero la pantalla usa dd/mm/aaaa en todos
+                # lados: sin esto los vencimientos salían '2026-09-22' al lado
+                # de fechas '22/08/2026'.
+                'vencimientos': [{'fecha': _fmt_iso(v.get('fecha')),
+                                  'importe': v.get('importe')}
+                                 for v in _json.loads(r.vencimientos_json or '[]')],
+                'n_items': n_items, 'n_tildados': n_tildados,
+                'pendientes': n_items - n_tildados, 'cerrado': cerrado,
             }
         return render_template('kellerhoff_resumen_detalle.html',
                                resumen=cab, items=items)
@@ -459,6 +483,15 @@ def _match_pedido(session, inv: Invoice, comp: dict) -> PedidoEmitido | None:
     return mejor
 
 
+def _fmt_iso(s):
+    """'2026-09-22' → '22/09/2026'. Devuelve lo que entró si no es una fecha ISO."""
+    from datetime import datetime as _dt
+    try:
+        return _dt.strptime(s, '%Y-%m-%d').strftime('%d/%m/%Y')
+    except (TypeError, ValueError):
+        return s or ''
+
+
 def _fmt_periodo(r) -> str:
     if not r.periodo_desde:
         return ''
@@ -467,13 +500,9 @@ def _fmt_periodo(r) -> str:
 
 
 def _contar_items(session, resumen_id):
-    """(total de renglones, cuántos están ligados a una factura nuestra)."""
-    from sqlalchemy import func as _f
-    total, ligados = (
-        session.query(_f.count(ResumenProveedorItem.id),
-                      _f.count(ResumenProveedorItem.factura_id))
-        .filter(ResumenProveedorItem.resumen_id == resumen_id).one())
-    return int(total or 0), int(ligados or 0)
+    """(total de renglones, cuántos están tildados, si la semana está cerrada)."""
+    from services.kellerhoff_resumen import estado_resumen
+    return estado_resumen(session, resumen_id)
 
 
 def _normalizar_nro(s: str) -> str:

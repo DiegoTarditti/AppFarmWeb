@@ -153,6 +153,7 @@ def importar_resumen(session, pdf_path, proveedor_id, pdf_filename=None):
     resumen.cierre = datos['cierre']
     resumen.generado_en = datos['generado_en']
     resumen.total = datos['total']
+    resumen.total_calculado = datos['total_calculado']
     resumen.primer_vencimiento = datos['primer_vencimiento']
     resumen.vencimientos_json = json.dumps(
         [{'fecha': v['fecha'].isoformat() if v['fecha'] else None,
@@ -162,25 +163,80 @@ def importar_resumen(session, pdf_path, proveedor_id, pdf_filename=None):
     session.flush()
 
     por_clave = _indice_facturas(session, proveedor_id)
+    ajustes_por_clave = _indice_ajustes(session)
     ligados = 0
     for it in datos['items']:
-        factura_id = por_clave.get(it['clave']) if it['clave'] else None
+        clave = it['clave']
+        factura_id = por_clave.get(clave) if clave else None
+        # Sólo se busca entre los ajustes si no hay factura: una NC financiera
+        # nunca crea Invoice, pero al revés no puede pasar.
+        ajuste_id = (ajustes_por_clave.get(clave)
+                     if (clave and not factura_id) else None)
         session.add(database.ResumenProveedorItem(
             resumen_id=resumen.id, fecha=it['fecha'], tipo=it['tipo'],
-            numero=it['numero'], clave=it['clave'],
+            numero=it['numero'], clave=clave,
             numero_remito=it['numero_remito'], total=it['total'],
-            factura_id=factura_id,
+            factura_id=factura_id, pago_ajuste_id=ajuste_id,
         ))
-        if factura_id:
+        if factura_id or ajuste_id:
             ligados += 1
 
     session.commit()
-    cuadra = (datos['total'] is not None
-              and abs(datos['total'] - datos['total_calculado']) < 0.01)
-    if not cuadra:
-        log.warning('[KH-RESUMEN] %s no cuadra: impreso=%s calculado=%s',
-                    datos['numero'], datos['total'], datos['total_calculado'])
-    return dict(datos, resumen_id=resumen.id, ligados=ligados, cuadra=cuadra)
+    # `cuadra` sale del modelo, no de una variable local: el estado tiene que
+    # quedar en la fila para que se vea meses después en el listado y en el
+    # detalle, no sólo en el flash de este import.
+    if resumen.cuadra is False:
+        log.warning('[KH-RESUMEN] %s no cuadra: impreso=%s calculado=%s (dif %s)',
+                    datos['numero'], resumen.total, resumen.total_calculado,
+                    resumen.diferencia)
+    return dict(datos, resumen_id=resumen.id, ligados=ligados,
+                cuadra=resumen.cuadra, diferencia=resumen.diferencia)
+
+
+# ── Control: ¿está tildado el renglón? ¿está cerrada la semana? ──────────────
+
+# Los checks que componen el tilde de un renglón, en orden. Hoy sólo está
+# implementado el primero; los demás devuelven None = "todavía no lo evaluamos"
+# y NO bloquean el tilde. El día que exista el eslabón 4 (ingreso), o las
+# columnas de ARCA y pago, se completan acá y el tilde se endurece solo — sin
+# migración y sin tocar la UI. Ver `docs/controles_kellerhoff.md`.
+CHECKS = ('comprobante', 'ingreso', 'arca', 'pago')
+
+
+def estado_item(item):
+    """{check: True | False | None} de un renglón del resumen.
+
+    None = no evaluado todavía (el control no existe), que NO es lo mismo que
+    False = lo evaluamos y no está.
+    """
+    return {
+        # Encontramos el comprobante de nuestro lado. Puede ser una factura o,
+        # si es una NC financiera, un ajuste de cuenta corriente.
+        'comprobante': bool(item.factura_id or item.pago_ajuste_id),
+        'ingreso': None,    # eslabón 4: cruce contra DW.Recepciones
+        'arca': None,       # Invoice.origen == 'arca' / cae
+        'pago': None,       # suma de PagoAplicacion vs total
+    }
+
+
+def item_tildado(item):
+    """True si todos los checks YA IMPLEMENTADOS del renglón están OK."""
+    evaluados = [v for v in estado_item(item).values() if v is not None]
+    return bool(evaluados) and all(evaluados)
+
+
+def estado_resumen(session, resumen_id):
+    """(n_items, n_tildados, cerrado) — el rollup de la semana.
+
+    `cerrado` es "no queda nada por controlar de lo que hoy sabemos controlar".
+    Un resumen sin renglones no está cerrado: está vacío, que es otra cosa.
+    """
+    import database
+
+    items = (session.query(database.ResumenProveedorItem)
+             .filter_by(resumen_id=resumen_id).all())
+    tildados = sum(1 for it in items if item_tildado(it))
+    return len(items), tildados, bool(items) and tildados == len(items)
 
 
 def _indice_facturas(session, proveedor_id):
@@ -212,4 +268,33 @@ def _indice_facturas(session, proveedor_id):
     for clave in ambiguas:
         del por_clave[clave]
         log.warning('[KH-RESUMEN] clave %s ambigua (2+ facturas) — no se liga', clave)
+    return por_clave
+
+
+def _indice_ajustes(session):
+    """{clave_comprobante: pago_ajuste_id} de las NC financieras ya registradas.
+
+    Son los recuperos de publicidad: el sync los manda a `pagos_ajustes_cc` con
+    `anunciante_id` en vez de crear una `Invoice`. No se filtra por proveedor
+    porque esas filas tienen `proveedor_id` NULL a propósito (van a la cuenta
+    corriente del anunciante, que es otra); el filtro es la clave, que ya
+    incluye punto de venta.
+
+    Misma regla de ambigüedad que las facturas: duplicada → no se liga.
+    """
+    import database
+
+    por_clave, ambiguas = {}, set()
+    for pa_id, numero in (session.query(database.PagoAjusteCC.id,
+                                        database.PagoAjusteCC.numero_comprobante)
+                          .filter(database.PagoAjusteCC.anunciante_id.isnot(None))):
+        clave = clave_comprobante(numero)
+        if not clave:
+            continue
+        if clave in por_clave and por_clave[clave] != pa_id:
+            ambiguas.add(clave)
+        por_clave[clave] = pa_id
+    for clave in ambiguas:
+        del por_clave[clave]
+        log.warning('[KH-RESUMEN] clave %s ambigua (2+ ajustes) — no se liga', clave)
     return por_clave

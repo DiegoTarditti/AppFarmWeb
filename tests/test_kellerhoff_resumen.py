@@ -13,7 +13,12 @@ import pytest
 import database
 from helpers import clave_comprobante
 from services.cuenta_corriente import corte_resumenes, movimientos_proveedor
-from services.kellerhoff_resumen import parse_resumen_texto
+from services.kellerhoff_resumen import (
+    estado_item,
+    estado_resumen,
+    item_tildado,
+    parse_resumen_texto,
+)
 
 # Pie del resumen tal como lo devuelve pdfplumber: son DOS celdas lado a lado,
 # así que las etiquetas caen en una línea y los valores en la siguiente.
@@ -126,6 +131,23 @@ def _factura(session, numero, total, fecha=date(2026, 8, 22)):
     return inv
 
 
+def _ajuste_nc(session, numero, monto):
+    """NC financiera tal como la guarda el sync: va a la cuenta corriente del
+    anunciante, con `proveedor_id` NULL."""
+    anunciante = (session.query(database.Anunciante)
+                  .filter_by(nombre='LABORATORIO X').first())
+    if anunciante is None:
+        anunciante = database.Anunciante(nombre='LABORATORIO X')
+        session.add(anunciante)
+        session.flush()
+    pa = database.PagoAjusteCC(proveedor_id=None, anunciante_id=anunciante.id,
+                               tipo='AJUSTE_NEG', fecha=date(2026, 8, 22),
+                               monto=monto, numero_comprobante=numero)
+    session.add(pa)
+    session.flush()
+    return pa
+
+
 def _importar(session, prov, tmp_path, texto=RESUMEN_TXT):
     """Importa `texto` como si viniera de un PDF (sin tocar pdfplumber)."""
     from unittest.mock import patch
@@ -209,3 +231,145 @@ def test_avisa_cuando_el_total_no_cierra(tmp_path):
         res = _importar(session, prov, tmp_path, texto=roto)
 
     assert res['cuadra'] is False
+
+
+def test_el_checksum_queda_guardado_en_la_fila(tmp_path):
+    """El estado tiene que sobrevivir al import, no vivir sólo en el flash.
+
+    Si sólo se devuelve en el dict, alguien cierra el aviso o recarga la página
+    y no queda ningún rastro de que el resumen se leyó mal — que es justo lo que
+    el checksum existe para evitar.
+    """
+    roto = RESUMEN_TXT.replace('22.09.2026 997.738,50', '22.09.2026 999.999,99')
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        session.commit()
+        res = _importar(session, prov, tmp_path, texto=roto)
+        session.expunge_all()          # forzar relectura desde la DB
+
+        guardado = session.get(database.ResumenProveedor, res['resumen_id'])
+        assert float(guardado.total) == 999999.99
+        assert float(guardado.total_calculado) == 997738.50
+        assert guardado.cuadra is False
+        assert round(guardado.diferencia, 2) == round(999999.99 - 997738.50, 2)
+
+
+def test_el_resumen_que_cierra_queda_marcado_como_que_cierra(tmp_path):
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+        session.expunge_all()
+
+        guardado = session.get(database.ResumenProveedor, res['resumen_id'])
+        assert guardado.cuadra is True
+        assert guardado.diferencia == 0
+
+
+# ── Control: tilde por renglón y cierre de la semana ────────────────────────
+
+def _items(session, resumen_id):
+    return (session.query(database.ResumenProveedorItem)
+            .filter_by(resumen_id=resumen_id)
+            .order_by(database.ResumenProveedorItem.numero).all())
+
+
+def test_un_renglon_sin_comprobante_no_esta_tildado(tmp_path):
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+
+        assert all(not item_tildado(it) for it in _items(session, res['resumen_id']))
+        assert estado_resumen(session, res['resumen_id']) == (3, 0, False)
+
+
+def test_la_semana_cierra_cuando_estan_todos(tmp_path):
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        _factura(session, '00046-00279207', 915046.04)
+        _factura(session, '00046-00279939', 151817.02)
+        _ajuste_nc(session, '0046A00063591', 69124.56)
+        session.commit()
+
+        res = _importar(session, prov, tmp_path)
+        n, tildados, cerrado = estado_resumen(session, res['resumen_id'])
+
+    assert (n, tildados, cerrado) == (3, 3, True)
+
+
+def test_la_nc_financiera_tilda_aunque_no_exista_como_factura(tmp_path):
+    """Los recuperos van a `pagos_ajustes_cc` con proveedor_id NULL y NUNCA
+    crean una Invoice. Sin engancharlos, un resumen con un recupero queda
+    pendiente para siempre por un comprobante bien procesado."""
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        ajuste = _ajuste_nc(session, '0046A00063591', 69124.56)
+        session.commit()
+
+        res = _importar(session, prov, tmp_path)
+        ncr = [it for it in _items(session, res['resumen_id']) if it.tipo == 'NCR'][0]
+
+        assert ncr.factura_id is None
+        assert ncr.pago_ajuste_id == ajuste.id
+        assert item_tildado(ncr) is True
+
+
+def test_los_checks_que_no_existen_todavia_no_bloquean_el_tilde(tmp_path):
+    """`ingreso`/`arca`/`pago` son None = no evaluado, que no es lo mismo que
+    False. Cuando se implementen, el tilde se endurece solo."""
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        _factura(session, '00046-00279207', 915046.04)
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+
+        ligado = [it for it in _items(session, res['resumen_id'])
+                  if it.factura_id][0]
+        checks = estado_item(ligado)
+
+        assert checks['comprobante'] is True
+        assert checks['ingreso'] is None
+        assert checks['arca'] is None
+        assert checks['pago'] is None
+        assert item_tildado(ligado) is True
+
+
+def test_un_resumen_vacio_no_cuenta_como_cerrado(tmp_path):
+    """Cero renglones es "vacío", no "todo controlado"."""
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        session.commit()
+        r = database.ResumenProveedor(proveedor_id=prov.id, numero='S99-2026')
+        session.add(r)
+        session.commit()
+
+        assert estado_resumen(session, r.id) == (0, 0, False)
+
+
+def test_un_ajuste_ambiguo_no_liga(tmp_path):
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        _ajuste_nc(session, '0046A00063591', 69124.56)
+        _ajuste_nc(session, '00046-00063591', 69124.56)   # misma clave
+        session.commit()
+
+        res = _importar(session, prov, tmp_path)
+        ncr = [it for it in _items(session, res['resumen_id']) if it.tipo == 'NCR'][0]
+
+        assert ncr.pago_ajuste_id is None
+
+
+def test_sin_total_impreso_el_checksum_dice_no_se_en_vez_de_no_cierra(tmp_path):
+    """"No pude leer el total" no es lo mismo que "el total no cierra"."""
+    sin_pie = RESUMEN_TXT.replace('1°Vencimiento TOTAL RESUMEN\n22.09.2026 997.738,50\n', '')
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        session.commit()
+        res = _importar(session, prov, tmp_path, texto=sin_pie)
+        session.expunge_all()
+
+        guardado = session.get(database.ResumenProveedor, res['resumen_id'])
+        assert guardado.total is None
+        assert guardado.cuadra is None
+        assert guardado.diferencia is None
