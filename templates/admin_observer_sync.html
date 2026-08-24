@@ -178,7 +178,7 @@
             </thead>
             <tbody>
                 {% set _premium = ['precios_vigentes', 'condiciones_comerciales'] %}
-                {% for ent in ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas', 'productos', 'precios_vigentes', 'condiciones_comerciales', 'stock', 'ventas_mensuales', 'obras_sociales', 'convenios', 'planes', 'colegios_medicos', 'medicos', 'medicos_matriculas', 'operadores', 'ventas_detalle'] %}
+                {% for ent in ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas', 'productos', 'precios_vigentes', 'condiciones_comerciales', 'stock', 'rowa_productos', 'ventas_mensuales', 'obras_sociales', 'convenios', 'planes', 'colegios_medicos', 'medicos', 'medicos_matriculas', 'operadores', 'ventas_detalle'] %}
                 <tr class="border-t border-surface-border {% if ent in _premium and not tiene_premium %}bg-yellow-50{% endif %}">
                     <td class="px-4 py-3 font-semibold">
                         {{ ent }}
