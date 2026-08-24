@@ -1,0 +1,89 @@
+{# Aviso de sync viejo, compartido por /rowa y /rowa/planilla.
+
+   El stock es el crítico: el depósito se calcula como stock_total − robot, así
+   que con datos viejos la planilla manda a caminar el depósito a buscar
+   mercadería que ya se vendió. Por eso el aviso es prominente y trae el botón
+   para sincronizar en el momento, en vez de mandar a otra pantalla. #}
+{% set viejos = syncs | selectattr('viejo') | list %}
+{% if viejos %}
+<div id="rowa-sync-aviso"
+     class="rounded-lg border-2 border-amber-500/50 bg-amber-500/10 p-4 mb-4">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <p class="text-sm font-bold text-amber-200">
+        ⚠ Los datos de ObServer están viejos
+      </p>
+      <ul class="text-[11px] text-[color:var(--ds-text-mute)] mt-1.5 space-y-0.5">
+        {% for s in viejos %}
+        <li>
+          <b class="text-amber-200">{{ s.entidad }}</b> —
+          {% if s.nunca %}
+            nunca se sincronizó
+          {% elif s.minutos >= 1440 %}
+            hace {{ (s.minutos / 1440) | round | int }} día(s)
+          {% elif s.minutos >= 60 %}
+            hace {{ (s.minutos / 60) | round(1) }} h
+          {% else %}
+            hace {{ s.minutos }} min
+          {% endif %}
+          <span class="opacity-60">(debería ser cada
+            {% if s.tope_min >= 1440 %}{{ (s.tope_min / 1440) | round | int }} día(s){% else %}{{ s.tope_min }} min{% endif %})</span>
+        </li>
+        {% endfor %}
+      </ul>
+      <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-2 leading-relaxed max-w-2xl">
+        El depósito se calcula restando lo que hay en el robot al stock de ObServer.
+        Con el stock desactualizado, la planilla puede mandar a buscar mercadería que ya
+        se vendió.
+      </p>
+    </div>
+    <button type="button" id="rowa-sync-btn" onclick="rowaSincronizar(this)"
+            data-entidades="{{ viejos | map(attribute='entidad') | join(',') }}"
+            class="px-3 py-1.5 rounded text-sm bg-amber-400 text-black font-semibold whitespace-nowrap">
+      ↻ Sincronizar ahora
+    </button>
+  </div>
+  <div id="rowa-sync-estado" class="hidden mt-3 text-[11px] font-mono text-amber-200"></div>
+</div>
+
+<script>
+// Corre los syncs viejos de a uno y recarga al terminar. De a uno y no en
+// paralelo a proposito: son consultas pesadas contra ObServer y lanzarlas
+// juntas solo hace que las dos tarden mas.
+function rowaSincronizar(btn) {
+  var entidades = (btn.dataset.entidades || '').split(',').filter(Boolean);
+  if (!entidades.length) { return; }
+  var estado = document.getElementById('rowa-sync-estado');
+  btn.disabled = true;
+  btn.textContent = 'Sincronizando…';
+  btn.classList.add('opacity-60');
+  estado.classList.remove('hidden');
+
+  var i = 0;
+  function siguiente() {
+    if (i >= entidades.length) {
+      estado.textContent = 'Listo. Recargando…';
+      location.reload();
+      return;
+    }
+    var ent = entidades[i];
+    estado.textContent = 'Sincronizando ' + ent + '… (' + (i + 1) + ' de ' + entidades.length + ')';
+    fetch('/admin/observer-sync/' + encodeURIComponent(ent), {
+      method: 'POST',
+      headers: {'X-Requested-With': 'XMLHttpRequest'}
+    })
+    .then(function (r) { return r.ok ? r : Promise.reject(r.status); })
+    .then(function () { i++; siguiente(); })
+    .catch(function (e) {
+      // Sin recargar: si algo falla conviene que quede a la vista y no que la
+      // pagina se refresque y borre el error.
+      estado.textContent = 'Falló el sync de ' + ent + ' (' + e + '). Probá desde /admin/observer-sync.';
+      btn.disabled = false;
+      btn.textContent = '↻ Reintentar';
+      btn.classList.remove('opacity-60');
+    });
+  }
+  siguiente();
+}
+</script>
+{% endif %}

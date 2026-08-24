@@ -379,6 +379,48 @@ def sync_laboratorios(session):
     return {'upsert': n, 'duracion_ms': duracion}
 
 
+def sync_rowa_productos(session):
+    """Capacidad del robot por articulo, de `Varios.Rowa_Productos`.
+
+    Es la unica fuente del dato: el robot no lo expone. Ver el docstring de
+    `database.ObsRowaProducto` para por que no sirve `ObsStock.maximo`.
+
+    Se traen TODAS las filas, tambien las que tienen `CantidadMaxima` en 0 o
+    NULL: distinguir "cupo cero" de "articulo que ni figura" importa a la hora de
+    armar la planilla de carga.
+    """
+    from database import ObsRowaProducto, now_ar
+    t0 = time.time()
+    conn = _connect()
+    if conn is None:
+        raise RuntimeError('ObServer no configurado o pymssql no disponible')
+    n = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("""
+                SELECT IdProducto, CantidadMaxima, NuevaCantidadMaxima
+                FROM Varios.Rowa_Productos
+            """)
+            for r in cur.fetchall():
+                _upsert_obs(
+                    session, ObsRowaProducto, 'producto_observer',
+                    int(r['IdProducto']),
+                    cantidad_maxima=(int(r['CantidadMaxima'])
+                                     if r['CantidadMaxima'] is not None else None),
+                    nueva_cantidad_maxima=(int(r['NuevaCantidadMaxima'])
+                                           if r['NuevaCantidadMaxima'] is not None else None),
+                    sync_en=now_ar(),
+                )
+                n += 1
+                if n % 5000 == 0:
+                    session.flush()
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'rowa_productos', n, duracion)
+    return {'upsert': n, 'duracion_ms': duracion}
+
+
 def sync_rubros(session):
     from database import ObsRubro, now_ar
     t0 = time.time()

@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Planilla de carga{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block main %}
+<div class="max-w-7xl mx-auto px-4 py-6">
+
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <div>
+      <h1 class="text-xl font-bold flex items-center gap-2">📋 Planilla de carga</h1>
+      {% if not sin_robot %}
+      <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-0.5">
+        Qué mover del depósito al robot · generado {{ generado.strftime('%H:%M') }}</p>
+      {% endif %}
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{{ url_for('rowa_dashboard') }}"
+         class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">← Volver</a>
+      {% if not sin_robot %}
+      <a href="{{ url_for('rowa_planilla', refresh=1, dias=totales.dias_autonomia) }}"
+         class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">↻ Actualizar</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if syncs %}{% include '_rowa_frescura.html' %}{% endif %}
+
+  {% if sin_robot %}
+  <div class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+    <p class="text-sm">No se pudo hablar con el robot.</p>
+    {% if error %}<p class="text-[11px] text-[color:var(--ds-text-mute)] mt-2 font-mono">{{ error }}</p>{% endif %}
+  </div>
+
+  {% elif sin_sync %}
+  {# Sin el sync corrido no hay maximos: la planilla saldria vacia y nadie
+     entenderia por que. #}
+  <div class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+    <p class="text-sm font-semibold">Falta correr el sync de capacidades.</p>
+    <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-1 leading-relaxed">
+      La planilla necesita la <code>Cantidad Máxima</code> de cada artículo, que vive en
+      ObServer (<code>Varios.Rowa_Productos</code>). Corré el sync
+      <b>rowa_productos</b> una vez y volvé a entrar.</p>
+  </div>
+
+  {% else %}
+
+  {# ---- Resumen ---- #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="rounded-lg border border-[color:var(--ds-mint)]/40 bg-[color:var(--ds-mint)]/10 p-3">
+      <div class="text-2xl font-bold text-[color:var(--ds-mint)]">{{ totales.packs_sug }}</div>
+      <div class="text-[11px] text-[color:var(--ds-text-mute)]">packs a mover <b>(sugerido)</b></div>
+    </div>
+    <div class="rounded-lg border border-[color:var(--ds-surface-border)] p-3">
+      <div class="text-2xl font-bold">{{ totales.packs_max }}</div>
+      <div class="text-[11px] text-[color:var(--ds-text-mute)]">packs si se llena al máximo</div>
+    </div>
+    <div class="rounded-lg border border-[color:var(--ds-surface-border)] p-3">
+      <div class="text-2xl font-bold">{{ totales.articulos }}</div>
+      <div class="text-[11px] text-[color:var(--ds-text-mute)]">artículos en la lista</div>
+    </div>
+    <div class="rounded-lg border border-rose-500/40 bg-rose-500/[0.07] p-3">
+      <div class="text-2xl font-bold text-rose-300">{{ totales.vacios }}</div>
+      <div class="text-[11px] text-[color:var(--ds-text-mute)]">con el robot en cero</div>
+    </div>
+  </div>
+
+  {# ---- De donde salen las salidas ---- #}
+  <div class="rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.02] p-3 mb-4">
+    <p class="text-[11px] text-[color:var(--ds-text-mute)] leading-relaxed">
+      <b>Autonomía {{ totales.dias_autonomia }} días.</b>
+      Las salidas mezclan lo medido en el robot con las ventas de ObServer, según cuántos
+      snapshots haya: hoy la ventana es de <b>{{ totales.dias_ventana }} días</b>, así que
+      la medición directa pesa <b>{{ (totales.confianza * 100) | round | int }}%</b> y el
+      resto lo aporta ObServer. A medida que se acumulen snapshots ese apoyo se apaga solo.
+      {% if totales.sin_senal %}
+      <br>{{ totales.sin_senal }} artículos no tienen señal suficiente: ahí se respeta el
+      máximo y no se sugiere nada.
+      {% endif %}
+    </p>
+  </div>
+
+  {# ---- Filtros ---- #}
+  <div class="flex flex-wrap items-center gap-2 mb-3">
+    <input id="pl-buscar" type="search" placeholder="🔎 Buscar…" oninput="plFiltrar()"
+           class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)] w-48">
+    <select id="pl-lab" onchange="plFiltrar()"
+            class="px-2 py-1 text-sm rounded border border-[color:var(--ds-surface-border)]"
+            style="background:#2c2c2e;color:inherit">
+      <option value="">Todo laboratorio</option>
+      {% for lab in labs_disponibles %}<option value="{{ lab }}">{{ lab }}</option>{% endfor %}
+    </select>
+    <select id="pl-aviso" onchange="plFiltrar()"
+            class="px-2 py-1 text-sm rounded border border-[color:var(--ds-surface-border)]"
+            style="background:#2c2c2e;color:inherit">
+      <option value="">Todos</option>
+      <option value="vacio">Sólo robot en cero</option>
+      <option value="parcial">Sólo carga parcial</option>
+      <option value="corregir">Sólo a corregir el máximo</option>
+      <option value="diferencia">Sólo diferencias</option>
+    </select>
+    <span id="pl-count" class="text-xs text-[color:var(--ds-text-mute)] ml-auto"></span>
+  </div>
+
+  <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)]">
+    <table class="w-full text-sm" id="pl-tabla">
+      <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
+        <tr>
+          <th class="text-left px-3 py-2">Producto</th>
+          <th class="text-left px-3 py-2">Laboratorio</th>
+          <th class="text-right px-3 py-2 w-16">Robot</th>
+          <th class="text-right px-3 py-2 w-14">Máx</th>
+          <th class="text-right px-3 py-2 w-20">Depósito</th>
+          <th class="text-right px-3 py-2 w-20">Sal/día</th>
+          <th class="text-right px-3 py-2 w-20">Cobert.</th>
+          <th class="text-right px-3 py-2 w-24 bg-[color:var(--ds-mint)]/10">A mover</th>
+          <th class="text-right px-3 py-2 w-20">si al máx</th>
+          <th class="text-left px-3 py-2 w-44">Avisos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+        <tr class="pl-fila border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]
+                   {% if f.diferencia %}bg-rose-500/[0.07]{% elif f.vacio %}bg-amber-500/[0.05]{% endif %}"
+            data-nombre="{{ (f.nombre or '') | lower }}"
+            data-lab="{{ f.laboratorio }}"
+            data-vacio="{{ '1' if f.vacio else '0' }}"
+            data-parcial="{{ '1' if f.parcial else '0' }}"
+            data-corregir="{{ '1' if f.corregir_a else '0' }}"
+            data-diferencia="{{ '1' if f.diferencia else '0' }}">
+          <td class="px-3 py-1.5">{{ f.nombre }}</td>
+          <td class="px-3 py-1.5 text-[color:var(--ds-text-mute)]">{{ f.laboratorio or '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono">{{ f.en_robot }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-[color:var(--ds-text-mute)]">{{ f.maximo if f.maximo is not none else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono {% if f.diferencia %}text-rose-300 font-bold{% endif %}">{{ f.deposito if f.deposito is not none else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-[color:var(--ds-text-mute)]">{{ f.salidas_dia }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-[color:var(--ds-text-mute)]">{{ (f.cobertura_d ~ ' d') if f.cobertura_d is not none else '—' }}</td>
+          {# El sugerido es el que va: resaltado, y el del maximo al lado como referencia. #}
+          <td class="px-3 py-1.5 text-right bg-[color:var(--ds-mint)]/10">
+            <span class="font-mono font-bold text-base {% if f.a_mover_sug %}text-[color:var(--ds-mint)]{% else %}text-[color:var(--ds-text-mute)]{% endif %}">{{ f.a_mover_sug }}</span>
+          </td>
+          <td class="px-3 py-1.5 text-right font-mono text-[color:var(--ds-text-mute)]">{{ f.a_mover_max }}</td>
+          <td class="px-3 py-1.5">
+            {% if f.vacio %}<span class="text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded px-1">VACÍO</span>{% endif %}
+            {% if f.parcial %}<span class="text-[9px] bg-white/10 text-[color:var(--ds-text-mute)] border border-[color:var(--ds-surface-border)] rounded px-1" title="El depósito no alcanza para llenar el hueco">parcial</span>{% endif %}
+            {% if f.corregir_a %}<span class="text-[9px] bg-violet-500/20 text-violet-300 border border-violet-500/40 rounded px-1" title="El máximo no se justifica con la demanda. Editarlo en ObServer.">máx → {{ f.corregir_a }}</span>{% endif %}
+            {% if f.diferencia %}<span class="text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded px-1" title="El robot tiene más que ObServer: el depósito no es confiable acá">DIFERENCIA</span>{% endif %}
+            {% if f.sin_maximo %}<span class="text-[9px] bg-sky-500/20 text-sky-300 border border-sky-500/40 rounded px-1" title="Falta cargarle la Cantidad Máxima en ObServer">sin máx</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-[10px] text-[color:var(--ds-text-mute)] mt-3 italic leading-relaxed">
+    <b>A mover</b> es la cifra sugerida por la demanda, que es la que conviene ejecutar.
+    <b>Si al máx</b> es lo que pediría llenar hasta la Cantidad Máxima de ObServer, y queda
+    de referencia. Las dos están limitadas por lo que haya en el depósito.
+    Un artículo que aparece <i>parcial</i> una y otra vez no tiene un problema de carga:
+    tiene el mínimo de compra corto.
+  </p>
+
+  {% endif %}
+</div>
+
+<script>
+function plFiltrar() {
+  var q = (document.getElementById('pl-buscar').value || '').toLowerCase();
+  var lab = document.getElementById('pl-lab').value;
+  var av = document.getElementById('pl-aviso').value;
+  var vis = 0, total = 0;
+  document.querySelectorAll('tr.pl-fila').forEach(function (tr) {
+    total++;
+    var ok = (!q   || (tr.dataset.nombre || '').indexOf(q) !== -1)
+          && (!lab || tr.dataset.lab === lab)
+          && (!av  || tr.dataset[av] === '1');
+    tr.style.display = ok ? '' : 'none';
+    if (ok) vis++;
+  });
+  var c = document.getElementById('pl-count');
+  if (c) { c.textContent = vis + ' de ' + total; }
+}
+document.addEventListener('DOMContentLoaded', function () {
+  if (document.getElementById('pl-buscar')) { plFiltrar(); }
+});
+</script>
+{% endblock %}

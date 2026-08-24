@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-24 17:46 · rama `feat/rowa-diferencias-stock` · commit `21a5fb3`
+Generado: 2026-08-24 18:41 · rama `feat/rowa-planilla-carga` · commit `4bc03d7`
 
-**797 rutas** en 77 archivos · **128 modelos** · **21 syncs** · **35 services** · **11 parsers**
+**798 rutas** en 77 archivos · **129 modelos** · **22 syncs** · **36 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -16,26 +16,27 @@ Generado: 2026-08-24 17:46 · rama `feat/rowa-diferencias-stock` · commit `21a5
 | Función | Lee de | Línea |
 |---|---|---|
 | `sync_laboratorios` | `DW.Laboratorios` | [356](../observer_source.py#L356) |
-| `sync_rubros` | `DW.Rubros` | [382](../observer_source.py#L382) |
-| `sync_subrubros` | `DW.Subrubros` | [410](../observer_source.py#L410) |
-| `sync_nombres_drogas` | `DW.NombresDrogas` | [440](../observer_source.py#L440) |
-| `sync_productos` | `DW.Productos` | [468](../observer_source.py#L468) |
-| `sync_precios_vigentes` ⭐ | `Gestion.ProductosPreciosVigentes` | [517](../observer_source.py#L517) |
-| `sync_condiciones_comerciales` ⭐ | `Gestion.CondicionesComerciales` | [597](../observer_source.py#L597) |
-| `sync_fraccionado_master` | — | [717](../observer_source.py#L717) |
-| `sync_colegios_medicos` | `DW.ColegiosMedicos` | [790](../observer_source.py#L790) |
-| `sync_medicos` | `DW.Medicos` | [818](../observer_source.py#L818) |
-| `sync_medicos_matriculas` | `DW.MedicosMatriculas` | [848](../observer_source.py#L848) |
-| `sync_ventas_detalle` | `DW.ProductosVendidos` | [887](../observer_source.py#L887) |
-| `sync_operadores` | `DW.OperadoresVenta` | [1069](../observer_source.py#L1069) |
-| `sync_grupos_clientes` | `DW.GruposClientes` | [1100](../observer_source.py#L1100) |
-| `sync_categorias_clientes` | `DW.CategoriasClientes` | [1126](../observer_source.py#L1126) |
-| `sync_obras_sociales` | `DW.ObrasSociales` | [1152](../observer_source.py#L1152) |
-| `sync_convenios` | `DW.Convenios` | [1178](../observer_source.py#L1178) |
-| `sync_planes` | `DW.Planes` | [1210](../observer_source.py#L1210) |
-| `sync_clientes` | `DW.Clientes` | [1243](../observer_source.py#L1243) |
-| `sync_stock` | `DW.StockFarmaciasProductos` | [1303](../observer_source.py#L1303) |
-| `sync_ventas_mensuales` | `DW.ProductosVendidos` | [1354](../observer_source.py#L1354) |
+| `sync_rowa_productos` | — | [382](../observer_source.py#L382) |
+| `sync_rubros` | `DW.Rubros` | [424](../observer_source.py#L424) |
+| `sync_subrubros` | `DW.Subrubros` | [452](../observer_source.py#L452) |
+| `sync_nombres_drogas` | `DW.NombresDrogas` | [482](../observer_source.py#L482) |
+| `sync_productos` | `DW.Productos` | [510](../observer_source.py#L510) |
+| `sync_precios_vigentes` ⭐ | `Gestion.ProductosPreciosVigentes` | [559](../observer_source.py#L559) |
+| `sync_condiciones_comerciales` ⭐ | `Gestion.CondicionesComerciales` | [639](../observer_source.py#L639) |
+| `sync_fraccionado_master` | — | [759](../observer_source.py#L759) |
+| `sync_colegios_medicos` | `DW.ColegiosMedicos` | [832](../observer_source.py#L832) |
+| `sync_medicos` | `DW.Medicos` | [860](../observer_source.py#L860) |
+| `sync_medicos_matriculas` | `DW.MedicosMatriculas` | [890](../observer_source.py#L890) |
+| `sync_ventas_detalle` | `DW.ProductosVendidos` | [929](../observer_source.py#L929) |
+| `sync_operadores` | `DW.OperadoresVenta` | [1111](../observer_source.py#L1111) |
+| `sync_grupos_clientes` | `DW.GruposClientes` | [1142](../observer_source.py#L1142) |
+| `sync_categorias_clientes` | `DW.CategoriasClientes` | [1168](../observer_source.py#L1168) |
+| `sync_obras_sociales` | `DW.ObrasSociales` | [1194](../observer_source.py#L1194) |
+| `sync_convenios` | `DW.Convenios` | [1220](../observer_source.py#L1220) |
+| `sync_planes` | `DW.Planes` | [1252](../observer_source.py#L1252) |
+| `sync_clientes` | `DW.Clientes` | [1285](../observer_source.py#L1285) |
+| `sync_stock` | `DW.StockFarmaciasProductos` | [1345](../observer_source.py#L1345) |
+| `sync_ventas_mensuales` | `DW.ProductosVendidos` | [1396](../observer_source.py#L1396) |
 
 ## Modelos (`database.py`)
 
@@ -88,7 +89,7 @@ Generado: 2026-08-24 17:46 · rama `feat/rowa-diferencias-stock` · commit `21a5
 | `kellerhoff_equivalencia` | `KellerhoffEquivalencia` | [1616](../database.py#L1616) |
 | `laboratorio_drogueria` | `LaboratorioDrogueria` | [1456](../database.py#L1456) |
 | `laboratorios` | `Laboratorio` | [91](../database.py#L91) |
-| `minimos_manuales` | `MinimoManual` | [3198](../database.py#L3198) |
+| `minimos_manuales` | `MinimoManual` | [3228](../database.py#L3228) |
 | `modulo_packs` | `ModuloPack` | [2054](../database.py#L2054) |
 | `modulos` | `Modulo` | [2041](../database.py#L2041) |
 | `motivo_devolucion` | `MotivoDevolucion` | [2483](../database.py#L2483) |
@@ -108,6 +109,7 @@ Generado: 2026-08-24 17:46 · rama `feat/rowa-diferencias-stock` · commit `21a5
 | `obs_operadores` | `ObsOperador` | [322](../database.py#L322) |
 | `obs_planes` | `ObsPlan` | [366](../database.py#L366) |
 | `obs_productos` | `ObsProducto` | [142](../database.py#L142) |
+| `obs_rowa_productos` | `ObsRowaProducto` | [3198](../database.py#L3198) |
 | `obs_rubros` | `ObsRubro` | [120](../database.py#L120) |
 | `obs_stock` | `ObsStock` | [181](../database.py#L181) |
 | `obs_stock_snapshot_diario` | `ObsStockSnapshotDiario` | [1162](../database.py#L1162) |
@@ -974,21 +976,21 @@ Generado: 2026-08-24 17:46 · rama `feat/rowa-diferencias-stock` · commit `21a5
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/admin/fraccionado-master/run` | POST | [`fraccionado_master_run`](../routes/observer_sync.py#L543) |
-| `/admin/observer-config` | POST | [`observer_config_save`](../routes/observer_sync.py#L618) |
-| `/admin/observer-match-productos` | POST | [`observer_match_productos`](../routes/observer_sync.py#L524) |
-| `/admin/observer-push-render` | POST | [`observer_push_render`](../routes/observer_sync.py#L701) |
-| `/admin/observer-sync` | GET | [`observer_sync_panel`](../routes/observer_sync.py#L388) |
-| `/admin/observer-sync/<entidad>` | POST | [`observer_sync_run`](../routes/observer_sync.py#L445) |
-| `/admin/observer/diagnostico` | GET | [`observer_diagnostico`](../routes/observer_sync.py#L609) |
-| `/admin/push-cadencias` | POST | [`push_cadencias`](../routes/observer_sync.py#L669) |
-| `/admin/push-productos-master` | POST | [`push_productos_master`](../routes/observer_sync.py#L635) |
-| `/admin/sync-audit` | GET | [`sync_audit_panel`](../routes/observer_sync.py#L311) |
-| `/api/auto-sync` | POST | [`api_auto_sync`](../routes/observer_sync.py#L738) |
-| `/api/auto-sync/status` | GET | [`api_auto_sync_status`](../routes/observer_sync.py#L781) |
-| `/producto/<int:producto_id>/desvincular` | POST | [`producto_desvincular`](../routes/observer_sync.py#L727) |
-| `/producto/<int:producto_id>/vincular/<int:observer_id>` | POST | [`producto_vincular`](../routes/observer_sync.py#L595) |
-| `/productos/sin-vincular` | GET | [`productos_sin_vincular`](../routes/observer_sync.py#L567) |
+| `/admin/fraccionado-master/run` | POST | [`fraccionado_master_run`](../routes/observer_sync.py#L545) |
+| `/admin/observer-config` | POST | [`observer_config_save`](../routes/observer_sync.py#L620) |
+| `/admin/observer-match-productos` | POST | [`observer_match_productos`](../routes/observer_sync.py#L526) |
+| `/admin/observer-push-render` | POST | [`observer_push_render`](../routes/observer_sync.py#L703) |
+| `/admin/observer-sync` | GET | [`observer_sync_panel`](../routes/observer_sync.py#L389) |
+| `/admin/observer-sync/<entidad>` | POST | [`observer_sync_run`](../routes/observer_sync.py#L446) |
+| `/admin/observer/diagnostico` | GET | [`observer_diagnostico`](../routes/observer_sync.py#L611) |
+| `/admin/push-cadencias` | POST | [`push_cadencias`](../routes/observer_sync.py#L671) |
+| `/admin/push-productos-master` | POST | [`push_productos_master`](../routes/observer_sync.py#L637) |
+| `/admin/sync-audit` | GET | [`sync_audit_panel`](../routes/observer_sync.py#L312) |
+| `/api/auto-sync` | POST | [`api_auto_sync`](../routes/observer_sync.py#L740) |
+| `/api/auto-sync/status` | GET | [`api_auto_sync_status`](../routes/observer_sync.py#L783) |
+| `/producto/<int:producto_id>/desvincular` | POST | [`producto_desvincular`](../routes/observer_sync.py#L729) |
+| `/producto/<int:producto_id>/vincular/<int:observer_id>` | POST | [`producto_vincular`](../routes/observer_sync.py#L597) |
+| `/productos/sin-vincular` | GET | [`productos_sin_vincular`](../routes/observer_sync.py#L569) |
 
 ### `routes/ofertas_bot.py`
 
@@ -1277,18 +1279,19 @@ Generado: 2026-08-24 17:46 · rama `feat/rowa-diferencias-stock` · commit `21a5
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L87) |
-| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L691) |
-| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L658) |
-| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L503) |
-| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L574) |
-| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L625) |
-| `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L239) |
-| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L349) |
-| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L186) |
-| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L295) |
-| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L215) |
-| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L357) |
-| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L773) |
+| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L838) |
+| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L805) |
+| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L650) |
+| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L721) |
+| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L772) |
+| `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L386) |
+| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L496) |
+| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L190) |
+| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L442) |
+| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L219) |
+| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L504) |
+| `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L304) |
+| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L920) |
 
 ### `routes/sucursales.py`
 
@@ -1390,6 +1393,7 @@ Generado: 2026-08-24 17:46 · rama `feat/rowa-diferencias-stock` · commit `21a5
 | [`rowa_client.py`](../services/rowa_client.py) | Conector WWKS2 con el robot BD Rowa (Mosaic). |
 | [`rowa_export.py`](../services/rowa_export.py) | Genera las 3 planillas del robot Rowa (Stock, Optimización, Capacidad) en vivo. |
 | [`rowa_observer.py`](../services/rowa_observer.py) | Cruce del stock del robot Rowa con datos reales de ObServer. |
+| [`rowa_planilla.py`](../services/rowa_planilla.py) | Planilla de carga del robot: qué mover del depósito a la máquina. |
 | [`transferencias.py`](../services/transferencias.py) | Análisis de transferencias entre sucursales (comparador N-way por par). |
 | [`ventas_comparativa.py`](../services/ventas_comparativa.py) | Comparación de ventas año contra año, agregada por mes. |
 | [`ventas_vendedor.py`](../services/ventas_vendedor.py) | Estadísticas de ventas por vendedor (operador del POS). |
