@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-24 18:47 · rama `feat/rowa-planilla-carga` · commit `3f02a3e`
+Generado: 2026-08-24 18:55 · rama `feat/rowa-planilla-carga` · commit `e199b44`
 
-**798 rutas** en 77 archivos · **129 modelos** · **22 syncs** · **36 services** · **11 parsers**
+**799 rutas** en 77 archivos · **129 modelos** · **22 syncs** · **37 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -1279,19 +1279,20 @@ Generado: 2026-08-24 18:47 · rama `feat/rowa-planilla-carga` · commit `3f02a3e
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L87) |
-| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L838) |
-| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L805) |
-| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L650) |
-| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L721) |
-| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L772) |
-| `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L386) |
-| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L496) |
+| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L895) |
+| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L862) |
+| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L707) |
+| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L778) |
+| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L829) |
+| `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L443) |
+| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L553) |
 | `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L190) |
-| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L442) |
+| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L499) |
 | `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L219) |
-| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L504) |
-| `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L304) |
-| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L920) |
+| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L561) |
+| `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L426) |
+| `/rowa/planilla/export.<fmt>` | GET | [`rowa_planilla_export`](../routes/rowa.py#L304) |
+| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L977) |
 
 ### `routes/sucursales.py`
 
@@ -1394,6 +1395,7 @@ Generado: 2026-08-24 18:47 · rama `feat/rowa-planilla-carga` · commit `3f02a3e
 | [`rowa_export.py`](../services/rowa_export.py) | Genera las 3 planillas del robot Rowa (Stock, Optimización, Capacidad) en vivo. |
 | [`rowa_observer.py`](../services/rowa_observer.py) | Cruce del stock del robot Rowa con datos reales de ObServer. |
 | [`rowa_planilla.py`](../services/rowa_planilla.py) | Planilla de carga del robot: qué mover del depósito a la máquina. |
+| [`rowa_planilla_export.py`](../services/rowa_planilla_export.py) | Impresión de la planilla de carga del robot: PDF para caminar y XLSX. |
 | [`transferencias.py`](../services/transferencias.py) | Análisis de transferencias entre sucursales (comparador N-way por par). |
 | [`ventas_comparativa.py`](../services/ventas_comparativa.py) | Comparación de ventas año contra año, agregada por mes. |
 | [`ventas_vendedor.py`](../services/ventas_vendedor.py) | Estadísticas de ventas por vendedor (operador del POS). |

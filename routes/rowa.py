@@ -299,16 +299,70 @@ def init_app(app):
             out[f.producto_observer] = (snap, obs, f.cantidad, f.nombre_obs or f.nombre)
         return out, dias_ventana
 
-    @app.route("/rowa/planilla")
+    @app.route("/rowa/planilla/export.<fmt>")
     @login_required
-    def rowa_planilla():
-        """Planilla de carga: qué mover del depósito al robot.
+    def rowa_planilla_export(fmt):
+        """Baja la planilla en PDF (para caminar el depósito) o XLSX.
+
+        Acepta los mismos parámetros que la pantalla —`dias` y los filtros— para
+        que el papel coincida con lo que el operador está mirando. Los filtros de
+        la pantalla son client-side, así que el botón los reenvía.
+        """
+        if fmt not in ("pdf", "xlsx"):
+            abort(404)
+        try:
+            planilla, _labs, generado, _syncs, sin_sync = _armar_planilla(
+                request.args.get("dias", type=int))
+        except (RowaError, OSError) as e:
+            abort(503, description=str(e))
+        if sin_sync:
+            abort(409, description="falta correr el sync rowa_productos")
+
+        filas = planilla["filas"]
+        q = (request.args.get("q") or "").strip().lower()
+        lab = (request.args.get("lab") or "").strip()
+        aviso = (request.args.get("aviso") or "").strip()
+        if q:
+            filas = [f for f in filas if q in (f["nombre"] or "").lower()]
+        if lab:
+            filas = [f for f in filas if f["laboratorio"] == lab]
+        if aviso == "vacio":
+            filas = [f for f in filas if f["vacio"]]
+        elif aviso == "parcial":
+            filas = [f for f in filas if f["parcial"]]
+        elif aviso == "corregir":
+            filas = [f for f in filas if f["corregir_a"]]
+        elif aviso == "diferencia":
+            filas = [f for f in filas if f["diferencia"]]
+
+        # Los totales se recalculan sobre lo filtrado: si el papel muestra un
+        # laboratorio, el encabezado tiene que decir los packs de ESE laboratorio.
+        totales = dict(planilla["totales"])
+        totales["articulos"] = len(filas)
+        totales["packs_sug"] = sum(f["a_mover_sug"] for f in filas)
+        totales["packs_max"] = sum(f["a_mover_max"] for f in filas)
+
+        from services.rowa_planilla_export import construir_pdf, construir_xlsx
+        if fmt == "pdf":
+            contenido = construir_pdf(filas, totales, generado)
+            mime = "application/pdf"
+        else:
+            contenido = construir_xlsx(filas, totales, generado)
+            mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        nombre = "Planilla-carga-%s.%s" % (generado.strftime("%Y-%m-%d"), fmt)
+        return Response(contenido, mimetype=mime,
+                        headers={"Content-Disposition": 'attachment; filename="%s"' % nombre})
+
+    def _armar_planilla(dias_pedidos=None, refresh=False):
+        """Junta la entrada y arma la planilla. La usan la pantalla y las descargas.
 
         Se arma desde ObServer y no desde el robot: `stock_info()` sólo devuelve
         artículos que tienen packs adentro, así que partir de ahí pierde el caso
         más fuerte — robot en CERO con mercadería esperando en el depósito.
 
         La lógica vive en `services/rowa_planilla`; acá sólo se junta la entrada.
+        Devuelve (planilla, labs_disponibles, generado, syncs, sin_sync) y deja
+        que `RowaError` / `OSError` suban: cada llamador decide qué mostrar.
         """
         from sqlalchemy import func as _f
 
@@ -320,14 +374,9 @@ def init_app(app):
         )
         from services.rowa_planilla import DIAS_AUTONOMIA, construir_planilla
 
-        dias = request.args.get("dias", type=int) or DIAS_AUTONOMIA
+        dias = dias_pedidos or DIAS_AUTONOMIA
         dias = max(1, min(dias, 60))
-
-        try:
-            data = _cargar(refresh=bool(request.args.get("refresh")))
-        except (RowaError, OSError) as e:
-            return render_template("rowa_planilla.html", sin_robot=True, error=str(e))
-
+        data = _cargar(refresh=refresh)
         filas = data["filas"]
         with get_db() as session:
             salidas, dias_ventana = _salidas_para_planilla(session, filas)
@@ -368,17 +417,25 @@ def init_app(app):
         with get_db() as session:
             syncs = _frescura_syncs(session)
 
+        # Sin el sync corrido no hay maximos y la planilla sale vacia: se avisa
+        # en vez de mostrar una pantalla en blanco sin explicacion.
+        return planilla, labs_disponibles, data["generado"], syncs, not maximos
+
+    @app.route("/rowa/planilla")
+    @login_required
+    def rowa_planilla():
+        """Pantalla de la planilla de carga."""
+        try:
+            planilla, labs, generado, syncs, sin_sync = _armar_planilla(
+                request.args.get("dias", type=int),
+                refresh=bool(request.args.get("refresh")))
+        except (RowaError, OSError) as e:
+            return render_template("rowa_planilla.html", sin_robot=True, error=str(e))
         return render_template(
             "rowa_planilla.html",
-            syncs=syncs,
-            sin_robot=False,
-            generado=data["generado"],
-            filas=planilla["filas"],
-            totales=planilla["totales"],
-            labs_disponibles=labs_disponibles,
-            # Sin el sync corrido no hay maximos y la planilla sale vacia: se
-            # avisa en vez de mostrar una pantalla en blanco sin explicacion.
-            sin_sync=not maximos,
+            syncs=syncs, sin_robot=False, generado=generado,
+            filas=planilla["filas"], totales=planilla["totales"],
+            labs_disponibles=labs, sin_sync=sin_sync,
         )
 
     @app.route("/rowa/diferencias")
