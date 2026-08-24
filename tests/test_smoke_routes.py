@@ -285,3 +285,12 @@ def test_detalle_marca_tildado_el_recupero_que_no_es_factura(smoke_client):
     # El badge "no está" tiene un title propio; buscar el texto suelto matchea
     # un comentario del CSS de base.html.
     assert 'Kellerhoff te lo cobra' not in html, 'quedó un renglón sin ligar'
+
+
+def test_los_vencimientos_salen_en_formato_argentino(smoke_client):
+    """Se guardan en ISO; la pantalla usa dd/mm/aaaa en todos lados y quedaban
+    '2026-09-22' al lado de fechas '22/08/2026'."""
+    resumen_id, _ = _sembrar_resumen(cerrado=True)
+    html = smoke_client.get(f'/kellerhoff/resumen/{resumen_id}').data.decode('utf-8')
+    assert '22/09/2026' in html
+    assert '2026-09-22' not in html

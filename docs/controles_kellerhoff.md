@@ -195,9 +195,14 @@ UI.
 > **NULL** — o sea que ni siquiera aparecen en la cuenta corriente del proveedor.
 > Si el tilde sólo mirara `facturas`, **un resumen con un recupero quedaría
 > pendiente para siempre** por un comprobante que está perfectamente bien
-> procesado, y con una semana así por mes la pantalla se vuelve mentira en dos
-> meses. Por eso `ResumenProveedorItem` tiene `pago_ajuste_id` además de
+> procesado. Por eso `ResumenProveedorItem` tiene `pago_ajuste_id` además de
 > `factura_id`, y el cruce mira los dos lados.
+>
+> **Ojo con confundirlas con las NC de mercadería**, que sí son `Invoice` con
+> `tipo_comprobante='NCR'` y ligan por el camino normal. En el S34 la NCR de
+> −69.124,56 es de mercadería: el resumen liga **23 de 23** contra los datos
+> reales de Badia. Las financieras se reconocen por el renglón único
+> `RECUPERO NC …` sin barcode (ver `services/kellerhoff_analizador.py`).
 
 ---
 

@@ -216,7 +216,12 @@ def init_app(app):
                                        if r.primer_vencimiento else ''),
                 'generado_en': (r.generado_en.strftime('%d/%m/%Y %H:%M')
                                 if r.generado_en else ''),
-                'vencimientos': _json.loads(r.vencimientos_json or '[]'),
+                # Se guardan en ISO, pero la pantalla usa dd/mm/aaaa en todos
+                # lados: sin esto los vencimientos salían '2026-09-22' al lado
+                # de fechas '22/08/2026'.
+                'vencimientos': [{'fecha': _fmt_iso(v.get('fecha')),
+                                  'importe': v.get('importe')}
+                                 for v in _json.loads(r.vencimientos_json or '[]')],
                 'n_items': n_items, 'n_tildados': n_tildados,
                 'pendientes': n_items - n_tildados, 'cerrado': cerrado,
             }
@@ -476,6 +481,15 @@ def _match_pedido(session, inv: Invoice, comp: dict) -> PedidoEmitido | None:
         if delta <= 5 and (mejor_delta is None or delta < mejor_delta):
             mejor, mejor_delta = p, delta
     return mejor
+
+
+def _fmt_iso(s):
+    """'2026-09-22' → '22/09/2026'. Devuelve lo que entró si no es una fecha ISO."""
+    from datetime import datetime as _dt
+    try:
+        return _dt.strptime(s, '%Y-%m-%d').strftime('%d/%m/%Y')
+    except (TypeError, ValueError):
+        return s or ''
 
 
 def _fmt_periodo(r) -> str:
