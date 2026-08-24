@@ -30,10 +30,11 @@ descubren de casualidad. La cadena:
 | 1 | **Pedido** | ✅ existe | `PedidoEmitido`; `/kellerhoff/sync` lista los ABIERTO sin factura |
 | 2 | **Factura** | ✅ existe | scraper Playwright sobre `/ctacte/ConsultaDeComprobantes` → `Invoice` + items, NC financieras, `FacturaFaltante`, liga a pedido con `_match_pedido` |
 | 3 | **Cuenta corriente** | ✅ existe | [`services/cuenta_corriente.py`](../services/cuenta_corriente.py), `/cuentas-corrientes` |
-| 4 | **Ingreso de mercadería** | ❌ falta | `DW.Recepciones` ya disponible; la UI está escrita y gateada |
-| 5 | **Resumen semanal** | ❌ falta | nada todavía |
+| 4 | **Ingreso de mercadería** | 🟡 motor listo | `observer_source.get_recepciones_factura` + `buscar_recepciones_candidatas` (PR #329). Falta la UI que proponga el candidato |
+| 5 | **Resumen semanal** | ✅ existe | `/kellerhoff/resumenes` (PR #325/#326) |
 
-Tres de cinco están. Faltan los dos extremos.
+Los cinco eslabones existen. Del 4 falta sólo la UI: hoy el operador tipea el
+número de comprobante a mano.
 
 ---
 
@@ -105,6 +106,31 @@ El renglón 138 que sobra es RIVOTRIL 2 mg con TODO en cero (renglón abierto si
 
 Las 199 unidades coinciden con el pie de la factura (`Cant Un: 199`). El cruce
 por unidades funciona.
+
+### Probado en producción (24/08/2026)
+
+Corrido contra el ObServer y la DB reales, con la factura 0046-00255798:
+
+```
+FACTURA          137 ítems · 199 unidades
+CANDIDATA        207663 · score 100 · las cuatro señales coinciden
+                 (la segunda mejor: 5)
+CRUCE            137 coinciden exacto · 0 diferencias de cantidad
+                 0 en la factura que no ingresaron
+                 1 en el ingreso que no está en la factura → el RIVOTRIL en cero
+```
+
+Dos cosas que se aprendieron ahí y valen para cualquier control que se agregue:
+
+**El orden importa.** Antes de sincronizar, esa factura tenía 0 ítems y el
+scoring daba **55** en vez de 100: sin detalle no hay `total_unidades` ni
+`total_articulos` con qué puntuar, y el cruce hubiera marcado los 138 renglones
+del ingreso como "sobrantes". **Primero se baja el detalle, después se cruza.**
+
+**El 99% de las facturas de Kellerhoff no tiene detalle.** Al correr el sync
+había **5019 de 5044** vacías. El sync de 7 días arregló su rango (y esa factura
+recuperó sus 137 renglones sola, gracias al fix de `skip_nros` del PR #327/#328),
+pero el histórico sigue sin bajar.
 
 ### ⚠ El número de comprobante en ObServer es texto libre y está sucio
 
@@ -258,18 +284,39 @@ bug. El de Kellerhoff quedó con el patrón viejo.
       hardcodeado para ObServer: hace falta discriminar una fila por sync.
 - [ ] Mientras tanto: **no clickear dos veces Sincronizar**.
 
-### P1 — El eslabón 4 sigue sin existir
+### P1 — Del eslabón 4 falta la UI
 
-- [ ] **`observer_source.get_recepciones_factura`** leyendo `DW.Recepciones`. La
-      UI ya está escrita y gateada con `hasattr`
-      ([`routes/observer.py:34`](../routes/observer.py),
-      `routes/invoices.py:958`, `templates/compare.html:337`) — se enciende sola.
-      Reemplaza la subida manual del Excel del ERP y saca del medio el lío de
-      `erp_carga_id`. **Hacerlo por `IdProveedor`, no Kellerhoff-only.**
+El motor está hecho y **probado en producción** (ver abajo). Lo que falta es
+sacarle el tipeo al operador:
+
+- [ ] **Proponer el candidato en vez de pedir el número.**
+      `buscar_recepciones_candidatas` ya devuelve los candidatos puntuados; la
+      ruta `/observer/factura/<id>/sync` sigue pidiendo `comprobante` en un
+      input. Falta la pantalla que muestre la mejor con su contexto (fecha,
+      renglones, unidades, motivos del score) y un botón de confirmar.
+- [ ] **Guardar la asociación** factura ↔ `IdRecepcion` para no repetir el
+      trabajo ni volver a preguntar.
+- [ ] **Mapear `Provider` → `IdProveedor` de ObServer.** Hoy hay que pasarlo a
+      mano: `DW.Proveedores` no tiene CUIT (verificado), sólo razón social.
+      Son 5 droguerías, se setea una vez. Sin esto, `buscar_recepciones_candidatas`
+      no se puede llamar desde la UI.
 - [ ] Al implementarlo: **las NC no tienen remito** (se ve en el S34: es la única
       fila con `—` en esa columna). Como el ancla del cruce es el remito, su
       check de `ingreso` tiene que quedar en **"no aplica"**, no en "falta" — una
-      NC no genera ingreso de mercadería. Si no, aparecen como falsos pendientes.
+      NC no genera ingreso de mercadería.
+
+### P1 — El 99% de las facturas de Kellerhoff no tiene detalle
+
+Medido el 24/08 al correr el sync: **5019 de 5044 vacías**. Con el fix de
+`skip_nros` ya no se saltean, así que el sync las recupera — pero sólo las del
+rango que se le pide, y por defecto son 7 días.
+
+- [ ] **Sincronizar hacia atrás por tramos** y ver cuántas se pueden recuperar.
+      Antes hay que averiguar **hasta dónde llega el portal**: si sólo guarda
+      algunos meses, el resto no se recupera por este camino y hay que decidir
+      si importa.
+- [ ] Ojo con el costo: cada comprobante nuevo es una navegación más. Un tramo
+      largo puede tardar mucho, y hoy **no se ve el progreso** (ver el P0).
 
 ### P1 — Faltantes que no se capturan
 
@@ -329,6 +376,15 @@ Lo que hay que respetar si se construye:
 
 ### P2 — Chico y suelto
 
+- [x] ~~El contador `enriquecidos` del sync es inalcanzable.~~ Arreglado. Estuvo
+      muerto **dos veces por el mismo lugar**: primero porque `skip_nros`
+      salteaba toda factura existente (así que nunca llegaba con ítems), y
+      después del fix porque la factura sin renglones ya no se saltea pero
+      tampoco lleva la marca `_ya_existe` —que el scraper sólo pone a las
+      salteadas—, así que contaba como CREADA. La pantalla informó
+      "17 creadas" cuando varias ya existían. Ahora `_get_or_create_invoice`
+      marca `_estaba_en_db`.
+
 - [ ] **Card en el home.** Los resúmenes se llegan hoy por Home → Ingresos → 🔄
       Portal Kellerhoff → *Resúmenes de cuenta* (3 clicks). El home tiene su
       inventario propio en [`lista_cards_home_ux.md`](lista_cards_home_ux.md);
@@ -340,13 +396,14 @@ Lo que hay que respetar si se construye:
 
 ## Pendiente de verificar
 
-- [ ] **El `.env` apunta a un ObServer que ya no existe.** Migró a `SRV-2K22`,
-      **SQL Server 2019** (la doc decía 2014), puerto dinámico **54200**; el
-      `.env` local tiene `54572` → conexión rechazada. Confirmar qué tiene el
-      `.env` del server de la app (Debian, `192.168.1.220:5000`): si arrastra el
-      puerto viejo, el sync está caído ahí también. Es exactamente el riesgo que
-      anticipa el punto 1 de [`observer_pedidos_admin.md`](observer_pedidos_admin.md)
-      — puerto dinámico, se mueve en cada reinicio.
+- [x] ~~El `.env` del server apunta a un ObServer que ya no existe.~~
+      **Verificado el 24/08: el server está BIEN** (`OBSERVER_PORT=54200`,
+      `observer_disponible()` → True). El desactualizado era el `.env` de la
+      máquina Windows de desarrollo, que tiene `54572`.
+      ⚠ Sigue siendo un **puerto dinámico**: se mueve en cada reinicio del SQL
+      Server. Conviene fijarlo — es el punto 1 de
+      [`observer_pedidos_admin.md`](observer_pedidos_admin.md). Para descubrirlo
+      sin entrar al server: consultar el SQL Browser (UDP 1434).
 - [ ] `Gestion.PedidosIGMSinProveedor` + `...Renglones`: por el nombre, el pedido
       **antes** del ingreso. Podría cubrir el eslabón 1 desde ObServer.
 - [ ] Si el portal expone el resumen semanal para **descarga automática** (el
