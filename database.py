@@ -3195,6 +3195,36 @@ class RowaNuevo(Base):
     obs_verificado_en = Column(DateTime, nullable=True)  # NULL = solo proxy de packs; seteado = ObServer ya analizó
 
 
+class ObsRowaProducto(Base):
+    """Capacidad del robot por artículo, tal como la carga ObServer.
+
+    Espejo de `Varios.Rowa_Productos`, un módulo Rowa de ObServer que existía
+    desde 2023 y que no estábamos leyendo. Es **la única fuente** de la capacidad
+    por artículo: el robot NO la expone — `MaxSubItemQuantity` llega vacío en los
+    3.510 artículos (ver `services/rowa_client.py`).
+
+    `cantidad_maxima` es lo que en la pantalla de ObServer se ve como "Cantidad
+    Máxima": cuántos packs de ese artículo deben quedar adentro de la máquina.
+    Se carga a mano — al 24/8/2026 había 13.222 con valor, editadas hasta la
+    versión 180 por 7 usuarios distintos entre 2023 y 2025. Es una decisión
+    humana sostenida, aunque gruesa: el 95% de los valores son 6, 5 o 2, o sea
+    clasificación por tamaño de envase.
+
+    OJO — NO CONFUNDIR CON `ObsStock.maximo`. Ese sale de
+    `DW.StockFarmaciasProductos.Maximo`, es otro campo y da otros valores (para
+    LOSACOR: 18/7/1/1/0/0 contra los 10/6/6 reales de acá). Usar el de ObsStock
+    como capacidad del robot pone un techo equivocado.
+
+    `nueva_cantidad_maxima` es la columna editable de esa misma pantalla, pensada
+    para proponer un cambio. Está en NULL en las 29.419 filas: nunca se usó.
+    """
+    __tablename__ = 'obs_rowa_productos'
+    producto_observer     = Column(Integer, primary_key=True, autoincrement=False)
+    cantidad_maxima       = Column(Integer, nullable=True)
+    nueva_cantidad_maxima = Column(Integer, nullable=True)
+    sync_en               = Column(DateTime, default=now_ar)
+
+
 class MinimoManual(Base):
     """Mínimo decidido a mano para un producto, por encima del cálculo.
 
