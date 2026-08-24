@@ -80,6 +80,74 @@ def _cargar(refresh: bool = False) -> dict:
     return payload
 
 
+def _construir_items(session, filas):
+    """Arma la lista de carga (cobertura, urgencia, sugerido) para /rowa/carga.
+
+    Vive aparte porque lo usan la pantalla y las exportaciones, y porque la
+    exportacion NO debe tomar snapshot: eso es efecto de abrir la pantalla, no
+    de bajarse un PDF.
+
+    Orden: por laboratorio y, dentro de cada uno, alfabetico por producto. Antes
+    ordenaba por urgencia y cobertura, pero para ir a buscar la mercaderia al
+    deposito conviene recorrer un laboratorio a la vez. La urgencia sigue estando
+    en cada fila (y pintada en la pantalla), asi que no se pierde.
+    """
+    salidas_dia = _calcular_salidas_diarias(session, filas)
+
+    # Eventos de aumento de stock por artículo (carga/parcial/ingreso sin
+    # registrar), para el filtro "solo con aumentos" — una sola pasada
+    # sobre todos los snapshots/cargas en vez de N queries por artículo.
+    snaps_por_art: dict[str, list[tuple[datetime, int]]] = defaultdict(list)
+    for aid, ts, cant in (
+        session.query(RowaSnapshot.article_id, RowaSnapshot.tomado_en, RowaSnapshot.cantidad)
+        .order_by(RowaSnapshot.tomado_en)
+        .all()
+    ):
+        snaps_por_art[aid].append((ts, cant))
+    cargas_por_art: dict[str, list[tuple[datetime, int]]] = defaultdict(list)
+    for aid, ts, cant in (
+        session.query(RowaCarga.article_id, RowaCarga.cargado_en, RowaCarga.cantidad)
+        .order_by(RowaCarga.cargado_en)
+        .all()
+    ):
+        cargas_por_art[aid].append((ts, cant))
+    tipo_aumento_por_art = {
+        aid: peor_tipo_evento(clasificar_eventos_stock(snaps, cargas_por_art.get(aid, [])))
+        for aid, snaps in snaps_por_art.items()
+        if len(snaps) >= 2
+    }
+
+    items = []
+    for f in filas:
+        sal = salidas_dia.get(f.article_id, 0)
+        if sal > 0:
+            cobertura = round(f.cantidad / sal)
+        elif f.cantidad == 0:
+            cobertura = 0
+        else:
+            cobertura = 999  # sin salidas conocidas
+
+        urgencia = 0 if f.cantidad == 0 else (1 if cobertura <= 3 else (2 if cobertura <= 7 else 3))
+        items.append({
+            "article_id": f.article_id,
+            "ean": f.ean or "",
+            "nombre": f.nombre_obs or f.nombre or "",
+            "laboratorio": f.laboratorio or "",
+            "cantidad": f.cantidad,
+            "stock_deposito": f.stock_deposito,
+            "stock_total": f.stock_total,
+            "salidas_dia": sal,
+            "cobertura": cobertura,
+            "urgencia": urgencia,
+            "sug_cargar": f.sug_en_robot - f.cantidad if f.sug_en_robot > f.cantidad else 0,
+            "tipo_aumento": tipo_aumento_por_art.get(f.article_id),
+        })
+
+    # "~" para que los sin laboratorio queden al final y no encabecen la lista.
+    items.sort(key=lambda x: ((x["laboratorio"] or "~").lower(), x["nombre"].lower()))
+    return items
+
+
 def init_app(app):
 
     @app.route("/rowa")
@@ -415,30 +483,7 @@ def init_app(app):
             else:
                 snap_ts = ultimo_snap[0]
 
-            salidas_dia = _calcular_salidas_diarias(session, filas)
-
-            # Eventos de aumento de stock por artículo (carga/parcial/ingreso sin
-            # registrar), para el filtro "solo con aumentos" — una sola pasada
-            # sobre todos los snapshots/cargas en vez de N queries por artículo.
-            snaps_por_art: dict[str, list[tuple[datetime, int]]] = defaultdict(list)
-            for aid, ts, cant in (
-                session.query(RowaSnapshot.article_id, RowaSnapshot.tomado_en, RowaSnapshot.cantidad)
-                .order_by(RowaSnapshot.tomado_en)
-                .all()
-            ):
-                snaps_por_art[aid].append((ts, cant))
-            cargas_por_art: dict[str, list[tuple[datetime, int]]] = defaultdict(list)
-            for aid, ts, cant in (
-                session.query(RowaCarga.article_id, RowaCarga.cargado_en, RowaCarga.cantidad)
-                .order_by(RowaCarga.cargado_en)
-                .all()
-            ):
-                cargas_por_art[aid].append((ts, cant))
-            tipo_aumento_por_art = {
-                aid: peor_tipo_evento(clasificar_eventos_stock(snaps, cargas_por_art.get(aid, [])))
-                for aid, snaps in snaps_por_art.items()
-                if len(snaps) >= 2
-            }
+            items = _construir_items(session, filas)
 
             # Última sesión de carga
             ultima_carga = (
@@ -460,34 +505,6 @@ def init_app(app):
                 .all()
             )
 
-        # Construir lista de carga con cobertura
-        items = []
-        for f in filas:
-            sal = salidas_dia.get(f.article_id, 0)
-            if sal > 0:
-                cobertura = round(f.cantidad / sal)
-            elif f.cantidad == 0:
-                cobertura = 0
-            else:
-                cobertura = 999  # sin salidas conocidas
-
-            urgencia = 0 if f.cantidad == 0 else (1 if cobertura <= 3 else (2 if cobertura <= 7 else 3))
-            items.append({
-                "article_id": f.article_id,
-                "ean": f.ean or "",
-                "nombre": f.nombre_obs or f.nombre or "",
-                "laboratorio": f.laboratorio or "",
-                "cantidad": f.cantidad,
-                "stock_deposito": f.stock_deposito,
-                "stock_total": f.stock_total,
-                "salidas_dia": sal,
-                "cobertura": cobertura,
-                "urgencia": urgencia,
-                "sug_cargar": f.sug_en_robot - f.cantidad if f.sug_en_robot > f.cantidad else 0,
-                "tipo_aumento": tipo_aumento_por_art.get(f.article_id),
-            })
-
-        items.sort(key=lambda x: (x["urgencia"], x["cobertura"]))
         labs_disponibles = sorted({i["laboratorio"] for i in items if i["laboratorio"]})
 
         return render_template(
@@ -501,6 +518,57 @@ def init_app(app):
             snap_historial=snap_historial,
             labs_disponibles=labs_disponibles,
         )
+
+    @app.route("/rowa/carga/export.<fmt>")
+    @login_required
+    def rowa_carga_export(fmt):
+        """Baja la lista de carga en XLSX o PDF, agrupada por laboratorio.
+
+        Aplica los mismos filtros que la pantalla (buscador, laboratorio, solo
+        criticos), que viajan por querystring: los de la pantalla son
+        client-side, asi que el boton los reenvia para que el archivo coincida
+        con lo que el operador esta viendo.
+
+        No toma snapshot a proposito: eso es efecto de abrir /rowa/carga, no de
+        bajarse un archivo.
+        """
+        if fmt not in ("xlsx", "pdf"):
+            abort(404)
+
+        try:
+            data = _cargar()
+        except (RowaError, OSError) as e:
+            abort(503, description=str(e))
+
+        with get_db() as session:
+            items = _construir_items(session, data["filas"])
+
+        q = (request.args.get("q") or "").strip().lower()
+        lab = (request.args.get("lab") or "").strip()
+        if q:
+            items = [i for i in items if q in i["nombre"].lower()]
+        if lab:
+            items = [i for i in items if i["laboratorio"] == lab]
+        if request.args.get("criticos") == "1":
+            # < 3, igual que el filtro de la pantalla (cargaFiltrar). El KPI
+            # `n_criticos` de la ruta usa < 2, que es otra cosa: acá lo que
+            # importa es que el archivo coincida con lo que el operador ve.
+            items = [i for i in items if i["urgencia"] < 3]
+
+        from services.rowa_carga_export import construir_pdf, construir_xlsx
+        generado = data["generado"]
+        sello = f"{generado:%Y-%m-%d}"
+
+        if fmt == "xlsx":
+            contenido = construir_xlsx(items, generado)
+            mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        else:
+            contenido = construir_pdf(items, generado)
+            mime = "application/pdf"
+
+        nombre = f"Carga-robot-{sello}.{fmt}"
+        return Response(contenido, mimetype=mime,
+                        headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
 
     @app.route("/rowa/carga/registrar", methods=["POST"])
     @login_required

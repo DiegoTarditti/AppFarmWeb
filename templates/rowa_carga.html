@@ -96,6 +96,14 @@
       {% endfor %}
     </select>
     <span id="carga-count" class="text-xs text-[color:var(--ds-text-mute)] ml-auto"></span>
+    {# Los filtros de arriba son client-side, asi que los botones reenvian el
+       estado por querystring para que el archivo coincida con lo que se ve. #}
+    <a id="carga-exp-pdf" href="/rowa/carga/export.pdf" onclick="cargaExportar(this,'pdf')"
+       class="px-2 py-1 text-xs rounded border border-[color:var(--ds-surface-border)] text-[color:var(--ds-text-mute)] hover:text-white"
+       title="Descargar la lista agrupada por laboratorio">📄 PDF</a>
+    <a id="carga-exp-xls" href="/rowa/carga/export.xlsx" onclick="cargaExportar(this,'xlsx')"
+       class="px-2 py-1 text-xs rounded border border-[color:var(--ds-surface-border)] text-[color:var(--ds-text-mute)] hover:text-white"
+       title="Descargar la lista agrupada por laboratorio">📊 Excel</a>
   </div>
 
   {# ---- Tabla ---- #}
@@ -190,6 +198,21 @@
   {% endif %}
 
   <script>
+  // Arma la URL de exportacion con los filtros que estan puestos ahora.
+  // "Solo con aumentos" no viaja: depende de los snapshots y no tiene sentido
+  // en una lista para caminar el deposito.
+  function cargaExportar(a, fmt) {
+    var p = new URLSearchParams();
+    var q = (document.getElementById('carga-buscar').value || '').trim();
+    var lab = document.getElementById('carga-lab').value;
+    if (q) { p.set('q', q); }
+    if (lab) { p.set('lab', lab); }
+    if (document.getElementById('carga-criticos').checked) { p.set('criticos', '1'); }
+    var qs = p.toString();
+    a.href = '/rowa/carga/export.' + fmt + (qs ? '?' + qs : '');
+    return true;   // deja seguir la navegacion, que dispara la descarga
+  }
+
   function cargaFiltrar() {
     var q    = (document.getElementById('carga-buscar').value || '').toLowerCase();
     var crit = document.getElementById('carga-criticos').checked;
