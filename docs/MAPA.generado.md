@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-24 15:29 · rama `feat/slider-gobierna-target` · commit `38954b0`
+Generado: 2026-08-24 15:31 · rama `feat/slider-gobierna-target` · commit `dfab665`
 
 **794 rutas** en 77 archivos · **127 modelos** · **21 syncs** · **34 services** · **11 parsers**
 
@@ -834,8 +834,8 @@ Generado: 2026-08-24 15:29 · rama `feat/slider-gobierna-target` · commit `3895
 |---|---|---|
 | `/kellerhoff/sync` | GET | [`kellerhoff_sync`](../routes/kellerhoff_sync.py#L27) |
 | `/kellerhoff/sync/ejecutar` | POST | [`kellerhoff_sync_ejecutar`](../routes/kellerhoff_sync.py#L76) |
-| `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L102) |
-| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L107) |
+| `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L103) |
+| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L108) |
 
 ### `routes/laboratorios.py`
 
