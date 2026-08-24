@@ -34,7 +34,7 @@ def main():
     hasta = date.today()
     desde = hasta - timedelta(days=dias)
 
-    print(f'\n=== Verificación parser Kellerhoff (SIN escribir DB) ===')
+    print('\n=== Verificación parser Kellerhoff (SIN escribir DB) ===')
     print(f'Rango: {desde} → {hasta}  ·  usuario: {os.environ["KELLERHOFF_USER"]}\n')
 
     def cb(msg):
