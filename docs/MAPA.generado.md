@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-24 20:13 · rama `feat/conteo-detalle-facturas` · commit `cd3b491`
+Generado: 2026-08-24 20:17 · rama `feat/conteo-detalle-facturas` · commit `fcd4f8c`
 
 **802 rutas** en 77 archivos · **131 modelos** · **22 syncs** · **38 services** · **11 parsers**
 
