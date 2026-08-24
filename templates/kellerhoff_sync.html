@@ -145,7 +145,7 @@
           <th>Fecha</th>
           <th>Nº Comprobante</th>
           <th class="th-center">Tipo</th>
-          <th class="th-right">Artículos</th>
+          <th class="th-center">Detalle</th>
           <th class="th-right">Total</th>
           <th class="th-center">Origen</th>
           <th></th>
@@ -162,7 +162,10 @@
               <span class="badge badge-mint">FAC</span>
               {% endif %}
             </td>
-            <td class="td-right mono-xs">{{ f.articulos }}</td>
+            <td class="td-center">
+              {% if f.detalle %}{% with d = f.detalle %}{% include '_badge_detalle.html' %}{% endwith %}
+              {% else %}<span class="mono-xs" style="color:var(--ds-text-mute);">—</span>{% endif %}
+            </td>
             <td class="td-right mono-xs" style="{% if f.total and f.total < 0 %}color:var(--ds-danger);{% else %}color:var(--ds-mint);{% endif %}">
               {% if f.total %}$ {{ '%.2f'|format(f.total) }}{% else %}—{% endif %}
             </td>

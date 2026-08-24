@@ -2026,6 +2026,73 @@ def materializar_producto(session, observer_id):
     return prod, None
 
 
+def conteo_items_por_factura(session, invoice_ids):
+    """{factura_id: cuántos `factura_items` tiene}. Una sola query, no una por fila.
+
+    Las facturas sin ningún ítem NO aparecen en el dict (un GROUP BY no devuelve
+    grupos vacíos): los callers usan `.get(id, 0)`.
+    """
+    from sqlalchemy import func as _func
+
+    import database
+
+    if not invoice_ids:
+        return {}
+    filas = (session.query(database.InvoiceItem.factura_id,
+                           _func.count(database.InvoiceItem.id))
+             .filter(database.InvoiceItem.factura_id.in_(invoice_ids))
+             .group_by(database.InvoiceItem.factura_id).all())
+    return {fid: int(n) for fid, n in filas}
+
+
+def detalle_facturas(session, invoices):
+    """{factura_id: {'items', 'declarado', 'estado'}} listo para `_badge_detalle.html`.
+
+    Es el punto único donde se decide si una factura "tiene detalle": lo usan las
+    tres listas (proveedor, portal Kellerhoff, cuenta corriente) para que no
+    terminen con tres criterios distintos, como pasó con el saldo (ver
+    `services/cuenta_corriente.py`).
+    """
+    invoices = list(invoices or [])
+    conteos = conteo_items_por_factura(session, [inv.id for inv in invoices])
+    out = {}
+    for inv in invoices:
+        n = conteos.get(inv.id, 0)
+        declarado = abs(int(inv.total_articulos)) if inv.total_articulos else 0
+        out[inv.id] = {
+            # 'renglones' y no 'items': en Jinja `d.items` resuelve al método
+            # items() del dict y no a la key (gotcha documentado en CLAUDE.md).
+            'renglones': n,
+            'declarado': declarado,
+            'estado': estado_detalle_factura(n, inv.total_articulos),
+        }
+    return out
+
+
+def estado_detalle_factura(n_items, total_articulos):
+    """Compara el detalle que GUARDAMOS contra el que la factura DECLARA.
+
+    `total_articulos` sale del encabezado (lo que dice el PDF) y `n_items` son
+    los `factura_items` que efectivamente quedaron. El hueco entre los dos es la
+    señal de que el parseo falló, y por eso se muestran los dos números y no
+    sólo el conteo.
+
+    Devuelve uno de:
+      'vacia'    — cero ítems: no se parseó, o se guardó sólo el encabezado.
+      'parcial'  — hay ítems pero no son los que la factura declara (faltan o
+                   sobran; sobrar suele ser el parser duplicando renglones).
+      'ok'       — coinciden.
+      'sin_ref'  — hay ítems pero la factura no declara cuántos: no hay contra
+                   qué comparar, así que no se afirma que esté bien.
+    """
+    declarado = abs(int(total_articulos)) if total_articulos else 0
+    if not n_items:
+        return 'vacia'
+    if not declarado:
+        return 'sin_ref'
+    return 'ok' if n_items == declarado else 'parcial'
+
+
 _RE_CLAVE_KH    = re.compile(r'^(\d{1,5})[A-Z](\d{1,8})$')       # 0046A00279207 (Kellerhoff)
 _RE_CLAVE_OBS   = re.compile(r'^[A-Z](\d{4})(\d{8})$')           # A004600279207 (ObServer)
 _RE_CLAVE_GUION = re.compile(r'^(\d{1,5})\s*-\s*(\d{1,8})$')     # 00046-00279207 / 0046-00255798

@@ -136,6 +136,7 @@
                             <th class="text-left py-2.5 px-2">Procesada</th>
                             <th class="text-left py-2.5 px-2">Tipo</th>
                             <th class="text-left py-2.5 px-2">Comprobante</th>
+                            <th class="text-center py-2.5 px-2" title="Renglones de detalle guardados vs. los que declara la factura">Detalle</th>
                             <th class="text-center py-2.5 px-2" title="Resumen de cuenta de la droguería en el que entró">Resumen</th>
                             <th class="text-center py-2.5 px-2">Ingresada</th>
                             <th class="text-center py-2.5 px-2">Conc.</th>
@@ -168,6 +169,10 @@
                             {% endif %}
                         </td>
                         <td class="py-2 px-2 text-[#6f6f6f] font-mono">{{ m.comprobante }}</td>
+                        <td class="py-2 px-2 text-center">
+                            {% if m.detalle %}{% with d = m.detalle %}{% include '_badge_detalle.html' %}{% endwith %}
+                            {% else %}<span class="text-[#ccc]">—</span>{% endif %}
+                        </td>
                         <td class="py-2 px-2 text-center whitespace-nowrap">
                             {% if m.resumen %}
                             <a href="{{ url_for('kellerhoff_resumen_detalle', resumen_id=m.resumen.id) }}"
@@ -253,7 +258,7 @@
                     </tbody>
                     <tfoot>
                         <tr class="border-t-2 border-[#d0d0d0] bg-surface-input">
-                            <td colspan="7" class="py-2.5 px-4 text-[10px] text-[#999] uppercase tracking-wide font-bold">Saldo final</td>
+                            <td colspan="8" class="py-2.5 px-4 text-[10px] text-[#999] uppercase tracking-wide font-bold">Saldo final</td>
                             <td class="py-2.5 px-2 text-right font-mono font-bold text-red-600">
                                 ${{ '{:,.2f}'.format(movimientos | map(attribute='debe') | sum).replace(',', 'X').replace('.', ',').replace('X', '.') }}
                             </td>

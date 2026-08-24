@@ -294,3 +294,59 @@ def test_los_vencimientos_salen_en_formato_argentino(smoke_client):
     html = smoke_client.get(f'/kellerhoff/resumen/{resumen_id}').data.decode('utf-8')
     assert '22/09/2026' in html
     assert '2026-09-22' not in html
+
+
+# ── Columna de detalle en las tres listas ────────────────────────────────────
+
+def _sembrar_facturas():
+    """Un proveedor con tres facturas: completa, a medias y sin detalle."""
+    from datetime import date
+
+    import database
+
+    with database.get_db() as session:
+        prov = database.Provider(razon_social='Kellerhoff', cuit='30539756490',
+                                 tipo='drogueria', activo=True)
+        session.add(prov)
+        session.flush()
+        hechas = []
+        for numero, declarado, n_items in [('00046-00279207', 2, 2),
+                                           ('00046-00281042', 9, 3),
+                                           ('00046-00255798', 0, 0)]:
+            inv = database.Invoice(numero_factura=numero, fecha=date(2026, 8, 22),
+                                   tipo_comprobante='FAC', proveedor_razon='Kellerhoff',
+                                   proveedor_cuit='30539756490', total=1000,
+                                   total_articulos=declarado)
+            session.add(inv)
+            session.flush()
+            for i in range(n_items):
+                session.add(database.InvoiceItem(factura_id=inv.id, codigo_barra=f'{i:013d}',
+                                                 cantidad=1, descripcion=f'IT{i}'))
+            hechas.append(inv.id)
+        session.commit()
+        import routes.kellerhoff_sync as ks
+        ks.KELLERHOFF_PROVIDER_ID = prov.id
+        return prov.id, hechas
+
+
+def test_facturas_del_proveedor_muestran_el_detalle(smoke_client):
+    prov_id, _ = _sembrar_facturas()
+    html = smoke_client.get(f'/provider/{prov_id}/invoices').data.decode('utf-8')
+    assert 'Detalle' in html
+    assert 'sin detalle' in html, 'la factura sin renglones no se marcó'
+    assert '3 / 9' in html, 'no se marcó el parseo incompleto'
+
+
+def test_portal_kellerhoff_muestra_el_detalle(smoke_client):
+    _sembrar_facturas()
+    html = smoke_client.get('/kellerhoff/sync').data.decode('utf-8')
+    assert 'sin detalle' in html
+    assert '3 / 9' in html
+
+
+def test_cuenta_corriente_muestra_el_detalle(smoke_client):
+    prov_id, _ = _sembrar_facturas()
+    html = smoke_client.get(
+        f'/cuentas-corrientes/extracto?proveedor={prov_id}').data.decode('utf-8')
+    assert 'sin detalle' in html
+    assert '3 / 9' in html

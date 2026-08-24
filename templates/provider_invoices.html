@@ -83,7 +83,7 @@
                             <th>Tipo</th>
                             <th>Número</th>
                             <th>Fecha</th>
-                            <th class="center">Artículos</th>
+                            <th class="center">Detalle</th>
                             <th class="right">Total</th>
                             <th class="right">Acciones</th>
                         </tr>
@@ -100,7 +100,10 @@
                             </td>
                             <td class="num">{{ inv.numero_factura }}</td>
                             <td class="muted">{{ inv.fecha }}</td>
-                            <td class="center muted">{{ inv.total_articulos or '—' }}</td>
+                            <td class="center">
+                                {% if detalle.get(inv.id) %}{% with d = detalle[inv.id] %}{% include '_badge_detalle.html' %}{% endwith %}
+                                {% else %}<span class="muted">—</span>{% endif %}
+                            </td>
                             <td class="right {{ 'total-ncr' if inv.tipo_comprobante == 'NCR' else 'total-fac' }}">
                                 {% if inv.total %}$ {{ inv.total | arg_currency }}{% else %}—{% endif %}
                             </td>

@@ -61,9 +61,12 @@ def init_app(app):
                 .limit(200)
                 .all()
             )
+            from helpers import detalle_facturas
+            detalle = detalle_facturas(session, facturas_kh)
             facturas_data = [
                 {
                     'id': f.id,
+                    'detalle': detalle.get(f.id),
                     'numero': f.numero_factura,
                     'fecha': f.fecha.strftime('%d/%m/%Y') if f.fecha else '',
                     'tipo': f.tipo_comprobante or 'FAC',
@@ -261,25 +264,46 @@ def _msg(texto: str) -> None:
     logging.getLogger(__name__).warning('[KH-SYNC] %s', texto)
 
 
+def nros_ya_completos(session) -> set:
+    """Comprobantes que NO hace falta volver a bajar del portal.
+
+    Son los que ya tienen todo lo que el detalle aporta: facturas/NCR de
+    mercadería **con renglones**, y las NC financieras ya registradas como
+    ajuste de cuenta corriente (esas no tienen detalle que bajar).
+
+    ⚠ El filtro `Invoice.items.any()` es el punto del asunto y no se puede
+    sacar. Antes se salteaba TODA factura que existiera en la DB, tuviera
+    renglones o no, y `scrape_comprobantes` a las salteadas les pone `items=[]`
+    sin navegar el detalle. Resultado: una factura guardada con encabezado y sin
+    renglones **no podía recuperarlos nunca** — cada sync la salteaba por "ya
+    existe". Le pasó a 0046-00255798: encabezado y desglose fiscal perfectos,
+    cero ítems, y volver a sincronizar no la arreglaba.
+
+    El síntoma de que era un bug estaba a la vista: el contador `enriquecidos`
+    ("factura que ya existía y ahora ganó sus ítems") era inalcanzable, porque
+    exige a la vez estar salteada y traer ítems.
+    """
+    rows = (
+        session.query(Invoice.numero_factura)
+        .filter(Invoice.proveedor_cuit.like(f'%{KELLERHOFF_CUIT[-8:]}%'),
+                Invoice.items.any())
+        .all()
+    )
+    nros = {r[0] for r in rows}
+    rows_nc = (
+        session.query(PagoAjusteCC.numero_comprobante)
+        .filter(PagoAjusteCC.anunciante_id.isnot(None))
+        .all()
+    )
+    nros |= {r[0] for r in rows_nc if r[0]}
+    return nros
+
+
 def _sincronizar(desde: date, hasta: date) -> dict:
     from services.kellerhoff_scraper import scrape_comprobantes
 
-    # Pre-cargar nros ya en DB para no re-navegar páginas de detalle: tanto
-    # facturas/NCR de mercadería (Invoice) como NC financieras ya registradas
-    # (PagoAjusteCC.numero_comprobante con anunciante_id seteado).
     with get_db() as session:
-        rows = (
-            session.query(Invoice.numero_factura)
-            .filter(Invoice.proveedor_cuit.like(f'%{KELLERHOFF_CUIT[-8:]}%'))
-            .all()
-        )
-        _nros_db = {r[0] for r in rows}
-        rows_nc = (
-            session.query(PagoAjusteCC.numero_comprobante)
-            .filter(PagoAjusteCC.anunciante_id.isnot(None))
-            .all()
-        )
-        _nros_db |= {r[0] for r in rows_nc if r[0]}
+        _nros_db = nros_ya_completos(session)
 
     _msg(f'Iniciando Chromium… (rango {desde} → {hasta})')
     comprobantes = scrape_comprobantes(desde, hasta, _msg, skip_nros=_nros_db)
