@@ -83,6 +83,47 @@ def _query_facturas_proveedor(session, provider):
     return q.filter(database.Invoice.proveedor_razon == provider.razon_social)
 
 
+def resumen_por_factura(session, provider, inv_ids):
+    """{factura_id: {id, numero, periodo_desde, periodo_hasta}} — en qué resumen
+    de cuenta entró cada factura.
+
+    Una factura puede aparecer en más de un resumen si la droguería la repitió;
+    se devuelve el más reciente por período, que es el que manda.
+    """
+    if not inv_ids:
+        return {}
+    filas = (session.query(database.ResumenProveedorItem.factura_id,
+                           database.ResumenProveedor.id,
+                           database.ResumenProveedor.numero,
+                           database.ResumenProveedor.periodo_desde,
+                           database.ResumenProveedor.periodo_hasta)
+             .join(database.ResumenProveedor,
+                   database.ResumenProveedor.id == database.ResumenProveedorItem.resumen_id)
+             .filter(database.ResumenProveedor.proveedor_id == provider.id,
+                     database.ResumenProveedorItem.factura_id.in_(inv_ids))
+             .all())
+    out = {}
+    for fid, rid, numero, desde, hasta in filas:
+        previo = out.get(fid)
+        if previo and previo['periodo_hasta'] and hasta and previo['periodo_hasta'] >= hasta:
+            continue
+        out[fid] = {'id': rid, 'numero': numero,
+                    'periodo_desde': desde, 'periodo_hasta': hasta}
+    return out
+
+
+def corte_resumenes(session, provider):
+    """Hasta qué fecha llegan los resúmenes importados de este proveedor.
+
+    Sirve para leer los huecos: una factura POSTERIOR al corte que no está en
+    ningún resumen todavía no fue cobrada (normal); una ANTERIOR que no está es
+    una anomalía — o falta importar ese resumen, o la droguería nunca la incluyó.
+    """
+    return (session.query(func.max(database.ResumenProveedor.periodo_hasta))
+            .filter(database.ResumenProveedor.proveedor_id == provider.id)
+            .scalar())
+
+
 def movimientos_proveedor(session, provider):
     """Extracto completo de un proveedor.
 
@@ -106,11 +147,14 @@ def movimientos_proveedor(session, provider):
                       session.query(distinct(database.StockDifference.factura_id))
                       .filter(database.StockDifference.factura_id.in_(inv_ids)).all()}
 
+    resumenes_map = resumen_por_factura(session, provider, inv_ids)
+
     for inv in invoices:
         debe, haber, informativo = clasificar_comprobante(
             inv.tipo_comprobante, inv.total)
         reclamo_est = reclamos_map.get(inv.id)
         movimientos.append({
+            'resumen': resumenes_map.get(inv.id),
             'fecha': inv.fecha,
             'fecha_proceso': inv.creado_en.strftime('%d/%m/%Y') if inv.creado_en else '',
             'tipo': inv.tipo_comprobante,
@@ -132,6 +176,7 @@ def movimientos_proveedor(session, provider):
         es_debe = pa.tipo == 'AJUSTE_POS'
         monto = float(pa.monto or 0)
         movimientos.append({
+            'resumen': None,
             'fecha': pa.fecha,
             'fecha_proceso': '',
             'tipo': pa.tipo,
@@ -152,6 +197,7 @@ def movimientos_proveedor(session, provider):
                .filter_by(proveedor_id=provider.id)
                .order_by(database.Pago.fecha).all()):
         movimientos.append({
+            'resumen': None,
             'fecha': pg.fecha,
             'fecha_proceso': '',
             'tipo': 'PAGO',

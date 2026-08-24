@@ -10,7 +10,7 @@ from flask import flash, redirect, render_template, request, url_for
 
 import database
 from helpers import get_providers
-from services.cuenta_corriente import movimientos_proveedor
+from services.cuenta_corriente import corte_resumenes, movimientos_proveedor
 
 # Códigos AFIP de Nota de Crédito → restan (haber). El resto (facturas, ND) suma (debe).
 _ARCA_NC = {3, 8, 13, 53, 110, 112, 113, 114, 119, 203, 208, 213}
@@ -145,10 +145,14 @@ def init_app(app):
             movimientos = []
             saldo_total = 0
             total_prefac = 0
+            corte = None
             if provider:
                 movimientos, resumen = movimientos_proveedor(session, provider)
                 saldo_total = resumen['saldo']
                 total_prefac = resumen['total_prefac']
+                # Hasta dónde llegan los resúmenes importados: sin esto no se
+                # puede distinguir "todavía no lo cobraron" de "falta".
+                corte = corte_resumenes(session, provider)
 
             prov = {'id': provider.id, 'razon_social': provider.razon_social,
                     'cuit': provider.cuit or ''} if provider else None
@@ -156,7 +160,7 @@ def init_app(app):
             return render_template('cuenta_corriente.html', provider=prov,
                                    proveedores=prov_list, provider_id=provider_id or 0,
                                    movimientos=movimientos, saldo_total=saldo_total,
-                                   total_prefac=total_prefac)
+                                   total_prefac=total_prefac, corte_resumenes=corte)
 
     @app.route('/comprobantes/importar', methods=['GET', 'POST'])
     def comprobantes_importar():

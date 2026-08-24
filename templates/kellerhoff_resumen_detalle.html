@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% set nav_active = "ingresos" %}
+{% block title %}Resumen {{ resumen.numero }} · Kellerhoff{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+  .list-card { padding: 0; overflow: hidden; }
+  .list-card__body { overflow: auto; max-height: 68vh; }
+  .list-card__body table { width: 100%; font-size: 13px; }
+  .list-card__body thead { position: sticky; top: 0; z-index: 5; }
+  .list-card__body thead th {
+    padding: 10px 16px;
+    font-size: 10px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; text-align: left;
+    background: var(--ds-surface); border-bottom: 1px solid var(--ds-line);
+  }
+  .list-card__body tbody td { padding: 9px 16px; border-bottom: 1px solid var(--ds-line); }
+  .list-card__body tbody tr:last-child td { border-bottom: 0; }
+  .list-card__body tbody tr:hover { background: rgba(95,230,188,.04); }
+  .mono-xs { font-family: ui-monospace, monospace; font-size: 12px; }
+  .th-right, .td-right { text-align: right; }
+  .th-center, .td-center { text-align: center; }
+  .kpi { display:flex; gap:28px; flex-wrap:wrap; }
+  .kpi__item small { display:block; font-size:10px; text-transform:uppercase;
+                     letter-spacing:.08em; color:var(--ds-text-mute); margin-bottom:3px; }
+  .kpi__item span { font-size:17px; font-weight:700; }
+  .badge { display:inline-block; padding:2px 7px; border-radius:5px;
+           font-size:10px; font-weight:700; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 py-6 px-6 overflow-auto">
+<div class="max-w-6xl mx-auto space-y-6">
+
+  <header class="page-header">
+    <div class="page-header__left">
+      <a href="{{ url_for('kellerhoff_resumenes') }}" class="section-label" style="margin-bottom:4px;">← Resúmenes</a>
+      <h1 class="page-header__title">Resumen <span class="glow-text">{{ resumen.numero }}</span></h1>
+      <p class="page-header__subtitle">
+        {{ resumen.periodo }}{% if resumen.cierre %} · cierre {{ resumen.cierre }}{% endif %}
+        {% if resumen.generado_en %} · generado {{ resumen.generado_en }}{% endif %}
+      </p>
+    </div>
+  </header>
+
+  <div class="card" style="padding:18px 24px;">
+    <div class="kpi">
+      <div class="kpi__item">
+        <small>Total resumen</small>
+        <span>${{ '{:,.2f}'.format(resumen.total).replace(',', 'X').replace('.', ',').replace('X', '.') }}</span>
+      </div>
+      <div class="kpi__item">
+        <small>Comprobantes</small>
+        <span>{{ items | length }}</span>
+      </div>
+      <div class="kpi__item">
+        <small>Ligados a facturas</small>
+        <span>{{ items | selectattr('factura_id') | list | length }}</span>
+      </div>
+      <div class="kpi__item">
+        <small>1° vencimiento</small>
+        <span>{{ resumen.primer_vencimiento or '—' }}</span>
+      </div>
+    </div>
+
+    {% if resumen.vencimientos %}
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--ds-line);">
+      <p class="section-label" style="margin-bottom:8px;">Vencimientos</p>
+      <p style="font-size:11px;color:var(--ds-text-mute);margin-bottom:8px;">
+        Kellerhoff los informa agrupados por fecha, no por comprobante.
+      </p>
+      <div class="kpi">
+        {% for v in resumen.vencimientos %}
+        <div class="kpi__item">
+          <small>{{ v.fecha }}</small>
+          <span style="font-size:14px;">${{ '{:,.2f}'.format(v.importe).replace(',', 'X').replace('.', ',').replace('X', '.') }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card list-card">
+    <div class="list-card__body">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Tipo</th>
+            <th>Comprobante</th>
+            <th>Remito</th>
+            <th class="th-right">Total</th>
+            <th class="th-center">Nuestra factura</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for it in items %}
+          <tr>
+            <td style="font-size:12px;">{{ it.fecha }}</td>
+            <td>
+              <span class="badge" style="{% if it.tipo == 'NCR' %}background:rgba(239,68,68,.14);color:#ef4444;{% else %}background:rgba(34,197,94,.14);color:#22c55e;{% endif %}">
+                {{ it.tipo }}
+              </span>
+            </td>
+            <td class="mono-xs">{{ it.numero }}</td>
+            <td class="mono-xs" style="color:var(--ds-text-mute);">{{ it.numero_remito or '—' }}</td>
+            <td class="td-right mono-xs" style="{% if it.total < 0 %}color:#ef4444;{% endif %}">
+              ${{ '{:,.2f}'.format(it.total).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+            </td>
+            <td class="td-center">
+              {% if it.factura_id %}
+              <a href="{{ url_for('show_results', invoice_id=it.factura_id) }}"
+                 class="badge" style="background:rgba(59,130,246,.14);color:#3b82f6;">ver</a>
+              {% else %}
+              <span class="badge" style="background:rgba(234,88,12,.14);color:var(--ds-orange);"
+                    title="Kellerhoff te lo cobra y no está entre nuestras facturas: falta bajarlo del portal, o es un comprobante que no reconocemos">
+                no está
+              </span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</div>
+{% endblock %}

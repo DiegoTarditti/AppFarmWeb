@@ -5,11 +5,21 @@ import os
 import threading
 from datetime import date, datetime, timedelta
 
-from flask import jsonify, render_template, request
+from flask import flash, jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
+from werkzeug.utils import secure_filename
 
 import database
-from database import FacturaFaltante, Invoice, InvoiceItem, PagoAjusteCC, PedidoEmitido, get_db
+from database import (
+    FacturaFaltante,
+    Invoice,
+    InvoiceItem,
+    PagoAjusteCC,
+    PedidoEmitido,
+    ResumenProveedor,
+    ResumenProveedorItem,
+    get_db,
+)
 from services.kellerhoff_analizador import resolver_anunciante
 
 KELLERHOFF_PROVIDER_ID = int(os.environ.get('KELLERHOFF_PROVIDER_ID', '1'))
@@ -102,6 +112,97 @@ def init_app(app):
     @login_required
     def kellerhoff_sync_estado():
         return jsonify(_sync_estado)
+
+    # ── Resúmenes de cuenta (el cierre semanal que emite Kellerhoff) ──────────
+
+    @app.route('/kellerhoff/resumenes')
+    @login_required
+    def kellerhoff_resumenes():
+        with get_db() as session:
+            resumenes = []
+            for r in (session.query(ResumenProveedor)
+                      .filter_by(proveedor_id=KELLERHOFF_PROVIDER_ID)
+                      .order_by(ResumenProveedor.periodo_desde.desc()).all()):
+                n_items, n_ligados = _contar_items(session, r.id)
+                resumenes.append({
+                    'id': r.id, 'numero': r.numero,
+                    'periodo': _fmt_periodo(r),
+                    'total': float(r.total or 0),
+                    'primer_vencimiento': (r.primer_vencimiento.strftime('%d/%m/%Y')
+                                           if r.primer_vencimiento else ''),
+                    'n_items': n_items, 'n_ligados': n_ligados,
+                    'importado_en': (r.importado_en.strftime('%d/%m/%Y %H:%M')
+                                     if r.importado_en else ''),
+                })
+        return render_template('kellerhoff_resumenes.html', resumenes=resumenes)
+
+    @app.route('/kellerhoff/resumenes/importar', methods=['POST'])
+    @login_required
+    def kellerhoff_resumen_importar():
+        from services.kellerhoff_resumen import importar_resumen
+
+        archivo = request.files.get('pdf')
+        if not archivo or not archivo.filename:
+            flash('Elegí el PDF del resumen', 'error')
+            return redirect(url_for('kellerhoff_resumenes'))
+
+        nombre = secure_filename(archivo.filename)
+        destino = os.path.join(app.config['UPLOAD_FOLDER'], nombre)
+        archivo.save(destino)
+        try:
+            with get_db() as session:
+                res = importar_resumen(session, destino, KELLERHOFF_PROVIDER_ID,
+                                       pdf_filename=nombre)
+        except Exception as e:
+            flash(f'No se pudo importar: {e}', 'error')
+            return redirect(url_for('kellerhoff_resumenes'))
+
+        msg = (f"Resumen {res['numero']}: {len(res['items'])} comprobantes, "
+               f"{res['ligados']} ligados a facturas nuestras.")
+        if not res['cuadra']:
+            # El PDF es autoconsistente; si no cierra, algún renglón se leyó mal.
+            flash(f"{msg} ⚠ El total impreso ({res['total']}) no coincide con la "
+                  f"suma de los renglones ({res['total_calculado']}) — revisá el PDF.",
+                  'error')
+        else:
+            flash(msg, 'success')
+        return redirect(url_for('kellerhoff_resumen_detalle', resumen_id=res['resumen_id']))
+
+    @app.route('/kellerhoff/resumen/<int:resumen_id>')
+    @login_required
+    def kellerhoff_resumen_detalle(resumen_id):
+        import json as _json
+
+        with get_db() as session:
+            r = session.get(ResumenProveedor, resumen_id)
+            if r is None:
+                flash('Resumen no encontrado', 'error')
+                return redirect(url_for('kellerhoff_resumenes'))
+
+            items = []
+            for it in (session.query(ResumenProveedorItem)
+                       .filter_by(resumen_id=r.id)
+                       .order_by(ResumenProveedorItem.fecha,
+                                 ResumenProveedorItem.numero).all()):
+                items.append({
+                    'fecha': it.fecha.strftime('%d/%m/%Y') if it.fecha else '',
+                    'tipo': it.tipo, 'numero': it.numero,
+                    'numero_remito': it.numero_remito or '',
+                    'total': float(it.total or 0),
+                    'factura_id': it.factura_id,
+                })
+            cab = {
+                'id': r.id, 'numero': r.numero, 'periodo': _fmt_periodo(r),
+                'cierre': r.cierre or '',
+                'total': float(r.total or 0),
+                'primer_vencimiento': (r.primer_vencimiento.strftime('%d/%m/%Y')
+                                       if r.primer_vencimiento else ''),
+                'generado_en': (r.generado_en.strftime('%d/%m/%Y %H:%M')
+                                if r.generado_en else ''),
+                'vencimientos': _json.loads(r.vencimientos_json or '[]'),
+            }
+        return render_template('kellerhoff_resumen_detalle.html',
+                               resumen=cab, items=items)
 
     @app.route('/kellerhoff/sync/ligar', methods=['POST'])
     @login_required
@@ -356,6 +457,23 @@ def _match_pedido(session, inv: Invoice, comp: dict) -> PedidoEmitido | None:
         if delta <= 5 and (mejor_delta is None or delta < mejor_delta):
             mejor, mejor_delta = p, delta
     return mejor
+
+
+def _fmt_periodo(r) -> str:
+    if not r.periodo_desde:
+        return ''
+    hasta = r.periodo_hasta.strftime('%d/%m/%Y') if r.periodo_hasta else ''
+    return f"{r.periodo_desde.strftime('%d/%m')} al {hasta}"
+
+
+def _contar_items(session, resumen_id):
+    """(total de renglones, cuántos están ligados a una factura nuestra)."""
+    from sqlalchemy import func as _f
+    total, ligados = (
+        session.query(_f.count(ResumenProveedorItem.id),
+                      _f.count(ResumenProveedorItem.factura_id))
+        .filter(ResumenProveedorItem.resumen_id == resumen_id).one())
+    return int(total or 0), int(ligados or 0)
 
 
 def _normalizar_nro(s: str) -> str:
