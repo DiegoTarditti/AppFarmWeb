@@ -301,20 +301,91 @@
        normal (matriz drog, sin oferta) el piso es min_efectivo y no se ajusta acá. #}
     {% if lab_id or oferta_drog_n %}
     <form method="get" id="cubrir-form" style="display: inline-flex; align-items: center; gap: 8px;">
-        {# Re-emitimos todos los query params para no perder filtros al cambiar el slider. #}
-        {% for k, v in request.args.items() if k != 'cubrir_dias' %}
+        {# Re-emitimos los query params para no perder filtros al cambiar el slider.
+           Se excluye `target` a proposito: en modo lab el slider ES el target, y
+           si lo re-emitieramos un ?target= viejo de la URL le seguiria ganando y
+           el slider dejaria de mover el universo. #}
+        {% for k, v in request.args.items() if k not in ('cubrir_dias', 'target') %}
         <input type="hidden" name="{{ k }}" value="{{ v }}">
         {% endfor %}
-        <label for="cubrir-dias" style="font-size: 11px; color: var(--ds-text-mute); white-space: nowrap;">
-            Cubrir por <b id="cubrir-dias-display" style="color: var(--ds-mint);">{{ cubrir_dias }}</b> días
+        <label for="cubrir-dias-num" style="font-size: 11px; color: var(--ds-text-mute); white-space: nowrap;">
+            Cubrir por
         </label>
-        <input type="range" id="cubrir-dias" name="cubrir_dias"
+        {# Trio -/numero/+ : el rango solo sirve para barrer rapido, pero para
+           acertarle a un valor puntual hace falta escribirlo o ir de a uno.
+           El unico campo que se manda es el numerico (el rango no tiene name,
+           si no irian dos `cubrir_dias` en la query). #}
+        <button type="button" class="cd-step" onclick="cdPaso(-1)" title="Un día menos (Shift: 5)" aria-label="Restar días">−</button>
+        <input type="number" id="cubrir-dias-num" name="cubrir_dias"
                min="7" max="120" step="1" value="{{ cubrir_dias }}"
-               style="width: 180px; accent-color: var(--ds-mint);"
-               oninput="document.getElementById('cubrir-dias-display').textContent = this.value"
-               onchange="document.getElementById('cubrir-form').submit()">
+               inputmode="numeric"
+               style="width: 54px; text-align: center; font-size: 12px; font-weight: 600;
+                      color: var(--ds-mint); background: var(--ds-bg); border: 1px solid var(--ds-border);
+                      border-radius: 4px; padding: 3px 4px;"
+               oninput="cdSync(this.value)"
+               onchange="cdEnviar()">
+        <button type="button" class="cd-step" onclick="cdPaso(1)" title="Un día más (Shift: 5)" aria-label="Sumar días">+</button>
+        <span style="font-size: 11px; color: var(--ds-text-mute);">días</span>
+        <input type="range" id="cubrir-dias"
+               min="7" max="120" step="1" value="{{ cubrir_dias }}"
+               aria-label="Días a cubrir"
+               style="width: 150px; accent-color: var(--ds-mint);"
+               oninput="cdSync(this.value)"
+               onchange="cdEnviar()">
         <span style="font-size: 10px; color: var(--ds-text-mute);">{{ '(min de compra al lab)' if lab_id else '(compra por oferta)' }}</span>
     </form>
+    <style>
+      .cd-step {
+        width: 22px; height: 22px; line-height: 1; padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 15px; font-weight: 700; cursor: pointer;
+        color: var(--ds-mint); background: var(--ds-bg);
+        border: 1px solid var(--ds-border); border-radius: 4px;
+      }
+      .cd-step:hover { border-color: var(--ds-mint); }
+      .cd-step:active { transform: translateY(1px); }
+      #cubrir-dias-num::-webkit-outer-spin-button,
+      #cubrir-dias-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+      #cubrir-dias-num { -moz-appearance: textfield; }
+    </style>
+    <script>
+      // Rango y numero muestran el mismo valor; solo el numero se manda.
+      (function () {
+        var num = document.getElementById('cubrir-dias-num');
+        var rng = document.getElementById('cubrir-dias');
+        var MIN = 7, MAX = 120;
+
+        window.cdSync = function (v) {
+          var n = parseInt(v, 10);
+          if (isNaN(n)) { return; }              // deja escribir, no pisa el tipeo
+          n = Math.max(MIN, Math.min(MAX, n));
+          if (num.value != n) { num.value = n; }
+          if (rng.value != n) { rng.value = n; }
+        };
+
+        window.cdEnviar = function () {
+          var n = parseInt(num.value, 10);
+          if (isNaN(n)) { n = parseInt(rng.value, 10); }
+          num.value = Math.max(MIN, Math.min(MAX, n));
+          document.getElementById('cubrir-form').submit();
+        };
+
+        window.cdPaso = function (d) {
+          var salto = (window.event && window.event.shiftKey) ? 5 : 1;
+          cdSync((parseInt(num.value, 10) || MIN) + d * salto);
+          cdEnviar();
+        };
+
+        // + y - tambien desde el teclado con el campo enfocado. Las flechas
+        // arriba/abajo ya las maneja el propio input number.
+        num.addEventListener('keydown', function (e) {
+          if (e.key === '+' || e.key === '-') {
+            e.preventDefault();
+            cdPaso(e.key === '+' ? 1 : -1);
+          }
+        });
+      })();
+    </script>
     {% endif %}
 
     {# Banner ofertas del lab (flujo /pedidos/dia → 🧪 Laboratorio).
