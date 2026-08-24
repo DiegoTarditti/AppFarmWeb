@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-24 16:00 · rama `feat/rowa-ver-todo-el-stock` · commit `9473a8c`
+Generado: 2026-08-24 16:33 · rama `feat/rowa-ver-todo-el-stock` · commit `05b46c6`
 
-**794 rutas** en 77 archivos · **127 modelos** · **21 syncs** · **34 services** · **11 parsers**
+**795 rutas** en 77 archivos · **127 modelos** · **21 syncs** · **35 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -1275,16 +1275,17 @@ Generado: 2026-08-24 16:00 · rama `feat/rowa-ver-todo-el-stock` · commit `9473
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L87) |
-| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L573) |
-| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L540) |
-| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L397) |
-| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L507) |
+| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L635) |
+| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L602) |
+| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L447) |
+| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L518) |
+| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L569) |
 | `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L293) |
 | `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L186) |
 | `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L239) |
 | `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L215) |
 | `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L301) |
-| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L655) |
+| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L717) |
 
 ### `routes/sucursales.py`
 
@@ -1382,6 +1383,7 @@ Generado: 2026-08-24 16:00 · rama `feat/rowa-ver-todo-el-stock` · commit `9473
 | [`reparto.py`](../services/reparto.py) | Asignación de pedidos a rutas de reparto (v1: cuadrantes N/S/E/O). |
 | [`reparto_sla_cron.py`](../services/reparto_sla_cron.py) | Cron interno para los SLA del flujo de reparto. |
 | [`rowa_analisis.py`](../services/rowa_analisis.py) | Análisis de stock del robot Rowa: rotación, vencimientos y optimización. |
+| [`rowa_carga_export.py`](../services/rowa_carga_export.py) | Exportaciones de la lista de carga del robot (/rowa/carga) a XLSX y PDF. |
 | [`rowa_client.py`](../services/rowa_client.py) | Conector WWKS2 con el robot BD Rowa (Mosaic). |
 | [`rowa_export.py`](../services/rowa_export.py) | Genera las 3 planillas del robot Rowa (Stock, Optimización, Capacidad) en vivo. |
 | [`rowa_observer.py`](../services/rowa_observer.py) | Cruce del stock del robot Rowa con datos reales de ObServer. |

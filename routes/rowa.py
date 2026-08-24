@@ -327,140 +327,91 @@ def init_app(app):
         return ahora
 
     def _calcular_salidas_diarias(session, filas) -> dict[str, float]:
-        """Devuelve {article_id: salidas_por_dia} usando snapshots + cargas.
+        """Devuelve {article_id: salidas_por_dia} a partir de los snapshots.
 
-        Toma los últimos 14 días de snapshots. El movimiento neto de un artículo
-        entre dos snapshots es: (cant_anterior - cant_posterior) + cargas_entre_medio.
-        Si no hay suficientes snapshots, usa unid_mes_est / 30 como fallback.
+        Suma las BAJAS entre snapshots consecutivos. Antes comparaba solo el
+        primero contra el ultimo y le sumaba las cargas registradas, y eso
+        subestimaba fuerte: un articulo que bajo de 10 a 2 y se repuso a 10
+        daba cero salidas. Medido contra el robot de Badia (24/8/2026, 26
+        snapshots en ~4 dias): por extremos 427 unidades, sumando bajas 1.469.
+
+        Ademas ya no depende de que alguien registre las cargas. En esos mismos
+        14 dias habia **cero** `RowaCarga` cargadas, asi que el termino que las
+        compensaba nunca sumaba nada y toda reposicion quedaba invisible. Con
+        este metodo los aumentos simplemente no se cuentan como salida, que es
+        lo correcto los registre alguien o no.
+
+        Sin al menos dos snapshots del articulo, cae al proxy unid_mes_est / 30.
         """
         desde = datetime.now() - timedelta(days=14)
 
-        # Snapshots ordenados por tiempo
         snaps_raw = (
             session.query(RowaSnapshot)
             .filter(RowaSnapshot.tomado_en >= desde)
             .order_by(RowaSnapshot.tomado_en)
             .all()
         )
-
-        # Cargas en el mismo período (suman al stock → no son salidas)
-        cargas_raw = (
-            session.query(RowaCarga)
-            .filter(RowaCarga.cargado_en >= desde)
-            .all()
-        )
-
         if not snaps_raw:
-            # Sin snapshots: fallback a unid_mes_est / 30
             return {f.article_id: round((f.unid_mes_est or 0) / 30, 3) for f in filas}
 
-        # Agrupar por ts → {ts: {article_id: cantidad}}
-        from collections import defaultdict as _dd
-        por_ts: dict = _dd(dict)
+        # {article_id: [(ts, cantidad), ...]} ya ordenado por la query.
+        serie_por_art: dict[str, list[tuple[datetime, int]]] = defaultdict(list)
         for s in snaps_raw:
-            por_ts[s.tomado_en][s.article_id] = s.cantidad
+            serie_por_art[s.article_id].append((s.tomado_en, s.cantidad))
 
-        ts_list = sorted(por_ts)
-        if len(ts_list) < 2:
+        ts_todos = sorted({s.tomado_en for s in snaps_raw})
+        if len(ts_todos) < 2:
             return {f.article_id: round((f.unid_mes_est or 0) / 30, 3) for f in filas}
+        dias = max((ts_todos[-1] - ts_todos[0]).total_seconds() / 86400, 1)
 
-        # Cargas entre snapshots → {(article_id, ts_ini, ts_fin): total_cargado}
-        cargas_por_aid: dict = _dd(float)
-        for c in cargas_raw:
-            cargas_por_aid[c.article_id] += c.cantidad
-
-        # Salidas acumuladas por artículo en el período
-        salidas_total: dict = _dd(float)
-        primer_ts = ts_list[0]
-        ultimo_ts = ts_list[-1]
-
-        for aid in {s.article_id for s in snaps_raw}:
-            q_ini = por_ts[primer_ts].get(aid)
-            q_fin = por_ts[ultimo_ts].get(aid)
-            if q_ini is None or q_fin is None:
-                continue
-            cargado = cargas_por_aid.get(aid, 0)
-            salidas = (q_ini - q_fin) + cargado
-            salidas_total[aid] = max(salidas, 0)
-
-        dias = max((ultimo_ts - primer_ts).total_seconds() / 86400, 1)
         result: dict[str, float] = {}
         for f in filas:
-            if f.article_id in salidas_total:
-                result[f.article_id] = round(salidas_total[f.article_id] / dias, 3)
-            else:
+            serie = serie_por_art.get(f.article_id, [])
+            if len(serie) < 2:
                 result[f.article_id] = round((f.unid_mes_est or 0) / 30, 3)
+                continue
+            bajas = sum(max(prev - cur, 0)
+                        for (_, prev), (_, cur) in zip(serie, serie[1:]))
+            result[f.article_id] = round(bajas / dias, 3)
         return result
 
-    @app.route("/rowa/carga")
-    @login_required
-    def rowa_carga():
-        try:
-            data = _cargar(refresh=bool(request.args.get("refresh")))
-        except (RowaError, OSError) as e:
-            return render_template("rowa_carga.html", sin_robot=True, error=str(e))
+    def _construir_items(session, filas):
+        """Arma la lista de carga (cobertura, urgencia, sugerido) para /rowa/carga.
 
-        filas = data["filas"]
+        Vive aparte porque lo usan la pantalla y las exportaciones, y porque la
+        exportacion NO debe tomar snapshot: eso es efecto de abrir la pantalla, no
+        de bajarse un PDF.
 
-        with get_db() as session:
-            # Auto-snapshot si el último tiene más de 1 hora
-            ultimo_snap = (
-                session.query(RowaSnapshot.tomado_en)
-                .order_by(RowaSnapshot.tomado_en.desc())
-                .first()
-            )
-            snap_ts = None
-            if not ultimo_snap or (datetime.now() - ultimo_snap[0]).total_seconds() > 3600:
-                snap_ts = _tomar_snapshot(session, filas)
-            else:
-                snap_ts = ultimo_snap[0]
+        Orden: por laboratorio y, dentro de cada uno, alfabetico por producto. Antes
+        ordenaba por urgencia y cobertura, pero para ir a buscar la mercaderia al
+        deposito conviene recorrer un laboratorio a la vez. La urgencia sigue estando
+        en cada fila (y pintada en la pantalla), asi que no se pierde.
+        """
+        salidas_dia = _calcular_salidas_diarias(session, filas)
 
-            salidas_dia = _calcular_salidas_diarias(session, filas)
+        # Eventos de aumento de stock por artículo (carga/parcial/ingreso sin
+        # registrar), para el filtro "solo con aumentos" — una sola pasada
+        # sobre todos los snapshots/cargas en vez de N queries por artículo.
+        snaps_por_art: dict[str, list[tuple[datetime, int]]] = defaultdict(list)
+        for aid, ts, cant in (
+            session.query(RowaSnapshot.article_id, RowaSnapshot.tomado_en, RowaSnapshot.cantidad)
+            .order_by(RowaSnapshot.tomado_en)
+            .all()
+        ):
+            snaps_por_art[aid].append((ts, cant))
+        cargas_por_art: dict[str, list[tuple[datetime, int]]] = defaultdict(list)
+        for aid, ts, cant in (
+            session.query(RowaCarga.article_id, RowaCarga.cargado_en, RowaCarga.cantidad)
+            .order_by(RowaCarga.cargado_en)
+            .all()
+        ):
+            cargas_por_art[aid].append((ts, cant))
+        tipo_aumento_por_art = {
+            aid: peor_tipo_evento(clasificar_eventos_stock(snaps, cargas_por_art.get(aid, [])))
+            for aid, snaps in snaps_por_art.items()
+            if len(snaps) >= 2
+        }
 
-            # Eventos de aumento de stock por artículo (carga/parcial/ingreso sin
-            # registrar), para el filtro "solo con aumentos" — una sola pasada
-            # sobre todos los snapshots/cargas en vez de N queries por artículo.
-            snaps_por_art: dict[str, list[tuple[datetime, int]]] = defaultdict(list)
-            for aid, ts, cant in (
-                session.query(RowaSnapshot.article_id, RowaSnapshot.tomado_en, RowaSnapshot.cantidad)
-                .order_by(RowaSnapshot.tomado_en)
-                .all()
-            ):
-                snaps_por_art[aid].append((ts, cant))
-            cargas_por_art: dict[str, list[tuple[datetime, int]]] = defaultdict(list)
-            for aid, ts, cant in (
-                session.query(RowaCarga.article_id, RowaCarga.cargado_en, RowaCarga.cantidad)
-                .order_by(RowaCarga.cargado_en)
-                .all()
-            ):
-                cargas_por_art[aid].append((ts, cant))
-            tipo_aumento_por_art = {
-                aid: peor_tipo_evento(clasificar_eventos_stock(snaps, cargas_por_art.get(aid, [])))
-                for aid, snaps in snaps_por_art.items()
-                if len(snaps) >= 2
-            }
-
-            # Última sesión de carga
-            ultima_carga = (
-                session.query(RowaCarga.cargado_en)
-                .order_by(RowaCarga.cargado_en.desc())
-                .first()
-            )
-
-            # Historial de snapshots (últimos 10, agrupados por timestamp)
-            from sqlalchemy import func as _func
-            snap_historial = (
-                session.query(
-                    RowaSnapshot.tomado_en,
-                    _func.count(RowaSnapshot.article_id).label("n_art"),
-                )
-                .group_by(RowaSnapshot.tomado_en)
-                .order_by(RowaSnapshot.tomado_en.desc())
-                .limit(10)
-                .all()
-            )
-
-        # Construir lista de carga con cobertura
         items = []
         for f in filas:
             sal = salidas_dia.get(f.article_id, 0)
@@ -487,13 +438,73 @@ def init_app(app):
                 "tipo_aumento": tipo_aumento_por_art.get(f.article_id),
             })
 
-        items.sort(key=lambda x: (x["urgencia"], x["cobertura"]))
-        labs_disponibles = sorted({i["laboratorio"] for i in items if i["laboratorio"]})
+        # "~" para que los sin laboratorio queden al final y no encabecen la lista.
+        items.sort(key=lambda x: ((x["laboratorio"] or "~").lower(), x["nombre"].lower()))
+        return items
+
+    @app.route("/rowa/carga")
+    @login_required
+    def rowa_carga():
+        try:
+            data = _cargar(refresh=bool(request.args.get("refresh")))
+        except (RowaError, OSError) as e:
+            return render_template("rowa_carga.html", sin_robot=True, error=str(e))
+
+        filas = data["filas"]
+
+        with get_db() as session:
+            # Auto-snapshot si el último tiene más de 1 hora
+            ultimo_snap = (
+                session.query(RowaSnapshot.tomado_en)
+                .order_by(RowaSnapshot.tomado_en.desc())
+                .first()
+            )
+            snap_ts = None
+            if not ultimo_snap or (datetime.now() - ultimo_snap[0]).total_seconds() > 3600:
+                snap_ts = _tomar_snapshot(session, filas)
+            else:
+                snap_ts = ultimo_snap[0]
+
+            items = _construir_items(session, filas)
+
+            # Última sesión de carga
+            ultima_carga = (
+                session.query(RowaCarga.cargado_en)
+                .order_by(RowaCarga.cargado_en.desc())
+                .first()
+            )
+
+            # Historial de snapshots (últimos 10, agrupados por timestamp)
+            from sqlalchemy import func as _func
+            snap_historial = (
+                session.query(
+                    RowaSnapshot.tomado_en,
+                    _func.count(RowaSnapshot.article_id).label("n_art"),
+                )
+                .group_by(RowaSnapshot.tomado_en)
+                .order_by(RowaSnapshot.tomado_en.desc())
+                .limit(10)
+                .all()
+            )
+
+        # Se renderizaban los ~3.500 items siempre, con el checkbox "Solo
+        # criticos" tildado escondiendo el 96% del lado del navegador: 4 MB de
+        # HTML por visita para mostrar 222 renglones. Ahora el corte lo hace el
+        # servidor y `?todo=1` trae el resto.
+        ver_todo = request.args.get("todo") == "1"
+        tabla = items if ver_todo else [i for i in items if i["urgencia"] < 3]
+
+        # Del conjunto renderizado: los filtros client-side no pueden ofrecer un
+        # laboratorio que no esta en la tabla.
+        labs_disponibles = sorted({i["laboratorio"] for i in tabla if i["laboratorio"]})
 
         return render_template(
             "rowa_carga.html",
             sin_robot=False,
-            items=items,
+            items=tabla,
+            ver_todo=ver_todo,
+            n_total=len(items),
+            n_tabla=len(tabla),
             snap_ts=snap_ts,
             ultima_carga=ultima_carga[0] if ultima_carga else None,
             n_criticos=sum(1 for i in items if i["urgencia"] < 2),
@@ -501,6 +512,57 @@ def init_app(app):
             snap_historial=snap_historial,
             labs_disponibles=labs_disponibles,
         )
+
+    @app.route("/rowa/carga/export.<fmt>")
+    @login_required
+    def rowa_carga_export(fmt):
+        """Baja la lista de carga en XLSX o PDF, agrupada por laboratorio.
+
+        Aplica los mismos filtros que la pantalla (buscador, laboratorio, solo
+        criticos), que viajan por querystring: los de la pantalla son
+        client-side, asi que el boton los reenvia para que el archivo coincida
+        con lo que el operador esta viendo.
+
+        No toma snapshot a proposito: eso es efecto de abrir /rowa/carga, no de
+        bajarse un archivo.
+        """
+        if fmt not in ("xlsx", "pdf"):
+            abort(404)
+
+        try:
+            data = _cargar()
+        except (RowaError, OSError) as e:
+            abort(503, description=str(e))
+
+        with get_db() as session:
+            items = _construir_items(session, data["filas"])
+
+        q = (request.args.get("q") or "").strip().lower()
+        lab = (request.args.get("lab") or "").strip()
+        if q:
+            items = [i for i in items if q in i["nombre"].lower()]
+        if lab:
+            items = [i for i in items if i["laboratorio"] == lab]
+        if request.args.get("criticos") == "1":
+            # < 3, igual que el filtro de la pantalla (cargaFiltrar). El KPI
+            # `n_criticos` de la ruta usa < 2, que es otra cosa: acá lo que
+            # importa es que el archivo coincida con lo que el operador ve.
+            items = [i for i in items if i["urgencia"] < 3]
+
+        from services.rowa_carga_export import construir_pdf, construir_xlsx
+        generado = data["generado"]
+        sello = f"{generado:%Y-%m-%d}"
+
+        if fmt == "xlsx":
+            contenido = construir_xlsx(items, generado)
+            mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        else:
+            contenido = construir_pdf(items, generado)
+            mime = "application/pdf"
+
+        nombre = f"Carga-robot-{sello}.{fmt}"
+        return Response(contenido, mimetype=mime,
+                        headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
 
     @app.route("/rowa/carga/registrar", methods=["POST"])
     @login_required
