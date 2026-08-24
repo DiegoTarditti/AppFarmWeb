@@ -225,26 +225,123 @@ paso saca del medio el lío de `erp_carga_id`.
 
 ---
 
-## Pendiente
 
-- [ ] **El corte asume continuidad, pero se calcula como un máximo.**
-      `corte_resumenes` devuelve `max(periodo_hasta)`. Si se importan el S32 y el
+## Pendientes
+
+Ordenados por lo que cuesta si no se hace. Todo lo de acá salió de la sesión del
+2026-08-24; lo marcado con PR ya está en revisión.
+
+### P0 — Se pueden disparar dos scrapings en paralelo
+
+**El sync de Kellerhoff usa un `threading.Lock` y un dict global**
+(`_sync_lock`, `_sync_estado` en [`routes/kellerhoff_sync.py`](../routes/kellerhoff_sync.py)),
+y gunicorn corre con **`--workers 2`** ([`Dockerfile:39`](../Dockerfile)). Esas
+variables son **una por proceso**, así que:
+
+- El `POST /kellerhoff/sync/ejecutar` cae en el worker A, que arranca el thread y
+  escribe el log en **su** copia del estado.
+- El polling `GET /kellerhoff/sync/estado` se reparte entre los dos. Cuando cae
+  en B devuelve `{corriendo: False}` → **la pantalla no muestra el log ni el
+  progreso**. Es el síntoma que se ve.
+- El segundo click, si cae en A, devuelve 409 "ya hay un sync en curso". **Si cae
+  en B, arranca un SEGUNDO scraping en paralelo**: dos Chromium logueándose al
+  portal y escribiendo la misma DB. Eso es el problema real; la UI muda es sólo
+  lo visible.
+
+**Ya está resuelto para el otro sync.** [`SyncLock`](../database.py) es un
+singleton en DB con `acquire` por UPDATE atómico (`rowcount == 1` = lo tomé) y
+timeout de 60 min para locks abandonados; su docstring describe exactamente este
+bug. El de Kellerhoff quedó con el patrón viejo.
+
+- [ ] Portar `SyncLock` al sync de Kellerhoff (lock **y** progreso en DB, para
+      que los dos workers vean lo mismo). Hoy `SyncLock` asume `id=1`
+      hardcodeado para ObServer: hace falta discriminar una fila por sync.
+- [ ] Mientras tanto: **no clickear dos veces Sincronizar**.
+
+### P1 — El eslabón 4 sigue sin existir
+
+- [ ] **`observer_source.get_recepciones_factura`** leyendo `DW.Recepciones`. La
+      UI ya está escrita y gateada con `hasattr`
+      ([`routes/observer.py:34`](../routes/observer.py),
+      `routes/invoices.py:958`, `templates/compare.html:337`) — se enciende sola.
+      Reemplaza la subida manual del Excel del ERP y saca del medio el lío de
+      `erp_carga_id`. **Hacerlo por `IdProveedor`, no Kellerhoff-only.**
+- [ ] Al implementarlo: **las NC no tienen remito** (se ve en el S34: es la única
+      fila con `—` en esa columna). Como el ancla del cruce es el remito, su
+      check de `ingreso` tiene que quedar en **"no aplica"**, no en "falta" — una
+      NC no genera ingreso de mercadería. Si no, aparecen como falsos pendientes.
+
+### P1 — Faltantes que no se capturan
+
+- [ ] El camino rápido del scraper (tabla HTML) **no captura la sección
+      `*** PRODUCTOS EN FALTA MOMENTÁNEA ***`** — hay un TODO en
+      [`_detalle_comprobante`](../services/kellerhoff_scraper.py). Sólo se leen
+      por el camino del PDF, que hoy se usa únicamente cuando el HTML no trae
+      ítems. La factura 0046-00255798 tiene **14 faltantes** que por ese camino
+      se pierden, y los faltantes son justamente lo que se le reclama a la
+      droguería. Falta una muestra HTML de una factura con faltantes para saber
+      si el dato está en la tabla o hay que bajar el PDF igual.
+
+### P2 — El corte de resúmenes asume continuidad
+
+- [ ] `corte_resumenes` devuelve `max(periodo_hasta)`. Si se importan el S32 y el
       S34 pero se saltea el S33, el corte queda al final del S34 y **toda la
-      semana del S33 se pinta ámbar** — que es exactamente el modo de falla que
-      el corte existe para evitar. Peor: el tooltip afirma "los resúmenes ya
-      cubren hasta el 28/08", que en ese caso es falso.
+      semana del S33 se pinta ámbar** — el modo de falla que el corte existe para
+      evitar. Peor: el tooltip afirma "los resúmenes ya cubren hasta el 28/08",
+      que ahí es falso.
       Se detecta comparando el `periodo_desde` de cada resumen contra el
-      `periodo_hasta` del anterior. Con eso se pueden excluir los rangos con
-      hueco de la regla ámbar, o mejor, mostrar un tercer estado: *"falta
-      importar el resumen de esa semana"* — que es una acción distinta a
-      *"reclamale a la droguería"*, y hoy la UI no las distingue.
-      _(Detectado en la review del PR #325. No bloqueante hasta que aparezca el
-      primer hueco real, pero el día que pase va a parecer un bug del cruce.)_
+      `periodo_hasta` del anterior. Con eso se excluyen los rangos con hueco, o
+      mejor, se muestra un tercer estado: *"falta importar el resumen de esa
+      semana"* — que es una acción distinta a *"reclamale a la droguería"*.
+      _(De la review del PR #325. No bloqueante hasta el primer hueco real, pero
+      el día que pase va a parecer un bug del cruce.)_
+
+### P2 — Columnas que ya se pueden llenar
+
+El tilde de cada renglón (`estado_item`) tiene los checks `ingreso`, `arca` y
+`pago` en `None` = *no evaluado*. Dos de los tres no necesitan modelo nuevo:
+
+- [ ] **ARCA**: `Invoice.origen == 'arca'` / `Invoice.cae`, del import de Mis
+      Comprobantes.
+- [ ] **Pago**: sumar `PagoAplicacion.monto` por factura contra `Invoice.total`
+      → impaga / parcial / paga.
+- [ ] **Ingreso**: depende del eslabón 4.
+
+Cuando se completen, el tilde se endurece solo — sin migración ni cambios de UI.
+
+### P2 — La pantalla de control de comprobantes
+
+Diseño conversado y **no implementado**: una tabla con **una fila por
+comprobante y una columna por fuente que lo confirma** (OBS · RESUMEN · ARCA ·
+PAGO), separada del extracto contable —que es una fila por *evento*, con saldo
+acumulado— porque responden preguntas distintas y mezclarlas arruina las dos.
+
+Lo que hay que respetar si se construye:
+
+- [ ] **Cada columna con su propio corte**, o marca falsos pendientes y nadie la
+      mira más: OBS = hoy − 72 h · RESUMEN = último `periodo_hasta` importado ·
+      ARCA = último período importado · PAGO = fecha de vencimiento. Vacío
+      **después** del corte es "todavía no toca" (gris), no "falta" (ámbar).
+- [ ] La fila **expande** en vez de navegar: el control de ingreso son ~137
+      renglones, no entran en una celda, y mandar al operador a otra pantalla por
+      cada factura es peor.
+- [ ] El botón de control por fila **y** uno masivo. Nadie aprieta 23 botones.
+
+### P2 — Chico y suelto
+
+- [ ] **Card en el home.** Los resúmenes se llegan hoy por Home → Ingresos → 🔄
+      Portal Kellerhoff → *Resúmenes de cuenta* (3 clicks). El home tiene su
+      inventario propio en [`lista_cards_home_ux.md`](lista_cards_home_ux.md);
+      decisión de Diego/Lisandro.
+- [ ] **Facturas que se re-navegan siempre.** Tras arreglar `skip_nros` (PR #327),
+      una factura cuyo detalle falle *de verdad* se vuelve a bajar en cada sync.
+      Es lento, no incorrecto — y ahora es visible en la columna de detalle en vez
+      de silencioso. Si molesta, hace falta un contador de intentos.
 
 ## Pendiente de verificar
 
 - [ ] **El `.env` apunta a un ObServer que ya no existe.** Migró a `SRV-2K22`,
-      **SQL Server 2019** (la doc dice 2014), puerto dinámico **54200**; el
+      **SQL Server 2019** (la doc decía 2014), puerto dinámico **54200**; el
       `.env` local tiene `54572` → conexión rechazada. Confirmar qué tiene el
       `.env` del server de la app (Debian, `192.168.1.220:5000`): si arrastra el
       puerto viejo, el sync está caído ahí también. Es exactamente el riesgo que
@@ -252,7 +349,7 @@ paso saca del medio el lío de `erp_carga_id`.
       — puerto dinámico, se mueve en cada reinicio.
 - [ ] `Gestion.PedidosIGMSinProveedor` + `...Renglones`: por el nombre, el pedido
       **antes** del ingreso. Podría cubrir el eslabón 1 desde ObServer.
-- [ ] Averiguar si el portal de Kellerhoff expone el resumen semanal para
-      descarga automática (el scraper hoy solo va a `ConsultaDeComprobantes`).
+- [ ] Si el portal expone el resumen semanal para **descarga automática** (el
+      scraper hoy sólo va a `ConsultaDeComprobantes`). Hoy el PDF se sube a mano.
 - [ ] Qué son los comprobantes con `PV 9003` letra `A`/`S` (117 casos, el segundo
-      formato más común). No son facturas de Kellerhoff.
+      formato más común en las recepciones). No son facturas de Kellerhoff.
