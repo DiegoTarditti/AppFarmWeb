@@ -777,14 +777,34 @@ def init_app(app):
         # los productos libres (sin asignación lab×drog) se preasignan a esta
         # droguería en el front (editable después). Solo aplica en modo matriz.
         libres_a = request.args.get('libres_a', type=int)
-        # Cobertura objetivo configurable por query param. Default 7 días.
-        target_dias = request.args.get('target', type=int) or TARGET_DIAS_COBERTURA_DEFAULT
-        target_dias = max(1, min(target_dias, 90))  # clamp 1-90
         # Modo lab: "cubrir N días" reemplaza min_efectivo como piso de ideal.
         # Solo aplica cuando hay lab_id (compra grande directa al lab); si no,
         # el cálculo REPO sigue usando min_efectivo (matriz lab/drog).
         cubrir_dias = request.args.get('cubrir_dias', type=int) or 30
         cubrir_dias = max(1, min(cubrir_dias, 120))
+        # Cobertura objetivo: decide QUIEN entra al universo, no cuanto se pide
+        #   (stock <= minimo)  OR  (stock * 365 < target_dias * u12m)
+        #
+        # En modo lab lo gobierna el MISMO slider que la cantidad. Antes quedaba
+        # fijo en 7 dias y escondia justo los productos que no llegaban a la
+        # cobertura pedida: pedias "cubrir 43 dias" y el producto con 21 dias de
+        # stock no aparecia, porque para entrar necesitaba estar por debajo de 7.
+        #
+        # No se toca el resto:
+        #   - modo oferta: el universo es el archivo, target no participa.
+        #   - reposicion (sin slider en pantalla): sigue en 7, para no agrandarle
+        #     la lista a un flujo que hoy funciona.
+        # Un ?target=N explicito gana siempre, para poder separarlos si hace falta.
+        _target_arg = request.args.get('target', type=int)
+        if _target_arg:
+            target_dias = _target_arg
+        elif lab_id:
+            target_dias = cubrir_dias
+        else:
+            target_dias = TARGET_DIAS_COBERTURA_DEFAULT
+        # clamp 1-90. Ojo: el slider llega a 120, asi que de 90 para arriba el
+        # universo deja de crecer aunque la cantidad pedida siga subiendo.
+        target_dias = max(1, min(target_dias, 90))
         # Ventana de meses para calcular tasa de rotación diaria. Default 3.
         # Nota: los 12 meses siguen usándose para estacionalidad/forecast en
         # purchase_engine; este parámetro solo afecta `target_unid` (cuánto pedir).
