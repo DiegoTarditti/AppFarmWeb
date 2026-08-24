@@ -1766,6 +1766,65 @@ class FacturaFaltante(Base):
     )
 
 
+class ResumenProveedor(Base):
+    """Resumen de cuenta que emite la droguería (Kellerhoff: uno por semana).
+
+    Es el ÚNICO control que cierra la plata: `DW.Recepciones` de ObServer trae
+    las cantidades pero `PrecioUnitario` viene en 0 en las 187.555 filas, y
+    `Proveedores.ComprobantesProveedores` está muerta desde 2024. Además es la
+    única fuente con vencimientos. Ver `docs/controles_kellerhoff.md`.
+
+    El PDF es autoconsistente (la suma de los ítems da el total impreso), así
+    que `total` sirve de checksum del import.
+    """
+    __tablename__ = 'resumen_proveedor'
+    id = Column(Integer, primary_key=True)
+    proveedor_id = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'),
+                          nullable=False)
+    numero = Column(String(20), nullable=False)      # 'S34-2026'
+    periodo_desde = Column(Date)
+    periodo_hasta = Column(Date)
+    cierre = Column(String(20))                      # 'Viernes'
+    generado_en = Column(DateTime)
+    total = Column(DECIMAL(14, 2))
+    primer_vencimiento = Column(Date)
+    # Los vencimientos vienen agregados por fecha, NO por comprobante: el PDF no
+    # dice cuál vence cuándo. Se guardan tal cual ([{fecha, importe}, ...]) en vez
+    # de inventar un reparto por ítem.
+    vencimientos_json = Column(Text)
+    pdf_filename = Column(String(200))
+    importado_en = Column(DateTime, default=now_ar, server_default=func.now())
+    __table_args__ = (
+        UniqueConstraint('proveedor_id', 'numero', name='uq_resumen_prov_numero'),
+    )
+
+
+class ResumenProveedorItem(Base):
+    """Un renglón del resumen: un comprobante que la droguería te está cobrando.
+
+    `clave` es el número normalizado a `PV-NUMERO` sin ceros ni letra (ver
+    `helpers.clave_comprobante`) — es por donde se cruza contra `facturas`,
+    porque cada sistema escribe el mismo comprobante distinto.
+    """
+    __tablename__ = 'resumen_proveedor_item'
+    id = Column(Integer, primary_key=True)
+    resumen_id = Column(Integer, ForeignKey('resumen_proveedor.id', ondelete='CASCADE'),
+                        nullable=False)
+    fecha = Column(Date)
+    tipo = Column(String(10))                        # FAC / NCR
+    numero = Column(String(25))                      # tal cual lo imprime: '0046A00279207'
+    clave = Column(String(25))                       # normalizado: '46-279207'
+    numero_remito = Column(String(25))               # '0047R00293853' (las NCR no traen)
+    total = Column(DECIMAL(14, 2))
+    factura_id = Column(Integer, ForeignKey('facturas.id', ondelete='SET NULL'),
+                        nullable=True)
+    __table_args__ = (
+        Index('idx_resumen_item_resumen', 'resumen_id'),
+        Index('idx_resumen_item_clave', 'clave'),
+        Index('idx_resumen_item_factura', 'factura_id'),
+    )
+
+
 class ErpStock(Base):
     __tablename__ = 'erp_stock'
     id = Column(Integer, primary_key=True)
@@ -3315,6 +3374,7 @@ def init_db(database_url=None):
                         'api_keys',
                         'web_rubros_publicados', 'web_producto_imagen',
                         'rowa_nuevos', 'rowa_snapshots', 'rowa_cargas',
+                        'resumen_proveedor', 'resumen_proveedor_item',
                         'anunciantes')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:

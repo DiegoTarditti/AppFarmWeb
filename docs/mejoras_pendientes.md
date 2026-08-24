@@ -17,6 +17,33 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Cadena de controles contra Kellerhoff (2026-08-24)
+
+**Diseño completo en [`docs/controles_kellerhoff.md`](controles_kellerhoff.md).**
+
+Cinco fuentes dicen algo sobre la misma compra y hoy no se cruzan:
+pedido → factura → cuenta corriente → **ingreso de mercadería** → **resumen semanal**.
+Los tres primeros ya existen; faltan los dos extremos.
+
+- [ ] **Eslabón 4 — ingreso de mercadería.** Implementar
+      `observer_source.get_recepciones_factura` leyendo **`DW.Recepciones`** (ya
+      existe: 187.555 filas, 2 años). Enciende la UI que ya está escrita y
+      gateada con `hasattr` (`routes/observer.py:34`, `routes/invoices.py:958`,
+      `templates/compare.html:337`) y reemplaza la subida manual del Excel ERP.
+      Probado contra la factura 0046-00255798: **137/137 renglones, 199 = 199
+      unidades**. Hacerlo por `IdProveedor`, no Kellerhoff-only.
+- [ ] **Eslabón 5 — resumen semanal.** Único control que cierra la **plata** y
+      trae **vencimientos**. El PDF es autoconsistente (S34-2026: los 23
+      comprobantes suman el total impreso).
+
+⚠ Dos trampas medidas, leer el doc antes de codear: el número de comprobante en
+ObServer es **texto libre** (solo 7 de 400 traen la factura real → anclar en el
+**remito**, matchear por dígitos, buscar en los dos campos), y `PrecioUnitario`
+viene en **0% de las 187.555 filas** → no sirve para plata ni para
+`Producto.ultima_compra`.
+
+---
+
 ## ✅ Kellerhoff sync: parsear ítems SIN IA + clasificador de comprobantes (2026-08-21)
 
 **Implementado (sesión 2026-08-21)**, validado contra los 90 comprobantes reales bajados

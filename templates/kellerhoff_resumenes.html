@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% set nav_active = "ingresos" %}
+{% block title %}Resúmenes de cuenta · Kellerhoff{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+  .list-card { padding: 0; overflow: hidden; }
+  .list-card__body table { width: 100%; font-size: 13px; }
+  .list-card__body thead th {
+    padding: 10px 16px;
+    font-size: 10px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; text-align: left;
+    background: var(--ds-surface); border-bottom: 1px solid var(--ds-line);
+  }
+  .list-card__body tbody td { padding: 10px 16px; border-bottom: 1px solid var(--ds-line); }
+  .list-card__body tbody tr:last-child td { border-bottom: 0; }
+  .list-card__body tbody tr:hover { background: rgba(95,230,188,.04); }
+  .mono-xs { font-family: ui-monospace, monospace; font-size: 12px; }
+  .th-right, .td-right { text-align: right; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 py-6 px-6 overflow-auto">
+<div class="max-w-5xl mx-auto space-y-6">
+
+  <header class="page-header">
+    <div class="page-header__left">
+      <a href="{{ url_for('kellerhoff_sync') }}" class="section-label" style="margin-bottom:4px;">← Ciclo de compra</a>
+      <h1 class="page-header__title">Resúmenes de cuenta · <span class="glow-text">Kellerhoff</span></h1>
+      <p class="page-header__subtitle">El cierre semanal de la droguería: qué comprobantes te cobra y cuándo vencen</p>
+    </div>
+  </header>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+      <div class="card" style="padding:12px 18px;border-color:{{ 'var(--ds-orange)' if category == 'error' else 'var(--ds-green, #22c55e)' }};">
+        <p class="text-sm">{{ message }}</p>
+      </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="card" style="padding:20px 24px;">
+    <h2 class="section-label" style="margin-bottom:6px;">Importar un resumen</h2>
+    <p style="font-size:12px;color:var(--ds-text-mute);margin-bottom:14px;">
+      El PDF que manda Kellerhoff (<span class="mono-xs">descargaResumenSemanalSap.pdf</span>).
+      Reimportar el mismo número reemplaza sus renglones, no los duplica.
+    </p>
+    <form method="POST" action="{{ url_for('kellerhoff_resumen_importar') }}"
+          enctype="multipart/form-data" class="flex items-end gap-3">
+      <input type="file" name="pdf" accept="application/pdf" required
+             style="font-size:13px;color:var(--ds-text);">
+      <button type="submit" class="btn btn-secondary">Importar</button>
+    </form>
+  </div>
+
+  <div class="card list-card">
+    <div class="list-card__body">
+      <table>
+        <thead>
+          <tr>
+            <th>Resumen</th>
+            <th>Período</th>
+            <th class="th-right">Total</th>
+            <th>1° vencimiento</th>
+            <th class="th-right">Comprobantes</th>
+            <th>Importado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in resumenes %}
+          <tr>
+            <td>
+              <a href="{{ url_for('kellerhoff_resumen_detalle', resumen_id=r.id) }}"
+                 class="mono-xs" style="font-weight:700;">{{ r.numero }}</a>
+            </td>
+            <td style="font-size:12px;color:var(--ds-text-mute);">{{ r.periodo }}</td>
+            <td class="td-right mono-xs">${{ '{:,.2f}'.format(r.total).replace(',', 'X').replace('.', ',').replace('X', '.') }}</td>
+            <td style="font-size:12px;">{{ r.primer_vencimiento }}</td>
+            <td class="td-right" style="font-size:12px;">
+              {{ r.n_ligados }} / {{ r.n_items }}
+              {% if r.n_ligados < r.n_items %}
+              <span title="{{ r.n_items - r.n_ligados }} comprobante(s) del resumen no están entre nuestras facturas"
+                    style="color:var(--ds-orange);">⚠</span>
+              {% endif %}
+            </td>
+            <td style="font-size:11px;color:var(--ds-text-mute);">{{ r.importado_en }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" style="padding:28px;text-align:center;color:var(--ds-text-mute);font-size:13px;">
+            Todavía no importaste ningún resumen.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</div>
+{% endblock %}

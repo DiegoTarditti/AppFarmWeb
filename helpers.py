@@ -2026,6 +2026,37 @@ def materializar_producto(session, observer_id):
     return prod, None
 
 
+_RE_CLAVE_KH    = re.compile(r'^(\d{1,5})[A-Z](\d{1,8})$')       # 0046A00279207 (Kellerhoff)
+_RE_CLAVE_OBS   = re.compile(r'^[A-Z](\d{4})(\d{8})$')           # A004600279207 (ObServer)
+_RE_CLAVE_GUION = re.compile(r'^(\d{1,5})\s*-\s*(\d{1,8})$')     # 00046-00279207 / 0046-00255798
+
+
+def clave_comprobante(nro):
+    """Número de comprobante → `'PV-NUMERO'` sin ceros a la izquierda ni letra.
+
+    Cada sistema escribe el MISMO comprobante distinto, y sin esto los cruces
+    dan falsos negativos en masa (ver `docs/controles_kellerhoff.md`):
+
+        Kellerhoff  '0046A00279207'   ← letra en el medio
+        ObServer    'A004600279207'   ← letra adelante
+        nuestro     '00046-00279207'  ← con guión, 5 dígitos de PV
+
+    Los tres devuelven `'46-279207'`. Devuelve None si no se puede interpretar
+    (mejor no cruzar que cruzar mal: un match equivocado acá termina en un
+    reclamo por el comprobante de otro).
+    """
+    s = (nro or '').strip().upper().replace(' ', '')
+    if not s:
+        return None
+    for rx in (_RE_CLAVE_GUION, _RE_CLAVE_KH, _RE_CLAVE_OBS):
+        m = rx.match(s)
+        if m:
+            return '%d-%d' % (int(m.group(1)), int(m.group(2)))
+    # Sin PV: un número suelto no identifica nada (el mismo número existe en
+    # varios puntos de venta), así que no se inventa una clave.
+    return None
+
+
 def _sin_acentos(s):
     """lowercase + sin acentos, para matching insensible a tildes.
 

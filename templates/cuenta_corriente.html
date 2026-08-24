@@ -136,6 +136,7 @@
                             <th class="text-left py-2.5 px-2">Procesada</th>
                             <th class="text-left py-2.5 px-2">Tipo</th>
                             <th class="text-left py-2.5 px-2">Comprobante</th>
+                            <th class="text-center py-2.5 px-2" title="Resumen de cuenta de la droguería en el que entró">Resumen</th>
                             <th class="text-center py-2.5 px-2">Ingresada</th>
                             <th class="text-center py-2.5 px-2">Conc.</th>
                             <th class="text-right py-2.5 px-2">Debe</th>
@@ -167,6 +168,24 @@
                             {% endif %}
                         </td>
                         <td class="py-2 px-2 text-[#6f6f6f] font-mono">{{ m.comprobante }}</td>
+                        <td class="py-2 px-2 text-center whitespace-nowrap">
+                            {% if m.resumen %}
+                            <a href="{{ url_for('kellerhoff_resumen_detalle', resumen_id=m.resumen.id) }}"
+                               title="Entró en el resumen {{ m.resumen.numero }}{% if m.resumen.periodo_desde %} ({{ m.resumen.periodo_desde.strftime('%d/%m') }} al {{ m.resumen.periodo_hasta.strftime('%d/%m/%Y') if m.resumen.periodo_hasta else '' }}){% endif %}"
+                               class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors">
+                                {{ m.resumen.numero }}
+                            </a>
+                            {% elif m.origen == 'factura' and m.tipo != 'PREFAC' and corte_resumenes and m.fecha and m.fecha <= corte_resumenes %}
+                            {# Anterior al último resumen importado y no figura: o falta ese
+                               resumen, o la droguería nunca lo incluyó. Vale mirarlo. #}
+                            <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700"
+                                  title="No aparece en ningún resumen, y los resúmenes ya cubren hasta el {{ corte_resumenes.strftime('%d/%m/%Y') }}">
+                                sin resumen
+                            </span>
+                            {% else %}
+                            <span class="text-[#ccc]">—</span>
+                            {% endif %}
+                        </td>
                         <td class="py-2 px-2 text-center">
                             {% if m.ingresada == true %}
                             <a href="{{ url_for('show_results', invoice_id=m.id) }}" title="Ver ingreso"
@@ -234,7 +253,7 @@
                     </tbody>
                     <tfoot>
                         <tr class="border-t-2 border-[#d0d0d0] bg-surface-input">
-                            <td colspan="6" class="py-2.5 px-4 text-[10px] text-[#999] uppercase tracking-wide font-bold">Saldo final</td>
+                            <td colspan="7" class="py-2.5 px-4 text-[10px] text-[#999] uppercase tracking-wide font-bold">Saldo final</td>
                             <td class="py-2.5 px-2 text-right font-mono font-bold text-red-600">
                                 ${{ '{:,.2f}'.format(movimientos | map(attribute='debe') | sum).replace(',', 'X').replace('.', ',').replace('X', '.') }}
                             </td>
