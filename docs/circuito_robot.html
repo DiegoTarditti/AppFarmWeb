@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Documento de referencia: el circuito del stock y los dos minimos que lo
+  gobiernan. Se abre con doble clic, no necesita servidor ni build.
+
+  Las tipografias vienen de Google Fonts; sin internet cae a las familias del
+  sistema y se lee igual.
+
+  Los numeros salen de correr contra el robot (WWKS2) y ObServer en produccion
+  el 24/8/2026. Si pasa mucho tiempo conviene volver a medir antes de citarlos:
+  la ventana de snapshots era de 4 dias y varias cifras dependen de eso.
+-->
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; }
+  img, svg { max-width: 100%; }
+</style>
+<title>De la droguería al mostrador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+
+<style>
+  :root {
+    --ground:  #F3F6F3;
+    --surface: #FFFFFF;
+    --sunken:  #E9EFE9;
+    --ink:     #16211C;
+    --muted:   #5F6E66;
+    --faint:   #8B9A91;
+    --line:    #D9E1DB;
+    --accent:  #0D7A57;
+    --accent-soft: #DCEFE7;
+    --roto:    #B4531C;
+    --roto-soft: #F8E9DC;
+
+    --f-display: "Archivo", "Segoe UI", system-ui, sans-serif;
+    --f-body: "Literata", Georgia, serif;
+    --f-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+    --s--1: 0.8rem;
+    --s-0:  1rem;
+    --s-1:  1.2rem;
+    --s-2:  1.55rem;
+    --s-3:  2.1rem;
+    --s-4:  2.9rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:  #0E1512;
+      --surface: #17211C;
+      --sunken:  #111A16;
+      --ink:     #E4ECE7;
+      --muted:   #93A399;
+      --faint:   #6C7C73;
+      --line:    #26332D;
+      --accent:  #3FD69E;
+      --accent-soft: #11291F;
+      --roto:    #E3944F;
+      --roto-soft: #2C1F14;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:  #0E1512;
+    --surface: #17211C;
+    --sunken:  #111A16;
+    --ink:     #E4ECE7;
+    --muted:   #93A399;
+    --faint:   #6C7C73;
+    --line:    #26332D;
+    --accent:  #3FD69E;
+    --accent-soft: #11291F;
+    --roto:    #E3944F;
+    --roto-soft: #2C1F14;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: var(--s-0);
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: clamp(28px, 5vw, 60px) clamp(18px, 4vw, 40px) 90px;
+    display: flex; flex-direction: column; gap: 54px;
+  }
+
+  header { display: flex; flex-direction: column; gap: 12px; }
+
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: var(--s--1);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: var(--s-4);
+    line-height: 1.03;
+    letter-spacing: -0.025em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .standfirst { font-size: var(--s-1); color: var(--muted); margin: 0; max-width: 60ch; }
+
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: var(--s-2);
+    letter-spacing: -0.012em;
+    margin: 0 0 4px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--ink);
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: var(--s-1);
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+
+  section { display: flex; flex-direction: column; gap: 20px; }
+  p { margin: 0; max-width: 66ch; }
+
+  code, .mono { font-family: var(--f-mono); font-size: 0.85em; }
+  code { background: var(--sunken); padding: 0.12em 0.38em; border-radius: 2px; }
+
+  /* ── Figura ─────────────────────────────────────────── */
+  figure { margin: 0; display: flex; flex-direction: column; gap: 14px; }
+  .figframe {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: clamp(14px, 3vw, 28px);
+    overflow-x: auto;
+  }
+  .figframe svg { display: block; width: 100%; min-width: 660px; height: auto; }
+  figcaption { font-size: var(--s--1); color: var(--muted); max-width: 70ch; }
+
+  /* ── Matriz de quién sabe qué ───────────────────────── */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: var(--s--1); }
+  th, td { text-align: left; padding: 11px 15px; border-bottom: 1px solid var(--line); }
+  thead th {
+    font-family: var(--f-mono); font-weight: 600; font-size: 0.71rem;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); background: var(--sunken); white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.k { font-family: var(--f-mono); font-size: 0.77rem; white-space: nowrap; }
+  .num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .si { color: var(--accent); font-weight: 600; }
+  .no { color: var(--faint); }
+  .gap { color: var(--roto); font-weight: 600; }
+
+  /* ── Los dos mínimos ────────────────────────────────── */
+  .dos { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .min {
+    background: var(--surface); border: 1px solid var(--line);
+    border-top: 3px solid var(--accent); border-radius: 5px;
+    padding: 20px 22px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .min.faltaba { border-top-color: var(--roto); }
+  .min dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: var(--s--1); }
+  .min dt { color: var(--muted); }
+  .min dd { margin: 0; }
+
+  /* ── Antes / después ────────────────────────────────── */
+  .antes { display: flex; flex-direction: column; gap: 2px; }
+  .row {
+    display: grid; grid-template-columns: 1fr auto auto auto;
+    align-items: center; gap: 8px 18px;
+    background: var(--surface); border: 1px solid var(--line); border-bottom: none;
+    padding: 14px 20px;
+  }
+  .row:first-child { border-radius: 5px 5px 0 0; }
+  .row:last-child { border-bottom: 1px solid var(--line); border-radius: 0 0 5px 5px; }
+  .row .que { min-width: 0; }
+  .row .que b { font-family: var(--f-display); font-weight: 600; }
+  .row .que span { display: block; font-size: var(--s--1); color: var(--muted); }
+  .v {
+    font-family: var(--f-mono); font-variant-numeric: tabular-nums;
+    font-size: var(--s-1); font-weight: 600; white-space: nowrap;
+  }
+  .v.a { color: var(--roto); }
+  .v.d { color: var(--accent); }
+  .flecha { color: var(--faint); font-family: var(--f-mono); }
+
+  .note {
+    font-size: var(--s--1); color: var(--muted);
+    border-left: 2px solid var(--line); padding-left: 15px; max-width: 66ch;
+  }
+
+  ul.limpia { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+  ul.limpia li { max-width: 64ch; }
+
+  footer {
+    border-top: 1px solid var(--line); padding-top: 18px;
+    font-size: var(--s--1); color: var(--faint);
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Farmacia Badía · agosto 2026</div>
+    <h1>De la droguería al mostrador</h1>
+    <p class="standfirst">Cómo se mueve el stock, los dos mínimos que lo gobiernan —y por qué uno de ellos no existía.</p>
+  </header>
+
+  <figure>
+    <div class="figframe">
+      <svg viewBox="0 0 920 300" role="img" aria-label="El stock va de la droguería al depósito, del depósito al robot y del robot al mostrador. Dos mínimos distintos gobiernan dos tramos distintos: el mínimo total decide cuándo comprarle a la droguería, y el mínimo del robot decide cuánto de lo que ya está en el depósito entra a la máquina. Ese segundo mínimo no existía.">
+        <defs>
+          <marker id="fl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="currentColor"/>
+          </marker>
+          <marker id="flR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#B4531C"/>
+          </marker>
+        </defs>
+
+        <!-- Etapas -->
+        <rect x="16"  y="86" width="180" height="66" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <text x="106" y="113" text-anchor="middle" font-family="Archivo, sans-serif" font-size="15" font-weight="600" fill="currentColor">DROGUERÍA</text>
+        <text x="106" y="133" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.6">el proveedor</text>
+
+        <rect x="256" y="86" width="180" height="66" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <text x="346" y="113" text-anchor="middle" font-family="Archivo, sans-serif" font-size="15" font-weight="600" fill="currentColor">DEPÓSITO</text>
+        <text x="346" y="133" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.6">la casa</text>
+
+        <rect x="496" y="86" width="180" height="66" rx="4" fill="none" stroke="#B4531C" stroke-width="2"/>
+        <text x="586" y="113" text-anchor="middle" font-family="Archivo, sans-serif" font-size="15" font-weight="600" fill="currentColor">ROBOT</text>
+        <text x="586" y="133" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.6">10.344 packs · espacio finito</text>
+
+        <rect x="736" y="86" width="168" height="66" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <text x="820" y="113" text-anchor="middle" font-family="Archivo, sans-serif" font-size="15" font-weight="600" fill="currentColor">MOSTRADOR</text>
+        <text x="820" y="133" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.6">la venta</text>
+
+        <!-- Flechas -->
+        <line x1="196" y1="119" x2="252" y2="119" stroke="currentColor" stroke-width="1.5" marker-end="url(#fl)"/>
+        <text x="224" y="70" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.72">varias veces al día</text>
+
+        <line x1="436" y1="119" x2="492" y2="119" stroke="#B4531C" stroke-width="2.5" marker-end="url(#flR)"/>
+        <text x="464" y="70" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" font-weight="600" fill="#B4531C">carga a mano</text>
+
+        <line x1="676" y1="119" x2="732" y2="119" stroke="currentColor" stroke-width="1.5" marker-end="url(#fl)"/>
+        <text x="704" y="70" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.72">venta</text>
+
+        <!-- Los dos minimos, colgando del tramo que gobiernan -->
+        <line x1="224" y1="128" x2="224" y2="192" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity="0.4"/>
+        <text x="224" y="212" text-anchor="middle" font-family="Archivo, sans-serif" font-size="12.5" font-weight="600" fill="currentColor">mínimo TOTAL</text>
+        <text x="224" y="230" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity="0.62">¿cuándo le compro?</text>
+        <text x="224" y="247" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity="0.45">lo limita la PLATA</text>
+        <text x="224" y="270" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity="0.62">obs_stock.minimo</text>
+
+        <line x1="464" y1="128" x2="464" y2="192" stroke="#B4531C" stroke-width="1.5" stroke-dasharray="3 3"/>
+        <text x="464" y="212" text-anchor="middle" font-family="Archivo, sans-serif" font-size="12.5" font-weight="600" fill="#B4531C">mínimo del ROBOT</text>
+        <text x="464" y="230" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#B4531C">¿cuánto va adentro?</text>
+        <text x="464" y="247" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="#B4531C" opacity="0.72">lo limita el ESPACIO</text>
+        <text x="464" y="270" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" font-weight="600" fill="#B4531C">NO EXISTÍA</text>
+
+        <!-- Nota del lado del robot -->
+        <text x="586" y="212" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity="0.55">11.477 lugares libres</text>
+        <text x="586" y="229" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity="0.55">y nada lo avisaba</text>
+      </svg>
+    </div>
+    <figcaption>El lead time del proveedor es casi cero: se compra varias veces por día, casi todos los días. Por eso el tramo que importa no es el primero sino el segundo — <strong>lo único que la autonomía del robot tiene que cubrir es cada cuánto alguien camina hasta la máquina a recargarla</strong>. Confundir los dos mínimos fue el error de partida: uno se mide en plata, el otro en espacio.</figcaption>
+  </figure>
+
+  <section>
+    <h2>Quién sabía qué</h2>
+    <p>Cada sistema conocía una parte, ninguno la tenía completa, y nadie estaba mirando lo que le faltaba al otro.</p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Dato</th>
+            <th>ObServer</th>
+            <th>El robot</th>
+            <th>Dónde estaba el problema</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="k">stock total</td>
+            <td class="si">sí</td>
+            <td class="no">no</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td class="k">stock en el robot</td>
+            <td class="gap">columna en <code>???</code></td>
+            <td class="si">sí, en vivo</td>
+            <td class="gap">ObServer lo espera y nadie se lo manda</td>
+          </tr>
+          <tr>
+            <td class="k">capacidad por artículo</td>
+            <td class="si">sí — 13.222 cargadas</td>
+            <td class="no">no lo expone</td>
+            <td class="gap">estaba ahí desde 2023 y no la leíamos</td>
+          </tr>
+          <tr>
+            <td class="k">vencimientos por pack</td>
+            <td class="gap">columna en <code>???</code></td>
+            <td class="si">sí, con su origen</td>
+            <td class="gap">ObServer lo espera y nadie se lo manda</td>
+          </tr>
+          <tr>
+            <td class="k">dimensiones del envase</td>
+            <td class="no">no</td>
+            <td class="si">100% de 10.340 packs</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td class="k">demanda real por artículo</td>
+            <td class="no">ventas, otra escala</td>
+            <td class="no">se deduce, no se informa</td>
+            <td class="gap">no la tenía nadie</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">La capacidad fue el hallazgo que destrabó todo, y apareció mirando una captura de pantalla de ObServer. Vive en <code>Varios.Rowa_Productos</code>, un módulo entero que existía desde 2023. No es un default: <code>FW_Version</code> llega hasta <strong>180</strong> y la cargaron <strong>7 usuarios</strong> distintos a lo largo de dos años.</p>
+  </section>
+
+  <section>
+    <h2>Los dos mínimos</h2>
+    <div class="dos">
+      <div class="min">
+        <h3>Mínimo total</h3>
+        <p style="font-size:var(--s--1);color:var(--muted)">Cuándo hay que comprarle a la droguería. Existía, pero desajustado.</p>
+        <dl>
+          <dt>vive en</dt><dd class="mono">obs_stock.minimo</dd>
+          <dt>lo limita</dt><dd>la plata</dd>
+          <dt>estado</dt><dd><strong>28% mal</strong> sobre 11.046 productos con ventas</dd>
+          <dt>en juego</dt><dd><strong>$54,5 M</strong> inmovilizados, un tercio en 20 productos</dd>
+        </dl>
+      </div>
+      <div class="min faltaba">
+        <h3>Mínimo del robot</h3>
+        <p style="font-size:var(--s--1);color:var(--muted)">Cuánto de lo que ya está comprado entra a la máquina. No existía.</p>
+        <dl>
+          <dt>vive en</dt><dd class="mono">Rowa_Productos.CantidadMaxima</dd>
+          <dt>lo limita</dt><dd>el espacio</dd>
+          <dt>estado</dt><dd><code>_recomendar()</code> sólo sabía <em>reducir</em></dd>
+          <dt>consecuencia</dt><dd><strong>11.477 lugares libres</strong> y ningún aviso</dd>
+        </dl>
+      </div>
+    </div>
+    <p class="note">Un producto puede estar perfecto de mínimo total —con 40 en el depósito— y aun así estar vacío en el robot. Son decisiones independientes, y hasta ahora sólo una estaba modelada.</p>
+  </section>
+
+  <section>
+    <h2>Antes y después</h2>
+    <p>Todo medido contra el robot y ObServer de Badía, no estimado.</p>
+    <div class="antes">
+      <div class="row">
+        <div class="que"><b>Qué reponer en el robot</b><span>la pantalla de carga no podía responder su propia pregunta</span></div>
+        <div class="v a">0 packs</div><div class="flecha">→</div><div class="v d">560 packs</div>
+      </div>
+      <div class="row">
+        <div class="que"><b>Artículos visibles en <span class="mono">/rowa</span></b><span>el resto se leía, se cruzaba, se calculaba… y se descartaba al dibujar</span></div>
+        <div class="v a">454</div><div class="flecha">→</div><div class="v d">3.508</div>
+      </div>
+      <div class="row">
+        <div class="que"><b>Salidas medidas en 4 días</b><span>comparaba extremos: vender 8 y reponer 8 daba cero</span></div>
+        <div class="v a">427 u</div><div class="flecha">→</div><div class="v d">1.469 u</div>
+      </div>
+      <div class="row">
+        <div class="que"><b>Artículos críticos detectados</b><span>consecuencia directa de medir bien las salidas</span></div>
+        <div class="v a">126</div><div class="flecha">→</div><div class="v d">222</div>
+      </div>
+      <div class="row">
+        <div class="que"><b>Robot vacío con stock en depósito</b><span>invisible: <span class="mono">stock_info()</span> sólo devuelve lo que ya está adentro</span></div>
+        <div class="v a">no se veían</div><div class="flecha">→</div><div class="v d">86 art.</div>
+      </div>
+      <div class="row">
+        <div class="que"><b>Mínimos ordenados por</b><span>al subir, la diferencia mediana es de UNA unidad: por cantidad no se llega a lo que importa</span></div>
+        <div class="v a">cantidad</div><div class="flecha">→</div><div class="v d">plata</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Lo que sigue</h2>
+    <ul class="limpia">
+      <li><strong>Correr el sync <code>rowa_productos</code> una vez.</strong> Sin eso la planilla no tiene capacidades y avisa que falta.</li>
+      <li><strong>Validar los 325 artículos caminando el depósito.</strong> Los números cierran entre sí, pero eso no prueba que coincidan con la realidad del estante.</li>
+      <li><strong>Los 128 máximos a corregir, con calma.</strong> Salen de una ventana de 4 días de snapshots; la confianza sube sola a medida que se acumulan tomas.</li>
+      <li><strong>Devolverle a ObServer lo que espera.</strong> Las columnas <code>Stock Robot</code> y <code>Próximo Venc.</code> están en <code>???</code> y nosotros tenemos los dos datos en vivo. Eso ya es escribirle, y merece conversación aparte.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Nueve PRs entre el 21 y el 24 de agosto de 2026 · 1.083 tests · los números salen de correr contra el robot (WWKS2) y ObServer en producción, sólo lecturas.
+  </footer>
+
+</div>
+
+</body>
+</html>

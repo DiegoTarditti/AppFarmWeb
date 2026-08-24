@@ -6,6 +6,10 @@ en [`backlog_urgente.md`](backlog_urgente.md)._
 Orden: **P0** = está roto o se pierde plata AHORA · **P1** = correctitud o
 capacidad sin usar · **P2** = deuda que acumula.
 
+> 📊 **El circuito de un vistazo**: [`circuito_robot.html`](circuito_robot.html) —
+> cómo se mueve el stock, los dos mínimos que lo gobiernan y los números del antes
+> y después. Se abre con doble clic.
+>
 > 🗺️ Para ubicarte: [`docs/MAPA.generado.md`](MAPA.generado.md).
 > Código: [`routes/rowa.py`](../routes/rowa.py),
 > [`services/rowa_client.py`](../services/rowa_client.py) (WWKS2),
