@@ -52,6 +52,62 @@
         {# Panel de gráficos (sticky arriba) #}
         {% include '_grafico_dual_panel.html' %}
 
+        {% if top_plata %}
+        {# Lo accionable. El desfasaje es ancho y poco profundo, asi que recorrer
+           laboratorio por laboratorio hace perder los pocos casos que mueven la
+           aguja. Esta lista corta es por donde conviene empezar. #}
+        <details class="bg-white border-2 border-amber-300 rounded-xl overflow-hidden mb-4" open>
+            <summary class="cursor-pointer px-4 py-3 bg-amber-50 hover:bg-amber-100 flex items-center gap-3 flex-wrap">
+                <span class="text-sm font-bold text-[#1e1e1e]">Empezar por aca - los 20 de mayor impacto</span>
+                <span class="text-xs text-[#666]">
+                    ${{ '{:,}'.format(plata_top).replace(',', '.') }} de ${{ '{:,}'.format(plata_total).replace(',', '.') }}
+                    ({{ (100 * plata_top / plata_total) | round | int }}% del total en {{ top_plata | length }} productos)
+                </span>
+            </summary>
+            <div class="border-t border-surface-border overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-[#fafafa]">
+                        <tr class="text-[#666] uppercase text-[10px]">
+                            <th class="text-left py-1.5 px-3">Producto</th>
+                            <th class="text-center py-1.5 px-3 w-20">Sug.</th>
+                            <th class="text-right py-1.5 px-3 w-20">Min actual</th>
+                            <th class="text-right py-1.5 px-3 w-22">Min sugerido</th>
+                            <th class="text-right py-1.5 px-3 w-24">Plata</th>
+                            <th class="text-right py-1.5 px-3 w-28">Fijar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for p in top_plata %}
+                    <tr class="border-t border-[#f0f0f0] hover:bg-emerald-50 cursor-pointer producto-row"
+                        data-pid="{{ p.pid }}" data-desc="{{ p.desc | e }}">
+                        <td class="py-1.5 px-3">{{ p.desc }}</td>
+                        <td class="py-1.5 px-3 text-center">
+                            {% if p.sugerencia == 'up' %}
+                            <span class="text-[10px] bg-rose-100 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded font-bold">SUBIR</span>
+                            {% else %}
+                            <span class="text-[10px] bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded font-bold">BAJAR</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-1.5 px-3 text-right font-mono text-[#888] line-through">{{ p.min_actual }}</td>
+                        <td class="py-1.5 px-3 text-right font-mono font-bold text-violet-700">{{ p.min_sugerido }}</td>
+                        <td class="py-1.5 px-3 text-right font-mono font-bold text-amber-700">
+                            ${{ '{:,}'.format(p.plata).replace(',', '.') }}</td>
+                        <td class="py-1.5 px-3 text-right" onclick="event.stopPropagation()">
+                            <input type="number" min="0" max="9999"
+                                   class="min-fijar w-16 text-right border border-surface-border rounded px-1 py-0.5 font-mono"
+                                   data-pid="{{ p.pid }}" value="{{ p.minimo_manual or '' }}"
+                                   placeholder="{{ p.min_sugerido }}"
+                                   onkeydown="if(event.key==='Enter'){event.preventDefault();fijarMinimo(this);}"
+                                   onblur="fijarMinimo(this)">
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+        {% endif %}
+
         {# Grupos por lab #}
         <div class="space-y-3">
         {% for g in grupos %}
@@ -74,6 +130,8 @@
                             <th class="text-right py-1.5 px-3 w-20">Diferencia</th>
                             <th class="text-right py-1.5 px-3 w-16">Stock</th>
                             <th class="text-right py-1.5 px-3 w-16">12m</th>
+                            <th class="text-right py-1.5 px-3 w-24" title="Unidades de diferencia x PVP estimado">Plata</th>
+                            <th class="text-right py-1.5 px-3 w-28" title="Minimo decidido a mano: manda sobre el sugerido">Fijar</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -96,6 +154,17 @@
                         </td>
                         <td class="py-1.5 px-3 text-right font-mono text-[#666]">{{ p.stock_actual }}</td>
                         <td class="py-1.5 px-3 text-right font-mono text-[#666]">{{ p.u12m }}</td>
+                        <td class="py-1.5 px-3 text-right font-mono font-bold {% if p.sugerencia == 'down' %}text-blue-700{% else %}text-[#666]{% endif %}">
+                            ${{ '{:,}'.format(p.plata).replace(',', '.') }}</td>
+                        <td class="py-1.5 px-3 text-right" onclick="event.stopPropagation()">
+                            <input type="number" min="0" max="9999"
+                                   class="min-fijar w-16 text-right border border-surface-border rounded px-1 py-0.5 font-mono"
+                                   data-pid="{{ p.pid }}" value="{{ p.minimo_manual or '' }}"
+                                   placeholder="{{ p.min_sugerido }}"
+                                   title="{{ p.manual_motivo or 'Vacio = manda el sugerido. Enter para guardar.' }}"
+                                   onkeydown="if(event.key==='Enter'){event.preventDefault();fijarMinimo(this);}"
+                                   onblur="fijarMinimo(this)">
+                        </td>
                     </tr>
                     {% endfor %}
                     </tbody>
@@ -116,6 +185,40 @@
 </div>
 
 <script>
+// Guarda el minimo fijado a mano. Vacio o 0 borra la decision y el producto
+// vuelve al automatico. Se dispara con Enter o al salir del campo.
+function fijarMinimo(input) {
+    var pid = parseInt(input.dataset.pid);
+    var valor = (input.value || '').trim();
+    if (input.dataset.ultimo === valor) { return; }   // sin cambios, no molestar
+    input.dataset.ultimo = valor;
+    input.disabled = true;
+    fetch('/informes/correcciones-minimos/fijar', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pid: pid, valor: valor})
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+        input.disabled = false;
+        if (!d.ok) {
+            input.style.borderColor = '#dc2626';
+            input.title = d.error || 'no se pudo guardar';
+            return;
+        }
+        input.style.borderColor = '#059669';
+        setTimeout(function () { input.style.borderColor = ''; }, 1200);
+        // El mismo producto puede estar en el top y en su laboratorio.
+        document.querySelectorAll('.min-fijar[data-pid="' + pid + '"]').forEach(function (otro) {
+            if (otro !== input) { otro.value = input.value; otro.dataset.ultimo = valor; }
+        });
+    })
+    .catch(function () {
+        input.disabled = false;
+        input.style.borderColor = '#dc2626';
+    });
+}
+
 // Click en cualquier fila → cargar charts. Delegated, soporta filas en
 // múltiples <details> colapsados.
 document.addEventListener('click', e => {

@@ -1364,7 +1364,7 @@ def init_app(app):
             ObsSubrubro,
             ObsVentaMensual,
         )
-        from purchase_helpers import calcular_min_sugerido, clasificar_min
+        from purchase_helpers import calcular_min_sugerido, clasificar_min, pvp_reciente
 
         lab_id_filter = request.args.get('lab_id', type=int)
         tipo_filter = (request.args.get('tipo') or 'both').lower()
@@ -1430,19 +1430,37 @@ def init_app(app):
             start_month = ((end_month - 11 - 1) % 12) + 1
             start_year = hoy_d.year if start_month <= end_month else hoy_d.year - 1
             ventas_por_pid = {pid: [0]*12 for pid in pids}
+            # Montos ademas de unidades: con ellos `pvp_reciente` estima el precio
+            # y podemos valorizar el desfasaje. Sin plata no se puede priorizar:
+            # medido el 24/8/2026, los 394 productos con el minimo pasado son
+            # ~$54,5 M inmovilizados y los 20 peores concentran un tercio. Ordenar
+            # por cantidad de unidades no lleva a esos 20.
+            montos_por_pid = {pid: [0.0]*12 for pid in pids}
             if pids:
                 rows_vm = (session.query(ObsVentaMensual.producto_observer,
                                           ObsVentaMensual.anio,
                                           ObsVentaMensual.mes,
-                                          func.sum(ObsVentaMensual.unidades))
+                                          func.sum(ObsVentaMensual.unidades),
+                                          func.sum(ObsVentaMensual.monto))
                            .filter(ObsVentaMensual.producto_observer.in_(pids))
                            .group_by(ObsVentaMensual.producto_observer,
                                      ObsVentaMensual.anio, ObsVentaMensual.mes)
                            .all())
-                for pid_v, anio, mes, uds in rows_vm:
+                for pid_v, anio, mes, uds, mto in rows_vm:
                     offset = (anio - start_year) * 12 + (mes - start_month)
                     if 0 <= offset <= 11 and pid_v in ventas_por_pid:
                         ventas_por_pid[pid_v][offset] += int(uds or 0)
+                        montos_por_pid[pid_v][offset] += float(mto or 0)
+
+            # Minimo decidido a mano, si alguien ya lo fijo para este producto.
+            from database import MinimoManual as _MM
+            manual_por_obs = {}
+            if pids:
+                manual_por_obs = {
+                    r.producto_observer: {'valor': r.valor, 'motivo': r.motivo,
+                                          'en': r.fijado_en, 'por': r.fijado_por}
+                    for r in session.query(_MM)
+                    .filter(_MM.producto_observer.in_(pids)).all()}
 
             # Procesar
             grupos = {}  # lab_id -> {nombre, productos: []}
@@ -1476,6 +1494,13 @@ def init_app(app):
                         'lab_nombre': r.lab_nombre or '— sin lab —',
                         'productos': [],
                     }
+                # Plata en juego. Para 'down' es capital inmovilizado (unidades
+                # de mas x PVP); para 'up' es la venta que se puede estar
+                # perdiendo por quedarse corto. En los dos casos, el valor
+                # absoluto es lo que ordena por impacto.
+                _pvp = pvp_reciente(ventas_arr, montos_por_pid.get(r.pid, [0.0]*12)) or 0
+                _dif = min_sug - min_act
+                _manual = manual_por_obs.get(r.pid)
                 grupos[lab_key]['productos'].append({
                     'pid': r.pid,
                     'desc': r.desc,
@@ -1483,23 +1508,34 @@ def init_app(app):
                     'sugerencia': sug,
                     'min_actual': min_act,
                     'min_sugerido': min_sug,
-                    'diferencia': min_sug - min_act,
+                    'diferencia': _dif,
                     'stock_actual': int(r.stock or 0),
                     'u12m': u12m,
                     'tipo': tipo_p,
+                    'pvp': round(_pvp),
+                    'plata': round(abs(_dif) * _pvp),
+                    'minimo_manual': (_manual or {}).get('valor'),
+                    'manual_motivo': (_manual or {}).get('motivo'),
                 })
 
-            # Sort productos dentro de cada lab por urgencia (subir primero, dif desc)
+            # Orden por PLATA, no por cantidad. El desfasaje es ancho y poco
+            # profundo —al subir, la diferencia mediana es de 1 unidad—, asi que
+            # ordenar por unidades manda a corregir cientos de casos irrelevantes
+            # y entierra los pocos que mueven la aguja.
             for g in grupos.values():
-                g['productos'].sort(key=lambda x: (
-                    0 if x['sugerencia'] == 'up' else 1,
-                    -abs(x['diferencia']),
-                ))
+                g['productos'].sort(key=lambda x: -x['plata'])
                 g['n_up'] = sum(1 for p in g['productos'] if p['sugerencia'] == 'up')
                 g['n_down'] = sum(1 for p in g['productos'] if p['sugerencia'] == 'down')
-            # Ordenar grupos por cantidad de productos descendente
-            grupos_list = sorted(grupos.values(),
-                                  key=lambda g: -len(g['productos']))
+                g['plata'] = sum(p['plata'] for p in g['productos'])
+            grupos_list = sorted(grupos.values(), key=lambda g: -g['plata'])
+
+            # Top transversal: es lo accionable. Al 24/8/2026 los 20 primeros
+            # concentraban un tercio de los ~$54,5 M inmovilizados, asi que la
+            # lista corta rinde mucho mas que recorrer laboratorio por laboratorio.
+            todos = [p for g in grupos_list for p in g['productos']]
+            top_plata = sorted(todos, key=lambda x: -x['plata'])[:20]
+            plata_total = sum(p['plata'] for p in todos)
+            plata_top = sum(p['plata'] for p in top_plata)
 
             # Para el dropdown del filtro de lab
             labs_disponibles = (session.query(ObsLaboratorio.observer_id,
@@ -1511,10 +1547,66 @@ def init_app(app):
                 'informe_correcciones_minimos.html',
                 grupos=grupos_list,
                 total=sum(len(g['productos']) for g in grupos_list),
+                top_plata=top_plata,
+                plata_total=plata_total,
+                plata_top=plata_top,
                 lab_id_filter=lab_id_filter,
                 tipo_filter=tipo_filter,
                 labs_disponibles=labs_disponibles,
             )
+
+    @app.route('/informes/correcciones-minimos/fijar', methods=['POST'])
+    @login_required
+    def informe_minimos_fijar():
+        """Fija (o borra) el minimo decidido a mano para un producto.
+
+        Body JSON: {pid, valor, motivo}. `valor` vacio o 0 borra la decision y
+        el producto vuelve al automatico (min_sugerido -> ObServer).
+
+        Se guarda en `minimos_manuales` (tabla propia, indexada por observer_id;
+        el catalogo local `productos` cubre apenas el 8% de ObServer): ObServer es de
+        solo lectura para nosotros y ademas no recalcula sus minimos. Lo que se
+        fija aca manda al armar pedidos; para que ObServer tambien lo tenga hay
+        que pasarle el XLSX de sugerencias, que sigue siendo manual.
+        """
+        from database import MinimoManual as _MM
+
+        body = request.get_json(silent=True) or {}
+        try:
+            pid = int(body.get('pid') or 0)
+        except (TypeError, ValueError):
+            pid = 0
+        if not pid:
+            return jsonify({'ok': False, 'error': 'falta el producto'}), 400
+
+        crudo = str(body.get('valor') or '').strip()
+        if crudo in ('', '0'):
+            valor = None
+        elif crudo.isdigit() and 0 < int(crudo) <= 9999:
+            valor = int(crudo)
+        else:
+            return jsonify({'ok': False, 'error': 'el minimo tiene que ser un entero entre 1 y 9999'}), 400
+
+        motivo = (body.get('motivo') or '').strip()[:200] or None
+        usuario = getattr(getattr(request, 'current_user', None), 'username', None)
+
+        with database.get_db() as session:
+            fila = session.get(_MM, pid)
+            if valor is None:
+                # Borrar la decision: el producto vuelve al automatico.
+                if fila:
+                    session.delete(fila)
+            elif fila:
+                fila.valor = valor
+                fila.motivo = motivo
+                fila.fijado_en = database.now_ar()
+                fila.fijado_por = usuario
+            else:
+                session.add(_MM(producto_observer=pid, valor=valor,
+                                motivo=motivo, fijado_por=usuario))
+            session.commit()
+
+        return jsonify({'ok': True, 'valor': valor})
 
     @app.route('/informes/bajo-minimo')
     @login_required
