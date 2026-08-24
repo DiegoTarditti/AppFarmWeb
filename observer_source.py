@@ -17,6 +17,7 @@ Config vía env vars:
 import logging
 import os
 import time
+from datetime import timedelta
 
 try:
     import pymssql
@@ -419,6 +420,296 @@ def sync_rowa_productos(session):
     duracion = int((time.time() - t0) * 1000)
     _log_sync(session, 'rowa_productos', n, duracion)
     return {'upsert': n, 'duracion_ms': duracion}
+
+
+# ── Ingreso de mercadería (eslabón 4 de docs/controles_kellerhoff.md) ────────
+#
+# Se lee de `DW.Recepciones` y NO de `Gestion.IngresosEgresosMercaderia*` por
+# dos motivos medidos el 2026-08-24:
+#
+#   · Portabilidad: `DW` lo ve `usuarioDW`; `Gestion` requiere SA, que en Badia
+#     tenemos por excepción y en otra farmacia no va a estar.
+#   · La vista ya filtra bien: incluye los movimientos `I` (94.655) y `C`
+#     (8.343) —las dos formas en que entra mercadería— y excluye los egresos
+#     `E` y los `D`. Replicar ese filtro a mano era adivinar qué significa `C`.
+#
+# ⚠ La vista tiene ventana de 2 AÑOS. Una factura más vieja no se puede cruzar
+#   por acá aunque el ingreso exista en las tablas base.
+
+# Ventana para buscar el ingreso de una factura. Es ASIMÉTRICA y chica, medido
+# sobre los 19 comprobantes del resumen S34 que cruzan contra una recepción:
+#
+#     mismo día  12    día siguiente  7    (nunca antes, nunca más de +1)
+#
+# Los "+1" son todos recepciones de madrugada (00:20, 01:50-01:55): no es un día
+# después, es la jornada que cruza la medianoche. Se deja 1 día de margen hacia
+# atrás por si alguna farmacia registra el ingreso antes de cargar la factura.
+# Achicar la ventana IMPORTA: con ±3 días la factura 0046-00255798 tenía 80
+# candidatas; con ésta, un puñado.
+_DIAS_ANTES = 1
+_DIAS_DESPUES = 2
+
+
+def _norm_nro(s):
+    """Número de comprobante → forma comparable, o '' si no se puede leer.
+
+    ObServer guarda el número como texto libre: el de la factura o el del
+    remito, con la letra adelante (`A004600255798`) o en el medio
+    (`0046A00255798`), con guión o sin él. Se delega en
+    `helpers.clave_comprobante`, que ya resuelve los tres formatos y es la que
+    usa el cruce del resumen semanal — tener dos normalizadores distintos en el
+    proyecto es cómo aparecen los falsos negativos.
+
+    Caída a dígitos crudos para lo que `clave_comprobante` no reconoce (ahí no
+    hay punto de venta que separar, así que es lo único que queda).
+    """
+    from helpers import clave_comprobante
+    clave = clave_comprobante(s)
+    if clave:
+        return clave
+    d = ''.join(ch for ch in (s or '') if ch.isdigit())
+    return d.lstrip('0') or ('0' if d else '')
+
+
+def _like_nro(s):
+    """Substring para acotar del lado del server, antes de comparar en Python.
+
+    Se usa el NÚMERO sin el punto de venta: `A004600255798` contiene `255798`
+    pero no contiene `46255798`, así que filtrar por los dígitos completos
+    dejaría afuera justo lo que se busca.
+    """
+    from helpers import clave_comprobante
+    clave = clave_comprobante(s)
+    if clave and '-' in clave:
+        return clave.split('-', 1)[1]
+    return ''.join(ch for ch in (s or '') if ch.isdigit()).lstrip('0')
+
+
+def puntuar_candidata(fila, fecha_factura, numero=None, unidades=None,
+                      renglones=None):
+    """(score 0-100, motivos) de una recepción como ingreso de esa factura.
+
+    Los pesos salen de qué tan discriminante es cada señal, medido sobre datos
+    reales (ver docs/controles_kellerhoff.md):
+
+      · número (50) — cuando está bien cargado no hay discusión, pero sólo 7 de
+        400 recepciones de Kellerhoff traían el de la factura, así que no puede
+        ser lo único.
+      · unidades (30) — es la huella digital: la 0046-00255798 tiene 199 y en su
+        ventana ninguna otra recepción del proveedor las tiene.
+      · renglones (15) — confirma, pero es menos único que las unidades.
+      · misma fecha (5) — desempata; casi todas las candidatas la comparten.
+
+    Función pura: sin ella el scoring sólo se podía probar contra ObServer.
+    """
+    score, motivos = 0, []
+    objetivo = _norm_nro(numero)
+    if objetivo:
+        nros = [_norm_nro(fila.get(k)) for k in ('nros', 'nro_fac', 'nro_rem')]
+        if objetivo in [n for n in nros if n]:
+            score += 50
+            motivos.append('coincide el número de comprobante')
+    if unidades and fila.get('unidades') == unidades:
+        score += 30
+        motivos.append('mismas unidades (%d)' % unidades)
+    if renglones and fila.get('renglones') in (renglones, renglones + 1):
+        # +1: ObServer suele dejar un renglón abierto en cero que la factura no
+        # tiene (le pasó a la 0046-00255798 con un RIVOTRIL).
+        score += 15
+        motivos.append('mismos renglones (%d)' % fila['renglones'])
+    fecha = fila.get('fecha')
+    if fecha and getattr(fecha, 'date', lambda: fecha)() == fecha_factura:
+        score += 5
+        motivos.append('misma fecha')
+    return score, motivos
+
+
+def buscar_recepciones_candidatas(fecha_factura, id_proveedor, id_farmacia=None,
+                                  numero=None, unidades=None, renglones=None,
+                                  dias_antes=_DIAS_ANTES, dias_despues=_DIAS_DESPUES):
+    """Recepciones que PUEDEN ser el ingreso de una factura, mejor primero.
+
+    El número de comprobante en ObServer está sucio —sobre 400 recepciones de
+    Kellerhoff, sólo 7 traían el número de factura real— así que no alcanza
+    para encontrar el ingreso. Lo que sí identifica es la combinación
+    **fecha + proveedor + unidades + renglones**: para la factura
+    0046-00255798 hay 80 candidatas en ±3 días y una sola tiene las 199
+    unidades y los ~137 renglones.
+
+    Devuelve dicts con `score` (0-100) y `motivos`, para que la UI proponga la
+    mejor y el operador confirme. NO elige sola: un cruce equivocado termina en
+    un reclamo a la droguería por el ingreso de otra factura.
+    """
+    conn = _connect()
+    if conn is None:
+        raise RuntimeError('ObServer no configurado o pymssql no disponible')
+    cfg = _config()
+    id_farmacia = id_farmacia or cfg['id_farmacia']
+    desde = fecha_factura - timedelta(days=dias_antes)
+    hasta = fecha_factura + timedelta(days=dias_despues)
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("""
+                SELECT IdRecepcion, MIN(FechaRecepcion) fecha,
+                       MIN(NumerosFacturas) nros, MIN(NumeroFactura) nro_fac,
+                       MIN(NumeroRemito) nro_rem,
+                       COUNT(*) renglones, SUM(CantidadRecepcionada) unidades
+                FROM DW.Recepciones
+                WHERE IdProveedor = %s AND IdFarmacia = %s
+                  AND FechaRecepcion >= %s AND FechaRecepcion < %s
+                GROUP BY IdRecepcion
+            """, (id_proveedor, id_farmacia, desde, hasta))
+            filas = list(cur.fetchall())
+    finally:
+        conn.close()
+
+    out = []
+    for f in filas:
+        score, motivos = puntuar_candidata(
+            f, fecha_factura, numero=numero, unidades=unidades, renglones=renglones)
+        out.append({
+            'id_recepcion': f['IdRecepcion'],
+            'fecha': f['fecha'],
+            'numero': (f.get('nros') or f.get('nro_fac') or f.get('nro_rem') or '').strip(),
+            'renglones': int(f['renglones'] or 0),
+            'unidades': int(f['unidades'] or 0),
+            'score': score,
+            'motivos': motivos,
+        })
+    out.sort(key=lambda c: (-c['score'], abs((c['fecha'].date() - fecha_factura).days)
+                            if c['fecha'] else 99))
+    return out
+
+
+def get_recepciones_factura(numero, proveedor_cuit=None, id_farmacia=None,
+                            id_recepcion=None, eans_factura=None):
+    """Ítems del ingreso de mercadería, en el formato que espera el cruce.
+
+    `[{codigo_barra, descripcion, cantidad, precio_unitario}]` — lo mismo que
+    devuelve el Excel del ERP, así que `/compare` lo consume sin cambios.
+
+    Se puede pedir de dos formas:
+      · `id_recepcion` — el `IdRecepcion` exacto (lo que devuelve
+        `buscar_recepciones_candidatas`). Es el camino confiable.
+      · `numero` — un número de comprobante (factura O remito, en cualquier
+        formato). Busca por dígitos en los tres campos donde ObServer lo
+        guarda indistintamente.
+
+    `proveedor_cuit` se acepta por compatibilidad con los callers, pero NO se
+    usa para filtrar: `DW.Proveedores` no tiene CUIT (verificado), así que no
+    hay forma de ir del CUIT al `IdProveedor` desde la vista.
+
+    ⚠ `PrecioUnitario` viene en CERO en las 187.555 filas de la vista — y
+    también en la tabla base (288 de 781.956, todas de hace años). O sea que el
+    precio de compra NO está en el ingreso: el `precio_unitario` que se devuelve
+    es siempre 0 y el Ratio% de `/compare` no va a decir nada útil. El control
+    que sí sirve por acá es el de CANTIDADES.
+    """
+    conn = _connect()
+    if conn is None:
+        raise RuntimeError('ObServer no configurado o pymssql no disponible')
+    cfg = _config()
+    id_farmacia = id_farmacia or cfg['id_farmacia']
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            if id_recepcion:
+                cur.execute("""
+                    SELECT IdProducto, CantidadRecepcionada qty, PrecioUnitario precio
+                    FROM DW.Recepciones
+                    WHERE IdRecepcion = %s AND IdFarmacia = %s
+                """, (int(id_recepcion), id_farmacia))
+                filas = list(cur.fetchall())
+            else:
+                objetivo = _norm_nro(numero)
+                patron = _like_nro(numero)
+                if not objetivo or not patron:
+                    return []
+                # El LIKE acota del lado del server; la igualdad exacta se
+                # decide en Python, porque el formato guardado varía.
+                cur.execute("""
+                    SELECT IdProducto, CantidadRecepcionada qty, PrecioUnitario precio,
+                           NumerosFacturas nros, NumeroFactura nro_fac, NumeroRemito nro_rem
+                    FROM DW.Recepciones
+                    WHERE IdFarmacia = %s
+                      AND (NumeroFactura LIKE %s OR NumeroRemito LIKE %s
+                           OR NumerosFacturas LIKE %s)
+                """, (id_farmacia, '%' + patron + '%',
+                      '%' + patron + '%', '%' + patron + '%'))
+                filas = [f for f in cur.fetchall()
+                         if objetivo in [_norm_nro(f.get(k))
+                                         for k in ('nros', 'nro_fac', 'nro_rem')]]
+            if not filas:
+                return []
+            prod_ids = sorted({int(f['IdProducto']) for f in filas if f['IdProducto']})
+            descripciones = _descripciones_observer(cur, prod_ids)
+    finally:
+        conn.close()
+
+    eans = _eans_por_producto(prod_ids, eans_factura)
+    return [{
+        'codigo_barra': eans.get(int(f['IdProducto']), ''),
+        'descripcion': descripciones.get(int(f['IdProducto']), ''),
+        'cantidad': int(f['qty'] or 0),
+        'precio_unitario': float(f['precio'] or 0),
+    } for f in filas if f['IdProducto']]
+
+
+def _descripciones_observer(cur, prod_ids):
+    if not prod_ids:
+        return {}
+    ids = ','.join(str(i) for i in prod_ids)
+    cur.execute("SELECT IdProducto, Producto FROM DW.Productos "
+                "WHERE IdProducto IN (%s)" % ids)
+    return {int(r['IdProducto']): (r['Producto'] or '').strip()
+            for r in cur.fetchall()}
+
+
+def _eans_por_producto(prod_ids, eans_factura=None):
+    """{IdProducto: EAN} desde `obs_codigos_barras`, que ya está sincronizada.
+
+    NO se filtra por `orden == 1` a propósito, aunque es el patrón del resto del
+    módulo: un producto puede tener varios EAN y la droguería factura con
+    cualquiera. Caso real de la 0046-00255798: GLAUCOSTAT tiene tres
+    (`7791763000453` orden 1, `7798137190222` orden 2, `7798009279697` orden 3)
+    y Kellerhoff usa **el segundo**. Con `orden == 1` ese renglón no cruzaba.
+
+    Por eso, si se pasan los `eans_factura`, se elige el que coincida; recién si
+    ninguno coincide se cae al principal.
+    """
+    from database import ObsCodigoBarras, Producto, get_db
+
+    if not prod_ids:
+        return {}
+    esperados = {str(e).strip() for e in (eans_factura or []) if e}
+    out = {}
+    with get_db() as session:
+        por_producto = {}
+        for obs_id, cb, orden in (
+                session.query(ObsCodigoBarras.producto_observer,
+                              ObsCodigoBarras.codigo_barras,
+                              ObsCodigoBarras.orden)
+                .filter(ObsCodigoBarras.producto_observer.in_(prod_ids),
+                        ObsCodigoBarras.fecha_baja.is_(None))
+                .order_by(ObsCodigoBarras.orden).all()):
+            por_producto.setdefault(int(obs_id), []).append((orden or 99, (cb or '').strip()))
+
+        for obs_id, codigos in por_producto.items():
+            codigos = [c for _o, c in sorted(codigos) if c]
+            if not codigos:
+                continue
+            match = next((c for c in codigos if c in esperados), None)
+            out[obs_id] = match or codigos[0]
+
+        # Fallback para los que no tienen EAN sincronizado: el bridge viejo.
+        faltan = [i for i in prod_ids if i not in out]
+        if faltan:
+            for obs_id, cb in (session.query(Producto.observer_id, Producto.codigo_barra)
+                               .filter(Producto.observer_id.in_(faltan),
+                                       Producto.codigo_barra.isnot(None),
+                                       ~Producto.codigo_barra.like('OBS:%')).all()):
+                if cb:
+                    out[int(obs_id)] = cb
+    return out
 
 
 def sync_rubros(session):

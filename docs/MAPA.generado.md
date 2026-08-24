@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-24 20:17 · rama `feat/conteo-detalle-facturas` · commit `fcd4f8c`
+Generado: 2026-08-24 20:46 · rama `feat/cruce-ingreso-observer` · commit `10a431f`
 
 **802 rutas** en 77 archivos · **131 modelos** · **22 syncs** · **38 services** · **11 parsers**
 
@@ -15,28 +15,28 @@ Generado: 2026-08-24 20:17 · rama `feat/conteo-detalle-facturas` · commit `fcd
 
 | Función | Lee de | Línea |
 |---|---|---|
-| `sync_laboratorios` | `DW.Laboratorios` | [356](../observer_source.py#L356) |
-| `sync_rowa_productos` | — | [382](../observer_source.py#L382) |
-| `sync_rubros` | `DW.Rubros` | [424](../observer_source.py#L424) |
-| `sync_subrubros` | `DW.Subrubros` | [452](../observer_source.py#L452) |
-| `sync_nombres_drogas` | `DW.NombresDrogas` | [482](../observer_source.py#L482) |
-| `sync_productos` | `DW.Productos` | [510](../observer_source.py#L510) |
-| `sync_precios_vigentes` ⭐ | `Gestion.ProductosPreciosVigentes` | [559](../observer_source.py#L559) |
-| `sync_condiciones_comerciales` ⭐ | `Gestion.CondicionesComerciales` | [639](../observer_source.py#L639) |
-| `sync_fraccionado_master` | — | [759](../observer_source.py#L759) |
-| `sync_colegios_medicos` | `DW.ColegiosMedicos` | [832](../observer_source.py#L832) |
-| `sync_medicos` | `DW.Medicos` | [860](../observer_source.py#L860) |
-| `sync_medicos_matriculas` | `DW.MedicosMatriculas` | [890](../observer_source.py#L890) |
-| `sync_ventas_detalle` | `DW.ProductosVendidos` | [929](../observer_source.py#L929) |
-| `sync_operadores` | `DW.OperadoresVenta` | [1111](../observer_source.py#L1111) |
-| `sync_grupos_clientes` | `DW.GruposClientes` | [1142](../observer_source.py#L1142) |
-| `sync_categorias_clientes` | `DW.CategoriasClientes` | [1168](../observer_source.py#L1168) |
-| `sync_obras_sociales` | `DW.ObrasSociales` | [1194](../observer_source.py#L1194) |
-| `sync_convenios` | `DW.Convenios` | [1220](../observer_source.py#L1220) |
-| `sync_planes` | `DW.Planes` | [1252](../observer_source.py#L1252) |
-| `sync_clientes` | `DW.Clientes` | [1285](../observer_source.py#L1285) |
-| `sync_stock` | `DW.StockFarmaciasProductos` | [1345](../observer_source.py#L1345) |
-| `sync_ventas_mensuales` | `DW.ProductosVendidos` | [1396](../observer_source.py#L1396) |
+| `sync_laboratorios` | `DW.Laboratorios` | [357](../observer_source.py#L357) |
+| `sync_rowa_productos` | — | [383](../observer_source.py#L383) |
+| `sync_rubros` | `DW.Rubros` | [715](../observer_source.py#L715) |
+| `sync_subrubros` | `DW.Subrubros` | [743](../observer_source.py#L743) |
+| `sync_nombres_drogas` | `DW.NombresDrogas` | [773](../observer_source.py#L773) |
+| `sync_productos` | `DW.Productos` | [801](../observer_source.py#L801) |
+| `sync_precios_vigentes` ⭐ | `Gestion.ProductosPreciosVigentes` | [850](../observer_source.py#L850) |
+| `sync_condiciones_comerciales` ⭐ | `Gestion.CondicionesComerciales` | [930](../observer_source.py#L930) |
+| `sync_fraccionado_master` | — | [1050](../observer_source.py#L1050) |
+| `sync_colegios_medicos` | `DW.ColegiosMedicos` | [1123](../observer_source.py#L1123) |
+| `sync_medicos` | `DW.Medicos` | [1151](../observer_source.py#L1151) |
+| `sync_medicos_matriculas` | `DW.MedicosMatriculas` | [1181](../observer_source.py#L1181) |
+| `sync_ventas_detalle` | `DW.ProductosVendidos` | [1220](../observer_source.py#L1220) |
+| `sync_operadores` | `DW.OperadoresVenta` | [1402](../observer_source.py#L1402) |
+| `sync_grupos_clientes` | `DW.GruposClientes` | [1433](../observer_source.py#L1433) |
+| `sync_categorias_clientes` | `DW.CategoriasClientes` | [1459](../observer_source.py#L1459) |
+| `sync_obras_sociales` | `DW.ObrasSociales` | [1485](../observer_source.py#L1485) |
+| `sync_convenios` | `DW.Convenios` | [1511](../observer_source.py#L1511) |
+| `sync_planes` | `DW.Planes` | [1543](../observer_source.py#L1543) |
+| `sync_clientes` | `DW.Clientes` | [1576](../observer_source.py#L1576) |
+| `sync_stock` | `DW.StockFarmaciasProductos` | [1636](../observer_source.py#L1636) |
+| `sync_ventas_mensuales` | `DW.ProductosVendidos` | [1687](../observer_source.py#L1687) |
 
 ## Modelos (`database.py`)
 
