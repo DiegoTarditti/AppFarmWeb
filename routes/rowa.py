@@ -149,17 +149,36 @@ def init_app(app):
             [f for f in filas if f.dias_prox_venc is not None and f.packs_venc_alerta],
             key=lambda f: f.dias_prox_venc)
         n_nuevos = sum(1 for v in nuevos_map.values() if v["confirmado"])
-        labs_disponibles = sorted({f.laboratorio for f in accion if f.laboratorio})
+
+        # La tabla mostraba SOLO `accion` (al_deposito > 0). Con el robot de
+        # Badia eso es ~450 de ~3500 articulos: el 87% del stock se analizaba y
+        # no se veia nunca, y desde la pantalla parecia que faltaban productos.
+        #
+        # `?todo=1` muestra el inventario completo. No se renderiza siempre
+        # porque 3500 filas son unos 4 MB de HTML; el default sigue liviano y la
+        # vista completa se pide cuando hace falta.
+        ver_todo = request.args.get("todo") == "1"
+        filas_orden = sorted(filas, key=lambda f: (f.nombre_obs or f.nombre or "").lower())
+        tabla = filas_orden if ver_todo else accion
+
+        # Los filtros son client-side sobre lo renderizado, asi que el combo de
+        # laboratorios tiene que salir de la tabla que se muestra: si saliera de
+        # `accion`, en la vista completa faltarian labs.
+        labs_disponibles = sorted({f.laboratorio for f in tabla if f.laboratorio})
         return render_template(
             "rowa.html",
             sin_robot=False,
             robot=data["robot"], diag=data["diag"], alturas=data["alturas"],
             cruce=data["cruce"], generado=data["generado"],
-            filas=sorted(filas, key=lambda f: (f.nombre_obs or f.nombre or "").lower()),
+            filas=filas_orden,
             accion=accion, vencimientos=vencimientos,
             n_accion=len(accion), n_venc=len(vencimientos),
             nuevos_map=nuevos_map, n_nuevos=n_nuevos,
             labs_disponibles=labs_disponibles,
+            tabla=tabla, ver_todo=ver_todo,
+            n_total=len(filas_orden),
+            unid_total=sum(f.cantidad for f in filas_orden),
+            unid_accion=sum(f.cantidad for f in accion),
         )
 
     @app.route("/rowa/export")

@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-24 15:31 · rama `feat/slider-gobierna-target` · commit `dfab665`
+Generado: 2026-08-24 16:00 · rama `feat/rowa-ver-todo-el-stock` · commit `9473a8c`
 
 **794 rutas** en 77 archivos · **127 modelos** · **21 syncs** · **34 services** · **11 parsers**
 
@@ -1275,16 +1275,16 @@ Generado: 2026-08-24 15:31 · rama `feat/slider-gobierna-target` · commit `dfab
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L87) |
-| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L554) |
-| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L521) |
-| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L378) |
-| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L488) |
-| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L274) |
-| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L167) |
-| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L220) |
-| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L196) |
-| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L282) |
-| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L636) |
+| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L573) |
+| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L540) |
+| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L397) |
+| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L507) |
+| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L293) |
+| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L186) |
+| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L239) |
+| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L215) |
+| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L301) |
+| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L655) |
 
 ### `routes/sucursales.py`
 

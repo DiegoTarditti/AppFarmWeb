@@ -80,11 +80,35 @@
 
   {# ---- Qué sacar / reducir del robot ---- #}
   <section class="mb-8">
-    <h2 class="text-sm font-bold mb-2 flex items-center gap-2">
+    <h2 class="text-sm font-bold mb-2 flex items-center gap-2 flex-wrap">
+      {% if ver_todo %}
+      📚 Todo el stock del robot
+      <span class="text-[11px] font-normal text-[color:var(--ds-text-mute)]">
+        {{ n_total }} artículos · {{ unid_total }} unidades</span>
+      {% else %}
       📦 Qué sacar o reducir del robot
       <span class="text-[11px] font-normal text-[color:var(--ds-text-mute)]">
         {{ n_accion }} artículos · liberan {{ diag.espacio_recuperable_l }} L al depósito</span>
+      {% endif %}
+
+      {# Interruptor accion / inventario completo. Va por URL y no client-side
+         porque las ~3500 filas son unos 4 MB de HTML: el default queda liviano
+         y la vista completa se pide cuando hace falta. #}
+      <span class="ml-auto flex items-center gap-1 text-[11px] font-normal">
+        <a href="{{ url_for('rowa_dashboard') }}"
+           class="px-2 py-0.5 rounded border {{ 'bg-[color:var(--ds-mint)]/20 border-[color:var(--ds-mint)] text-[color:var(--ds-mint)]' if not ver_todo else 'border-[color:var(--ds-surface-border)] text-[color:var(--ds-text-mute)] hover:text-white' }}">
+          Para sacar ({{ n_accion }})</a>
+        <a href="{{ url_for('rowa_dashboard', todo=1) }}"
+           class="px-2 py-0.5 rounded border {{ 'bg-[color:var(--ds-mint)]/20 border-[color:var(--ds-mint)] text-[color:var(--ds-mint)]' if ver_todo else 'border-[color:var(--ds-surface-border)] text-[color:var(--ds-text-mute)] hover:text-white' }}">
+          Todo el stock ({{ n_total }})</a>
+      </span>
     </h2>
+    {% if ver_todo %}
+    <p class="text-[11px] text-[color:var(--ds-text-mute)] mb-2">
+      Inventario completo tal como lo devuelve el robot. De estos, <b>{{ n_accion }}</b>
+      ({{ unid_accion }} u) tienen algo para sacar o reducir; el resto se muestra para consulta.
+    </p>
+    {% endif %}
 
     {# ---- Filtros (client-side, sobre la tabla ya cargada) ---- #}
     <div class="flex flex-wrap items-center gap-2 mb-2">
@@ -142,7 +166,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for f in accion %}
+          {% for f in tabla %}
           {% set _nr = nuevos_map.get(f.article_id) %}
           <tr class="rowa-fila border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]"
               data-nombre="{{ (f.nombre_obs or f.nombre or '')|lower }}"
@@ -204,7 +228,7 @@
               <th class="text-right px-3 py-2">Packs en alerta</th></tr>
         </thead>
         <tbody>
-          {% for f in vencimientos[:50] %}
+          {% for f in vencimientos[:200] %}
           <tr class="border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]">
             <td class="px-3 py-1.5">{{ (f.nombre_obs or f.nombre or '')[:36] }}</td>
             <td class="px-3 py-1.5 text-right">{{ f.cantidad }}</td>
@@ -216,6 +240,12 @@
         </tbody>
       </table>
     </div>
+    {% if n_venc > 200 %}
+    {# El corte estaba en 50 y era mudo: si crecia, desaparecian vencimientos
+       sin que nadie se enterara. Ahora se avisa. #}
+    <p class="text-[11px] text-amber-300 mt-1">
+      Se muestran los 200 más próximos de {{ n_venc }}.</p>
+    {% endif %}
   </section>
   {% endif %}
 
