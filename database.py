@@ -5732,6 +5732,22 @@ def _pg_add_columns(conn):
     """))
     conn.execute(text("ALTER TABLE web_producto_imagen ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAULT FALSE"))
 
+    # Resumen de cuenta: las dos columnas se agregaron al modelo DESPUÉS de que
+    # la tabla ya existía en producción, y `create_all` no altera tablas que ya
+    # están — así que /kellerhoff/resumenes tiraba 500 con "column
+    # resumen_proveedor.total_calculado does not exist". Toda columna nueva
+    # sobre una tabla ya desplegada necesita su ALTER acá, aunque el modelo la
+    # declare.
+    conn.execute(text(
+        "ALTER TABLE resumen_proveedor ADD COLUMN IF NOT EXISTS total_calculado NUMERIC(14,2)"))
+    conn.execute(text(
+        "ALTER TABLE resumen_proveedor_item ADD COLUMN IF NOT EXISTS pago_ajuste_id INTEGER "
+        "REFERENCES pagos_ajustes_cc(id) ON DELETE SET NULL"))
+    # Mismo caso en el módulo Rowa: la columna se sumó al modelo `RowaNuevo`
+    # cuando la tabla ya estaba creada.
+    conn.execute(text(
+        "ALTER TABLE rowa_nuevos ADD COLUMN IF NOT EXISTS obs_verificado_en TIMESTAMP"))
+
 
 def _sqlite_add_columns(conn):
     """Migraciones para SQLite (no soporta IF NOT EXISTS en ALTER TABLE)."""
