@@ -1,12 +1,14 @@
 """Ciclo de compra Kellerhoff: scraping del portal → InvoiceItems → liga PedidoEmitido."""
 from __future__ import annotations
 
+import json
 import os
 import threading
 from datetime import date, datetime, timedelta
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
+from sqlalchemy import text as _text
 from werkzeug.utils import secure_filename
 
 import database
@@ -25,9 +27,64 @@ from services.kellerhoff_analizador import resolver_anunciante
 KELLERHOFF_PROVIDER_ID = int(os.environ.get('KELLERHOFF_PROVIDER_ID', '1'))
 KELLERHOFF_CUIT = '30539756490'
 
-# Estado de ejecución del scraper (in-memory, un thread a la vez)
-_sync_lock = threading.Lock()
-_sync_estado: dict = {'corriendo': False, 'ultimo': None, 'resultado': None, 'msg': ''}
+# ── Lock del sync en DB (id=2 en sync_lock) ──────────────────────────────────
+# Antes: threading.Lock + dict en memoria. Con gunicorn --workers 2 eso es una
+# copia POR worker: el polling caía en el worker que no corría el sync y no veía
+# el log, y un segundo click en otro worker arrancaba un SEGUNDO scraping. El
+# lock en DB lo comparten los dos workers (mismo patrón que ObServer, id=1).
+_KH_LOCK_ID = 2
+_KH_LOCK_TIMEOUT_MIN = 60   # lock abandonado (worker muerto mid-sync) → se puede tomar
+
+# Buffer del log SOLO en el worker que corre el sync (el que tiene el lock). Se
+# vuelca entero a sync_lock.log en cada línea, así el otro worker lo lee de DB.
+_kh_log_buffer: list[str] = []
+
+
+def _kh_lock_acquire() -> bool:
+    """Toma el lock por UPDATE atómico. True si lo tomó; False si ya está tomado
+    por otro worker dentro del timeout."""
+    with get_db() as session:
+        if session.query(database.SyncLock).filter_by(id=_KH_LOCK_ID).first() is None:
+            session.add(database.SyncLock(id=_KH_LOCK_ID, en_curso=False))
+            session.commit()
+        umbral = datetime.now() - timedelta(minutes=_KH_LOCK_TIMEOUT_MIN)
+        result = session.execute(_text(
+            "UPDATE sync_lock SET en_curso = :on, iniciado_en = :now, "
+            "finalizado_en = NULL, ultimo_resultado = NULL, log = NULL "
+            "WHERE id = :lid AND (en_curso = :off OR iniciado_en IS NULL OR iniciado_en < :umbral)"
+        ), {'on': True, 'off': False, 'now': datetime.now(), 'umbral': umbral,
+            'lid': _KH_LOCK_ID})
+        session.commit()
+        return result.rowcount == 1
+
+
+def _kh_lock_release(resultado=None) -> None:
+    with get_db() as session:
+        session.execute(_text(
+            "UPDATE sync_lock SET en_curso = :off, finalizado_en = :now, "
+            "ultimo_resultado = :res WHERE id = :lid"
+        ), {'off': False, 'now': datetime.now(), 'lid': _KH_LOCK_ID,
+            'res': json.dumps(resultado, default=str) if resultado else None})
+        session.commit()
+
+
+def _kh_lock_estado() -> dict:
+    """Estado del sync leído de DB — lo mismo para los dos workers."""
+    with get_db() as session:
+        row = session.query(database.SyncLock).filter_by(id=_KH_LOCK_ID).first()
+    if row is None:
+        return {'corriendo': False, 'msg': '', 'log': [], 'resultado': None, 'ultimo': None}
+    try:
+        resultado = json.loads(row.ultimo_resultado) if row.ultimo_resultado else None
+    except (ValueError, TypeError):
+        resultado = None
+    return {
+        'corriendo': bool(row.en_curso),
+        'msg': row.paso_actual or '',
+        'log': row.log.split('\n') if row.log else [],
+        'resultado': resultado,
+        'ultimo': row.finalizado_en.strftime('%d/%m/%Y %H:%M') if row.finalizado_en else None,
+    }
 
 
 def init_app(app):
@@ -79,7 +136,7 @@ def init_app(app):
         return render_template(
             'kellerhoff_sync.html',
             credenciales_ok=credenciales_ok,
-            sync_estado=_sync_estado,
+            sync_estado=_kh_lock_estado(),
             pendientes=pendientes_data,
             facturas=facturas_data,
         )
@@ -87,7 +144,9 @@ def init_app(app):
     @app.route('/kellerhoff/sync/ejecutar', methods=['POST'])
     @login_required
     def kellerhoff_sync_ejecutar():
-        if not _sync_lock.acquire(blocking=False):
+        # Lock en DB: si otro worker ya está sincronizando, rowcount==0 → 409.
+        # Esto es lo que evita el segundo scraping en paralelo.
+        if not _kh_lock_acquire():
             return jsonify({'ok': False, 'error': 'Ya hay un sync en curso'}), 409
 
         dias = min(int(request.form.get('dias', 7)), 60)
@@ -95,18 +154,15 @@ def init_app(app):
         desde = hasta - timedelta(days=dias)
 
         def _run():
+            global _kh_log_buffer
+            _kh_log_buffer = []   # log limpio para esta corrida (este worker)
+            resultado = None
             try:
-                _sync_estado['corriendo'] = True
-                _sync_estado['resultado'] = None
-                _sync_estado['log'] = []   # log en vivo, arranca limpio cada corrida
                 resultado = _sincronizar(desde, hasta)
-                _sync_estado['resultado'] = resultado
-                _sync_estado['ultimo'] = datetime.now().strftime('%d/%m/%Y %H:%M')
             except Exception as e:
-                _sync_estado['resultado'] = {'ok': False, 'error': str(e)}
+                resultado = {'ok': False, 'error': str(e)}
             finally:
-                _sync_estado['corriendo'] = False
-                _sync_lock.release()
+                _kh_lock_release(resultado)
 
         threading.Thread(target=_run, daemon=True).start()
         return jsonify({'ok': True, 'mensaje': f'Sync iniciado ({desde} → {hasta})'})
@@ -114,7 +170,7 @@ def init_app(app):
     @app.route('/kellerhoff/sync/estado')
     @login_required
     def kellerhoff_sync_estado():
-        return jsonify(_sync_estado)
+        return jsonify(_kh_lock_estado())
 
     # ── Resúmenes de cuenta (el cierre semanal que emite Kellerhoff) ──────────
 
@@ -253,14 +309,26 @@ def init_app(app):
 # ── Lógica de sincronización ───────────────────────────────────────────────────
 
 def _msg(texto: str) -> None:
-    """Actualiza el mensaje visible + acumula el log en vivo que muestra la UI."""
+    """Publica una línea de progreso: paso_actual + log completo en sync_lock,
+    para que el worker que atiende el polling (que puede NO ser este) la vea.
+
+    Corre en el thread del sync, que es el único que tiene el lock, así que el
+    buffer de módulo es de este worker y no pisa a nadie. Cada línea = un UPDATE
+    chico; en un sync son ~150, trivial para la DB.
+    """
     import logging
-    _sync_estado['msg'] = texto
-    log = _sync_estado.setdefault('log', [])
-    log.append(texto)
-    # Cap defensivo: un sync largo no debe inflar la respuesta del endpoint.
-    if len(log) > 800:
-        del log[:len(log) - 800]
+    _kh_log_buffer.append(texto)
+    if len(_kh_log_buffer) > 800:   # cap defensivo para un tramo largo
+        del _kh_log_buffer[:len(_kh_log_buffer) - 800]
+    try:
+        with get_db() as session:
+            session.execute(_text(
+                "UPDATE sync_lock SET paso_actual = :paso, log = :log WHERE id = :lid"
+            ), {'paso': texto[:80], 'log': '\n'.join(_kh_log_buffer), 'lid': _KH_LOCK_ID})
+            session.commit()
+    except Exception:
+        # El log es informativo: si falla el UPDATE, el sync sigue igual.
+        pass
     logging.getLogger(__name__).warning('[KH-SYNC] %s', texto)
 
 

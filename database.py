@@ -973,14 +973,16 @@ class AlarmaNotificada(Base):
 
 
 class SyncLock(Base):
-    """Singleton (id=1) que protege el sync ObServer entre workers de gunicorn.
+    """Lock de sync entre workers de gunicorn. UNA fila por sync:
 
-    Reemplaza al `threading.Lock` en memoria, que con `--preload --workers 2`
-    no sirve: cada worker forkea su propio lock y dos workers pueden disparar
-    el sync en paralelo. Acá el `acquire` es un UPDATE atómico contra la fila.
+      id=1 → ObServer (routes/observer_sync.py)
+      id=2 → Kellerhoff (routes/kellerhoff_sync.py)
 
-    Si `iniciado_en` quedó viejo (>60 min) sin liberar, el lock se considera
-    abandonado (worker se mató mid-sync) y se puede tomar igual.
+    Reemplaza al `threading.Lock` en memoria, que con `--workers 2` no sirve:
+    cada worker tiene su propia copia y dos workers pueden disparar el sync en
+    paralelo. Acá el `acquire` es un UPDATE atómico contra la fila (rowcount==1
+    = lo tomé). Si `iniciado_en` quedó viejo (>60 min) sin liberar, el lock se
+    considera abandonado (worker muerto mid-sync) y se puede tomar igual.
     """
     __tablename__ = 'sync_lock'
     id = Column(Integer, primary_key=True)
@@ -989,6 +991,10 @@ class SyncLock(Base):
     finalizado_en = Column(DateTime, nullable=True)
     paso_actual = Column(String(80), nullable=True)
     ultimo_resultado = Column(Text, nullable=True)  # JSON serializado
+    # Log en vivo del sync (líneas unidas por \n). Vive en DB para que los DOS
+    # workers muestren lo mismo: el que corre el sync lo escribe, el que atiende
+    # el polling lo lee. Lo usa Kellerhoff; ObServer usa solo paso_actual.
+    log = Column(Text, nullable=True)
 
 
 class PanelComando(Base):
@@ -3624,7 +3630,8 @@ def init_db(database_url=None):
                     "CREATE INDEX IF NOT EXISTS idx_pend_rev_supplier "
                     "ON productos_pendientes_revision(supplier_id)"
                 ))
-                # Lock singleton para coordinar el sync ObServer entre workers.
+                # Lock por sync para coordinar entre workers (id=1 ObServer,
+                # id=2 Kellerhoff).
                 conn.execute(text("""
                     CREATE TABLE IF NOT EXISTS sync_lock (
                         id INTEGER PRIMARY KEY,
@@ -3635,6 +3642,9 @@ def init_db(database_url=None):
                         ultimo_resultado TEXT
                     )
                 """))
+                # Log en vivo del sync (Kellerhoff): que los dos workers lo vean.
+                conn.execute(text(
+                    "ALTER TABLE sync_lock ADD COLUMN IF NOT EXISTS log TEXT"))
                 # Compartido peer-to-peer: columna destinatarios + log local de importados.
                 conn.execute(text(
                     "ALTER TABLE archivos_compartidos "
