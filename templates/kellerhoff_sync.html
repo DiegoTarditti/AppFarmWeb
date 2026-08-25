@@ -114,7 +114,7 @@
           {% for p in pendientes %}
           <tr>
             <td class="mono-xs">{{ p.fecha }}</td>
-            <td class="td-right mono-xs">{{ p.items }}</td>
+            <td class="td-right mono-xs">{{ p.articulos }}</td>
             <td class="td-right mono-xs">{{ p.unidades }}</td>
             <td class="td-right">
               <a href="{{ url_for('api_drogueria_pedidos_emitidos', prov_id=1) }}"

@@ -122,8 +122,10 @@ def init_app(app):
                 .all()
             )
             pendientes_data = [
+                # 'articulos' y NO 'items': en Jinja `p.items` resuelve al método
+                # items() del dict, no a la key (gotcha documentado en CLAUDE.md).
                 {'id': p.id, 'fecha': p.fecha.strftime('%d/%m/%Y'),
-                 'items': p.total_items, 'unidades': p.total_unidades}
+                 'articulos': p.total_items, 'unidades': p.total_unidades}
                 for p in pendientes
             ]
             facturas_kh = (
