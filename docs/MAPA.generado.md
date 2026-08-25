@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-25 17:33 · rama `feat/rowa-columna-robot` · commit `27daf94`
+Generado: 2026-08-25 17:41 · rama `feat/rowa-columna-robot` · commit `2467935`
 
 **804 rutas** en 77 archivos · **131 modelos** · **22 syncs** · **38 services** · **11 parsers**
 
@@ -1286,11 +1286,11 @@ Generado: 2026-08-25 17:33 · rama `feat/rowa-columna-robot` · commit `27daf94`
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L87) |
-| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L895) |
-| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L862) |
-| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L707) |
-| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L778) |
-| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L829) |
+| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L948) |
+| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L915) |
+| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L747) |
+| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L826) |
+| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L882) |
 | `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L443) |
 | `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L553) |
 | `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L190) |
@@ -1299,7 +1299,7 @@ Generado: 2026-08-25 17:33 · rama `feat/rowa-columna-robot` · commit `27daf94`
 | `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L561) |
 | `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L426) |
 | `/rowa/planilla/export.<fmt>` | GET | [`rowa_planilla_export`](../routes/rowa.py#L304) |
-| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L982) |
+| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L1035) |
 
 ### `routes/sucursales.py`
 
