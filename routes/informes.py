@@ -118,6 +118,26 @@ def _friendly_api_error(e):
     return jsonify({'ok': False, 'error': friendly}), 502
 
 
+def meses_sin_vender(ventas):
+    """Cuántos meses hace que no vende, mirando los 12 de `ventas_json`.
+
+    El array viene del más viejo al más nuevo, así que se recorre al revés
+    hasta encontrar un mes con ventas. Devuelve 12 si no vendió en todo el
+    período (o si no hay datos): es el "clavo absoluto", que se marca aparte
+    porque no es lo mismo que un producto que se dejó de vender.
+
+    Se prefiere esto antes que `ProductAnalytics.sin_mov_60d` porque ese flag
+    es binario y acá interesa el GRADO — un mes sin venderse no es lo mismo
+    que un año.
+    """
+    if not ventas:
+        return 12
+    for i, u in enumerate(reversed(ventas)):
+        if (u or 0) > 0:
+            return i
+    return 12
+
+
 def init_app(app):
 
     @app.route('/informes')
@@ -3452,3 +3472,98 @@ def init_app(app):
                 session.delete(m)
                 session.commit()
         return ('', 204)
+
+    # ── Stock parado: plata inmovilizada en productos que no se venden ────────
+
+    @app.route('/informes/stock-parado')
+    @login_required
+    def informe_stock_parado():
+        """Catálogo muerto de toda la farmacia, ordenado por plata inmovilizada.
+
+        Existe porque el análisis de lo que no se mueve estaba repartido en cinco
+        lugares que no se hablan (ver docs/informe_stock_parado.md): cadencias
+        (por laboratorio, hay que entrar de a uno), el robot (sólo lo que está
+        adentro de la máquina), `ProductAnalytics.sin_mov_60d` (se calcula para
+        todo el catálogo y no lo mostraba ninguna pantalla), `purchase_engine` y
+        el diagnóstico de mínimo.
+
+        Se lee de `ProductAnalytics`, que ya viene pre-agregado por el snapshot:
+        stock, precio, laboratorio y las ventas de los 12 meses. Eso evita tocar
+        `obs_ventas_detalle`, que es lo que hace OOM.
+
+        Los meses sin vender salen de `ventas_json` y NO de `sin_mov_60d`: el
+        flag es binario (vendió o no en 2 meses) y acá hace falta el grado, que
+        es lo que separa "dejó de venderse el mes pasado" de "hace un año que no
+        se mueve".
+        """
+        import json as _json
+
+        from helpers import multi_token_filter
+
+        MESES_OPCIONES = [2, 3, 6, 12]
+        meses_min = request.args.get('meses', type=int) or 6
+        if meses_min not in MESES_OPCIONES:
+            meses_min = 6
+        lab = (request.args.get('lab') or '').strip()
+        q = (request.args.get('q') or '').strip()
+        orden = request.args.get('orden') or 'valor'
+
+        with database.get_db() as session:
+            base = session.query(database.ProductAnalytics).filter(
+                database.ProductAnalytics.stock > 0)   # sin stock no hay plata parada
+            if lab:
+                base = base.filter(database.ProductAnalytics.laboratorio == lab)
+            clausula = multi_token_filter(q, database.ProductAnalytics.descripcion,
+                                          database.ProductAnalytics.codigo_barra)
+            if clausula is not None:
+                base = base.filter(clausula)
+
+            filas, total_valor, total_unid = [], 0.0, 0
+            nunca = 0
+            labs = set()
+            for r in base.all():
+                if r.laboratorio:
+                    labs.add(r.laboratorio)
+                try:
+                    ventas = _json.loads(r.ventas_json) if r.ventas_json else []
+                except (ValueError, TypeError):
+                    ventas = []
+                meses = meses_sin_vender(ventas)
+                if meses < meses_min:
+                    continue
+                precio = float(r.precio_pvp or 0)
+                valor = round(r.stock * precio, 2)
+                total_valor += valor
+                total_unid += r.stock
+                if meses >= 12:
+                    nunca += 1
+                filas.append({
+                    'codigo_barra': r.codigo_barra,
+                    'descripcion': r.descripcion or '',
+                    'laboratorio': r.laboratorio or '',
+                    'stock': r.stock,
+                    'precio': round(precio, 2),
+                    'valor': valor,
+                    'meses': meses,
+                    'nunca': meses >= 12,
+                    'ventas': ventas,
+                    'ultimo_mes': max(ventas) if ventas else 0,
+                })
+
+        if orden == 'nombre':
+            filas.sort(key=lambda f: f['descripcion'].lower())
+        elif orden == 'stock':
+            filas.sort(key=lambda f: -f['stock'])
+        elif orden == 'meses':
+            filas.sort(key=lambda f: (-f['meses'], -f['valor']))
+        else:
+            filas.sort(key=lambda f: -f['valor'])
+
+        return render_template(
+            'informe_stock_parado.html',
+            filas=filas, meses_min=meses_min, meses_opciones=MESES_OPCIONES,
+            lab=lab, q=q, orden=orden,
+            labs_disponibles=sorted(labs),
+            total_valor=round(total_valor, 2), total_unid=total_unid,
+            n_filas=len(filas), n_nunca=nunca,
+        )
