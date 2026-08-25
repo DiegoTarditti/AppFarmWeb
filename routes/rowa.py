@@ -38,6 +38,12 @@ from services.rowa_analisis import (
 from services.rowa_client import RowaClient, RowaError
 from services.rowa_observer import cruzar_con_observer
 
+# Días de venta que se busca cubrir al cargar el robot, desde /rowa/carga.
+# Es 3 y no los 7 de la planilla a propósito: la recarga es diaria, y apuntar
+# más lejos llena la máquina de producto que no va a salir y le saca lugar al
+# que sí. El operador lo ajusta desde el encabezado.
+DIAS_CARGA_DEFAULT = 3
+
 # Caché en memoria (un solo robot, un solo proceso relevante). TTL corto.
 _CACHE: dict = {"ts": None, "payload": None}
 _TTL_SEG = 600  # 10 min
@@ -635,7 +641,7 @@ def init_app(app):
             result[f.article_id] = round(bajas / dias, 3)
         return result
 
-    def _sugerir_carga(en_robot, deposito, maximo, salidas):
+    def _sugerir_carga(en_robot, deposito, maximo, salidas, dias=None):
         """Cuántos packs conviene mover del depósito al robot.
 
         Misma fórmula que `/rowa/planilla` (`services/rowa_planilla.calcular_fila`):
@@ -653,6 +659,7 @@ def init_app(app):
 
         from services.rowa_planilla import DIAS_AUTONOMIA
 
+        dias = dias or DIAS_AUTONOMIA
         disponible = max(deposito or 0, 0)
         if not maximo or maximo <= 0 or disponible <= 0:
             return 0
@@ -660,11 +667,11 @@ def init_app(app):
         if hueco <= 0:
             return 0
         if salidas and salidas > 0:
-            objetivo = max(1, min(math.ceil(salidas * DIAS_AUTONOMIA), maximo))
+            objetivo = max(1, min(math.ceil(salidas * dias), maximo))
             return min(max(0, objetivo - (en_robot or 0)), disponible)
         return min(hueco, disponible)
 
-    def _construir_items(session, filas):
+    def _construir_items(session, filas, dias_autonomia=None):
         """Arma la lista de carga (cobertura, urgencia, sugerido) para /rowa/carga.
 
         Vive aparte porque lo usan la pantalla y las exportaciones, y porque la
@@ -730,11 +737,13 @@ def init_app(app):
                 "salidas_dia": sal,
                 "cobertura": cobertura,
                 "urgencia": urgencia,
+                "maximo": maximos.get(f.producto_observer),
                 "sug_cargar": _sugerir_carga(
                     en_robot=f.cantidad,
                     deposito=f.stock_deposito,
                     maximo=maximos.get(f.producto_observer),
-                    salidas=sal),
+                    salidas=sal,
+                    dias=dias_autonomia),
                 "tipo_aumento": tipo_aumento_por_art.get(f.article_id),
             })
 
@@ -765,7 +774,13 @@ def init_app(app):
             else:
                 snap_ts = ultimo_snap[0]
 
-            items = _construir_items(session, filas)
+            # Para cuántos días de venta se quiere llenar el robot. Default 3:
+            # la recarga es diaria, así que apuntar muy lejos llena el robot de
+            # producto que no va a salir y le saca lugar al que sí. Se ajusta
+            # desde el encabezado.
+            dias = request.args.get("dias", type=int) or DIAS_CARGA_DEFAULT
+            dias = max(1, min(dias, 60))
+            items = _construir_items(session, filas, dias_autonomia=dias)
 
             # Última sesión de carga
             ultima_carga = (
@@ -792,13 +807,22 @@ def init_app(app):
         # HTML por visita para mostrar 222 renglones. Ahora el corte lo hace el
         # servidor y `?todo=1` trae el resto.
         ver_todo = request.args.get("todo") == "1"
-        # Sin stock en el depósito no hay nada que mover al robot: mostrar esas
-        # filas es pedirle al operador que descarte a mano lo que no puede hacer.
-        # `?con_deposito=0` las trae igual (para diagnosticar por qué un crítico
-        # no aparece: si no está acá, es que tampoco hay en el depósito).
-        solo_con_deposito = request.args.get("con_deposito", "1") != "0"
-        base = [i for i in items if (i["stock_deposito"] or 0) > 0] if solo_con_deposito else items
+        # Sin sugerencia no hay nada que hacer con esa fila: mostrarla es pedirle
+        # al operador que descarte a mano lo que no puede cargar. El filtro
+        # subsume al de "sin stock en depósito" (sin depósito la sugerencia ya da
+        # cero) y además saca los que no tienen cupo cargado en ObServer.
+        # `?sugeridos=0` las trae igual, para diagnosticar por qué un crítico no
+        # aparece.
+        solo_sugeridos = request.args.get("sugeridos", "1") != "0"
+        base = [i for i in items if i["sug_cargar"] > 0] if solo_sugeridos else items
         tabla = base if ver_todo else [i for i in base if i["urgencia"] < 3]
+
+        # Desglose de por qué se ocultó cada una: "sin cupo" es accionable
+        # (hay que cargar la Cantidad Máxima en ObServer), "sin depósito" no.
+        ocultos = [i for i in items if i["sug_cargar"] <= 0] if solo_sugeridos else []
+        n_sin_deposito = sum(1 for i in ocultos if (i["stock_deposito"] or 0) <= 0)
+        n_sin_cupo = sum(1 for i in ocultos
+                         if (i["stock_deposito"] or 0) > 0 and not i.get("maximo"))
 
         # Del conjunto renderizado: los filtros client-side no pueden ofrecer un
         # laboratorio que no esta en la tabla.
@@ -811,8 +835,11 @@ def init_app(app):
             ver_todo=ver_todo,
             n_total=len(items),
             n_tabla=len(tabla),
-            n_sin_deposito=len(items) - len(base),
-            solo_con_deposito=solo_con_deposito,
+            n_ocultos=len(ocultos),
+            n_sin_deposito=n_sin_deposito,
+            n_sin_cupo=n_sin_cupo,
+            solo_sugeridos=solo_sugeridos,
+            dias_autonomia=dias,
             snap_ts=snap_ts,
             ultima_carga=ultima_carga[0] if ultima_carga else None,
             n_criticos=sum(1 for i in items if i["urgencia"] < 2),
@@ -842,13 +869,14 @@ def init_app(app):
         except (RowaError, OSError) as e:
             abort(503, description=str(e))
 
+        dias = request.args.get("dias", type=int) or DIAS_CARGA_DEFAULT
+        dias = max(1, min(dias, 60))
         with get_db() as session:
-            items = _construir_items(session, data["filas"])
+            items = _construir_items(session, data["filas"], dias_autonomia=dias)
 
-        # Mismo criterio que la pantalla: sin stock en depósito no hay nada que
-        # mover, así que tampoco va al archivo.
-        if request.args.get("con_deposito", "1") != "0":
-            items = [i for i in items if (i["stock_deposito"] or 0) > 0]
+        # Mismo criterio que la pantalla: sin sugerencia no va al archivo.
+        if request.args.get("sugeridos", "1") != "0":
+            items = [i for i in items if i["sug_cargar"] > 0]
 
         q = (request.args.get("q") or "").strip().lower()
         lab = (request.args.get("lab") or "").strip()

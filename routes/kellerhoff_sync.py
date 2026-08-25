@@ -243,14 +243,19 @@ def init_app(app):
         with get_db() as session:
             prov = _kh_provider(session)
             movimientos, resumen = ([], {'saldo': 0.0, 'total_prefac': 0.0})
+            corte = None
             if prov is not None:
                 movimientos, resumen = movimientos_proveedor(session, prov)
+                # Hasta dónde llegan los resúmenes importados: sin esto no se
+                # distingue "todavía no lo cobraron" de "falta".
+                corte = corte_resumenes(session, prov)
             prov_data = {'razon_social': prov.razon_social if prov else 'Kellerhoff',
                          'cuit': (prov.cuit if prov else '') or ''}
         return render_template('kellerhoff_cuenta_corriente.html',
                                provider=prov_data, movimientos=movimientos,
                                saldo_total=resumen['saldo'],
-                               total_prefac=resumen.get('total_prefac', 0))
+                               total_prefac=resumen.get('total_prefac', 0),
+                               corte_resumenes=corte)
 
     # ── Resúmenes de cuenta (el cierre semanal que emite Kellerhoff) ──────────
 

@@ -34,6 +34,10 @@
         <th style="text-align:left; padding:9px 14px;">Fecha</th>
         <th style="text-align:left; padding:9px 14px;">Tipo</th>
         <th style="text-align:left; padding:9px 14px;">Comprobante</th>
+        <th style="text-align:center; padding:9px 14px;"
+            title="Renglones de detalle guardados vs. los que declara la factura">Detalle</th>
+        <th style="text-align:center; padding:9px 14px;"
+            title="Resumen de cuenta de Kellerhoff en el que entró">Resumen</th>
         <th style="text-align:right; padding:9px 14px;">Debe</th>
         <th style="text-align:right; padding:9px 14px;">Haber</th>
         <th style="text-align:right; padding:9px 14px;">Saldo</th>
@@ -45,6 +49,30 @@
         <td style="padding:8px 14px; white-space:nowrap;">{{ m.fecha.strftime('%d/%m/%Y') if m.fecha else '' }}</td>
         <td style="padding:8px 14px;">{{ m.tipo }}</td>
         <td style="padding:8px 14px; font-variant-numeric:tabular-nums; color:var(--ds-text-soft);">{{ m.comprobante }}</td>
+        <td style="padding:8px 14px; text-align:center;">
+          {% if m.detalle %}{% with d = m.detalle %}{% include '_badge_detalle.html' %}{% endwith %}
+          {% else %}<span style="color:var(--ds-text-mute);">—</span>{% endif %}
+        </td>
+        <td style="padding:8px 14px; text-align:center; white-space:nowrap;">
+          {% if m.resumen %}
+          <a href="{{ url_for('kellerhoff_resumen_detalle', resumen_id=m.resumen.id) }}"
+             title="Entró en el resumen {{ m.resumen.numero }}{% if m.resumen.periodo_desde %} ({{ m.resumen.periodo_desde.strftime('%d/%m') }} al {{ m.resumen.periodo_hasta.strftime('%d/%m/%Y') if m.resumen.periodo_hasta else '' }}){% endif %}"
+             style="display:inline-block;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;
+                    background:rgba(59,130,246,.16);color:#93c5fd;text-decoration:none;">
+            {{ m.resumen.numero }}
+          </a>
+          {% elif m.origen == 'factura' and m.tipo != 'PREFAC' and corte_resumenes and m.fecha and m.fecha <= corte_resumenes %}
+          {# Anterior al último resumen importado y no figura: o falta ese
+             resumen, o Kellerhoff nunca lo incluyó. #}
+          <span style="display:inline-block;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;
+                       background:rgba(234,88,12,.16);color:#fdba74;"
+                title="No aparece en ningún resumen, y los resúmenes ya cubren hasta el {{ corte_resumenes.strftime('%d/%m/%Y') }}">
+            sin resumen
+          </span>
+          {% else %}
+          <span style="color:var(--ds-text-mute);">—</span>
+          {% endif %}
+        </td>
         <td style="padding:8px 14px; text-align:right; font-variant-numeric:tabular-nums; color:#FCA5A5;">
           {% if m.debe %}${{ money(m.debe) }}{% else %}—{% endif %}</td>
         <td style="padding:8px 14px; text-align:right; font-variant-numeric:tabular-nums; color:#5FE6BC;">

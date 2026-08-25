@@ -93,18 +93,38 @@
       <span class="text-[10px] text-[color:var(--ds-text-mute)]">({{ n_tabla }} de {{ n_total }})</span></label>
     <label class="flex items-center gap-1 text-xs text-[color:var(--ds-text-mute)] cursor-pointer">
       <input id="carga-aumentos" type="checkbox" onchange="cargaFiltrar()"> 📈 Solo con aumentos</label>
-    {# Sin stock en depósito no hay nada que mover al robot. Se puede destildar
-       para diagnosticar: si un crítico no aparece, es que tampoco hay afuera. #}
+    {# Sin sugerencia no hay nada que hacer con la fila. Se puede destildar para
+       diagnosticar: si un crítico no aparece, es que no hay en depósito o falta
+       el cupo en ObServer. #}
     <label class="flex items-center gap-1 text-xs text-[color:var(--ds-text-mute)] cursor-pointer"
-           title="Oculta los artículos sin stock en el depósito: no se pueden cargar aunque estén críticos">
-      <input id="carga-condep" type="checkbox" {{ 'checked' if solo_con_deposito else '' }}
-             onchange="location.href = this.checked
-               ? '{{ url_for('rowa_carga', todo=1 if ver_todo else None) }}'
-               : '{{ url_for('rowa_carga', todo=1 if ver_todo else None, con_deposito=0) }}'">
-      📦 Con stock en depósito
-      {% if n_sin_deposito %}
-      <span class="text-[10px] text-[color:var(--ds-text-mute)]">({{ n_sin_deposito }} ocultos)</span>
+           title="Oculta lo que no se puede cargar: sin stock en depósito o sin cupo cargado en ObServer">
+      <input id="carga-sugeridos" type="checkbox" {{ 'checked' if solo_sugeridos else '' }}
+             onchange="cargaIrConDias(this.checked ? null : 0)">
+      ✅ Solo con sugerencia
+      {% if n_ocultos %}
+      <span class="text-[10px] text-[color:var(--ds-text-mute)]"
+            title="{{ n_sin_deposito }} sin stock en depósito · {{ n_sin_cupo }} sin cupo cargado en ObServer">
+        ({{ n_ocultos }} ocultos)</span>
       {% endif %}
+    </label>
+
+    {# Para cuántos días de venta llenar el robot. Slider + número: el slider
+       para tantear rápido, el número para poner un valor exacto. Recarga al
+       soltar (no en cada pixel del arrastre), porque el cálculo es del server. #}
+    <label class="flex items-center gap-2 text-xs text-[color:var(--ds-text-mute)]"
+           title="Objetivo: cubrir esta cantidad de días de venta, sin pasar el cupo de ObServer ni lo que hay en depósito">
+      🎯 Cargar para
+      <input id="carga-dias-range" type="range" min="1" max="30" step="1"
+             value="{{ dias_autonomia }}"
+             style="width:110px;accent-color:var(--ds-mint);cursor:pointer"
+             oninput="document.getElementById('carga-dias-num').value = this.value"
+             onchange="cargaIrConDias()">
+      <input id="carga-dias-num" type="number" min="1" max="60" step="1"
+             value="{{ dias_autonomia }}"
+             class="w-14 px-1.5 py-0.5 text-right text-xs rounded bg-white/5 border border-[color:var(--ds-surface-border)] focus:border-[color:var(--ds-mint)] focus:outline-none"
+             oninput="document.getElementById('carga-dias-range').value = this.value"
+             onchange="cargaIrConDias()">
+      días
     </label>
     <select id="carga-lab" onchange="cargaFiltrar()"
             class="px-2 py-1 text-sm rounded border border-[color:var(--ds-surface-border)]"
@@ -229,9 +249,24 @@
     if (q) { p.set('q', q); }
     if (lab) { p.set('lab', lab); }
     if (document.getElementById('carga-criticos').checked) { p.set('criticos', '1'); }
+    // Los días y el corte por sugerencia también viajan: el archivo tiene que
+    // decir lo mismo que la pantalla, y la sugerencia depende de los días.
+    p.set('dias', document.getElementById('carga-dias-num').value || '{{ dias_autonomia }}');
+    if (!document.getElementById('carga-sugeridos').checked) { p.set('sugeridos', '0'); }
     var qs = p.toString();
     a.href = '/rowa/carga/export.' + fmt + (qs ? '?' + qs : '');
     return true;   // deja seguir la navegacion, que dispara la descarga
+  }
+
+  // Los días y el filtro de sugeridos se resuelven en el server (el cálculo
+  // depende del cupo y del depósito), así que navegan en vez de filtrar el DOM.
+  function cargaIrConDias(sugeridos) {
+    var p = new URLSearchParams(window.location.search);
+    var d = parseInt(document.getElementById('carga-dias-num').value, 10);
+    if (!isNaN(d) && d >= 1) { p.set('dias', Math.min(d, 60)); }
+    if (sugeridos === 0) { p.set('sugeridos', 0); }
+    else if (sugeridos === null) { p.delete('sugeridos'); }
+    window.location.href = '{{ url_for('rowa_carga') }}?' + p.toString();
   }
 
   function cargaFiltrar() {

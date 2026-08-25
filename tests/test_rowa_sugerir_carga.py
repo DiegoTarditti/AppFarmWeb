@@ -62,3 +62,31 @@ def test_sin_señal_de_ventas_se_respeta_el_maximo():
     f = _fila(en_robot=1, deposito=10, maximo=6, salidas=0)
     assert f['sin_senal'] is True
     assert f['a_mover_sug'] == 5           # llena hasta el cupo, no opina de más
+
+
+# ── Los días de autonomía los elige el operador ─────────────────────────────
+
+def test_mas_dias_pide_mas_packs():
+    """El slider del encabezado mueve el objetivo, no el cupo ni el depósito."""
+    pocos = _fila(en_robot=0, deposito=99, maximo=20, salidas=1, dias=3)
+    muchos = _fila(en_robot=0, deposito=99, maximo=20, salidas=1, dias=10)
+    assert pocos['a_mover_sug'] == 3
+    assert muchos['a_mover_sug'] == 10
+
+
+def test_el_cupo_sigue_siendo_el_techo_aunque_se_pidan_muchos_dias():
+    """Subir los días no puede hacer que se sugiera más de lo que entra."""
+    f = _fila(en_robot=0, deposito=99, maximo=6, salidas=1, dias=60)
+    assert f['a_mover_sug'] == 6
+
+
+def test_el_deposito_sigue_siendo_el_techo_aunque_se_pidan_muchos_dias():
+    f = _fila(en_robot=0, deposito=2, maximo=20, salidas=1, dias=30)
+    assert f['a_mover_sug'] == 2
+
+
+def test_el_default_de_la_pantalla_de_carga_es_3():
+    """3 y no los 7 de la planilla: la recarga es diaria, y apuntar más lejos
+    llena el robot de producto que no va a salir."""
+    from routes.rowa import DIAS_CARGA_DEFAULT
+    assert DIAS_CARGA_DEFAULT == 3

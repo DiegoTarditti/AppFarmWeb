@@ -118,6 +118,7 @@ RUTAS_GET = [
     ('/ingresos', 'ingresos'),
     ('/kellerhoff/sync', 'kellerhoff_sync'),
     ('/kellerhoff/resumenes', 'kellerhoff_resumenes'),
+    ('/kellerhoff/cuenta-corriente', 'kellerhoff_cuenta_corriente'),
 
     # Catálogos
     ('/providers', 'providers_list'),
@@ -350,3 +351,29 @@ def test_cuenta_corriente_muestra_el_detalle(smoke_client):
         f'/cuentas-corrientes/extracto?proveedor={prov_id}').data.decode('utf-8')
     assert 'sin detalle' in html
     assert '3 / 9' in html
+
+
+def test_la_cuenta_corriente_del_modulo_dice_en_que_resumen_entro(smoke_client):
+    """La columna existía sólo en /cuentas-corrientes/extracto. La pantalla del
+    módulo usa el mismo motor (`movimientos_proveedor`), así que el dato ya
+    viajaba: sólo faltaba dibujarlo."""
+    from datetime import date
+    from unittest.mock import patch
+
+    import database
+    import services.kellerhoff_resumen as mod
+    from tests.test_kellerhoff_resumen import RESUMEN_TXT, _factura, _proveedor
+
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        _factura(session, '00046-00279207', 915046.04)
+        session.commit()
+        with patch.object(mod, 'parse_resumen_pdf',
+                          lambda _p: mod.parse_resumen_texto(RESUMEN_TXT)):
+            mod.importar_resumen(session, 'x.pdf', prov.id)
+        import routes.kellerhoff_sync as ks
+        ks.KELLERHOFF_PROVIDER_ID = prov.id
+
+    html = smoke_client.get('/kellerhoff/cuenta-corriente').data.decode('utf-8')
+    assert 'Resumen' in html, 'falta la columna'
+    assert 'S34-2026' in html, 'no se dibujó en qué resumen entró la factura'

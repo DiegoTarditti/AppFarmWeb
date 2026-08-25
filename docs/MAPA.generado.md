@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-25 17:41 · rama `feat/rowa-columna-robot` · commit `2467935`
+Generado: 2026-08-25 18:08 · rama `fix/rescate-commits-333-334` · commit `e2da83d`
 
 **804 rutas** en 77 archivos · **131 modelos** · **22 syncs** · **38 services** · **11 parsers**
 
@@ -840,13 +840,13 @@ Generado: 2026-08-25 17:41 · rama `feat/rowa-columna-robot` · commit `2467935`
 |---|---|---|
 | `/kellerhoff` | GET | [`kellerhoff_index`](../routes/kellerhoff_sync.py#L196) |
 | `/kellerhoff/cuenta-corriente` | GET | [`kellerhoff_cuenta_corriente`](../routes/kellerhoff_sync.py#L239) |
-| `/kellerhoff/resumen/<int:resumen_id>` | GET | [`kellerhoff_resumen_detalle`](../routes/kellerhoff_sync.py#L320) |
-| `/kellerhoff/resumenes` | GET | [`kellerhoff_resumenes`](../routes/kellerhoff_sync.py#L259) |
-| `/kellerhoff/resumenes/importar` | POST | [`kellerhoff_resumen_importar`](../routes/kellerhoff_sync.py#L283) |
+| `/kellerhoff/resumen/<int:resumen_id>` | GET | [`kellerhoff_resumen_detalle`](../routes/kellerhoff_sync.py#L325) |
+| `/kellerhoff/resumenes` | GET | [`kellerhoff_resumenes`](../routes/kellerhoff_sync.py#L264) |
+| `/kellerhoff/resumenes/importar` | POST | [`kellerhoff_resumen_importar`](../routes/kellerhoff_sync.py#L288) |
 | `/kellerhoff/sync` | GET | [`kellerhoff_sync`](../routes/kellerhoff_sync.py#L109) |
 | `/kellerhoff/sync/ejecutar` | POST | [`kellerhoff_sync_ejecutar`](../routes/kellerhoff_sync.py#L163) |
 | `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L189) |
-| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L372) |
+| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L377) |
 
 ### `routes/laboratorios.py`
 
@@ -1285,21 +1285,21 @@ Generado: 2026-08-25 17:41 · rama `feat/rowa-columna-robot` · commit `2467935`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L87) |
-| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L948) |
-| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L915) |
-| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L747) |
-| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L826) |
-| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L882) |
-| `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L443) |
-| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L553) |
-| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L190) |
-| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L499) |
-| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L219) |
-| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L561) |
-| `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L426) |
-| `/rowa/planilla/export.<fmt>` | GET | [`rowa_planilla_export`](../routes/rowa.py#L304) |
-| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L1035) |
+| `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L93) |
+| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L976) |
+| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L943) |
+| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L756) |
+| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L853) |
+| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L910) |
+| `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L449) |
+| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L559) |
+| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L196) |
+| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L505) |
+| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L225) |
+| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L567) |
+| `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L432) |
+| `/rowa/planilla/export.<fmt>` | GET | [`rowa_planilla_export`](../routes/rowa.py#L310) |
+| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L1063) |
 
 ### `routes/sucursales.py`
 
