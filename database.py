@@ -3271,6 +3271,22 @@ class RowaCarga(Base):
     cargado_en  = Column(DateTime, nullable=False, default=now_ar, index=True)
     usuario     = Column(String(80), nullable=True)
 
+    # ── Verificación contra el robot ──────────────────────────────────────
+    # Registrar una carga NO prueba que la mercadería haya entrado: guarda lo
+    # que el operador dice que cargó. El 25/8/2026 se registraron 23 packs y el
+    # robot nunca los tomó — el total de la máquina sólo bajó (10.115 → 10.102)
+    # y los 11 artículos quedaron con el mismo stock. Sin este chequeo, la app
+    # decía que estaban adentro.
+    #
+    # `stock_antes` se guarda al registrar (lo que el robot reportaba en ese
+    # momento) y `stock_despues` en la verificación, que compara contra
+    # `stock_antes + cantidad`.
+    stock_antes    = Column(Integer, nullable=True)
+    stock_despues  = Column(Integer, nullable=True)
+    verificado_en  = Column(DateTime, nullable=True)
+    # pendiente | confirmada | parcial | no_detectada
+    estado         = Column(String(15), nullable=False, default='pendiente')
+
 
 class RowaNuevo(Base):
     """Memoria de artículos detectados como 'nuevos' en el robot Rowa.
@@ -5731,6 +5747,14 @@ def _pg_add_columns(conn):
         )
     """))
     conn.execute(text("ALTER TABLE web_producto_imagen ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAULT FALSE"))
+
+    # Verificación de cargas del robot: columnas sumadas a una tabla que ya
+    # estaba desplegada, así que `create_all` no las agrega.
+    for _col, _tipo in (('stock_antes', 'INTEGER'), ('stock_despues', 'INTEGER'),
+                        ('verificado_en', 'TIMESTAMP'),
+                        ('estado', "VARCHAR(15) NOT NULL DEFAULT 'pendiente'")):
+        conn.execute(text(
+            f"ALTER TABLE rowa_cargas ADD COLUMN IF NOT EXISTS {_col} {_tipo}"))
 
     # Resumen de cuenta: las dos columnas se agregaron al modelo DESPUÉS de que
     # la tabla ya existía en producción, y `create_all` no altera tablas que ya

@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-25 18:21 · rama `fix/rescate-commits-333-334` · commit `17ec753`
+Generado: 2026-08-25 19:16 · rama `feat/rowa-verificar-carga` · commit `f575438`
 
-**805 rutas** en 77 archivos · **131 modelos** · **22 syncs** · **38 services** · **11 parsers**
+**806 rutas** en 77 archivos · **131 modelos** · **22 syncs** · **38 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -89,7 +89,7 @@ Generado: 2026-08-25 18:21 · rama `fix/rescate-commits-333-334` · commit `17ec
 | `kellerhoff_equivalencia` | `KellerhoffEquivalencia` | [1622](../database.py#L1622) |
 | `laboratorio_drogueria` | `LaboratorioDrogueria` | [1462](../database.py#L1462) |
 | `laboratorios` | `Laboratorio` | [91](../database.py#L91) |
-| `minimos_manuales` | `MinimoManual` | [3324](../database.py#L3324) |
+| `minimos_manuales` | `MinimoManual` | [3340](../database.py#L3340) |
 | `modulo_packs` | `ModuloPack` | [2150](../database.py#L2150) |
 | `modulos` | `Modulo` | [2137](../database.py#L2137) |
 | `motivo_devolucion` | `MotivoDevolucion` | [2579](../database.py#L2579) |
@@ -109,7 +109,7 @@ Generado: 2026-08-25 18:21 · rama `fix/rescate-commits-333-334` · commit `17ec
 | `obs_operadores` | `ObsOperador` | [322](../database.py#L322) |
 | `obs_planes` | `ObsPlan` | [366](../database.py#L366) |
 | `obs_productos` | `ObsProducto` | [142](../database.py#L142) |
-| `obs_rowa_productos` | `ObsRowaProducto` | [3294](../database.py#L3294) |
+| `obs_rowa_productos` | `ObsRowaProducto` | [3310](../database.py#L3310) |
 | `obs_rubros` | `ObsRubro` | [120](../database.py#L120) |
 | `obs_stock` | `ObsStock` | [181](../database.py#L181) |
 | `obs_stock_snapshot_diario` | `ObsStockSnapshotDiario` | [1168](../database.py#L1168) |
@@ -158,7 +158,7 @@ Generado: 2026-08-25 18:21 · rama `fix/rescate-commits-333-334` · commit `17ec
 | `resumen_proveedor_item` | `ResumenProveedorItem` | [1832](../database.py#L1832) |
 | `rol_filtro_obra_social` | `RolFiltroObraSocial` | [2709](../database.py#L2709) |
 | `rowa_cargas` | `RowaCarga` | [3258](../database.py#L3258) |
-| `rowa_nuevos` | `RowaNuevo` | [3275](../database.py#L3275) |
+| `rowa_nuevos` | `RowaNuevo` | [3291](../database.py#L3291) |
 | `rowa_snapshots` | `RowaSnapshot` | [3244](../database.py#L3244) |
 | `rutas_reparto` | `RutaReparto` | [795](../database.py#L795) |
 | `stock_differences` | `StockDifference` | [1887](../database.py#L1887) |
@@ -1286,21 +1286,22 @@ Generado: 2026-08-25 18:21 · rama `fix/rescate-commits-333-334` · commit `17ec
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L93) |
-| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L976) |
-| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L943) |
-| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L756) |
-| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L853) |
-| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L910) |
-| `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L449) |
-| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L559) |
-| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L196) |
-| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L505) |
-| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L225) |
-| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L567) |
-| `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L432) |
-| `/rowa/planilla/export.<fmt>` | GET | [`rowa_planilla_export`](../routes/rowa.py#L310) |
-| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L1063) |
+| `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L94) |
+| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L1056) |
+| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L1023) |
+| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L757) |
+| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L871) |
+| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L928) |
+| `/rowa/carga/verificar` | POST | [`rowa_carga_verificar`](../routes/rowa.py#L974) |
+| `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L450) |
+| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L560) |
+| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L197) |
+| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L506) |
+| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L226) |
+| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L568) |
+| `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L433) |
+| `/rowa/planilla/export.<fmt>` | GET | [`rowa_planilla_export`](../routes/rowa.py#L311) |
+| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L1143) |
 
 ### `routes/sucursales.py`
 
