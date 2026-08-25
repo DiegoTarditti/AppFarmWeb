@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-25 13:53 · rama `feat/modulo-control-kellerhoff` · commit `acb7069`
+Generado: 2026-08-25 17:33 · rama `feat/rowa-columna-robot` · commit `27daf94`
 
 **804 rutas** en 77 archivos · **131 modelos** · **22 syncs** · **38 services** · **11 parsers**
 
@@ -1299,7 +1299,7 @@ Generado: 2026-08-25 13:53 · rama `feat/modulo-control-kellerhoff` · commit `a
 | `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L561) |
 | `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L426) |
 | `/rowa/planilla/export.<fmt>` | GET | [`rowa_planilla_export`](../routes/rowa.py#L304) |
-| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L977) |
+| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L982) |
 
 ### `routes/sucursales.py`
 
