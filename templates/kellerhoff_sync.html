@@ -1,5 +1,5 @@
-{% extends "base.html" %}
-{% set nav_active = "ingresos" %}
+{% extends "base_kellerhoff.html" %}
+{% set kh_active = "portal" %}
 {% block title %}Ciclo de compra · Kellerhoff{% endblock %}
 {% block body_class %}theme-emerald{% endblock %}
 
@@ -36,7 +36,7 @@
 </style>
 {% endblock %}
 
-{% block main %}
+{% block kh %}
 <div class="flex-1 py-6 px-6 overflow-auto">
 <div class="max-w-5xl mx-auto space-y-6">
 
@@ -98,7 +98,7 @@
 
   {# ── Pedidos abiertos sin factura ── #}
   {% if pendientes %}
-  <div class="card list-card">
+  <div class="card list-card" id="pedidos">
     <div class="list-card__head">
       <span style="font-size:13px;font-weight:600;">Pedidos Kellerhoff sin factura ({{ pendientes|length }})</span>
     </div>
@@ -114,7 +114,7 @@
           {% for p in pendientes %}
           <tr>
             <td class="mono-xs">{{ p.fecha }}</td>
-            <td class="td-right mono-xs">{{ p.items }}</td>
+            <td class="td-right mono-xs">{{ p.articulos }}</td>
             <td class="td-right mono-xs">{{ p.unidades }}</td>
             <td class="td-right">
               <a href="{{ url_for('api_drogueria_pedidos_emitidos', prov_id=1) }}"
@@ -132,7 +132,7 @@
 
   {# ── Comprobantes en sistema ── #}
   {% if facturas %}
-  <div class="card list-card">
+  <div class="card list-card" id="facturas">
     <div class="list-card__head">
       <span style="font-size:13px;font-weight:600;">Comprobantes en sistema ({{ facturas|length }})</span>
       {% if sync_estado.ultimo %}

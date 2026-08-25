@@ -1,0 +1,67 @@
+{% extends "base_kellerhoff.html" %}
+{% set kh_active = 'ctacte' %}
+{% block title %}Cuenta corriente · Kellerhoff{% endblock %}
+
+{% macro money(x) -%}
+{{ '{:,.2f}'.format(x).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+{%- endmacro %}
+
+{% block kh %}
+<div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+  <h1 class="page-header__title" style="margin:0;">Cuenta corriente</h1>
+  <span style="font-size:12px; color:var(--ds-text-mute);">{{ provider.razon_social }}{% if provider.cuit %} · CUIT {{ provider.cuit }}{% endif %}</span>
+  <a href="{{ url_for('cuentas_corrientes', proveedor=0) }}" class="btn btn-secondary btn-sm" style="margin-left:auto;"
+     title="El extracto completo (ajustes, pagos) está en Cuentas Corrientes">Ver en Cuentas Corrientes ↗</a>
+</div>
+
+<div class="card" style="padding:18px 20px; margin-bottom:14px;">
+  <div style="font-size:10px; color:var(--ds-text-mute); text-transform:uppercase; letter-spacing:.04em;">Saldo actual</div>
+  <div style="font-size:26px; font-weight:800; font-variant-numeric:tabular-nums;
+              color:{% if saldo_total > 0.005 %}#FCA5A5{% elif saldo_total < -0.005 %}#5FE6BC{% else %}var(--ds-text){% endif %};">
+    ${{ money(saldo_total) }}</div>
+  <div style="font-size:12px; color:var(--ds-text-mute); margin-top:2px;">
+    {% if saldo_total > 0.005 %}Deuda con Kellerhoff{% elif saldo_total < -0.005 %}A favor nuestro{% else %}Sin saldo{% endif %}
+    {% if total_prefac %} · + ${{ money(total_prefac) }} en prefacturas (fuera del saldo){% endif %}
+  </div>
+</div>
+
+<div class="card" style="padding:0; overflow:hidden;">
+  {% if movimientos %}
+  <div style="overflow-x:auto;">
+  <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+    <thead>
+      <tr style="color:var(--ds-text-mute); text-transform:uppercase; font-size:10px; letter-spacing:.03em;">
+        <th style="text-align:left; padding:9px 14px;">Fecha</th>
+        <th style="text-align:left; padding:9px 14px;">Tipo</th>
+        <th style="text-align:left; padding:9px 14px;">Comprobante</th>
+        <th style="text-align:right; padding:9px 14px;">Debe</th>
+        <th style="text-align:right; padding:9px 14px;">Haber</th>
+        <th style="text-align:right; padding:9px 14px;">Saldo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in movimientos %}
+      <tr style="border-top:1px solid var(--ds-line);">
+        <td style="padding:8px 14px; white-space:nowrap;">{{ m.fecha.strftime('%d/%m/%Y') if m.fecha else '' }}</td>
+        <td style="padding:8px 14px;">{{ m.tipo }}</td>
+        <td style="padding:8px 14px; font-variant-numeric:tabular-nums; color:var(--ds-text-soft);">{{ m.comprobante }}</td>
+        <td style="padding:8px 14px; text-align:right; font-variant-numeric:tabular-nums; color:#FCA5A5;">
+          {% if m.debe %}${{ money(m.debe) }}{% else %}—{% endif %}</td>
+        <td style="padding:8px 14px; text-align:right; font-variant-numeric:tabular-nums; color:#5FE6BC;">
+          {% if m.haber %}${{ money(m.haber) }}{% else %}—{% endif %}</td>
+        <td style="padding:8px 14px; text-align:right; font-variant-numeric:tabular-nums; font-weight:700;">${{ money(m.saldo) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div style="padding:28px; text-align:center; color:var(--ds-text-mute);">Sin movimientos todavía.</div>
+  {% endif %}
+</div>
+
+<p style="margin-top:10px; font-size:11.5px; color:var(--ds-text-mute);">
+  Mismo motor de saldo que Cuentas Corrientes — acá filtrado a Kellerhoff. Los
+  ajustes y pagos se cargan desde el módulo de Cuentas Corrientes.
+</p>
+{% endblock %}

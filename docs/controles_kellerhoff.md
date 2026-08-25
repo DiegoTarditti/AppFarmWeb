@@ -38,6 +38,57 @@ número de comprobante a mano.
 
 ---
 
+## Módulo "Control Kellerhoff" (decisión 2026-08-25)
+
+Hoy el ciclo de Kellerhoff está desparramado: el sync y los resúmenes cuelgan de
+Control de Ingreso (3 clicks, y bajo un perfil que no es el que hace cuentas
+corrientes), el saldo vive en Cuentas Corrientes, los reclamos en otro lado.
+"Está trabado el acceso" (Diego). Y Kellerhoff **se trata distinto a todo lo
+demás**: portal con scraping, resumen semanal con vencimientos, NC financieras
+de anunciantes (cuenta aparte), recepción cruzable contra ObServer. Nada de eso
+tienen Pharmos ni 20 de Junio.
+
+**Decisión:** un **módulo standalone "Control Kellerhoff"** con **perfil
+dedicado** (`control_kellerhoff`), para el operador que maneja ese ciclo entero.
+
+### Patrón
+El mismo que **Cuentas Corrientes**: un layout propio con menú horizontal
+(`base_kellerhoff.html`, clon de `base_contab.html`) + landing + perfil. Infra ya
+probada, nada nuevo.
+
+### Contenido (menú del módulo)
+Inicio (panel del día) · Pedidos abiertos · Portal/Sync · Facturas (con columna
+de detalle) · Resúmenes semanales · Cuenta corriente Kellerhoff · Reclamos por
+faltantes. **Casi todo ya existe** — el módulo es contenedor + landing + menú +
+perfil que reúne pantallas existentes en un lugar.
+
+### Guardarraíl (lo más importante)
+La cuenta corriente adentro del módulo **reusa el motor único**
+[`services/cuenta_corriente.py`](../services/cuenta_corriente.py) + los modelos de
+resumen, vista filtrada a Kellerhoff — **no un silo paralelo**. El saldo se
+calcula en un solo lugar (lo unificado en julio, PR #255/#304/#305). El módulo
+cambia *dónde se entra y quién entra*, no *cómo se calcula*.
+
+### Alcance
+- **Fase 1:** shell `base_kellerhoff.html` + landing + perfil + gating; reencuadrar
+  las pantallas existentes bajo el menú. URLs siguen `/kellerhoff/*` → cero
+  migración. El link de `/ingresos` **se deja** como atajo secundario.
+- **Fase 2:** panel "Inicio" con estado del día; a futuro la pantalla de control
+  de comprobantes (P2 de este doc).
+
+### Decidido con Diego (2026-08-25)
+- Nombre: **"Control Kellerhoff"** (específico, no genérico "Compras droguerías").
+- El perfil ve **solo Kellerhoff** por ahora.
+- El link en `/ingresos` **se queda**.
+- **Orden del menú (por uso diario, no por ciclo):** Inicio · Portal/Sync ·
+  Facturas · Resúmenes · Cuenta corriente · Pedidos · Reclamos. Adelante lo que
+  se toca todos los días; pedidos y reclamos al final.
+- **Inicio = panel del día**: pedidos sin factura · facturas sin detalle (⚠) ·
+  último resumen importado / semana en curso sin resumen · saldo cta cte ·
+  faltantes sin reclamar. Cada fila linkea a su pantalla; botón Sincronizar a mano.
+
+---
+
 ## Las dos mitades no se tocan
 
 Es lo que más ordena el diseño:

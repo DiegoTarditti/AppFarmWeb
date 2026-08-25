@@ -1,0 +1,64 @@
+{# Layout standalone del módulo "Control Kellerhoff".
+   Mismo patrón que base_contab.html: extiende base.html (design-system emerald),
+   oculta el sidebar operativo y pone un menú horizontal propio. Cada pantalla
+   del módulo extiende este layout y rellena {% block kh %}.
+
+   Orden del menú (decisión Diego 2026-08-25, "por uso diario"): Inicio ·
+   Portal/Sync · Facturas · Resúmenes · Cuenta corriente · Pedidos · Reclamos.
+   Ver docs/controles_kellerhoff.md. #}
+{% extends "base.html" %}
+{% set hide_sidebar = True %}
+
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+  <div style="max-width:1200px; margin:0 auto; padding:14px 22px 28px;">
+
+    <nav style="display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-bottom:20px;
+                background:var(--ds-surface); border:1px solid var(--ds-line-2);
+                border-radius:var(--ds-r-lg); padding:8px 12px; box-shadow:var(--ds-shadow-md);">
+      <a href="{{ url_for('kellerhoff_index') }}"
+         style="display:flex; align-items:center; gap:8px; text-decoration:none; padding:2px 8px;">
+        <span style="font-size:18px;">📦</span>
+        <span class="glow-text" style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px;">Control Kellerhoff</span>
+      </a>
+      <span style="width:1px; height:22px; background:var(--ds-line-2); margin:0 8px;"></span>
+
+      {% set _menu = [
+          ('inicio',    'Inicio',            url_for('kellerhoff_index'),                True),
+          ('portal',    'Portal / Sync',     url_for('kellerhoff_sync'),                 True),
+          ('facturas',  'Facturas',          url_for('kellerhoff_sync') ~ '#facturas',   True),
+          ('resumenes', 'Resúmenes',         url_for('kellerhoff_resumenes'),            True),
+          ('ctacte',    'Cuenta corriente',  url_for('kellerhoff_cuenta_corriente'),     True),
+          ('pedidos',   'Pedidos',           url_for('kellerhoff_sync') ~ '#pedidos',    True),
+          ('reclamos',  'Reclamos',          '#',                                        False),
+      ] %}
+      {% for slug, label, href, listo in _menu %}
+        {% if listo %}
+        <a href="{{ href }}"
+           style="padding:6px 13px; border-radius:var(--ds-r-sm); font-size:12.5px; font-weight:600; text-decoration:none; transition:all .12s;
+                  {% if kh_active == slug %}background:rgba(95,230,188,.16); color:var(--ds-mint);{% else %}color:var(--ds-text-soft);{% endif %}"
+           {% if kh_active != slug %}onmouseover="this.style.background='rgba(95,230,188,.07)'; this.style.color='var(--ds-text)';"
+           onmouseout="this.style.background='transparent'; this.style.color='var(--ds-text-soft)';"{% endif %}>
+          {{ label }}
+        </a>
+        {% else %}
+        <span title="Próximamente"
+              style="padding:6px 13px; border-radius:var(--ds-r-sm); font-size:12.5px; font-weight:600;
+                     color:var(--ds-text-mute); opacity:.55; cursor:default;">
+          {{ label }} <span style="font-size:9px; vertical-align:middle;">●</span>
+        </span>
+        {% endif %}
+      {% endfor %}
+
+      <a href="{{ url_for('index') }}" title="Volver a la app"
+         style="margin-left:auto; padding:6px 13px; border-radius:var(--ds-r-sm); font-size:12px;
+                color:var(--ds-text-mute); text-decoration:none;">↩ Salir del módulo</a>
+    </nav>
+
+    {% block kh %}{% endblock %}
+
+  </div>
+</div>
+{% endblock %}
