@@ -145,3 +145,30 @@ def test_las_nc_financieras_siguen_salteandose():
         session.commit()
 
         assert '00046-00063591' in nros_ya_completos(session)
+
+
+def test_una_factura_preexistente_que_gana_detalle_cuenta_como_enriquecida():
+    """El contador `enriquecidos` estuvo muerto dos veces por el mismo lugar.
+
+    Antes: `skip_nros` salteaba toda factura existente, así que nunca llegaba
+    con ítems. Después de arreglar eso: la factura sin renglones ya no se
+    saltea, pero tampoco lleva la marca `_ya_existe` (que sólo pone el scraper
+    a las salteadas), así que contaba como CREADA. La pantalla informaba
+    "17 creadas" cuando varias ya existían.
+    """
+    from routes.kellerhoff_sync import _get_or_create_invoice
+
+    with database.get_db() as session:
+        inv = database.Invoice(
+            numero_factura='00046-00255798', fecha=date(2026, 8, 18),
+            tipo_comprobante='FAC', proveedor_razon='Kellerhoff',
+            proveedor_cuit='30539756490', total=100)
+        session.add(inv)
+        session.commit()
+
+        comp = {'nro_comp_arca': '00046-00255798'}
+        encontrada = _get_or_create_invoice(session, comp)
+
+        assert encontrada.id == inv.id
+        assert comp.get('_estaba_en_db') is True, (
+            'sin esta marca, una factura que ya existía cuenta como creada')

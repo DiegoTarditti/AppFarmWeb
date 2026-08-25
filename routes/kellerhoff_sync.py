@@ -333,7 +333,7 @@ def _sincronizar(desde: date, hasta: date) -> dict:
                 if inv is None:
                     continue
 
-                es_nuevo = comp.get('_ya_existe') is None
+                es_nuevo = not comp.get('_estaba_en_db')
                 if not inv.items:
                     _crear_items(session, inv, comp['items'])
                     if comp['items']:
@@ -439,6 +439,11 @@ def _get_or_create_invoice(session, comp: dict) -> Invoice | None:
         .first()
     )
     if existente:
+        # Marca para el contador: la factura ya estaba en la DB. NO se puede usar
+        # `_ya_existe` (que pone el scraper) porque ése sólo marca las que se
+        # saltearon del portal, y desde que las facturas sin renglones dejaron de
+        # saltearse, una preexistente que gana su detalle no lleva esa marca.
+        comp['_estaba_en_db'] = True
         return existente
 
     # Crear provisional (puede enriquecerse después con el import ARCA)

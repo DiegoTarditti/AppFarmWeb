@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-24 20:46 · rama `feat/cruce-ingreso-observer` · commit `10a431f`
+Generado: 2026-08-24 20:58 · rama `docs/pendientes-controles` · commit `c956b33`
 
 **802 rutas** en 77 archivos · **131 modelos** · **22 syncs** · **38 services** · **11 parsers**
 
