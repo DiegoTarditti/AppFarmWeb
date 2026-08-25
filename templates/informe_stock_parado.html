@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Stock parado — Informes{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+  .sp-page { padding: 10px 24px 24px; }
+  .sp-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+  .sp-head h1 { font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:700;
+                color:var(--ds-text); margin:0; }
+  .sp-sub { font-size:12px; color:var(--ds-text-mute); margin-bottom:14px; max-width:70ch; }
+
+  .sp-kpis { display:flex; gap:26px; flex-wrap:wrap; padding:14px 18px; margin-bottom:14px;
+             background:var(--ds-surface); border:1px solid var(--ds-line);
+             border-radius:var(--ds-r-md); }
+  .sp-kpi small { display:block; font-size:10px; text-transform:uppercase;
+                  letter-spacing:.07em; color:var(--ds-text-mute); margin-bottom:3px; }
+  .sp-kpi span { font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; }
+
+  .sp-filtros { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .sp-filtros input, .sp-filtros select {
+    background:var(--ds-surface-2); border:1px solid var(--ds-line);
+    border-radius:var(--ds-r-sm); padding:5px 9px; font-size:13px; color:var(--ds-text);
+  }
+  .sp-filtros input:focus, .sp-filtros select:focus {
+    outline:none; border-color:var(--ds-mint);
+  }
+  .sp-lbl { font-size:11px; color:var(--ds-text-mute); }
+
+  .sp-tabla { width:100%; font-size:13px; border-collapse:collapse; }
+  .sp-tabla thead th { position:sticky; top:0; z-index:5; background:var(--ds-surface);
+    padding:9px 12px; font-size:10px; font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; text-align:left; color:var(--ds-text-mute);
+    border-bottom:1px solid var(--ds-line); }
+  .sp-tabla tbody td { padding:8px 12px; border-bottom:1px solid var(--ds-line); }
+  .sp-tabla tbody tr:hover { background:rgba(95,230,188,.04); }
+  .sp-num { text-align:right; font-variant-numeric:tabular-nums;
+            font-family:ui-monospace,monospace; }
+  .sp-wrap { background:var(--ds-surface); border:1px solid var(--ds-line);
+             border-radius:var(--ds-r-md); overflow:auto; max-height:66vh; }
+
+  .sp-badge { display:inline-block; padding:2px 7px; border-radius:5px;
+              font-size:10px; font-weight:700; }
+  .sp-nunca { background:rgba(239,68,68,.15); color:#fca5a5; }
+  .sp-viejo { background:rgba(234,88,12,.15); color:#fdba74; }
+  .sp-tibio { background:rgba(148,163,184,.16); color:#cbd5e1; }
+
+  /* Mini-barras de los 12 meses: se ve de un vistazo si murió de golpe o
+     se fue apagando. */
+  .sp-spark { display:inline-flex; align-items:flex-end; gap:1px; height:16px; }
+  .sp-spark i { width:3px; background:var(--ds-mint); opacity:.55; border-radius:1px; }
+  .sp-spark i.cero { background:var(--ds-line); opacity:1; height:1px !important; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="sp-page">
+
+  <div class="sp-head">
+    <a href="{{ url_for('informes_index') }}" class="section-label">← Informes</a>
+    <h1>Stock parado</h1>
+  </div>
+  <p class="sp-sub">
+    Plata inmovilizada en productos con stock que no se venden. Los meses sin vender
+    salen de las ventas de los últimos 12 meses; los que nunca vendieron en ese
+    período se marcan aparte, porque no es lo mismo que uno que se dejó de vender.
+  </p>
+
+  <div class="sp-kpis">
+    <div class="sp-kpi">
+      <small>Plata parada</small>
+      <span style="color:var(--ds-orange);">${{ '{:,.2f}'.format(total_valor).replace(',', 'X').replace('.', ',').replace('X', '.') }}</span>
+    </div>
+    <div class="sp-kpi">
+      <small>Productos</small>
+      <span>{{ n_filas }}</span>
+    </div>
+    <div class="sp-kpi">
+      <small>Unidades</small>
+      <span>{{ total_unid }}</span>
+    </div>
+    <div class="sp-kpi">
+      <small title="Con stock y sin una sola venta en los últimos 12 meses">Nunca vendieron (12m)</small>
+      <span style="color:#fca5a5;">{{ n_nunca }}</span>
+    </div>
+  </div>
+
+  <form method="GET" class="sp-filtros">
+    <span class="sp-lbl">Sin vender hace</span>
+    <select name="meses" onchange="this.form.submit()">
+      {% for m in meses_opciones %}
+      <option value="{{ m }}" {% if m == meses_min %}selected{% endif %}>{{ m }}+ meses</option>
+      {% endfor %}
+    </select>
+
+    <select name="lab" onchange="this.form.submit()">
+      <option value="">Todos los laboratorios</option>
+      {% for l in labs_disponibles %}
+      <option value="{{ l }}" {% if l == lab %}selected{% endif %}>{{ l }}</option>
+      {% endfor %}
+    </select>
+
+    {# Multi-token AND: "amoxi 500" pide las dos cosas, en cualquier orden. #}
+    <input type="search" name="q" value="{{ q }}" style="min-width:230px"
+           placeholder="🔎 Buscar producto o código — ej: amoxi 500">
+
+    <select name="orden" onchange="this.form.submit()">
+      <option value="valor"  {% if orden == 'valor'  %}selected{% endif %}>Ordenar: plata parada</option>
+      <option value="meses"  {% if orden == 'meses'  %}selected{% endif %}>Ordenar: más tiempo sin vender</option>
+      <option value="stock"  {% if orden == 'stock'  %}selected{% endif %}>Ordenar: más unidades</option>
+      <option value="nombre" {% if orden == 'nombre' %}selected{% endif %}>Ordenar: A → Z</option>
+    </select>
+
+    <button type="submit" class="btn btn-secondary" style="padding:5px 12px;font-size:12px;">Aplicar</button>
+    {% if lab or q %}
+    <a href="{{ url_for('informe_stock_parado', meses=meses_min) }}" class="sp-lbl"
+       style="text-decoration:underline;">limpiar</a>
+    {% endif %}
+  </form>
+
+  {% if filas %}
+  <div class="sp-wrap">
+    <table class="sp-tabla">
+      <thead>
+        <tr>
+          <th>Producto</th>
+          <th>Laboratorio</th>
+          <th style="text-align:center">12 meses</th>
+          <th style="text-align:center">Sin vender</th>
+          <th style="text-align:right">Stock</th>
+          <th style="text-align:right">P. unit.</th>
+          <th style="text-align:right">Plata parada</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+        <tr>
+          <td>
+            {{ f.descripcion }}
+            <span class="sp-lbl" style="font-family:ui-monospace,monospace;">{{ f.codigo_barra }}</span>
+          </td>
+          <td style="color:var(--ds-text-mute);">{{ f.laboratorio or '—' }}</td>
+          <td style="text-align:center;">
+            {% if f.ultimo_mes %}
+            <span class="sp-spark" title="Ventas mes a mes, del más viejo al más nuevo">
+              {% for u in f.ventas %}
+              <i class="{{ 'cero' if not u }}"
+                 style="height:{{ (14 * u / f.ultimo_mes) | round(0, 'ceil') | int if u else 1 }}px"></i>
+              {% endfor %}
+            </span>
+            {% else %}
+            <span class="sp-lbl">sin ventas</span>
+            {% endif %}
+          </td>
+          <td style="text-align:center;">
+            {% if f.nunca %}
+            <span class="sp-badge sp-nunca" title="Con stock y ninguna venta en los últimos 12 meses">nunca</span>
+            {% elif f.meses >= 6 %}
+            <span class="sp-badge sp-viejo">{{ f.meses }} meses</span>
+            {% else %}
+            <span class="sp-badge sp-tibio">{{ f.meses }} meses</span>
+            {% endif %}
+          </td>
+          <td class="sp-num">{{ f.stock }}</td>
+          <td class="sp-num" style="color:var(--ds-text-mute);">
+            {% if f.precio %}${{ '{:,.2f}'.format(f.precio).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% else %}—{% endif %}
+          </td>
+          <td class="sp-num" style="font-weight:700;">
+            {% if f.valor %}${{ '{:,.2f}'.format(f.valor).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+            {% else %}<span class="sp-lbl" title="Sin precio en el snapshot: no se puede valorizar">s/precio</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding:34px; text-align:center; color:var(--ds-text-mute); font-size:13px;
+              background:var(--ds-surface); border:1px solid var(--ds-line);
+              border-radius:var(--ds-r-md);">
+    {% if lab or q %}
+      Nada con esos filtros. <a href="{{ url_for('informe_stock_parado', meses=meses_min) }}"
+      style="text-decoration:underline;">Ver todo</a>.
+    {% else %}
+      Ningún producto con stock lleva {{ meses_min }} meses o más sin venderse.
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -47,6 +47,8 @@
         <div class="inf-section mb-5">
             <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2"><span>📉</span> Análisis de mínimos</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {{ inf_card('informe_stock_parado', '🧊', 'sky', 'Nuevo', 'amber', 'Stock parado',
+                   'Plata inmovilizada en productos con stock que no se venden, de toda la farmacia. Filtro por laboratorio y búsqueda de producto.', 'stock muerto durmiente sin movimiento inmovilizado catalogo') }}
                 {{ inf_card('informe_bajo_minimo', '🔻', 'rose', 'Listo', 'emerald', 'Productos bajo mínimo',
                    'Productos cuyo stock está por debajo del mínimo de ObServer. Filtrá por lab y ordená por urgencia.', 'stock') }}
                 {{ inf_card('informe_correcciones_minimos', '📐', 'violet', 'Listo', 'emerald', 'Correcciones de mínimos sugeridas',
