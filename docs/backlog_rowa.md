@@ -183,26 +183,88 @@ vencimiento por pack, con `expiry_source` para saber cuáles son confiables.
 
 ---
 
-## P1 — Nadie registra las cargas
+## P0 — DECIDIDO: se discontinúa el registro de cargas (25/8/2026)
 
-**Cero `RowaCarga` en 14 días.** El botón de registrar carga existe y no se usa.
+**Decisión de Diego**: la planilla de carga se va a usar (dice qué mover del
+depósito al robot, y sirve para verificar el stock físico), pero **el registro de
+la carga no**. No paga el trabajo de tildar.
 
-Eso deja sin funcionar la detección de `tipo_aumento` (el filtro "Solo con
-aumentos" y la clasificación carga / carga_parcial / ingreso_detectado), que
-depende de comparar snapshots contra cargas registradas.
+La evidencia de los dos días:
 
-El arreglo del cálculo de salidas ya no depende de esto —los aumentos
-simplemente no cuentan como salida—, pero mientras nadie registre no se puede
-distinguir "entró mercadería" de "alguien la cargó".
+- **Cero `RowaCarga` en 14 días.** El botón existía y nadie lo apretaba.
+- El 25/8 se registró **una** carga (11 artículos, 23 packs) y el operador no
+  recibió nada a cambio: la pantalla siguió mostrando lo mismo.
 
-- [ ] Decidir si el registro de cargas vale la pena. Si no se va a usar, sacar
-      el filtro que depende de él en vez de dejarlo mudo.
+### Qué hay que sacar (no dejar a medias)
+
+Un botón que nadie aprieta y un panel que nadie mira son peores que no tenerlos:
+confunden y hacen ruido.
+
+- [ ] Botón **Registrar carga** y el `POST /rowa/carga/registrar`.
+- [ ] Filtro **"Solo con aumentos"** — depende de `tipo_aumento`, que sale de
+      comparar snapshots contra cargas registradas.
+- [ ] Panel **"cargas sin verificar"** de `/rowa/carga` y
+      `POST /rowa/carga/verificar` (PR #337, ya en main).
+- [ ] **La leyenda del gráfico.** Hoy los aumentos salen en **rojo, "Ingreso sin
+      registrar"**, y ese rojo sugiere problema. Sin registros, TODO aumento va a
+      ser rojo para siempre: el color deja de informar y se vuelve ruido. Pasarlo
+      a algo neutro — *"ingreso detectado"* —, que es lo que realmente es.
+- [ ] Decidir qué pasa con el **PR #338** (hacía verificables las cargas viejas):
+      si el registro se discontinúa, no tiene sentido mergearlo.
+
+**Pregunta abierta**: ¿se conserva el input "Cargar" de la planilla como campo de
+trabajo —para anotar cuánto mover mientras se recorre el depósito— sacando sólo
+el guardado, o se va entero?
+
+### Lo que NO se toca
+
+No dependen de los registros: salen de los snapshots, que se toman solos.
+
+- La **planilla** (qué mover del depósito al robot).
+- **Salidas/día, cobertura, rotación y críticos** — ya se habían desacoplado
+  justamente porque nadie registraba.
+
+---
+
+## P1 — ABIERTO: el robot no tomó 23 packs (25/8/2026)
+
+Se cargaron 23 packs en 11 artículos a las 18:45 y **el robot nunca los tomó**.
+Su total sólo bajó:
+
+```
+18:38   10.115 packs
+18:57   10.103   (-12)
+19:00   10.102    (-1)
+19:22   ...        ← cargaste 23 packs a las 18:45, el total nunca sube
+```
+
+Los 11 artículos quedaron con el mismo stock (`21398`: 14 antes y 14 después).
+
+**Descartado** (verificado, no asumido):
+
+- **No es timing de la app**: se forzaron dos snapshots y el robot devuelve datos
+  frescos — el conteo de artículos cambia entre tomas.
+- **No es el estado de los packs**: los 10.102 están `Available`, ninguno en
+  tránsito ni `NotAvailable`.
+- **No son artículos equivocados**: los 11 IDs existen en el robot, con su stock
+  intacto.
+
+Quedan dos escenarios y **se distinguen mirando la máquina**, no el código: o la
+mercadería sigue en la cinta sin almacenar, o el robot la rechazó.
+
+- [ ] Confirmar si quedó mercadería en la cinta de entrada.
 
 ---
 
 ## P2 — Cosas chicas que suman
 
-- [ ] **El cron de snapshots corre menos de lo que debería.**
+- [x] ~~El cron de snapshots corre menos de lo que debería.~~ **No es el cron.**
+      `/rowa/snapshot/auto` dice en su docstring que toma uno "si el último tiene
+      más de 50 minutos", pero el código compara contra **14400 segundos = 4
+      horas**. Por eso salen ~7 tomas por día. El freno está en el endpoint, no
+      en quien lo llama. Falta decidir cuál de los dos números es el correcto y
+      alinear el otro.
+- [ ] _(texto original, para contexto)_ **El cron de snapshots corre menos de lo que debería.**
       `_calcular_salidas_diarias` mira 14 días, pero sólo hay **26 snapshots en
       3,94 días** — uno cada ~3,6 h. `/rowa/snapshot/auto` está pensado para
       tomar uno si el último tiene más de **50 minutos**, o sea que en esa
