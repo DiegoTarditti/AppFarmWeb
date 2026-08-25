@@ -635,6 +635,35 @@ def init_app(app):
             result[f.article_id] = round(bajas / dias, 3)
         return result
 
+    def _sugerir_carga(en_robot, deposito, maximo, salidas):
+        """Cuántos packs conviene mover del depósito al robot.
+
+        Misma fórmula que `/rowa/planilla` (`services/rowa_planilla.calcular_fila`):
+        objetivo por demanda acotado por el cupo de ObServer y por lo que hay en
+        el depósito. Antes esta pantalla usaba `sug_en_robot - cantidad`, que era
+        **siempre 0**: `_recomendar()` sólo sabe reducir y nunca fija un objetivo
+        mayor al stock actual, así que la columna que existe para decidir qué
+        reponer no podía responder su propia pregunta.
+
+        Sin cupo cargado no se opina: no hay objetivo contra el cual comparar.
+        Sin señal de ventas tampoco se inventa demanda — se respeta el máximo,
+        que es una decisión humana.
+        """
+        import math
+
+        from services.rowa_planilla import DIAS_AUTONOMIA
+
+        disponible = max(deposito or 0, 0)
+        if not maximo or maximo <= 0 or disponible <= 0:
+            return 0
+        hueco = max(0, maximo - (en_robot or 0))
+        if hueco <= 0:
+            return 0
+        if salidas and salidas > 0:
+            objetivo = max(1, min(math.ceil(salidas * DIAS_AUTONOMIA), maximo))
+            return min(max(0, objetivo - (en_robot or 0)), disponible)
+        return min(hueco, disponible)
+
     def _construir_items(session, filas):
         """Arma la lista de carga (cobertura, urgencia, sugerido) para /rowa/carga.
 
@@ -672,6 +701,13 @@ def init_app(app):
             if len(snaps) >= 2
         }
 
+        # Cupo por artículo (Varios.Rowa_Productos). Es la única fuente de
+        # "cuántos packs entran": el robot no lo expone (ver ObsRowaProducto).
+        from database import ObsRowaProducto
+
+        maximos = dict(session.query(ObsRowaProducto.producto_observer,
+                                     ObsRowaProducto.cantidad_maxima).all())
+
         items = []
         for f in filas:
             sal = salidas_dia.get(f.article_id, 0)
@@ -694,7 +730,11 @@ def init_app(app):
                 "salidas_dia": sal,
                 "cobertura": cobertura,
                 "urgencia": urgencia,
-                "sug_cargar": f.sug_en_robot - f.cantidad if f.sug_en_robot > f.cantidad else 0,
+                "sug_cargar": _sugerir_carga(
+                    en_robot=f.cantidad,
+                    deposito=f.stock_deposito,
+                    maximo=maximos.get(f.producto_observer),
+                    salidas=sal),
                 "tipo_aumento": tipo_aumento_por_art.get(f.article_id),
             })
 
@@ -752,7 +792,13 @@ def init_app(app):
         # HTML por visita para mostrar 222 renglones. Ahora el corte lo hace el
         # servidor y `?todo=1` trae el resto.
         ver_todo = request.args.get("todo") == "1"
-        tabla = items if ver_todo else [i for i in items if i["urgencia"] < 3]
+        # Sin stock en el depósito no hay nada que mover al robot: mostrar esas
+        # filas es pedirle al operador que descarte a mano lo que no puede hacer.
+        # `?con_deposito=0` las trae igual (para diagnosticar por qué un crítico
+        # no aparece: si no está acá, es que tampoco hay en el depósito).
+        solo_con_deposito = request.args.get("con_deposito", "1") != "0"
+        base = [i for i in items if (i["stock_deposito"] or 0) > 0] if solo_con_deposito else items
+        tabla = base if ver_todo else [i for i in base if i["urgencia"] < 3]
 
         # Del conjunto renderizado: los filtros client-side no pueden ofrecer un
         # laboratorio que no esta en la tabla.
@@ -765,6 +811,8 @@ def init_app(app):
             ver_todo=ver_todo,
             n_total=len(items),
             n_tabla=len(tabla),
+            n_sin_deposito=len(items) - len(base),
+            solo_con_deposito=solo_con_deposito,
             snap_ts=snap_ts,
             ultima_carga=ultima_carga[0] if ultima_carga else None,
             n_criticos=sum(1 for i in items if i["urgencia"] < 2),
@@ -796,6 +844,11 @@ def init_app(app):
 
         with get_db() as session:
             items = _construir_items(session, data["filas"])
+
+        # Mismo criterio que la pantalla: sin stock en depósito no hay nada que
+        # mover, así que tampoco va al archivo.
+        if request.args.get("con_deposito", "1") != "0":
+            items = [i for i in items if (i["stock_deposito"] or 0) > 0]
 
         q = (request.args.get("q") or "").strip().lower()
         lab = (request.args.get("lab") or "").strip()
@@ -945,6 +998,11 @@ def init_app(app):
                     "cob": round(cob, 1) if cob < 900 else None,
                     "nuevo": f.es_nuevo,
                     "laboratorio": f.laboratorio or "",
+                    # Las tres se muestran juntas en la tabla, igual que en la
+                    # planilla de carga: robot + depósito = total. `cantidad` es
+                    # lo que el robot reporta adentro; `stock_total` es el stock
+                    # de ObServer (robot + depósito) y la resta da el depósito.
+                    "robot": f.cantidad,
                     "stock_deposito": f.stock_deposito,
                     "stock_total": f.stock_total,
                 }

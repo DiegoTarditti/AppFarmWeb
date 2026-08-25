@@ -178,8 +178,9 @@
           <th class="text-center px-3 py-2">Rotación</th>
           <th class="text-right px-3 py-2">Cobertura</th>
           <th class="text-right px-3 py-2">U/Mes</th>
-          <th class="text-right px-3 py-2">Depósito</th>
-          <th class="text-right px-3 py-2">Total</th>
+          <th class="text-right px-3 py-2" title="Packs dentro del robot">Robot</th>
+          <th class="text-right px-3 py-2" title="Stock fuera del robot: total de ObServer menos lo que hay adentro">Depósito</th>
+          <th class="text-right px-3 py-2" title="Stock total según ObServer (robot + depósito)">Total</th>
           <th class="text-right px-3 py-2">Vol cm³</th>
         </tr>
       </thead>
@@ -361,6 +362,7 @@ function renderTabla(filterQ) {
       + '<td class="px-3 py-1 text-center"><span class="' + rotCls + ' text-[10px]">' + p.rotacion + '</span></td>'
       + '<td class="px-3 py-1 text-right font-mono">' + cobStr + '</td>'
       + '<td class="px-3 py-1 text-right font-mono">' + p.x + '</td>'
+      + '<td class="px-3 py-1 text-right font-mono">' + (p.robot !== null && p.robot !== undefined ? p.robot : '—') + '</td>'
       + '<td class="px-3 py-1 text-right font-mono">' + (p.stock_deposito !== null && p.stock_deposito !== undefined ? p.stock_deposito : '—') + '</td>'
       + '<td class="px-3 py-1 text-right font-mono">' + (p.stock_total !== null && p.stock_total !== undefined ? p.stock_total : '—') + '</td>'
       + '<td class="px-3 py-1 text-right font-mono">' + p.vol + '</td>'

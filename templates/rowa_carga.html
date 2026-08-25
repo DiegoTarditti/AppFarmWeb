@@ -93,6 +93,19 @@
       <span class="text-[10px] text-[color:var(--ds-text-mute)]">({{ n_tabla }} de {{ n_total }})</span></label>
     <label class="flex items-center gap-1 text-xs text-[color:var(--ds-text-mute)] cursor-pointer">
       <input id="carga-aumentos" type="checkbox" onchange="cargaFiltrar()"> 📈 Solo con aumentos</label>
+    {# Sin stock en depósito no hay nada que mover al robot. Se puede destildar
+       para diagnosticar: si un crítico no aparece, es que tampoco hay afuera. #}
+    <label class="flex items-center gap-1 text-xs text-[color:var(--ds-text-mute)] cursor-pointer"
+           title="Oculta los artículos sin stock en el depósito: no se pueden cargar aunque estén críticos">
+      <input id="carga-condep" type="checkbox" {{ 'checked' if solo_con_deposito else '' }}
+             onchange="location.href = this.checked
+               ? '{{ url_for('rowa_carga', todo=1 if ver_todo else None) }}'
+               : '{{ url_for('rowa_carga', todo=1 if ver_todo else None, con_deposito=0) }}'">
+      📦 Con stock en depósito
+      {% if n_sin_deposito %}
+      <span class="text-[10px] text-[color:var(--ds-text-mute)]">({{ n_sin_deposito }} ocultos)</span>
+      {% endif %}
+    </label>
     <select id="carga-lab" onchange="cargaFiltrar()"
             class="px-2 py-1 text-sm rounded border border-[color:var(--ds-surface-border)]"
             style="background:#2c2c2e;color:inherit">
@@ -176,7 +189,9 @@
           <td class="px-3 py-1 text-right">
             <input type="number" min="0" step="1"
                    class="carga-qty w-20 px-2 py-0.5 text-right text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)] focus:border-[color:var(--ds-mint)] focus:outline-none"
-                   placeholder="{{ it.sug_cargar if it.sug_cargar else '' }}"
+                   value="{{ it.sug_cargar if it.sug_cargar else '' }}"
+                   placeholder="0"
+                   title="{% if it.sug_cargar %}Sugerido: llenar hasta cubrir la demanda, sin pasar el cupo de ObServer ni lo que hay en depósito{% else %}Sin sugerencia: falta el cupo en ObServer o no hay stock en depósito{% endif %}"
                    data-aid="{{ it.article_id }}"
                    onchange="cargaMarcar(this)">
           </td>
