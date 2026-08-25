@@ -969,6 +969,20 @@ def init_app(app):
         _CACHE["payload"] = None  # forzar recarga del robot en el próximo acceso
         return jsonify({"ok": True, "sesion_id": sid})
 
+    def _stock_antes_de(session, article_id, momento):
+        """Stock del artículo en el último snapshot PREVIO a `momento`.
+
+        Recupera el "antes" de las cargas que se registraron cuando el campo no
+        existía todavía. Devuelve None si no hay ningún snapshot anterior, y ahí
+        la carga queda 'pendiente' de verdad: no hay contra qué comparar.
+        """
+        fila = (session.query(RowaSnapshot.cantidad)
+                .filter(RowaSnapshot.article_id == article_id,
+                        RowaSnapshot.tomado_en < momento)
+                .order_by(RowaSnapshot.tomado_en.desc())
+                .first())
+        return fila[0] if fila else None
+
     @app.route("/rowa/carga/verificar", methods=["POST"])
     @login_required
     def rowa_carga_verificar():
@@ -1000,7 +1014,16 @@ def init_app(app):
                       .order_by(RowaCarga.cargado_en.desc()).all())
             for c in cargas:
                 despues = stock_ahora.get(c.article_id)
-                estado = clasificar_carga(c.cantidad, c.stock_antes, despues)
+                antes = c.stock_antes
+                if antes is None:
+                    # Carga registrada antes de que existiera `stock_antes`, o
+                    # con el robot caído. El "antes" igual existe: es el último
+                    # snapshot PREVIO a la carga. Sin esto, esas cargas quedaban
+                    # 'pendiente' para siempre y el botón no las resolvía nunca.
+                    antes = _stock_antes_de(session, c.article_id, c.cargado_en)
+                    if antes is not None:
+                        c.stock_antes = antes
+                estado = clasificar_carga(c.cantidad, antes, despues)
                 c.stock_despues = despues
                 c.verificado_en = datetime.now()
                 c.estado = estado

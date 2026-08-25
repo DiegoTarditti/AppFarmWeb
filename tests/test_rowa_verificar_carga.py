@@ -8,6 +8,8 @@ daba por cargados.
 import pytest
 
 from services.rowa_analisis import clasificar_carga
+# El fixture con todos los routers vive en el smoke.
+from tests.test_smoke_routes import smoke_app, smoke_client  # noqa: F401
 
 
 def test_el_stock_subio_lo_cargado():
@@ -45,3 +47,43 @@ def test_una_carga_de_cero_no_se_confirma_sola():
     """Sin cantidad declarada no hay nada que verificar; que el stock no se
     mueva no la convierte en válida."""
     assert clasificar_carga(cantidad=0, stock_antes=14, stock_despues=14) == 'no_detectada'
+
+
+# ── Recuperar el "antes" de las cargas viejas ───────────────────────────────
+
+def test_una_carga_sin_stock_antes_se_verifica_con_el_snapshot_previo(smoke_client):
+    """Las cargas registradas antes de que existiera `stock_antes` quedaban
+    'pendiente' PARA SIEMPRE: el botón de verificar no las resolvía nunca. El
+    "antes" existe igual — es el último snapshot previo a la carga."""
+    from datetime import datetime
+    from unittest.mock import patch
+
+    import database
+    import routes.rowa as rowa
+
+    momento = datetime(2026, 8, 25, 18, 45)
+    with database.get_db() as s:
+        # snapshot ANTES de la carga (el "antes" recuperable)
+        s.add(database.RowaSnapshot(tomado_en=datetime(2026, 8, 25, 18, 38),
+                                    article_id='21398', cantidad=14))
+        # la carga, sin stock_antes (como quedaron las viejas)
+        s.add(database.RowaCarga(sesion_id='x', article_id='21398', cantidad=5,
+                                 cargado_en=momento, estado='pendiente'))
+        s.commit()
+
+    # El robot sigue reportando 14: la mercadería no entró (el caso del 25/8).
+    class _Fila:
+        article_id, cantidad = '21398', 14
+
+    with patch.object(rowa, '_cargar', lambda refresh=False: {'filas': [_Fila()],
+                                                              'generado': momento}):
+        r = smoke_client.post('/rowa/carga/verificar')
+
+    assert r.status_code == 200
+    assert r.get_json()['resumen']['no_detectada'] == 1, (
+        'con el snapshot previo tiene que poder concluir, no quedar pendiente')
+
+    with database.get_db() as s:
+        c = s.query(database.RowaCarga).filter_by(article_id='21398').first()
+        assert c.stock_antes == 14, 'el antes recuperado se guarda'
+        assert c.estado == 'no_detectada'
