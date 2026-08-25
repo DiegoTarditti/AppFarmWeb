@@ -945,6 +945,11 @@ def init_app(app):
                     "cob": round(cob, 1) if cob < 900 else None,
                     "nuevo": f.es_nuevo,
                     "laboratorio": f.laboratorio or "",
+                    # Las tres se muestran juntas en la tabla, igual que en la
+                    # planilla de carga: robot + depósito = total. `cantidad` es
+                    # lo que el robot reporta adentro; `stock_total` es el stock
+                    # de ObServer (robot + depósito) y la resta da el depósito.
+                    "robot": f.cantidad,
                     "stock_deposito": f.stock_deposito,
                     "stock_total": f.stock_total,
                 }
