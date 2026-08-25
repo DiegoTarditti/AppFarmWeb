@@ -34,6 +34,45 @@
   </div>
   {% else %}
 
+  {# ---- Verificación de las cargas contra el robot ----
+     Registrar una carga no prueba que la mercadería haya entrado: guarda lo que
+     el operador declaró. El 25/8/2026 se registraron 23 packs que el robot nunca
+     tomó, y la pantalla los daba por cargados. #}
+  {% if verif and verif.total %}
+  <div class="rounded-lg border p-3 mb-4
+       {% if verif.no_detectada %}border-rose-500/50 bg-rose-500/10
+       {% elif verif.pendiente %}border-amber-500/40 bg-amber-500/10
+       {% else %}border-[color:var(--ds-mint)]/40 bg-[color:var(--ds-mint)]/10{% endif %}">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <p class="text-sm font-semibold">
+          {% if verif.no_detectada %}
+          ⚠ {{ verif.no_detectada }} carga(s) que el robot no tomó
+          {% elif verif.pendiente %}
+          🕓 {{ verif.pendiente }} carga(s) sin verificar
+          {% else %}
+          ✅ Las {{ verif.total }} cargas de las últimas 48 h están confirmadas
+          {% endif %}
+        </p>
+        <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-1">
+          Últimas 48 h: {{ verif.total }} artículos · {{ verif.packs }} packs declarados.
+          {% if verif.no_detectada %}
+          <b class="text-rose-300">{{ verif.no_detectada_packs }} packs no aparecen en el robot</b>
+          — pueden seguir en la cinta sin almacenar, o la máquina no los tomó.
+          {% endif %}
+          {% if verif.confirmada %} · {{ verif.confirmada }} confirmadas{% endif %}
+          {% if verif.parcial %} · {{ verif.parcial }} parciales{% endif %}
+        </p>
+      </div>
+      <button type="button" id="btn-verificar" onclick="verificarCargas(this)"
+              class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5 whitespace-nowrap">
+        ↻ Verificar contra el robot
+      </button>
+    </div>
+    <div id="verif-salida" class="hidden mt-3 text-[11px] font-mono"></div>
+  </div>
+  {% endif %}
+
   {# ---- KPIs ---- #}
   <div class="grid grid-cols-3 gap-3 mb-5">
     {% set n_cero = items | selectattr('cantidad', 'eq', 0) | list | length %}
@@ -267,6 +306,29 @@
     if (sugeridos === 0) { p.set('sugeridos', 0); }
     else if (sugeridos === null) { p.delete('sugeridos'); }
     window.location.href = '{{ url_for('rowa_carga') }}?' + p.toString();
+  }
+
+  async function verificarCargas(btn) {
+    var out = document.getElementById('verif-salida');
+    btn.disabled = true;
+    var textoPrevio = btn.textContent;
+    btn.textContent = 'Leyendo el robot…';
+    out.classList.remove('hidden');
+    out.textContent = 'Releyendo el stock y comparando…';
+    try {
+      var r = await fetch('{{ url_for("rowa_carga_verificar") }}', {method: 'POST'});
+      var d = await r.json();
+      if (!d.ok) { out.textContent = '⚠ ' + (d.error || 'no se pudo verificar'); return; }
+      var s = d.resumen;
+      out.textContent = d.cargas + ' carga(s): ' + s.confirmada + ' confirmadas, '
+        + s.parcial + ' parciales, ' + s.no_detectada + ' NO detectadas.';
+      setTimeout(function () { location.reload(); }, 1200);
+    } catch (e) {
+      out.textContent = '⚠ ' + e;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = textoPrevio;
+    }
   }
 
   function cargaFiltrar() {

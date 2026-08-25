@@ -319,3 +319,36 @@ def analizar_alturas(articulos, margen_mm: int = 15) -> dict:
         "distribucion": dist,
         "rendimiento": rendimiento,
     }
+
+
+# ── Verificación de cargas contra el robot ───────────────────────────────────
+
+def clasificar_carga(cantidad: int, stock_antes: int | None,
+                     stock_despues: int | None) -> str:
+    """¿La mercadería que el operador dice que cargó entró de verdad al robot?
+
+    Registrar una carga no prueba nada: guarda lo que el operador declaró. El
+    25/8/2026 se registraron 23 packs y el robot nunca los tomó — su total sólo
+    bajó (10.115 → 10.102) y los 11 artículos quedaron con el mismo stock. Sin
+    comparar contra la máquina, la app afirmaba que estaban adentro.
+
+    Devuelve:
+      'confirmada'   — subió al menos lo cargado.
+      'parcial'      — subió, pero menos de lo declarado.
+      'no_detectada' — no subió nada. O sigue en la cinta sin almacenar, o el
+                       robot no la tomó.
+      'pendiente'    — falta alguna de las dos mediciones para poder decir algo.
+
+    Ojo con el ruido: entre las dos mediciones el robot sigue despachando, así
+    que un artículo que se vendió puede tapar parte de la carga y dar 'parcial'
+    sin que nadie haya hecho nada mal. Por eso 'parcial' NO es un error: es un
+    "mirá esto", y sólo 'no_detectada' amerita ir a ver la máquina.
+    """
+    if stock_antes is None or stock_despues is None:
+        return 'pendiente'
+    subio = stock_despues - stock_antes
+    if subio <= 0:
+        return 'no_detectada'
+    if subio >= (cantidad or 0):
+        return 'confirmada'
+    return 'parcial'

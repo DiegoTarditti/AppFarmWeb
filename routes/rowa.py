@@ -30,6 +30,7 @@ from database import RowaCarga, RowaNuevo, RowaSnapshot, get_db
 from services.rowa_analisis import (
     analizar_alturas,
     analizar_stock,
+    clasificar_carga,
     clasificar_eventos_stock,
     clean_ean,
     diagnosticar,
@@ -789,6 +790,22 @@ def init_app(app):
                 .first()
             )
 
+            # Estado de las cargas recientes contra el robot. Lo que importa es
+            # `no_detectada`: mercadería que la app da por cargada y el robot
+            # nunca tomó (pasó el 25/8/2026 con 23 packs).
+            _desde = datetime.now() - timedelta(hours=48)
+            cargas_recientes = (session.query(RowaCarga)
+                                .filter(RowaCarga.cargado_en >= _desde)
+                                .order_by(RowaCarga.cargado_en.desc()).all())
+            verif = {'confirmada': 0, 'parcial': 0, 'no_detectada': 0, 'pendiente': 0}
+            for _c in cargas_recientes:
+                verif[_c.estado or 'pendiente'] = verif.get(_c.estado or 'pendiente', 0) + 1
+            verif['total'] = len(cargas_recientes)
+            verif['packs'] = sum(_c.cantidad or 0 for _c in cargas_recientes)
+            verif['no_detectada_packs'] = sum(
+                _c.cantidad or 0 for _c in cargas_recientes
+                if (_c.estado or 'pendiente') == 'no_detectada')
+
             # Historial de snapshots (últimos 10, agrupados por timestamp)
             from sqlalchemy import func as _func
             snap_historial = (
@@ -842,6 +859,7 @@ def init_app(app):
             dias_autonomia=dias,
             snap_ts=snap_ts,
             ultima_carga=ultima_carga[0] if ultima_carga else None,
+            verif=verif,
             n_criticos=sum(1 for i in items if i["urgencia"] < 2),
             generado=data["generado"],
             snap_historial=snap_historial,
@@ -917,6 +935,16 @@ def init_app(app):
         usuario = getattr(request, "current_user", None)
         usuario_str = getattr(usuario, "username", None) if usuario else None
 
+        # Foto del stock ANTES de la carga, para poder verificarla después. Se
+        # lee del robot y no del último snapshot: entre snapshot y registro
+        # pueden pasar horas, y ahí el "antes" ya no es el antes.
+        stock_antes = {}
+        try:
+            for f in _cargar()["filas"]:
+                stock_antes[str(f.article_id)] = f.cantidad
+        except (RowaError, OSError):
+            pass   # sin robot se registra igual; queda 'pendiente' de verificar
+
         with get_db() as session:
             for it in items:
                 try:
@@ -925,18 +953,70 @@ def init_app(app):
                     cant = 0
                 if cant <= 0:
                     continue
+                aid = str(it.get("article_id") or "")
                 session.add(RowaCarga(
                     sesion_id=sid,
-                    article_id=str(it.get("article_id") or ""),
+                    article_id=aid,
                     ean=it.get("ean") or None,
                     nombre=it.get("nombre") or None,
                     cantidad=cant,
                     usuario=usuario_str,
+                    stock_antes=stock_antes.get(aid),
+                    estado="pendiente",
                 ))
             session.commit()
 
         _CACHE["payload"] = None  # forzar recarga del robot en el próximo acceso
         return jsonify({"ok": True, "sesion_id": sid})
+
+    @app.route("/rowa/carga/verificar", methods=["POST"])
+    @login_required
+    def rowa_carga_verificar():
+        """Compara las cargas registradas contra el stock real del robot.
+
+        Relee el robot (no usa el último snapshot: puede tener horas) y marca
+        cada carga como confirmada / parcial / no_detectada. Deja el snapshot
+        tomado, así el gráfico también refleja el momento de la verificación.
+
+        Sirve para el caso que lo motivó: el 25/8/2026 se registraron 23 packs
+        que el robot nunca tomó, y la app los daba por cargados.
+        """
+        horas = min(request.args.get("horas", type=int) or 24, 24 * 7)
+        try:
+            data = _cargar(refresh=True)
+        except (RowaError, OSError) as e:
+            return jsonify({"ok": False, "error": f"robot no disponible: {e}"}), 502
+
+        filas = data["filas"]
+        stock_ahora = {str(f.article_id): f.cantidad for f in filas}
+        desde = datetime.now() - timedelta(hours=horas)
+
+        resumen = {"confirmada": 0, "parcial": 0, "no_detectada": 0, "pendiente": 0}
+        detalle = []
+        with get_db() as session:
+            _tomar_snapshot(session, filas)
+            cargas = (session.query(RowaCarga)
+                      .filter(RowaCarga.cargado_en >= desde)
+                      .order_by(RowaCarga.cargado_en.desc()).all())
+            for c in cargas:
+                despues = stock_ahora.get(c.article_id)
+                estado = clasificar_carga(c.cantidad, c.stock_antes, despues)
+                c.stock_despues = despues
+                c.verificado_en = datetime.now()
+                c.estado = estado
+                resumen[estado] = resumen.get(estado, 0) + 1
+                detalle.append({
+                    "article_id": c.article_id,
+                    "nombre": c.nombre or "",
+                    "cantidad": c.cantidad,
+                    "stock_antes": c.stock_antes,
+                    "stock_despues": despues,
+                    "estado": estado,
+                })
+            session.commit()
+
+        return jsonify({"ok": True, "resumen": resumen, "detalle": detalle,
+                        "cargas": len(detalle)})
 
     @app.route("/rowa/api/producto/<article_id>/historial-stock")
     @login_required
