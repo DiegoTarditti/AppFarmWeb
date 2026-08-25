@@ -138,6 +138,15 @@ PERFILES = {
         'prefijos': ['/contabilidad', '/cuentas-corrientes', '/comprobantes',
                      '/providers', '/provider/', '/api/proveedores'],
     },
+    # Módulo standalone "Control Kellerhoff": el ciclo completo de esa droguería
+    # (portal/sync, facturas, resúmenes, cuenta corriente, reclamos) para un
+    # operador dedicado. Todo cuelga de /kellerhoff → un solo prefijo alcanza.
+    # Ver docs/controles_kellerhoff.md.
+    'control_kellerhoff': {
+        'label': 'Control Kellerhoff', 'icono': '📦',
+        'url': '/kellerhoff',
+        'prefijos': ['/kellerhoff'],
+    },
 }
 
 # Paths comunes a todo operador (siempre permitidos).

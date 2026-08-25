@@ -1,5 +1,5 @@
-{% extends "base.html" %}
-{% set nav_active = "ingresos" %}
+{% extends "base_kellerhoff.html" %}
+{% set kh_active = "resumenes" %}
 {% block title %}Resumen {{ resumen.numero }} · Kellerhoff{% endblock %}
 {% block body_class %}theme-emerald{% endblock %}
 
@@ -30,7 +30,7 @@
 </style>
 {% endblock %}
 
-{% block main %}
+{% block kh %}
 <div class="flex-1 py-6 px-6 overflow-auto">
 <div class="max-w-6xl mx-auto space-y-6">
 

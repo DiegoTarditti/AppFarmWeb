@@ -22,6 +22,11 @@ from database import (
     ResumenProveedorItem,
     get_db,
 )
+from services.cuenta_corriente import (
+    corte_resumenes,
+    movimientos_proveedor,
+    normalizar_cuit,
+)
 from services.kellerhoff_analizador import resolver_anunciante
 
 KELLERHOFF_PROVIDER_ID = int(os.environ.get('KELLERHOFF_PROVIDER_ID', '1'))
@@ -85,6 +90,16 @@ def _kh_lock_estado() -> dict:
         'resultado': resultado,
         'ultimo': row.finalizado_en.strftime('%d/%m/%Y %H:%M') if row.finalizado_en else None,
     }
+
+
+def _kh_provider(session):
+    """El Provider de Kellerhoff, para saldo/extracto. Por CUIT normalizado
+    (la vía robusta, ver services/cuenta_corriente); fallback al id de env."""
+    cuit_d = normalizar_cuit(KELLERHOFF_CUIT)
+    for p in session.query(database.Provider).all():
+        if normalizar_cuit(p.cuit) == cuit_d:
+            return p
+    return session.get(database.Provider, KELLERHOFF_PROVIDER_ID)
 
 
 def init_app(app):
@@ -171,6 +186,69 @@ def init_app(app):
     @login_required
     def kellerhoff_sync_estado():
         return jsonify(_kh_lock_estado())
+
+    # ── Landing del módulo "Control Kellerhoff" (panel del día) ───────────────
+
+    @app.route('/kellerhoff')
+    @login_required
+    def kellerhoff_index():
+        with get_db() as session:
+            prov = _kh_provider(session)
+            pedidos_abiertos = (
+                session.query(PedidoEmitido)
+                .filter(PedidoEmitido.drogueria_id == KELLERHOFF_PROVIDER_ID,
+                        PedidoEmitido.estado == 'ABIERTO',
+                        PedidoEmitido.factura_id.is_(None))
+                .count()
+            )
+            facturas_kh = (
+                session.query(Invoice)
+                .filter(Invoice.proveedor_cuit.like(f'%{KELLERHOFF_CUIT[-8:]}%')).all()
+            )
+            from helpers import detalle_facturas
+            det = detalle_facturas(session, facturas_kh)
+            # "sin detalle" = factura sin renglones (lo que impide cruzar).
+            facturas_sin_detalle = sum(
+                1 for f in facturas_kh
+                if not (det.get(f.id) or {}).get('renglones'))
+            faltantes = (session.query(FacturaFaltante)
+                         .join(Invoice, Invoice.id == FacturaFaltante.factura_id)
+                         .filter(Invoice.proveedor_cuit.like(f'%{KELLERHOFF_CUIT[-8:]}%'))
+                         .count())
+            saldo = 0.0
+            resumen_ultimo = None
+            if prov is not None:
+                _movs, resumen = movimientos_proveedor(session, prov)
+                saldo = resumen['saldo']
+                corte = corte_resumenes(session, prov)
+                resumen_ultimo = corte.strftime('%d/%m/%Y') if corte else None
+            panel = {
+                'pedidos_abiertos': pedidos_abiertos,
+                'facturas_sin_detalle': facturas_sin_detalle,
+                'faltantes': faltantes,
+                'saldo': saldo,
+                'resumen_ultimo': resumen_ultimo,
+                'ultimo_sync': _kh_lock_estado().get('ultimo'),
+            }
+        return render_template('kellerhoff_index.html', panel=panel)
+
+    @app.route('/kellerhoff/cuenta-corriente')
+    @login_required
+    def kellerhoff_cuenta_corriente():
+        """Extracto de Kellerhoff DENTRO del módulo. Reusa el motor único
+        (movimientos_proveedor) — misma data que /cuentas-corrientes, vista
+        filtrada a Kellerhoff y enmarcada en el módulo (no un silo aparte)."""
+        with get_db() as session:
+            prov = _kh_provider(session)
+            movimientos, resumen = ([], {'saldo': 0.0, 'total_prefac': 0.0})
+            if prov is not None:
+                movimientos, resumen = movimientos_proveedor(session, prov)
+            prov_data = {'razon_social': prov.razon_social if prov else 'Kellerhoff',
+                         'cuit': (prov.cuit if prov else '') or ''}
+        return render_template('kellerhoff_cuenta_corriente.html',
+                               provider=prov_data, movimientos=movimientos,
+                               saldo_total=resumen['saldo'],
+                               total_prefac=resumen.get('total_prefac', 0))
 
     # ── Resúmenes de cuenta (el cierre semanal que emite Kellerhoff) ──────────
 

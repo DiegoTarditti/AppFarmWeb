@@ -1,0 +1,71 @@
+{% extends "base_kellerhoff.html" %}
+{% set kh_active = 'inicio' %}
+{% block title %}Control Kellerhoff{% endblock %}
+
+{% macro money(x) -%}
+{{ '{:,.2f}'.format(x).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+{%- endmacro %}
+
+{% block kh %}
+<div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+  <h1 class="page-header__title" style="margin:0;">Panel del día</h1>
+  {% if panel.ultimo_sync %}
+  <span style="font-size:11.5px; color:var(--ds-text-mute);">Último sync: {{ panel.ultimo_sync }}</span>
+  {% endif %}
+  <a href="{{ url_for('kellerhoff_sync') }}" class="btn btn-primary btn-sm" style="margin-left:auto;">🔄 Ir a Sincronizar</a>
+</div>
+
+<div class="card" style="padding:0; overflow:hidden;">
+  <table style="width:100%; border-collapse:collapse; font-size:13.5px;">
+    <tbody>
+      {# Accionable: lo que hay que hacer #}
+      <tr style="border-bottom:1px solid var(--ds-line);">
+        <td style="padding:11px 16px; color:var(--ds-text-soft);">Pedidos abiertos sin factura</td>
+        <td style="padding:11px 16px; text-align:right; font-weight:700; font-variant-numeric:tabular-nums;">{{ panel.pedidos_abiertos }}</td>
+        <td style="padding:11px 16px; text-align:right; width:40px;">
+          <a href="{{ url_for('kellerhoff_sync') }}#pedidos" style="color:var(--ds-mint);">→</a></td>
+      </tr>
+      <tr style="border-bottom:1px solid var(--ds-line);">
+        <td style="padding:11px 16px; color:var(--ds-text-soft);">
+          Facturas sin detalle (bajar del portal)
+          {% if panel.facturas_sin_detalle %}<span title="Sin ítems no se puede cruzar ni controlar" style="color:var(--ds-warn);"> ⚠</span>{% endif %}
+        </td>
+        <td style="padding:11px 16px; text-align:right; font-weight:700; font-variant-numeric:tabular-nums;
+                   {% if panel.facturas_sin_detalle %}color:var(--ds-warn);{% endif %}">{{ panel.facturas_sin_detalle }}</td>
+        <td style="padding:11px 16px; text-align:right;">
+          <a href="{{ url_for('kellerhoff_sync') }}" style="color:var(--ds-mint);">→</a></td>
+      </tr>
+      {# Control / plata #}
+      <tr style="border-bottom:1px solid var(--ds-line);">
+        <td style="padding:11px 16px; color:var(--ds-text-soft);">
+          Resumen semanal · última importada
+          {% if panel.resumen_ultimo %}<span style="color:var(--ds-text-mute);"> — {{ panel.resumen_ultimo }}</span>{% endif %}
+        </td>
+        <td style="padding:11px 16px; text-align:right; color:var(--ds-text-mute);">
+          {% if not panel.resumen_ultimo %}sin importar{% endif %}</td>
+        <td style="padding:11px 16px; text-align:right;">
+          <a href="{{ url_for('kellerhoff_resumenes') }}" style="color:var(--ds-mint);">→</a></td>
+      </tr>
+      <tr style="border-bottom:1px solid var(--ds-line);">
+        <td style="padding:11px 16px; color:var(--ds-text-soft);">Saldo cuenta corriente</td>
+        <td style="padding:11px 16px; text-align:right; font-weight:700; font-variant-numeric:tabular-nums;
+                   color:{% if panel.saldo > 0.005 %}#FCA5A5{% elif panel.saldo < -0.005 %}#5FE6BC{% else %}var(--ds-text-mute){% endif %};">
+          ${{ money(panel.saldo) }}</td>
+        <td style="padding:11px 16px; text-align:right;">
+          <a href="{{ url_for('kellerhoff_cuenta_corriente') }}" style="color:var(--ds-mint);">→</a></td>
+      </tr>
+      {# Cierre #}
+      <tr>
+        <td style="padding:11px 16px; color:var(--ds-text-soft);">Faltantes registrados</td>
+        <td style="padding:11px 16px; text-align:right; font-weight:700; font-variant-numeric:tabular-nums;">{{ panel.faltantes }}</td>
+        <td style="padding:11px 16px; text-align:right; color:var(--ds-text-mute);">—</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<p style="margin-top:10px; font-size:11.5px; color:var(--ds-text-mute);">
+  El ciclo completo de Kellerhoff en un lugar. Saldo y resúmenes salen del mismo
+  motor que Cuentas Corrientes — acá se ven filtrados a Kellerhoff.
+</p>
+{% endblock %}
