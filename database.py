@@ -1635,6 +1635,35 @@ class KellerhoffEquivalencia(Base):
     creado_por        = Column(String(80), nullable=True)
 
 
+class KellerhoffOferta(Base):
+    """Oferta por mínimo de compra VIGENTE — resultado del análisis del
+    `ProductosEnOferta.csv` (ver services/ofertas_kellerhoff). Una fila por EAN
+    que califica (Minimas>1, menor mínimo, delta ≥ umbral). La consume el armado
+    de pedido para el badge "Of.Kell.". Se reemplaza entera en cada import.
+    """
+    __tablename__ = 'kellerhoff_oferta'
+    ean               = Column(String(20), primary_key=True)
+    nombre            = Column(String(200), nullable=True)
+    unidades_minimas  = Column(Integer, nullable=False)
+    descuento_pct     = Column(DECIMAL(6, 2), nullable=False)
+    base              = Column(String(12), nullable=True)   # PVP / P.Farmacia
+    delta             = Column(DECIMAL(6, 2), nullable=False)
+    actualizado_en    = Column(DateTime, default=now_ar)
+
+
+class KellerhoffOfertasFuente(Base):
+    """El CSV crudo de la última descarga + meta, para reprocesar (cambiar el
+    umbral, etc.) sin volver a bajar del portal. Singleton (id=1).
+    """
+    __tablename__ = 'kellerhoff_ofertas_fuente'
+    id             = Column(Integer, primary_key=True)
+    descargado_en  = Column(DateTime, nullable=True)
+    generado_en    = Column(DateTime, nullable=True)
+    delta_umbral   = Column(DECIMAL(6, 2), nullable=True)
+    n_vigentes     = Column(Integer, nullable=True)
+    csv_texto      = Column(Text, nullable=True)
+
+
 class PedidoBorrador(Base):
     """Borrador de pedido en armado por usuario y droguería.
 
@@ -3408,6 +3437,8 @@ def init_db(database_url=None):
                         'producto_flags',
                         'kellerhoff_catalogo',
                         'kellerhoff_equivalencia',
+                        'kellerhoff_oferta',
+                        'kellerhoff_ofertas_fuente',
                         'estacionalidad_escenarios',
                         'estacionalidad_productos',
                         'cadencia_lab_snapshot',
