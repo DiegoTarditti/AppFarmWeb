@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Control de stock por laboratorio{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block main %}
+<div class="max-w-7xl mx-auto px-4 py-6">
+
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <div>
+      <h1 class="text-xl font-bold flex items-center gap-2">📦 Control de stock por laboratorio</h1>
+      <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-0.5">
+        Qué hay en góndola y en el robot, por laboratorio · para ir a contar</p>
+    </div>
+    <a href="{{ url_for('rowa_dashboard') }}"
+       class="px-3 py-1.5 rounded text-sm border border-[color:var(--ds-surface-border)] hover:bg-white/5">← Volver a Rowa</a>
+  </div>
+
+  {% if sin_robot %}
+  <div class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 mb-4">
+    <p class="text-sm">El robot no responde: la columna <b>En robot</b> puede estar incompleta.
+    Se muestra igual el stock de <b>depósito</b>.</p>
+  </div>
+  {% endif %}
+
+  {# ---- Controles: laboratorio + filtro (server-side) + búsqueda (client) ---- #}
+  <div class="flex flex-wrap items-center gap-2 mb-3">
+    <select id="cg-lab" onchange="cgIr()"
+            class="px-2 py-1 text-sm rounded border border-[color:var(--ds-surface-border)]"
+            style="background:#2c2c2e;color:inherit">
+      <option value="">— Elegí un laboratorio —</option>
+      {% for l in labs %}
+      <option value="{{ l }}" {% if l == lab %}selected{% endif %}>{{ l }}</option>
+      {% endfor %}
+    </select>
+
+    <select id="cg-filtro" onchange="cgIr()"
+            class="px-2 py-1 text-sm rounded border border-[color:var(--ds-surface-border)]"
+            style="background:#2c2c2e;color:inherit">
+      <option value="con_stock"     {% if filtro == 'con_stock' %}selected{% endif %}>Con stock</option>
+      <option value="solo_robot"    {% if filtro == 'solo_robot' %}selected{% endif %}>Solo en robot</option>
+      <option value="solo_deposito" {% if filtro == 'solo_deposito' %}selected{% endif %}>Solo en depósito</option>
+    </select>
+
+    {% if lab %}
+    <input id="cg-buscar" type="search" placeholder="🔎 Buscar…" oninput="cgFiltrar()"
+           class="px-2 py-1 text-sm rounded bg-white/5 border border-[color:var(--ds-surface-border)] w-48">
+    <span id="cg-count" class="text-xs text-[color:var(--ds-text-mute)] ml-auto"></span>
+    <a href="#" onclick="return cgBajar('pdf')"
+       class="px-2 py-1 text-xs rounded border border-[color:var(--ds-surface-border)] text-[color:var(--ds-text-mute)] hover:text-white"
+       title="Imprimir para ir a contar">📄 PDF</a>
+    <a href="#" onclick="return cgBajar('xlsx')"
+       class="px-2 py-1 text-xs rounded border border-[color:var(--ds-surface-border)] text-[color:var(--ds-text-mute)] hover:text-white">📊 Excel</a>
+    {% endif %}
+  </div>
+
+  {% if not lab %}
+  <div class="rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.02] p-6 text-center text-sm text-[color:var(--ds-text-mute)]">
+    Elegí un laboratorio arriba para ver su stock.
+  </div>
+  {% elif not filas %}
+  <div class="rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.02] p-6 text-center text-sm text-[color:var(--ds-text-mute)]">
+    Sin artículos para <b>{{ lab }}</b> con este filtro.
+  </div>
+  {% else %}
+  <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)]">
+    <table class="w-full text-sm" id="cg-tabla">
+      <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
+        <tr>
+          <th class="text-left px-3 py-2">Producto</th>
+          <th class="text-right px-3 py-2 w-24">En robot</th>
+          <th class="text-right px-3 py-2 w-24">En depósito</th>
+          <th class="text-right px-3 py-2 w-20">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+        <tr class="cg-fila border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]"
+            data-nombre="{{ (f.nombre or '') | lower }}">
+          <td class="px-3 py-1.5">{{ f.nombre }}</td>
+          <td class="px-3 py-1.5 text-right font-mono {% if f.en_robot %}text-[color:var(--ds-mint)]{% else %}text-[color:var(--ds-text-mute)]{% endif %}">{{ f.en_robot or '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono {% if f.deposito %}{% else %}text-[color:var(--ds-text-mute)]{% endif %}">{{ f.deposito or '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono font-bold">{{ f.total }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-[10px] text-[color:var(--ds-text-mute)] mt-3 italic">
+    <b>En robot</b> = packs dentro de la máquina · <b>En depósito</b> = fuera del robot (góndola/estante).
+    El PDF trae una columna en blanco para anotar lo contado.
+  </p>
+  {% endif %}
+</div>
+
+<script>
+function cgIr() {
+  var lab = document.getElementById('cg-lab').value;
+  var filtro = document.getElementById('cg-filtro').value;
+  var p = new URLSearchParams();
+  if (lab) { p.set('lab', lab); }
+  p.set('filtro', filtro);
+  window.location.href = '/control-gondola?' + p.toString();
+}
+function cgBajar(fmt) {
+  var p = new URLSearchParams();
+  p.set('lab', document.getElementById('cg-lab').value);
+  p.set('filtro', document.getElementById('cg-filtro').value);
+  var q = (document.getElementById('cg-buscar').value || '').trim();
+  if (q) { p.set('q', q); }
+  window.location.href = '/control-gondola/export.' + fmt + '?' + p.toString();
+  return false;
+}
+function cgFiltrar() {
+  var q = (document.getElementById('cg-buscar').value || '').toLowerCase();
+  var vis = 0, total = 0;
+  document.querySelectorAll('tr.cg-fila').forEach(function (tr) {
+    total++;
+    var ok = !q || (tr.dataset.nombre || '').indexOf(q) !== -1;
+    tr.style.display = ok ? '' : 'none';
+    if (ok) { vis++; }
+  });
+  var c = document.getElementById('cg-count');
+  if (c) { c.textContent = vis + ' de ' + total; }
+}
+document.addEventListener('DOMContentLoaded', function () {
+  if (document.getElementById('cg-buscar')) { cgFiltrar(); }
+});
+</script>
+{% endblock %}
