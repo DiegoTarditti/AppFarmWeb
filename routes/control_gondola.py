@@ -29,8 +29,21 @@ from sqlalchemy import func
 
 from database import ObsLaboratorio, ObsProducto, ObsStock, get_db
 
-# Opciones del filtro de arriba, en el orden pedido por Diego.
-FILTROS = ('con_stock', 'solo_robot', 'solo_deposito')
+# Opciones del filtro de arriba (orden pedido por Diego). Son INCLUSIVOS, no
+# exclusivos: "en robot" trae todo lo que tiene algo en el robot (aunque además
+# tenga depósito) y "en depósito" todo lo que tiene algo en depósito. Así
+# En robot ∪ En depósito = Con stock y NADA queda afuera del control: un producto
+# que está en los dos (ej. OPTAMOX 18 robot + 12 depósito) aparece en las dos, con
+# su parte correspondiente, sin contarse doble.
+FILTROS = ('con_stock', 'en_robot', 'en_deposito')
+
+# Alias de las URLs viejas ('solo_*') para no romper bookmarks.
+_ALIAS_FILTRO = {'solo_robot': 'en_robot', 'solo_deposito': 'en_deposito'}
+
+
+def _normalizar_filtro(filtro):
+    filtro = _ALIAS_FILTRO.get(filtro, filtro)
+    return filtro if filtro in FILTROS else 'con_stock'
 
 
 def _robot_por_pid():
@@ -112,10 +125,11 @@ def _filas_de_lab(session, robot_map, lab_nombre):
 
 
 def _aplicar_filtro(filas, filtro):
-    if filtro == 'solo_robot':
-        return [f for f in filas if f['en_robot'] > 0 and f['deposito'] <= 0]
-    if filtro == 'solo_deposito':
-        return [f for f in filas if f['deposito'] > 0 and f['en_robot'] <= 0]
+    # Inclusivos: un producto en robot Y depósito aparece en las dos vistas.
+    if filtro == 'en_robot':
+        return [f for f in filas if f['en_robot'] > 0]
+    if filtro == 'en_deposito':
+        return [f for f in filas if f['deposito'] > 0]
     return [f for f in filas if f['total'] > 0]   # con_stock (default)
 
 
@@ -125,9 +139,7 @@ def init_app(app):
     @login_required
     def control_gondola():
         lab = (request.args.get('lab') or '').strip()
-        filtro = request.args.get('filtro') or 'con_stock'
-        if filtro not in FILTROS:
-            filtro = 'con_stock'
+        filtro = _normalizar_filtro(request.args.get('filtro') or 'con_stock')
         robot_map, sin_robot = _robot_por_pid()
         with get_db() as session:
             labs = _labs_con_stock(session)
@@ -147,9 +159,7 @@ def init_app(app):
         lab = (request.args.get('lab') or '').strip()
         if not lab:
             abort(400, description='Falta elegir el laboratorio.')
-        filtro = request.args.get('filtro') or 'con_stock'
-        if filtro not in FILTROS:
-            filtro = 'con_stock'
+        filtro = _normalizar_filtro(request.args.get('filtro') or 'con_stock')
         q = (request.args.get('q') or '').strip().lower()
         robot_map, _sin = _robot_por_pid()
         with get_db() as session:

@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-26 13:14 · rama `feat/kellerhoff-ofertas-fase1` · commit `37cd4eb`
+Generado: 2026-08-26 13:44 · rama `feat/kellerhoff-ofertas-fase1` · commit `e16aa84`
 
 **808 rutas** en 78 archivos · **133 modelos** · **22 syncs** · **40 services** · **11 parsers**
 
@@ -519,8 +519,8 @@ Generado: 2026-08-26 13:14 · rama `feat/kellerhoff-ofertas-fase1` · commit `37
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/control-gondola` | GET | [`control_gondola`](../routes/control_gondola.py#L126) |
-| `/control-gondola/export.<fmt>` | GET | [`control_gondola_export`](../routes/control_gondola.py#L144) |
+| `/control-gondola` | GET | [`control_gondola`](../routes/control_gondola.py#L140) |
+| `/control-gondola/export.<fmt>` | GET | [`control_gondola_export`](../routes/control_gondola.py#L156) |
 
 ### `routes/converter.py`
 
