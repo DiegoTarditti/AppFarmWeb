@@ -75,10 +75,11 @@
         {% if stale %}
         <div class="kc-stale mb-3">⚠ El archivo tiene más de 30 días (o nunca se bajó). Kellerhoff publica ~1 vez por mes — conviene actualizar.</div>
         {% endif %}
-        <form method="post" action="{{ url_for('kellerhoff_ofertas_actualizar') }}" style="display:inline">
+        <form method="post" action="{{ url_for('kellerhoff_ofertas_actualizar') }}" style="display:inline"
+              onsubmit="return kcDescargar(this)">
             <button type="submit" class="btn btn-mint text-xs">⬇ Actualizar (bajar del portal)</button>
         </form>
-        <span class="kc-help" style="margin-left:8px">reusa el login del scraper de cuentas corrientes</span>
+        <span id="kc-dl-msg" class="kc-help" style="margin-left:8px">reusa el login del scraper de cuentas corrientes</span>
     </div>
 
     {# Subida manual #}
@@ -128,4 +129,14 @@
         {% endif %}
     </div>
 </div>
+
+<script>
+function kcDescargar(form) {
+    var btn = form.querySelector('button[type=submit]');
+    var msg = document.getElementById('kc-dl-msg');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Descargando del portal…'; }
+    if (msg) { msg.textContent = 'Puede tardar 10-30s (login + descarga + análisis). No cierres la página.'; }
+    return true;  // deja seguir el POST; la página redirige al terminar con el resultado
+}
+</script>
 {% endblock %}
