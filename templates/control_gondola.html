@@ -37,9 +37,9 @@
     <select id="cg-filtro" onchange="cgIr()"
             class="px-2 py-1 text-sm rounded border border-[color:var(--ds-surface-border)]"
             style="background:#2c2c2e;color:inherit">
-      <option value="con_stock"     {% if filtro == 'con_stock' %}selected{% endif %}>Con stock</option>
-      <option value="solo_robot"    {% if filtro == 'solo_robot' %}selected{% endif %}>Solo en robot</option>
-      <option value="solo_deposito" {% if filtro == 'solo_deposito' %}selected{% endif %}>Solo en depósito</option>
+      <option value="con_stock"   {% if filtro == 'con_stock' %}selected{% endif %}>Con stock</option>
+      <option value="en_robot"    {% if filtro == 'en_robot' %}selected{% endif %}>En robot</option>
+      <option value="en_deposito" {% if filtro == 'en_deposito' %}selected{% endif %}>En depósito</option>
     </select>
 
     {% if lab %}

@@ -13,7 +13,12 @@ from sqlalchemy.orm import sessionmaker
 import database
 import routes.rowa
 from database import ObsLaboratorio, ObsProducto, ObsStock
-from routes.control_gondola import _aplicar_filtro, _filas_de_lab, _robot_por_pid
+from routes.control_gondola import (
+    _aplicar_filtro,
+    _filas_de_lab,
+    _normalizar_filtro,
+    _robot_por_pid,
+)
 
 
 def _fila(**kw):
@@ -79,18 +84,41 @@ def test_universo_incluye_deposito_aunque_no_este_en_robot():
     # El del robot: split correcto (18 + 12 = 30).
     o = by['OPTAMOX']
     assert (o['en_robot'], o['deposito'], o['total']) == (18, 12, 30)
-    # "Solo en depósito" ahora incluye el que no está en el robot.
-    solo_dep = {f['nombre'] for f in _aplicar_filtro(filas, 'solo_deposito')}
-    assert 'IRAZEM 10' in solo_dep
-    assert 'OPTAMOX' not in solo_dep   # está en los dos → no es "solo depósito"
+    # "En depósito" (inclusivo) incluye al que no está en el robot Y también a
+    # OPTAMOX (que tiene depósito además del robot) → nada queda afuera.
+    en_dep = {f['nombre'] for f in _aplicar_filtro(filas, 'en_deposito')}
+    assert 'IRAZEM 10' in en_dep
+    assert 'OPTAMOX' in en_dep
 
 
-def test_filtro_solo_deposito_y_solo_robot():
-    filas = [
-        {'en_robot': 18, 'deposito': 12, 'total': 30},   # en los dos
-        {'en_robot': 5, 'deposito': 0, 'total': 5},       # solo robot
-        {'en_robot': 0, 'deposito': 8, 'total': 8},       # solo depósito
-    ]
-    assert len(_aplicar_filtro(filas, 'con_stock')) == 3
-    assert _aplicar_filtro(filas, 'solo_robot') == [filas[1]]
-    assert _aplicar_filtro(filas, 'solo_deposito') == [filas[2]]
+def test_caso_uno_por_columna_y_nada_afuera():
+    """El caso que pidió Lisandro: con stock con al menos uno en cada columna, y
+    ninguno afuera del control. Filtros INCLUSIVOS: el que está en los dos aparece
+    en las dos."""
+    ambos = {'nombre': 'AMBOS', 'en_robot': 18, 'deposito': 12, 'total': 30}
+    solo_rob = {'nombre': 'ROBOT', 'en_robot': 5, 'deposito': 0, 'total': 5}
+    solo_dep = {'nombre': 'DEPOSITO', 'en_robot': 0, 'deposito': 8, 'total': 8}
+    filas = [ambos, solo_rob, solo_dep]
+
+    con_stock = _aplicar_filtro(filas, 'con_stock')
+    en_robot = _aplicar_filtro(filas, 'en_robot')
+    en_dep = _aplicar_filtro(filas, 'en_deposito')
+
+    # Con stock: los 3, y CADA columna tiene al menos uno.
+    assert len(con_stock) == 3
+    assert any(f['en_robot'] > 0 for f in con_stock)
+    assert any(f['deposito'] > 0 for f in con_stock)
+    # Inclusivos: el de ambos entra en las dos vistas.
+    assert {f['nombre'] for f in en_robot} == {'AMBOS', 'ROBOT'}
+    assert {f['nombre'] for f in en_dep} == {'AMBOS', 'DEPOSITO'}
+    # Unión = con stock → NADA queda afuera del control.
+    union = {f['nombre'] for f in en_robot} | {f['nombre'] for f in en_dep}
+    assert union == {'AMBOS', 'ROBOT', 'DEPOSITO'}
+
+
+def test_alias_de_urls_viejas():
+    # Bookmarks viejos (?filtro=solo_*) siguen andando → mapean a los inclusivos.
+    assert _normalizar_filtro('solo_robot') == 'en_robot'
+    assert _normalizar_filtro('solo_deposito') == 'en_deposito'
+    assert _normalizar_filtro('con_stock') == 'con_stock'
+    assert _normalizar_filtro('cualquier_cosa') == 'con_stock'
