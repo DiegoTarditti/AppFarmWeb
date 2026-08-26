@@ -12,6 +12,7 @@ _FILTRO_LABEL = {
     'con_stock': 'Con stock',
     'en_robot': 'En robot',
     'en_deposito': 'En depósito',
+    'en_ambos': 'En robot y depósito',
     # Alias de las URLs viejas, por si llega uno guardado.
     'solo_robot': 'En robot',
     'solo_deposito': 'En depósito',
