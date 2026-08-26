@@ -27,7 +27,7 @@ from flask import Response, abort, render_template, request
 from flask_login import login_required
 from sqlalchemy import func
 
-from database import ObsLaboratorio, ObsProducto, ObsRowaProducto, ObsStock, get_db
+from database import ObsLaboratorio, ObsProducto, ObsStock, get_db
 
 # Opciones del filtro de arriba, en el orden pedido por Diego.
 FILTROS = ('con_stock', 'solo_robot', 'solo_deposito')
@@ -61,46 +61,54 @@ def _robot_por_pid():
     return out, False
 
 
-def _fuera_robot_con_stock(session):
-    """{pid: total} de artículos con stock que NO están en el robot."""
-    robot_sub = session.query(ObsRowaProducto.producto_observer)
-    q = (session.query(ObsProducto.observer_id.label('pid'),
-                       func.sum(ObsStock.stock_actual).label('stock'))
-         .join(ObsStock, ObsStock.producto_observer == ObsProducto.observer_id)
-         .filter(ObsProducto.fecha_baja.is_(None),
-                 ObsProducto.observer_id.notin_(robot_sub))
-         .group_by(ObsProducto.observer_id)
-         .having(func.sum(ObsStock.stock_actual) > 0))
-    return {r.pid: int(r.stock or 0) for r in q.all()}
+def _labs_con_stock(session):
+    """Nombres de laboratorio que tienen al menos un producto con stock."""
+    stocked = (session.query(ObsStock.producto_observer)
+               .group_by(ObsStock.producto_observer)
+               .having(func.sum(ObsStock.stock_actual) > 0)).subquery()
+    rows = (session.query(ObsLaboratorio.descripcion)
+            .join(ObsProducto,
+                  ObsProducto.laboratorio_observer == ObsLaboratorio.observer_id)
+            .filter(ObsProducto.observer_id.in_(
+                        session.query(stocked.c.producto_observer)),
+                    ObsProducto.fecha_baja.is_(None))
+            .distinct().all())
+    return sorted({r[0] for r in rows if r[0]})
 
 
-def _armar_filas(session, robot_map):
-    """Una fila por artículo con stock, con su split robot/depósito, uniendo los
-    del robot con los de fuera del robot. Devuelve (filas, labs_disponibles)."""
+def _filas_de_lab(session, robot_map, lab_nombre):
+    """Todas las filas con stock de ese laboratorio, con el split robot/depósito.
+
+    El universo es TODO lo que tiene stock (esté o no en el robot); 'en robot'
+    sale de los packs REALES (robot_map, vía _cargar), no de la membresía de
+    capacidad (ObsRowaProducto tiene ~29k filas de cupo, no de presencia física
+    — usarla dejaba afuera los que tienen cupo pero 0 packs adentro y stock en
+    depósito). depósito = total − en_robot.
+    """
+    lab_id = (session.query(ObsLaboratorio.observer_id)
+              .filter(ObsLaboratorio.descripcion == lab_nombre).scalar())
+    if lab_id is None:
+        return []
+    rows = (session.query(ObsProducto.observer_id.label('pid'),
+                          ObsProducto.descripcion,
+                          ObsProducto.descripcion_custom,
+                          func.sum(ObsStock.stock_actual).label('stock'))
+            .join(ObsStock, ObsStock.producto_observer == ObsProducto.observer_id)
+            .filter(ObsProducto.laboratorio_observer == lab_id,
+                    ObsProducto.fecha_baja.is_(None))
+            .group_by(ObsProducto.observer_id, ObsProducto.descripcion,
+                      ObsProducto.descripcion_custom)
+            .having(func.sum(ObsStock.stock_actual) > 0).all())
     filas = []
-    # 1) Artículos del robot (traen su nombre/lab del cruce que hizo _cargar).
-    for _pid, (en_robot, total, deposito, nombre, lab) in robot_map.items():
-        if total <= 0 and en_robot <= 0:
-            continue
-        filas.append({'nombre': nombre.strip(), 'laboratorio': lab or '',
+    for r in rows:
+        total = int(r.stock or 0)
+        en_robot = robot_map.get(r.pid, (0,))[0]
+        deposito = max(total - en_robot, 0)
+        filas.append({'nombre': (r.descripcion_custom or r.descripcion or '').strip(),
+                      'laboratorio': lab_nombre,
                       'en_robot': en_robot, 'deposito': deposito,
                       'total': max(total, en_robot)})
-    # 2) Artículos fuera del robot con stock → todo en depósito.
-    fuera = _fuera_robot_con_stock(session)
-    fuera = {pid: st for pid, st in fuera.items() if pid not in robot_map}
-    if fuera:
-        labs = dict(session.query(ObsLaboratorio.observer_id,
-                                  ObsLaboratorio.descripcion).all())
-        prods = (session.query(ObsProducto)
-                 .filter(ObsProducto.observer_id.in_(list(fuera))).all())
-        for p in prods:
-            st = fuera[p.observer_id]
-            filas.append({
-                'nombre': (p.descripcion_custom or p.descripcion or '').strip(),
-                'laboratorio': labs.get(p.laboratorio_observer) or '',
-                'en_robot': 0, 'deposito': st, 'total': st})
-    labs_disponibles = sorted({f['laboratorio'] for f in filas if f['laboratorio']})
-    return filas, labs_disponibles
+    return filas
 
 
 def _aplicar_filtro(filas, filtro):
@@ -122,10 +130,10 @@ def init_app(app):
             filtro = 'con_stock'
         robot_map, sin_robot = _robot_por_pid()
         with get_db() as session:
-            todas, labs = _armar_filas(session, robot_map)
-        filas = []
+            labs = _labs_con_stock(session)
+            filas = _filas_de_lab(session, robot_map, lab) if lab else []
         if lab:
-            filas = _aplicar_filtro([f for f in todas if f['laboratorio'] == lab], filtro)
+            filas = _aplicar_filtro(filas, filtro)
             filas.sort(key=lambda f: f['nombre'].lower())
         return render_template('control_gondola.html', labs=labs, filas=filas,
                                lab=lab, filtro=filtro, sin_robot=sin_robot,
@@ -145,8 +153,8 @@ def init_app(app):
         q = (request.args.get('q') or '').strip().lower()
         robot_map, _sin = _robot_por_pid()
         with get_db() as session:
-            todas, _labs = _armar_filas(session, robot_map)
-        filas = _aplicar_filtro([f for f in todas if f['laboratorio'] == lab], filtro)
+            filas = _filas_de_lab(session, robot_map, lab)
+        filas = _aplicar_filtro(filas, filtro)
         if q:
             filas = [f for f in filas if q in f['nombre'].lower()]
         filas.sort(key=lambda f: f['nombre'].lower())

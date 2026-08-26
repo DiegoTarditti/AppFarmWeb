@@ -7,8 +7,13 @@ daba depósito 0 y la suma no cerraba (robot 18 + 0 ≠ total 30). El stock real
 """
 from types import SimpleNamespace
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+import database
 import routes.rowa
-from routes.control_gondola import _aplicar_filtro, _robot_por_pid
+from database import ObsLaboratorio, ObsProducto, ObsStock
+from routes.control_gondola import _aplicar_filtro, _filas_de_lab, _robot_por_pid
 
 
 def _fila(**kw):
@@ -42,6 +47,42 @@ def test_robot_no_responde_degrada(monkeypatch):
     robot_map, sin_robot = _robot_por_pid()
     assert robot_map == {}
     assert sin_robot is True
+
+
+def _session_mem():
+    eng = create_engine('sqlite:///:memory:')
+    database.Base.metadata.create_all(eng)
+    return sessionmaker(bind=eng)()
+
+
+def test_universo_incluye_deposito_aunque_no_este_en_robot():
+    """El bug: solo mostraba lo que figuraba en el robot. El universo debe ser
+    TODO lo que tiene stock; 'en robot' sale de los packs reales, no del cupo."""
+    s = _session_mem()
+    s.add(ObsLaboratorio(observer_id=1, descripcion='Roemmers'))
+    # Producto con stock en depósito, NO presente en el robot (no en robot_map).
+    s.add(ObsProducto(observer_id=10, descripcion='IRAZEM 10', laboratorio_observer=1))
+    s.add(ObsStock(id_farmacia=1, producto_observer=10, stock_actual=5))
+    # Producto en robot + depósito (OPTAMOX): total 30, robot 18 → depósito 12.
+    s.add(ObsProducto(observer_id=20, descripcion='OPTAMOX', laboratorio_observer=1))
+    s.add(ObsStock(id_farmacia=1, producto_observer=20, stock_actual=30))
+    s.commit()
+
+    robot_map = {20: (18, 30, 12, 'OPTAMOX', 'Roemmers')}   # solo OPTAMOX en el robot
+    filas = _filas_de_lab(s, robot_map, 'Roemmers')
+    by = {f['nombre']: f for f in filas}
+
+    # El que NO está en el robot aparece igual, todo en depósito.
+    assert by['IRAZEM 10']['en_robot'] == 0
+    assert by['IRAZEM 10']['deposito'] == 5
+    assert by['IRAZEM 10']['total'] == 5
+    # El del robot: split correcto (18 + 12 = 30).
+    o = by['OPTAMOX']
+    assert (o['en_robot'], o['deposito'], o['total']) == (18, 12, 30)
+    # "Solo en depósito" ahora incluye el que no está en el robot.
+    solo_dep = {f['nombre'] for f in _aplicar_filtro(filas, 'solo_deposito')}
+    assert 'IRAZEM 10' in solo_dep
+    assert 'OPTAMOX' not in solo_dep   # está en los dos → no es "solo depósito"
 
 
 def test_filtro_solo_deposito_y_solo_robot():
