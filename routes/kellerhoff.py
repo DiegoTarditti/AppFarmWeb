@@ -545,3 +545,59 @@ def init_app(app):
                 session.commit()
             estado = estado_equivalencia(session, ean)
         return jsonify({'ok': True, 'kellerhoff': estado})
+
+    # ── Ofertas por mínimo de compra (ProductosEnOferta.csv) ──────────────
+    @app.route('/kellerhoff/ofertas')
+    @login_required
+    def kellerhoff_ofertas():
+        """Ofertas por cantidad vigentes: el resultado del análisis del CSV.
+        Se compara contra esto al armar un pedido a Kellerhoff (badge Of.Kell.)."""
+        from database import KellerhoffOferta
+        from services.ofertas_kellerhoff import estado_fuente, necesita_refresh
+        with get_db() as session:
+            fuente = estado_fuente(session)
+            vigentes = (session.query(KellerhoffOferta)
+                        .order_by(KellerhoffOferta.delta.desc(),
+                                  KellerhoffOferta.nombre.asc()).all())
+            filas = [{
+                'ean': o.ean, 'nombre': o.nombre,
+                'unidades_minimas': o.unidades_minimas,
+                'descuento_pct': float(o.descuento_pct),
+                'base': o.base, 'delta': float(o.delta),
+            } for o in vigentes]
+            stale = necesita_refresh(session)
+        return render_template('kellerhoff_ofertas.html',
+                               fuente=fuente, filas=filas, stale=stale)
+
+    @app.route('/kellerhoff/ofertas/importar', methods=['POST'])
+    @login_required
+    def kellerhoff_ofertas_importar():
+        """Subida manual del ProductosEnOferta.csv (sin scraping)."""
+        f = request.files.get('archivo')
+        if not f or not f.filename:
+            flash('Subí el ProductosEnOferta.csv de Kellerhoff.', 'error')
+            return redirect(url_for('kellerhoff_ofertas'))
+        from services.ofertas_kellerhoff import decodificar, importar_desde_texto
+        texto = decodificar(f.read())
+        with get_db() as session:
+            res = importar_desde_texto(session, texto, descargado_en=now_ar())
+            session.commit()
+        flash(f'Ofertas Kellerhoff actualizadas: {res["vigentes"]} vigentes '
+              f'(umbral delta {res["umbral"]:g}%).')
+        return redirect(url_for('kellerhoff_ofertas'))
+
+    @app.route('/kellerhoff/ofertas/actualizar', methods=['POST'])
+    @login_required
+    def kellerhoff_ofertas_actualizar():
+        """Descarga el CSV del portal (reusa el login del scraper) y reprocesa."""
+        from services.ofertas_kellerhoff import actualizar
+        try:
+            with get_db() as session:
+                res = actualizar(session)
+                session.commit()
+            flash(f'Ofertas Kellerhoff descargadas y actualizadas: '
+                  f'{res["vigentes"]} vigentes.')
+        except Exception as e:  # noqa: BLE001 — scraper/playwright/portal
+            flash(f'No se pudo descargar del portal: {e}. '
+                  f'Podés subir el CSV a mano.', 'error')
+        return redirect(url_for('kellerhoff_ofertas'))

@@ -760,6 +760,12 @@
                         <span class="text-[9px] bg-rose-100 text-rose-700 border border-rose-300 px-1 py-0.5 rounded mr-1 font-bold" title="Marcado como 'No pedir'. Reactivá desde la columna Acciones.">⛔ NO PEDIR</span>
                         {% endif %}
                         {{ it.desc }}
+                        {% if it.of_kell %}
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ml-1 align-middle bg-amber-100 text-amber-800 border-amber-300"
+                              title="Kellerhoff — oferta por cantidad: {{ it.of_kell.descuento_pct | round(1) }}% comprando {{ it.of_kell.unidades_minimas }}+ (rota en ≤1 mes de venta)">
+                            🏷️ Of.Kell. mín {{ it.of_kell.unidades_minimas }} · {{ it.of_kell.descuento_pct | round | int }}%
+                        </span>
+                        {% endif %}
                         {# Orden: flag primero (operativo, decide si se compra o no), Repo después.
                            Si el flag es DISCONTINUADO, ocultamos Repo (no tiene sentido reponer
                            algo discontinuado — el a_pedir ya va a 0 por efecto_armado='excluir'). #}
@@ -803,7 +809,12 @@
                         </span>
                     </td>
                     {% endif %}
-                    <td class="px-3 py-1 font-mono text-xs text-[#888]">{{ it.ean or '—' }}</td>
+                    <td class="px-3 py-1 font-mono text-xs text-[#888]">
+                        {{ it.ean or '—' }}
+                        {% if it.ean_falta_kell %}
+                        <span class="text-[10px] text-rose-600 font-bold ml-1 whitespace-nowrap" title="Kellerhoff no reconoce este EAN (no está en su catálogo ni resuelto por equivalencia). Al subir el pedido lo va a rechazar.">⚠ no en Kel</span>
+                        {% endif %}
+                    </td>
                     <td class="px-3 py-1 text-right font-mono tabular-nums text-xs">
                         {% if it.pvp and it.pvp > 0 %}
                             ${{ '{:,.0f}'.format(it.pvp).replace(',', '.') }}
