@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-26 09:38 · rama `main` · commit `f3b0774`
+Generado: 2026-08-26 11:56 · rama `fix/control-gondola-deposito` · commit `9bc59f2`
 
 **808 rutas** en 78 archivos · **131 modelos** · **22 syncs** · **39 services** · **11 parsers**
 
@@ -517,8 +517,8 @@ Generado: 2026-08-26 09:38 · rama `main` · commit `f3b0774`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/control-gondola` | GET | [`control_gondola`](../routes/control_gondola.py#L114) |
-| `/control-gondola/export.<fmt>` | GET | [`control_gondola_export`](../routes/control_gondola.py#L132) |
+| `/control-gondola` | GET | [`control_gondola`](../routes/control_gondola.py#L118) |
+| `/control-gondola/export.<fmt>` | GET | [`control_gondola_export`](../routes/control_gondola.py#L136) |
 
 ### `routes/converter.py`
 
