@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% set nav_active = "droguerias" %}
+{% block title %}Ofertas Kellerhoff{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.kc-topbar {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line);
+    padding: 12px 24px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.kc-topbar h1 { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0; }
+.kc-wrap { padding: 18px 24px; max-width: 980px; display: flex; flex-direction: column; gap: 16px; }
+.kc-card {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); padding: 16px 18px;
+}
+.kc-card h3 { font-size: 13px; font-weight: 700; color: var(--ds-text); margin: 0 0 10px; }
+.kc-help { font-size: 11px; color: var(--ds-text-mute); }
+.kc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.kc-stat { background: var(--ds-surface-2); border: 1px solid var(--ds-line); border-radius: var(--ds-r-sm); padding: 10px 12px; }
+.kc-stat .v { font-size: 20px; font-weight: 700; color: var(--ds-text); font-family: 'JetBrains Mono', monospace; }
+.kc-stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); margin-top: 2px; }
+.kc-stat.ok .v { color: var(--ds-mint); }
+.kc-file { width: 100%; background: var(--ds-surface-2); border: 1px solid var(--ds-line);
+           border-radius: var(--ds-r-sm); padding: 8px 10px; font-size: 13px; color: var(--ds-text); }
+.kc-flash { padding: 10px 14px; border-radius: var(--ds-r-sm); font-size: 12px; margin-bottom: 8px; border: 1px solid; }
+.kc-flash-success, .kc-flash-message { background: rgba(95,230,188,.10); border-color: rgba(95,230,188,.4); color: var(--ds-mint); }
+.kc-flash-error { background: rgba(239,68,68,.10); border-color: rgba(239,68,68,.4); color: #fca5a5; }
+.kc-stale { background: rgba(251,191,36,.10); border: 1px solid rgba(251,191,36,.4); color: #fbbf24;
+            padding: 8px 12px; border-radius: var(--ds-r-sm); font-size: 11px; }
+.kc-tabla { width: 100%; border-collapse: collapse; font-size: 12px; }
+.kc-tabla th { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--ds-line);
+               font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--ds-text-mute); }
+.kc-tabla td { padding: 5px 10px; border-bottom: 1px solid var(--ds-line); color: var(--ds-text); }
+.kc-tabla td.num { text-align: right; font-family: 'JetBrains Mono', monospace; }
+.kc-badge { display: inline-block; background: rgba(251,191,36,.15); color: #d97706;
+            border: 1px solid rgba(251,191,36,.4); border-radius: 6px; padding: 1px 7px;
+            font-size: 11px; font-weight: 700; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="kc-topbar">
+    <a href="{{ url_for('kellerhoff_catalogo') }}"
+       class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">← Catálogo</a>
+    <h1>🏷️ Ofertas Kellerhoff <span class="kc-help">por mínimo de compra</span></h1>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div style="padding: 8px 24px 0 24px;">
+        {% for category, msg in messages %}
+        <div class="kc-flash kc-flash-{{ category }}">{{ msg }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+{% endwith %}
+
+<div class="kc-wrap">
+    {# Estado del vigente #}
+    <div class="kc-card">
+        <h3>Ofertas vigentes</h3>
+        <p class="kc-help mb-3">Resultado del análisis del <code>ProductosEnOferta.csv</code>: solo las
+           ofertas por <b>cantidad</b> que valen la pena (mínimo &gt; 1, salto real ≥ umbral). Al armar un
+           pedido a Kellerhoff se compara contra esto y aparece el badge <span class="kc-badge">Of.Kell.</span>
+           en cada producto (filtrado además por rotación: comprar el mínimo debe ser ≤ 1 mes de venta).</p>
+        <div class="kc-stats mb-3">
+            <div class="kc-stat ok"><div class="v">{{ fuente.n_vigentes }}</div><div class="l">Vigentes</div></div>
+            <div class="kc-stat"><div class="v">{{ '%g'|format(fuente.delta_umbral) if fuente.delta_umbral is not none else '—' }}%</div><div class="l">Umbral delta</div></div>
+            <div class="kc-stat"><div class="v" style="font-size:12px; line-height:1.4">{{ fuente.descargado_en.strftime('%d/%m/%Y') if fuente.descargado_en else '—' }}</div><div class="l">Descargado</div></div>
+            <div class="kc-stat"><div class="v" style="font-size:12px; line-height:1.4">{{ fuente.generado_en.strftime('%d/%m/%Y %H:%M') if fuente.generado_en else '—' }}</div><div class="l">Procesado</div></div>
+        </div>
+        {% if stale %}
+        <div class="kc-stale mb-3">⚠ El archivo tiene más de 30 días (o nunca se bajó). Kellerhoff publica ~1 vez por mes — conviene actualizar.</div>
+        {% endif %}
+        <form method="post" action="{{ url_for('kellerhoff_ofertas_actualizar') }}" style="display:inline">
+            <button type="submit" class="btn btn-mint text-xs">⬇ Actualizar (bajar del portal)</button>
+        </form>
+        <span class="kc-help" style="margin-left:8px">reusa el login del scraper de cuentas corrientes</span>
+    </div>
+
+    {# Subida manual #}
+    <div class="kc-card">
+        <h3>Subir el CSV a mano</h3>
+        <p class="kc-help mb-3">Si ya lo bajaste de <code>kellerhoff.com.ar/config/descarga</code>, subilo acá
+           (no requiere el scraper). Reemplaza el vigente y guarda el crudo para reprocesar.</p>
+        <form method="post" action="{{ url_for('kellerhoff_ofertas_importar') }}" enctype="multipart/form-data"
+              style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <input type="file" name="archivo" accept=".csv,text/csv" class="kc-file" style="flex:1; min-width:220px;" required>
+            <button type="submit" class="btn btn-mint text-xs">Importar</button>
+        </form>
+    </div>
+
+    {# Tabla de vigentes #}
+    <div class="kc-card">
+        <h3>Detalle <span class="kc-help">· {{ filas|length }} producto(s)</span></h3>
+        {% if filas %}
+        <div style="overflow-x:auto">
+        <table class="kc-tabla">
+            <thead>
+                <tr>
+                    <th>Producto</th>
+                    <th>EAN</th>
+                    <th style="text-align:right">Mín</th>
+                    <th style="text-align:right">% Dto</th>
+                    <th>Base</th>
+                    <th style="text-align:right" title="Cuánto más se gana comprando el mínimo vs. comprando poco">Delta</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in filas %}
+                <tr>
+                    <td>{{ f.nombre }}</td>
+                    <td class="num" style="text-align:left; color:var(--ds-text-mute)">{{ f.ean }}</td>
+                    <td class="num">{{ f.unidades_minimas }}</td>
+                    <td class="num" style="color:var(--ds-mint); font-weight:700">{{ '%g'|format(f.descuento_pct) }}%</td>
+                    <td>{{ f.base }}</td>
+                    <td class="num">+{{ '%g'|format(f.delta) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% else %}
+        <p class="kc-help">No hay ofertas cargadas todavía. Subí el CSV o actualizá del portal.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

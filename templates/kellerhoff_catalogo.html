@@ -38,6 +38,8 @@
     <a href="{{ url_for('providers_list') }}"
        class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">← Proveedores</a>
     <h1>📦 Catálogo Kellerhoff</h1>
+    <a href="{{ url_for('kellerhoff_ofertas') }}"
+       class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition" style="margin-left:auto">🏷️ Ofertas por mínimo →</a>
 </div>
 
 {% with messages = get_flashed_messages(with_categories=true) %}

@@ -1376,6 +1376,37 @@ def init_app(app):
             for it in items:
                 it['pendientes_count'] = pendientes_por_obs.get(it['pid'], 0)
 
+            # ── Kellerhoff: oferta por mínimo + aviso de EAN que no reconoce ──
+            # Solo cuando el pedido va A Kellerhoff (prov elegido o libres_a). Dos
+            # avisos por fila:
+            #   · of_kell → oferta vigente por cantidad (badge "Of.Kell."),
+            #     filtrada por rotación: comprar el mínimo debe ser ≤ 1 mes de
+            #     venta (si no, es stock parado y la oferta no sirve).
+            #   · ean_falta_kell → EAN que Kellerhoff NO va a reconocer al importar
+            #     (ni en su catálogo ni resuelto por equivalencia). Avisar antes de
+            #     subir el pedido y comerse el "REGISTRO ERRONEO".
+            def _es_kel(p):
+                return bool(p) and 'kellerhoff' in (p.razon_social or '').lower()
+            es_pedido_kellerhoff = _es_kel(prov)
+            if not es_pedido_kellerhoff and libres_a:
+                es_pedido_kellerhoff = _es_kel(session.get(Provider, libres_a))
+            if es_pedido_kellerhoff and items:
+                from routes.kellerhoff import eans_faltantes_kellerhoff
+                from services import ofertas_kellerhoff as _ofk
+                _item_eans = [it['ean'] for it in items if it.get('ean')]
+                _ofertas_kell = _ofk.ofertas_por_ean(session, _item_eans)
+                _faltan_kell = eans_faltantes_kellerhoff(session, _item_eans)
+                for it in items:
+                    e = it.get('ean')
+                    it['ean_falta_kell'] = bool(e) and e in _faltan_kell
+                    of = _ofertas_kell.get(e) if e else None
+                    it['of_kell'] = of if (of and _ofk.califica_por_rotacion(
+                        of['unidades_minimas'], (it['u12m'] or 0) / 12.0)) else None
+            else:
+                for it in items:
+                    it['of_kell'] = None
+                    it['ean_falta_kell'] = False
+
             # ── Flags (Comportamientos excepcionales) por EAN ──
             # Cualquier EAN del producto (principal o alt) cuenta. El display del
             # chip lo arma services.flags (dedup); acá aplicamos el efecto sobre la
@@ -1642,6 +1673,7 @@ def init_app(app):
                                    oferta_vigencia_hasta=oferta_vigencia_hasta,
                                    oferta_observacion=oferta_observacion,
                                    usar_oferta=usar_oferta,
+                                   es_pedido_kellerhoff=es_pedido_kellerhoff,
                                    lab_id=lab_id,
                                    lab_nombre=lab_nombre,
                                    libres_a=libres_a,
