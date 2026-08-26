@@ -264,6 +264,40 @@ def corregir_eans(session, eans):
     return out
 
 
+def eans_faltantes_kellerhoff(session, eans):
+    """Set de EANs que Kellerhoff NO va a reconocer al importar el pedido: no
+    están en su catálogo ni se resuelven por equivalencia (a un código que sí
+    tenga EAN). Para avisar en el armado antes de subir y no comerse el
+    "REGISTRO ERRONEO". Vacío si no hay catálogo cargado (sin base para afirmar).
+    """
+    eans = list({str(e) for e in eans if e})
+    if not eans:
+        return set()
+    if not session.query(KellerhoffCatalogo.codigo_kellerhoff).first():
+        return set()
+    cat_eans = {e for (e,) in session.query(KellerhoffCatalogo.ean).filter(
+        KellerhoffCatalogo.ean.in_(eans))}
+    faltan = [e for e in eans if e not in cat_eans]
+    if not faltan:
+        return set()
+    eq = {x.ean: x.codigo_kellerhoff for x in session.query(KellerhoffEquivalencia).filter(
+        KellerhoffEquivalencia.ean.in_(faltan))}
+    codkels = [c for c in eq.values() if c and c != KEL_NO_DISPONIBLE]
+    ck_con_ean = set()
+    if codkels:
+        for (ck,) in session.query(KellerhoffCatalogo.codigo_kellerhoff).filter(
+                KellerhoffCatalogo.codigo_kellerhoff.in_(codkels),
+                KellerhoffCatalogo.ean.isnot(None)):
+            ck_con_ean.add(ck)
+    faltantes = set()
+    for e in faltan:
+        ck = eq.get(e)
+        if ck and ck != KEL_NO_DISPONIBLE and ck in ck_con_ean:
+            continue   # resuelto por equivalencia → Kellerhoff lo va a encontrar
+        faltantes.add(e)
+    return faltantes
+
+
 def init_app(app):
 
     @app.route('/kellerhoff/catalogo')

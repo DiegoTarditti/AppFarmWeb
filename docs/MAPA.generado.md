@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-26 13:02 · rama `feat/kellerhoff-ofertas-fase1` · commit `316f82b`
+Generado: 2026-08-26 13:14 · rama `feat/kellerhoff-ofertas-fase1` · commit `37cd4eb`
 
 **808 rutas** en 78 archivos · **133 modelos** · **22 syncs** · **40 services** · **11 parsers**
 
@@ -835,14 +835,14 @@ Generado: 2026-08-26 13:02 · rama `feat/kellerhoff-ofertas-fase1` · commit `31
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/api/kellerhoff/catalogo/buscar` | GET | [`kellerhoff_catalogo_buscar`](../routes/kellerhoff.py#L457) |
-| `/api/producto/kellerhoff-equivalencia` | POST | [`kellerhoff_equivalencia_guardar`](../routes/kellerhoff.py#L477) |
-| `/kellerhoff/catalogo` | GET | [`kellerhoff_catalogo`](../routes/kellerhoff.py#L271) |
-| `/kellerhoff/catalogo/cobertura` | GET | [`kellerhoff_catalogo_cobertura`](../routes/kellerhoff.py#L384) |
-| `/kellerhoff/catalogo/importar` | POST | [`kellerhoff_catalogo_importar`](../routes/kellerhoff.py#L359) |
-| `/kellerhoff/equivalencias` | GET | [`kellerhoff_equivalencias_list`](../routes/kellerhoff.py#L278) |
-| `/kellerhoff/equivalencias/<int:eid>/eliminar` | POST | [`kellerhoff_equivalencia_eliminar`](../routes/kellerhoff.py#L348) |
-| `/kellerhoff/equivalencias/recalcular` | POST | [`kellerhoff_equivalencias_recalcular`](../routes/kellerhoff.py#L443) |
+| `/api/kellerhoff/catalogo/buscar` | GET | [`kellerhoff_catalogo_buscar`](../routes/kellerhoff.py#L491) |
+| `/api/producto/kellerhoff-equivalencia` | POST | [`kellerhoff_equivalencia_guardar`](../routes/kellerhoff.py#L511) |
+| `/kellerhoff/catalogo` | GET | [`kellerhoff_catalogo`](../routes/kellerhoff.py#L305) |
+| `/kellerhoff/catalogo/cobertura` | GET | [`kellerhoff_catalogo_cobertura`](../routes/kellerhoff.py#L418) |
+| `/kellerhoff/catalogo/importar` | POST | [`kellerhoff_catalogo_importar`](../routes/kellerhoff.py#L393) |
+| `/kellerhoff/equivalencias` | GET | [`kellerhoff_equivalencias_list`](../routes/kellerhoff.py#L312) |
+| `/kellerhoff/equivalencias/<int:eid>/eliminar` | POST | [`kellerhoff_equivalencia_eliminar`](../routes/kellerhoff.py#L382) |
+| `/kellerhoff/equivalencias/recalcular` | POST | [`kellerhoff_equivalencias_recalcular`](../routes/kellerhoff.py#L477) |
 
 ### `routes/kellerhoff_sync.py`
 
