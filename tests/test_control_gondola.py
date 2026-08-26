@@ -114,6 +114,9 @@ def test_caso_uno_por_columna_y_nada_afuera():
     # Unión = con stock → NADA queda afuera del control.
     union = {f['nombre'] for f in en_robot} | {f['nombre'] for f in en_dep}
     assert union == {'AMBOS', 'ROBOT', 'DEPOSITO'}
+    # "En robot y depósito": solo los que tienen stock en los DOS.
+    en_ambos = _aplicar_filtro(filas, 'en_ambos')
+    assert {f['nombre'] for f in en_ambos} == {'AMBOS'}
 
 
 def test_alias_de_urls_viejas():

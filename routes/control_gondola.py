@@ -35,7 +35,7 @@ from database import ObsLaboratorio, ObsProducto, ObsStock, get_db
 # En robot ∪ En depósito = Con stock y NADA queda afuera del control: un producto
 # que está en los dos (ej. OPTAMOX 18 robot + 12 depósito) aparece en las dos, con
 # su parte correspondiente, sin contarse doble.
-FILTROS = ('con_stock', 'en_robot', 'en_deposito')
+FILTROS = ('con_stock', 'en_robot', 'en_deposito', 'en_ambos')
 
 # Alias de las URLs viejas ('solo_*') para no romper bookmarks.
 _ALIAS_FILTRO = {'solo_robot': 'en_robot', 'solo_deposito': 'en_deposito'}
@@ -130,6 +130,9 @@ def _aplicar_filtro(filas, filtro):
         return [f for f in filas if f['en_robot'] > 0]
     if filtro == 'en_deposito':
         return [f for f in filas if f['deposito'] > 0]
+    if filtro == 'en_ambos':
+        # Sí o sí stock en los DOS: robot ≥ 1 y depósito ≥ 1.
+        return [f for f in filas if f['en_robot'] > 0 and f['deposito'] > 0]
     return [f for f in filas if f['total'] > 0]   # con_stock (default)
 
 
