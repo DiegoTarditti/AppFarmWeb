@@ -169,6 +169,18 @@
                     <div class="label">Total</div>
                     <div class="value accent">$ {{ invoice.total | arg_currency }}</div>
                 </div>
+                <div class="info-grid__cell">
+                    <div class="label">Vencimiento{% if invoice.condicion_pago %} <span style="color:var(--ds-text-mute); font-weight:400;">· {{ invoice.condicion_pago }}</span>{% endif %}</div>
+                    <div class="value {% if not invoice.vencimiento %}warn{% endif %}">
+                        {{ invoice.vencimiento.strftime('%d/%m/%Y') if invoice.vencimiento else '—' }}
+                    </div>
+                </div>
+                {% if invoice.trf %}
+                <div class="info-grid__cell">
+                    <div class="label">TRF <span style="color:var(--ds-text-mute); font-weight:400;">(oferta lab)</span></div>
+                    <div class="value">{{ invoice.trf }}</div>
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -187,6 +199,23 @@
                     <input type="text" name="proveedor_razon" class="ds-input"
                            value="{{ invoice.proveedor_razon or '' }}"
                            placeholder="Razón social del proveedor">
+                </div>
+                <div>
+                    <label class="ds-label">Vencimiento de pago</label>
+                    <input type="date" name="vencimiento" class="ds-input"
+                           value="{{ invoice.vencimiento.strftime('%Y-%m-%d') if invoice.vencimiento else '' }}">
+                </div>
+                <div>
+                    <label class="ds-label">Condición de pago</label>
+                    <input type="text" name="condicion_pago" class="ds-input"
+                           value="{{ invoice.condicion_pago or '' }}"
+                           placeholder="Ej: 180 días FF">
+                </div>
+                <div class="col-span-2">
+                    <label class="ds-label">TRF <span style="color:var(--ds-text-mute); font-weight:400;">(oferta de laboratorio vía Kellerhoff)</span></label>
+                    <input type="text" name="trf" class="ds-input"
+                           value="{{ invoice.trf or '' }}"
+                           placeholder="Ej: 0032915501Y (varios separados por coma)">
                 </div>
             </div>
             <div class="flex justify-end gap-2 mt-5">

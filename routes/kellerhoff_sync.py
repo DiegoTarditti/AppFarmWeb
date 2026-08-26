@@ -240,6 +240,8 @@ def init_app(app):
         """Extracto de Kellerhoff DENTRO del módulo. Reusa el motor único
         (movimientos_proveedor) — misma data que /cuentas-corrientes, vista
         filtrada a Kellerhoff y enmarcada en el módulo (no un silo aparte)."""
+        desde = (request.args.get('desde') or '').strip() or None
+        hasta = (request.args.get('hasta') or '').strip() or None
         with get_db() as session:
             prov = _kh_provider(session)
             movimientos, resumen = ([], {'saldo': 0.0, 'total_prefac': 0.0})
@@ -249,13 +251,17 @@ def init_app(app):
                 # Hasta dónde llegan los resúmenes importados: sin esto no se
                 # distingue "todavía no lo cobraron" de "falta".
                 corte = corte_resumenes(session, prov)
+                from services.cuenta_corriente import filtrar_por_fecha
+                movimientos = filtrar_por_fecha(movimientos, desde, hasta)
             prov_data = {'razon_social': prov.razon_social if prov else 'Kellerhoff',
                          'cuit': (prov.cuit if prov else '') or ''}
+        from datetime import date as _date
         return render_template('kellerhoff_cuenta_corriente.html',
                                provider=prov_data, movimientos=movimientos,
                                saldo_total=resumen['saldo'],
                                total_prefac=resumen.get('total_prefac', 0),
-                               corte_resumenes=corte)
+                               corte_resumenes=corte,
+                               desde=desde, hasta=hasta, hoy=_date.today())
 
     # ── Resúmenes de cuenta (el cierre semanal que emite Kellerhoff) ──────────
 
@@ -485,6 +491,16 @@ def _sincronizar(desde: date, hasta: date) -> dict:
                 inv = _get_or_create_invoice(session, comp)
                 if inv is None:
                     continue
+
+                # Vencimiento de pago + TRF detectados del detalle. Solo si están
+                # vacíos: no pisar una edición manual ni reescribir en re-syncs.
+                _vt = comp.get('analisis') or {}
+                if inv.vencimiento is None and _vt.get('vencimiento'):
+                    inv.vencimiento = _vt['vencimiento']
+                if not inv.condicion_pago and _vt.get('condicion_pago'):
+                    inv.condicion_pago = _vt['condicion_pago']
+                if not inv.trf and _vt.get('trf'):
+                    inv.trf = _vt['trf']
 
                 es_nuevo = not comp.get('_estaba_en_db')
                 if not inv.items:

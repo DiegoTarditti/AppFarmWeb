@@ -1754,6 +1754,17 @@ class Invoice(Base):
     fecha_pago           = Column(Date, nullable=True)
     forma_pago           = Column(String(40), nullable=True)
     nro_comprobante_pago = Column(String(40), nullable=True)
+    # Vencimiento de PAGO (no confundir con InvoiceItem.vencimiento, que es el del
+    # producto). Del header de la factura ("COND. DE PAGO: 180 días FF Vto.: …").
+    # Opcional: contado/NCR o facturas sin el dato quedan NULL. `condicion_pago`
+    # guarda "180 días FF" para poder recalcular vencimiento = fecha + N si algún
+    # comprobante trae la condición pero no imprime el Vto. explícito.
+    vencimiento          = Column(Date, nullable=True)
+    condicion_pago       = Column(String(40), nullable=True)
+    # TRF = "Transfer": oferta de laboratorio que entra vía Kellerhoff. El número
+    # va en el renglón de la factura ("TRF 0032915501Y"). Si hay varios renglones
+    # con TRF distintos, se guardan separados por coma. NULL si no trae ninguno.
+    trf                  = Column(String(200), nullable=True)
     creado_en = Column(DateTime, default=now_ar)
     items = relationship('InvoiceItem', back_populates='invoice')
     batch = relationship('InvoiceBatch', back_populates='invoices')
@@ -4968,6 +4979,9 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS fecha_pago DATE"))
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS forma_pago VARCHAR(40)"))
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS nro_comprobante_pago VARCHAR(40)"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS vencimiento DATE"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS condicion_pago VARCHAR(40)"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS trf VARCHAR(200)"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS pagos_ajustes_cc (
             id SERIAL PRIMARY KEY,

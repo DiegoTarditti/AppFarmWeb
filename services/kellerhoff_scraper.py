@@ -300,6 +300,17 @@ def _detalle_comprobante(page, comp: dict) -> dict:
     if not _ir_a_detalle(page, comp, log):
         return {'categoria': 'factura', 'items': [], 'faltantes': []}
 
+    # Vencimiento de pago + TRF del header del detalle (best-effort, sin bajar el
+    # PDF: la página ya está cargada). El detector ancla en 'COND. DE PAGO', así
+    # que no toma los otros 'Vto.' del comprobante (renglón TRF ni CAEA).
+    venc_trf = {}
+    try:
+        from helpers import _normalize_quadrupled, detectar_vencimiento_trf
+        _txt = _normalize_quadrupled(page.inner_text('body'))
+        venc_trf = detectar_vencimiento_trf(_txt, fecha_factura=comp.get('fecha'))
+    except Exception:  # noqa: BLE001 — el vencimiento es opcional, no frenar el sync
+        venc_trf = {}
+
     items_html = _detalle_via_html(page, comp, log)
 
     # Caso común (factura con mercadería): la tabla HTML ya trae los ítems, no
@@ -309,7 +320,7 @@ def _detalle_comprobante(page, comp: dict) -> dict:
     #  camino; nunca funcionaron en prod porque la navegación estaba rota. Se
     #  agregan cuando tengamos una muestra HTML de una factura con faltantes.)
     if items_html:
-        return {'categoria': 'factura', 'items': items_html, 'faltantes': []}
+        return {'categoria': 'factura', 'items': items_html, 'faltantes': [], **venc_trf}
 
     # Sin ítems en el HTML → candidato a NC financiera (recupero, un solo
     # renglón sin barcode). Ahí sí bajamos el PDF para clasificar con el
@@ -325,6 +336,7 @@ def _detalle_comprobante(page, comp: dict) -> dict:
         'categoria': 'factura',
         'items': items,
         'faltantes': analisis_pdf.get('faltantes') or [],
+        **venc_trf,
     }
 
 

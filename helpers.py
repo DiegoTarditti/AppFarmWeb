@@ -1088,6 +1088,73 @@ def _normalize_quadrupled(text):
     return '\n'.join(out_lines)
 
 
+# ── Vencimiento de pago + TRF desde el texto de la factura ──────────────────
+
+# "COND. DE PAGO: 180 días FF Vto.: 28/07/2026" → (condición, fecha).
+# Ancla en COND. DE PAGO para NO agarrar los otros "Vto." del PDF (el del renglón
+# TRF ni el "Fecha de Vto" del CAEA de AFIP).
+_RE_COND_VTO = re.compile(
+    r'COND\.?\s*DE\s*PAGO\s*:?\s*([^\n]{0,40}?)\s*Vto\.?\s*:?\s*(\d{1,2}/\d{1,2}/\d{2,4})',
+    re.IGNORECASE)
+# Fallback: condición con "N días" para calcular vencimiento = fecha + N.
+_RE_COND_DIAS = re.compile(r'COND\.?\s*DE\s*PAGO\s*:?\s*(\d{1,3})\s*d[ií]as',
+                           re.IGNORECASE)
+# "TRF 0032915501Y" en el renglón. El código es dígitos + posible letra final.
+_RE_TRF = re.compile(r'\bTRF\s+([0-9]{4,}[A-Z]?)\b', re.IGNORECASE)
+
+
+def _parse_fecha_ar(s):
+    """'28/07/2026' o '28/7/26' → date. None si no parsea."""
+    from datetime import datetime as _dt
+    s = (s or '').strip()
+    for fmt in ('%d/%m/%Y', '%d/%m/%y'):
+        try:
+            return _dt.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def detectar_vencimiento_trf(texto, fecha_factura=None):
+    """De un texto de factura Kellerhoff, devuelve dict con:
+        vencimiento    (date|None) — el Vto. de PAGO del header.
+        condicion_pago (str|None)  — p.ej. '180 días FF'.
+        trf            (str|None)  — TRF(s) del/los renglón(es), coma-separados.
+
+    Best-effort: contado/NCR o facturas sin el dato devuelven None en cada campo
+    (no rompe otros proveedores: el texto simplemente no matchea). Si hay condición
+    'N días' pero no imprime el Vto. explícito y se pasa `fecha_factura`, calcula
+    vencimiento = fecha_factura + N días.
+    """
+    texto = texto or ''
+    condicion_pago = None
+    vencimiento = None
+    m = _RE_COND_VTO.search(texto)
+    if m:
+        condicion_pago = ' '.join(m.group(1).split()) or None
+        vencimiento = _parse_fecha_ar(m.group(2))
+    else:
+        # Sin "Vto.:" explícito: rescatar la condición si está.
+        md = _RE_COND_DIAS.search(texto)
+        if md:
+            condicion_pago = ' '.join(
+                texto[md.start():md.start() + 40].split()[1:4]) or None
+    # Fallback de vencimiento por condición + fecha.
+    if vencimiento is None and fecha_factura is not None:
+        md = _RE_COND_DIAS.search(texto)
+        if md:
+            from datetime import timedelta as _td
+            vencimiento = fecha_factura + _td(days=int(md.group(1)))
+    # TRF(s): dedup preservando orden.
+    trfs = []
+    for t in _RE_TRF.findall(texto):
+        tu = t.upper()
+        if tu not in trfs:
+            trfs.append(tu)
+    trf = ', '.join(trfs) or None
+    return {'vencimiento': vencimiento, 'condicion_pago': condicion_pago, 'trf': trf}
+
+
 # ── Pattern builder (used by invoices + converter) ──────────────────────────
 
 def _build_item_pattern(example_line, selections):
