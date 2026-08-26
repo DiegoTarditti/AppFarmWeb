@@ -10,8 +10,11 @@ from datetime import datetime
 
 _FILTRO_LABEL = {
     'con_stock': 'Con stock',
-    'solo_robot': 'Solo en robot',
-    'solo_deposito': 'Solo en depósito',
+    'en_robot': 'En robot',
+    'en_deposito': 'En depósito',
+    # Alias de las URLs viejas, por si llega uno guardado.
+    'solo_robot': 'En robot',
+    'solo_deposito': 'En depósito',
 }
 
 # (clave, encabezado, ancho_xlsx, ancho_pdf_cm, alineación)
