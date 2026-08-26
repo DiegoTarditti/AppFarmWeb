@@ -49,7 +49,11 @@ def _robot_por_pid():
         en_robot = int(getattr(f, 'cantidad', 0) or 0)
         total = getattr(f, 'stock_total', None)
         total = int(total) if total is not None else en_robot
-        deposito = getattr(f, 'al_deposito', None)
+        # OJO: en la fila de Rowa `al_deposito` es el "Sacar" (cuánto mover del
+        # robot al depósito), NO el stock de depósito. El stock real es
+        # `stock_deposito` (= stock_total − en_robot). Usar al_deposito daba
+        # depósito 0 y la suma no cerraba (robot 18 + 0 ≠ total 30).
+        deposito = getattr(f, 'stock_deposito', None)
         deposito = int(deposito) if deposito is not None else max(total - en_robot, 0)
         out[pid] = (en_robot, total, deposito,
                     getattr(f, 'nombre_obs', None) or getattr(f, 'nombre', '') or '',
