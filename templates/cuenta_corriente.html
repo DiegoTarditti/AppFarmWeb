@@ -8,8 +8,8 @@
     <div class="bg-surface border-b border-surface-border px-3 sm:px-6 py-3 flex items-center gap-2 sm:gap-4 flex-wrap flex-shrink-0">
         <h1 class="text-base font-bold text-[#1e1e1e]">Cuentas corrientes</h1>
 
-        <!-- Selector de proveedor -->
-        <form method="GET" class="flex items-center gap-2 min-w-0 flex-1 sm:flex-initial">
+        <!-- Selector de proveedor + filtro por fecha -->
+        <form method="GET" class="flex items-center gap-2 min-w-0 flex-1 sm:flex-initial flex-wrap">
             <select name="proveedor" onchange="this.form.submit()"
                     class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand w-full sm:min-w-[250px]">
                 <option value="">— Seleccionar proveedor —</option>
@@ -17,6 +17,20 @@
                 <option value="{{ p.id }}" {% if p.id == provider_id %}selected{% endif %}>{{ p.razon_social }}</option>
                 {% endfor %}
             </select>
+            {% if provider %}
+            <div class="flex items-center gap-1 text-[11px] text-[#6f6f6f]">
+                <label>Desde</label>
+                <input type="date" name="desde" value="{{ desde or '' }}"
+                       class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand">
+                <label>Hasta</label>
+                <input type="date" name="hasta" value="{{ hasta or '' }}"
+                       class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand">
+                <button type="submit" class="bg-black/[0.06] hover:bg-black/[0.10] text-[#1e1e1e] rounded-lg px-2.5 py-1 text-xs font-medium">Filtrar</button>
+                {% if desde or hasta %}
+                <a href="{{ url_for('cuentas_corrientes', proveedor=provider_id) }}" class="text-[#999] hover:text-[#1e1e1e] px-1" title="Limpiar filtro">✕</a>
+                {% endif %}
+            </div>
+            {% endif %}
         </form>
 
         {% if provider %}
@@ -136,6 +150,7 @@
                             <th class="text-left py-2.5 px-2">Procesada</th>
                             <th class="text-left py-2.5 px-2">Tipo</th>
                             <th class="text-left py-2.5 px-2">Comprobante</th>
+                            <th class="text-left py-2.5 px-2" title="Vencimiento de pago de la factura">Vto.</th>
                             <th class="text-center py-2.5 px-2" title="Renglones de detalle guardados vs. los que declara la factura">Detalle</th>
                             <th class="text-center py-2.5 px-2" title="Resumen de cuenta de la droguería en el que entró">Resumen</th>
                             <th class="text-center py-2.5 px-2">Ingresada</th>
@@ -168,7 +183,15 @@
                                   title="Documento no válido como factura: no suma al saldo">PREFAC</span>
                             {% endif %}
                         </td>
-                        <td class="py-2 px-2 text-[#6f6f6f] font-mono">{{ m.comprobante }}</td>
+                        <td class="py-2 px-2 text-[#6f6f6f] font-mono">
+                            {{ m.comprobante }}
+                            {% if m.trf %}
+                            <span class="inline-block ml-1 px-1 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700" title="TRF (oferta de laboratorio vía Kellerhoff): {{ m.trf }}">TRF</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 px-2 whitespace-nowrap {% if m.vencimiento and hoy and m.vencimiento < hoy and not m.conciliado %}text-red-600 font-semibold{% else %}text-[#6f6f6f]{% endif %}">
+                            {{ m.vencimiento.strftime('%d/%m/%Y') if m.vencimiento else '—' }}
+                        </td>
                         <td class="py-2 px-2 text-center">
                             {% if m.detalle %}{% with d = m.detalle %}{% include '_badge_detalle.html' %}{% endwith %}
                             {% else %}<span class="text-[#ccc]">—</span>{% endif %}
@@ -258,7 +281,7 @@
                     </tbody>
                     <tfoot>
                         <tr class="border-t-2 border-[#d0d0d0] bg-surface-input">
-                            <td colspan="8" class="py-2.5 px-4 text-[10px] text-[#999] uppercase tracking-wide font-bold">Saldo final</td>
+                            <td colspan="9" class="py-2.5 px-4 text-[10px] text-[#999] uppercase tracking-wide font-bold">Saldo final</td>
                             <td class="py-2.5 px-2 text-right font-mono font-bold text-red-600">
                                 ${{ '{:,.2f}'.format(movimientos | map(attribute='debe') | sum).replace(',', 'X').replace('.', ',').replace('X', '.') }}
                             </td>

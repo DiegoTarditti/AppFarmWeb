@@ -141,6 +141,8 @@ def init_app(app):
 
             provider_id = request.args.get('proveedor', type=int)
             provider = session.get(database.Provider, provider_id) if provider_id else None
+            desde = (request.args.get('desde') or '').strip() or None
+            hasta = (request.args.get('hasta') or '').strip() or None
 
             movimientos = []
             saldo_total = 0
@@ -153,14 +155,19 @@ def init_app(app):
                 # Hasta dónde llegan los resúmenes importados: sin esto no se
                 # puede distinguir "todavía no lo cobraron" de "falta".
                 corte = corte_resumenes(session, provider)
+                # Filtro de fecha (no afecta el saldo real, solo qué filas se ven).
+                from services.cuenta_corriente import filtrar_por_fecha
+                movimientos = filtrar_por_fecha(movimientos, desde, hasta)
 
             prov = {'id': provider.id, 'razon_social': provider.razon_social,
                     'cuit': provider.cuit or ''} if provider else None
 
+            from datetime import date as _date
             return render_template('cuenta_corriente.html', provider=prov,
                                    proveedores=prov_list, provider_id=provider_id or 0,
                                    movimientos=movimientos, saldo_total=saldo_total,
-                                   total_prefac=total_prefac, corte_resumenes=corte)
+                                   total_prefac=total_prefac, corte_resumenes=corte,
+                                   desde=desde, hasta=hasta, hoy=_date.today())
 
     @app.route('/comprobantes/importar', methods=['GET', 'POST'])
     def comprobantes_importar():

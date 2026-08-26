@@ -711,6 +711,21 @@ def init_app(app):
                 invoice.numero_factura = request.form.get('numero_factura', invoice.numero_factura).strip() or invoice.numero_factura
             if 'proveedor_razon' in request.form:
                 invoice.proveedor_razon = request.form.get('proveedor_razon', invoice.proveedor_razon).strip() or invoice.proveedor_razon
+            # Vencimiento de pago (input date → YYYY-MM-DD). Vacío = limpiar.
+            if 'vencimiento' in request.form:
+                _v = (request.form.get('vencimiento') or '').strip()
+                if _v:
+                    from datetime import datetime as _dt
+                    try:
+                        invoice.vencimiento = _dt.strptime(_v, '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+                else:
+                    invoice.vencimiento = None
+            if 'condicion_pago' in request.form:
+                invoice.condicion_pago = (request.form.get('condicion_pago') or '').strip() or None
+            if 'trf' in request.form:
+                invoice.trf = (request.form.get('trf') or '').strip() or None
             session.commit()
         if ajax:
             return jsonify({'ok': True})

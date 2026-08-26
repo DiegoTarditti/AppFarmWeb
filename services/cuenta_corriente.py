@@ -124,6 +124,41 @@ def corte_resumenes(session, provider):
             .scalar())
 
 
+def filtrar_por_fecha(movimientos, desde=None, hasta=None):
+    """Filtra los movimientos por rango de `fecha` (date), inclusive. `desde`/`hasta`
+    pueden ser date o string 'YYYY-MM-DD' (o None). El saldo por fila NO se toca:
+    ya viene acumulado desde el inicio del historial, así que recortar la ventana
+    deja cada saldo correcto a esa fecha (el saldo final del header es el real)."""
+    from datetime import datetime as _dt
+
+    def _d(v):
+        if not v:
+            return None
+        if hasattr(v, 'year'):
+            return v
+        try:
+            return _dt.strptime(v, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            return None
+
+    d, h = _d(desde), _d(hasta)
+    if not d and not h:
+        return movimientos
+    out = []
+    for m in movimientos:
+        f = m.get('fecha')
+        if f is None:
+            continue
+        if hasattr(f, 'date') and not hasattr(f, 'year'):
+            f = f.date()
+        if d and f < d:
+            continue
+        if h and f > h:
+            continue
+        out.append(m)
+    return out
+
+
 def movimientos_proveedor(session, provider):
     """Extracto completo de un proveedor.
 
@@ -162,6 +197,8 @@ def movimientos_proveedor(session, provider):
             'detalle': detalle_map.get(inv.id),
             'fecha': inv.fecha,
             'fecha_proceso': inv.creado_en.strftime('%d/%m/%Y') if inv.creado_en else '',
+            'vencimiento': inv.vencimiento,
+            'trf': inv.trf,
             'tipo': inv.tipo_comprobante,
             'comprobante': inv.numero_factura or '',
             'debe': debe,
