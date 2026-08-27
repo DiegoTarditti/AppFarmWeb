@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-27 08:50 · rama `fix/control-items-neto-impuestos` · commit `7bff61f`
+Generado: 2026-08-27 11:41 · rama `feat/ctacte-link-detalle` · commit `be35391`
 
-**811 rutas** en 78 archivos · **133 modelos** · **22 syncs** · **40 services** · **11 parsers**
+**814 rutas** en 79 archivos · **133 modelos** · **22 syncs** · **41 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -847,6 +847,14 @@ Generado: 2026-08-27 08:50 · rama `fix/control-items-neto-impuestos` · commit 
 | `/kellerhoff/ofertas/actualizar` | POST | [`kellerhoff_ofertas_actualizar`](../routes/kellerhoff.py#L591) |
 | `/kellerhoff/ofertas/importar` | POST | [`kellerhoff_ofertas_importar`](../routes/kellerhoff.py#L574) |
 
+### `routes/kellerhoff_backfill.py`
+
+| Ruta | Métodos | Función |
+|---|---|---|
+| `/kellerhoff/backfill` | GET | [`kellerhoff_backfill`](../routes/kellerhoff_backfill.py#L115) |
+| `/kellerhoff/backfill/estado` | GET | [`kellerhoff_backfill_estado`](../routes/kellerhoff_backfill.py#L137) |
+| `/kellerhoff/backfill/run` | POST | [`kellerhoff_backfill_run`](../routes/kellerhoff_backfill.py#L120) |
+
 ### `routes/kellerhoff_sync.py`
 
 | Ruta | Métodos | Función |
@@ -1398,6 +1406,7 @@ Generado: 2026-08-27 08:50 · rama `fix/control-items-neto-impuestos` · commit 
 | [`horarios.py`](../services/horarios.py) | Helper para horarios de reparto por droguería. |
 | [`informes_bot.py`](../services/informes_bot.py) | Informes proactivos vía Telegram (mismo bot que el asistente). |
 | [`kellerhoff_analizador.py`](../services/kellerhoff_analizador.py) | Clasificador de comprobantes del portal Kellerhoff. |
+| [`kellerhoff_bulk_pdf.py`](../services/kellerhoff_bulk_pdf.py) | Parser del export masivo de comprobantes de Kellerhoff (un PDF con muchas |
 | [`kellerhoff_resumen.py`](../services/kellerhoff_resumen.py) | Resumen semanal de cuenta de Kellerhoff: parseo del PDF + import a DB. |
 | [`kellerhoff_scraper.py`](../services/kellerhoff_scraper.py) | Scraper Playwright para portal Kellerhoff. |
 | [`llm_matcher.py`](../services/llm_matcher.py) | LLM matcher para items en queue de pendientes de revisión. |
