@@ -265,6 +265,11 @@ def movimientos_proveedor(session, provider):
         total_prefac += m['informativo']
         m['saldo'] = saldo
 
+    # El saldo se acumula en orden cronológico (arriba), pero la lista se muestra
+    # descendente por fecha (más nueva primero) en las dos pantallas. Cada fila
+    # conserva su saldo acumulado; solo se invierte el orden de presentación.
+    movimientos.reverse()
+
     resumen = {
         'saldo': saldo,
         'total_prefac': total_prefac,
