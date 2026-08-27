@@ -30,6 +30,7 @@
           ('portal',    'Portal / Sync',     url_for('kellerhoff_sync'),                 True),
           ('facturas',  'Facturas',          url_for('kellerhoff_sync') ~ '#facturas',   True),
           ('resumenes', 'Resúmenes',         url_for('kellerhoff_resumenes'),            True),
+          ('backfill',  'Backfill',          url_for('kellerhoff_backfill'),             True),
           ('ctacte',    'Cuenta corriente',  url_for('kellerhoff_cuenta_corriente'),     True),
           ('pedidos',   'Pedidos',           url_for('kellerhoff_sync') ~ '#pedidos',    True),
           ('reclamos',  'Reclamos',          '#',                                        False),
