@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% set nav_active = "kellerhoff" %}
+{% block title %}Backfill Kellerhoff{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.kc-topbar { background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line); padding: 12px 24px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.kc-topbar h1 { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0; }
+.kc-wrap { padding: 18px 24px; max-width: 820px; display: flex; flex-direction: column; gap: 16px; }
+.kc-card { background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); padding: 16px 18px; }
+.kc-card h3 { font-size: 13px; font-weight: 700; color: var(--ds-text); margin: 0 0 10px; }
+.kc-help { font-size: 11px; color: var(--ds-text-mute); }
+.kc-file { width: 100%; background: var(--ds-surface-2); border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-sm); padding: 8px 10px; font-size: 13px; color: var(--ds-text); }
+.kc-flash { padding: 10px 14px; border-radius: var(--ds-r-sm); font-size: 12px; margin-bottom: 8px; border: 1px solid; }
+.kc-flash-success, .kc-flash-message { background: rgba(95,230,188,.10); border-color: rgba(95,230,188,.4); color: var(--ds-mint); }
+.kc-flash-error { background: rgba(239,68,68,.10); border-color: rgba(239,68,68,.4); color: #fca5a5; }
+.kc-log { background: #0d0d0f; border: 1px solid var(--ds-line); border-radius: var(--ds-r-sm);
+    padding: 10px 12px; font-family: ui-monospace, monospace; font-size: 11px; color: #9fe7c9;
+    max-height: 280px; overflow-y: auto; white-space: pre-wrap; }
+.kc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 10px; }
+.kc-stat { background: var(--ds-surface-2); border: 1px solid var(--ds-line); border-radius: var(--ds-r-sm); padding: 10px 12px; }
+.kc-stat .v { font-size: 20px; font-weight: 700; color: var(--ds-mint); font-family: 'JetBrains Mono', monospace; }
+.kc-stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); margin-top: 2px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="kc-topbar">
+    <a href="{{ url_for('kellerhoff_index') }}" class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">← Control Kellerhoff</a>
+    <h1>📦 Backfill histórico</h1>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div style="padding: 8px 24px 0 24px;">
+        {% for category, msg in messages %}<div class="kc-flash kc-flash-{{ category }}">{{ msg }}</div>{% endfor %}
+    </div>
+    {% endif %}
+{% endwith %}
+
+<div class="kc-wrap">
+    <div class="kc-card">
+        <h3>Subir el export de comprobantes</h3>
+        <p class="kc-help mb-3">El PDF <code>Comprobantes-…</code> del portal (agrupa cientos de facturas/NC).
+           Completa las facturas Kellerhoff <b>ya existentes</b> (matchea por número) con sus
+           <b>ítems + %Dto + TRF</b>. Es <b>aditivo</b>: no pisa facturas que ya tienen ítems, no crea
+           facturas nuevas, y saltea las NC financieras (RECUPERO). Corre en segundo plano.</p>
+        <form method="post" action="{{ url_for('kellerhoff_backfill_run') }}" enctype="multipart/form-data"
+              style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <input type="file" name="pdf" accept=".pdf,application/pdf" class="kc-file" style="flex:1; min-width:220px;" required
+                   {% if estado.corriendo %}disabled{% endif %}>
+            <button type="submit" class="btn btn-mint text-xs" {% if estado.corriendo %}disabled{% endif %}>
+                {% if estado.corriendo %}Procesando…{% else %}Procesar{% endif %}
+            </button>
+        </form>
+    </div>
+
+    <div class="kc-card">
+        <h3>Progreso {% if estado.ultimo %}<span class="kc-help">· último: {{ estado.ultimo }}</span>{% endif %}</h3>
+        <div id="bf-msg" class="kc-help mb-2">{{ estado.msg or 'Sin actividad.' }}</div>
+        <div id="bf-log" class="kc-log">{{ estado.log | join('\n') }}</div>
+        <div id="bf-stats" class="kc-stats" style="display:none;"></div>
+    </div>
+</div>
+
+<script>
+function pintarStats(r) {
+    if (!r || r.error) { document.getElementById('bf-stats').style.display='none'; return; }
+    const box = document.getElementById('bf-stats');
+    const S = (v,l)=>`<div class="kc-stat"><div class="v">${v ?? 0}</div><div class="l">${l}</div></div>`;
+    box.innerHTML = S(r.match,'Facturas matcheadas') + S(r.facturas_backfill,'Completadas c/ítems')
+        + S(r.items_creados,'Ítems creados') + S(r.trf_set,'TRF seteados')
+        + S(r.ya_tenian_items,'Ya tenían ítems') + S(r.sin_match,'Sin match') + S(r.saltados_fin,'NC financieras');
+    box.style.display = 'grid';
+}
+pintarStats({{ estado.resultado | tojson if estado.resultado else 'null' }});
+{% if estado.corriendo %}
+const bfTimer = setInterval(async () => {
+    try {
+        const r = await fetch('{{ url_for("kellerhoff_backfill_estado") }}', {credentials:'same-origin'});
+        const d = await r.json();
+        document.getElementById('bf-msg').textContent = d.msg || '';
+        const log = document.getElementById('bf-log');
+        log.textContent = (d.log || []).join('\n'); log.scrollTop = log.scrollHeight;
+        if (!d.corriendo) { clearInterval(bfTimer); pintarStats(d.resultado); setTimeout(()=>location.reload(), 800); }
+    } catch (e) {}
+}, 1500);
+{% endif %}
+</script>
+{% endblock %}

@@ -150,6 +150,7 @@
                             <th class="text-left py-2.5 px-2">Procesada</th>
                             <th class="text-left py-2.5 px-2">Tipo</th>
                             <th class="text-left py-2.5 px-2">Comprobante</th>
+                            <th class="text-left py-2.5 px-2" title="TRF = Transfer: oferta de laboratorio que entra vía Kellerhoff">TRF</th>
                             <th class="text-left py-2.5 px-2" title="Vencimiento de pago de la factura">Vto.</th>
                             <th class="text-center py-2.5 px-2" title="Renglones de detalle guardados vs. los que declara la factura">Detalle</th>
                             <th class="text-center py-2.5 px-2" title="Resumen de cuenta de la droguería en el que entró">Resumen</th>
@@ -184,11 +185,11 @@
                             {% endif %}
                         </td>
                         <td class="py-2 px-2 text-[#6f6f6f] font-mono">
-                            {{ m.comprobante }}
-                            {% if m.trf %}
-                            <span class="inline-block ml-1 px-1 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700" title="TRF (oferta de laboratorio vía Kellerhoff): {{ m.trf }}">TRF</span>
-                            {% endif %}
+                            {% if m.origen == 'factura' and m.id %}
+                            <a href="{{ url_for('invoice_items', invoice_id=m.id) }}" class="text-emerald-700 hover:underline" title="Ver detalle de la factura (ítems, % Dto)">{{ m.comprobante }}</a>
+                            {% else %}{{ m.comprobante }}{% endif %}
                         </td>
+                        <td class="py-2 px-2 font-mono text-amber-700 whitespace-nowrap">{{ m.trf or '—' }}</td>
                         <td class="py-2 px-2 whitespace-nowrap {% if m.vencimiento and hoy and m.vencimiento < hoy and not m.conciliado %}text-red-600 font-semibold{% else %}text-[#6f6f6f]{% endif %}">
                             {{ m.vencimiento.strftime('%d/%m/%Y') if m.vencimiento else '—' }}
                         </td>
@@ -281,7 +282,7 @@
                     </tbody>
                     <tfoot>
                         <tr class="border-t-2 border-[#d0d0d0] bg-surface-input">
-                            <td colspan="9" class="py-2.5 px-4 text-[10px] text-[#999] uppercase tracking-wide font-bold">Saldo final</td>
+                            <td colspan="10" class="py-2.5 px-4 text-[10px] text-[#999] uppercase tracking-wide font-bold">Saldo final</td>
                             <td class="py-2.5 px-2 text-right font-mono font-bold text-red-600">
                                 ${{ '{:,.2f}'.format(movimientos | map(attribute='debe') | sum).replace(',', 'X').replace('.', ',').replace('X', '.') }}
                             </td>
