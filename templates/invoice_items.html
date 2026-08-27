@@ -139,21 +139,20 @@
                     <p class="field-value mono">$ {{ invoice.total | arg_currency }}</p>
                 </div>
                 {% endif %}
-                {# Verificacion matematica: Σ importes ítems vs total declarado. #}
-                {% set _suma_items = items | sum(attribute='importe') %}
+                {# Verificacion matematica: Σ importes ítems vs base neta (total
+                   menos impuestos, cuando hay desglose fiscal). Ver la ruta. #}
                 <div>
                     <p class="field-label">Σ ítems</p>
-                    <p class="field-value mono">$ {{ _suma_items | arg_currency }}</p>
+                    <p class="field-value mono">$ {{ control.suma_items | arg_currency }}</p>
                 </div>
                 {% if invoice.total %}
-                    {% set _diff = (_suma_items - invoice.total) | abs %}
                     <div>
-                        <p class="field-label">Control</p>
-                        {% if _diff < 1 %}
-                        <p class="field-value mint">✓ cuadra</p>
+                        <p class="field-label">Control{% if control.con_impuestos %} <span class="text-[10px] normal-case text-[#999]">(vs neto)</span>{% endif %}</p>
+                        {% if control.ok %}
+                        <p class="field-value mint" title="{% if control.con_impuestos %}Σ ítems = base neta (total − impuestos ${{ control.impuestos | arg_currency }}){% else %}Σ ítems = total{% endif %}">✓ cuadra</p>
                         {% else %}
-                        <p class="field-value danger" title="Σ ítems - total = {{ _diff | arg_currency }}">
-                            ⚠ difiere ${{ _diff | arg_currency }}
+                        <p class="field-value danger" title="Σ ítems ${{ control.suma_items | arg_currency }} vs esperado ${{ control.esperado | arg_currency }}{% if control.con_impuestos %} (total ${{ control.total | arg_currency }} − impuestos ${{ control.impuestos | arg_currency }}){% endif %} = difiere ${{ control.diff | arg_currency }}">
+                            ⚠ difiere ${{ control.diff | arg_currency }}
                         </p>
                         {% endif %}
                     </div>
