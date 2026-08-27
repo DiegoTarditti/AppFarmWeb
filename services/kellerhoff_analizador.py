@@ -39,6 +39,54 @@ def leer_texto_pdf(pdf_path: str) -> str:
     return _normalize_quadrupled(extract_text_with_ocr_fallback(pdf_path))
 
 
+# Renglón del cuerpo de la factura (con precios, a diferencia de los faltantes):
+#   BARCODE CANT DESC [flags] PRECIO_PUB %DTO PRECIO_UNIT IMPORTE
+# Los 4 números finales en formato AR ('12.918,24'). El dto es el 2º — es
+# justo lo que la tabla HTML del portal NO trae. La desc absorbe flags (TL/WEB/
+# TRZ); no importan para el dto.
+_PRECIO_AR = r'[\d.]+,\d{2}'
+_RE_ITEM_PDF = re.compile(
+    r'^(\d{7,14})\s+(\d+)\s+(.+?)\s+'
+    rf'({_PRECIO_AR})\s+({_PRECIO_AR})\s+({_PRECIO_AR})\s+({_PRECIO_AR})\s*$',
+    re.MULTILINE)
+
+
+def _num_ar(s: str) -> float:
+    try:
+        return float(s.replace('.', '').replace(',', '.'))
+    except (ValueError, AttributeError):
+        return 0.0
+
+
+def parsear_items_pdf(full_text: str) -> list[dict]:
+    """Ítems del cuerpo de la factura desde el texto del PDF, CON descuento.
+
+    La tabla HTML del portal no trae la columna de %Dto (ni el cuerpo cuando el
+    HTML falla); el PDF sí. Devuelve por renglón: barcode, cantidad, descripcion,
+    precio_pub, dto_pct, precio_unitario, importe. Corta antes de la sección
+    '*** PRODUCTOS EN FALTA ***' (que no lleva precios, para no mezclarla)."""
+    m = _RE_MARCADOR_FALTA.search(full_text)
+    cuerpo = full_text[:m.start()] if m else full_text
+    items = []
+    for it in _RE_ITEM_PDF.finditer(cuerpo):
+        bc, cant, desc, pub, dto, unit, imp = it.groups()
+        items.append({
+            'barcode': bc,
+            'cantidad': int(cant),
+            'descripcion': ' '.join(desc.split()),
+            'precio_pub': _num_ar(pub),
+            'dto_pct': _num_ar(dto),
+            'precio_unitario': _num_ar(unit),
+            'importe': _num_ar(imp),
+        })
+    return items
+
+
+def dto_por_barcode(full_text: str) -> dict:
+    """{barcode: dto%} para completar los ítems que vienen del HTML sin dto."""
+    return {it['barcode']: it['dto_pct'] for it in parsear_items_pdf(full_text)}
+
+
 def es_nc_financiera(full_text: str) -> bool:
     return bool(_RE_RECUPERO_NC.search(full_text))
 

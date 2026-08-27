@@ -320,6 +320,9 @@ def _detalle_comprobante(page, comp: dict) -> dict:
     #  camino; nunca funcionaron en prod porque la navegación estaba rota. Se
     #  agregan cuando tengamos una muestra HTML de una factura con faltantes.)
     if items_html:
+        # Completar dto (la tabla HTML no lo trae) + vto/TRF desde el PDF, solo
+        # si falta. Aditivo: no cambia los ítems, solo rellena.
+        venc_trf = _enriquecer_con_pdf(page, comp, items_html, venc_trf, log)
         return {'categoria': 'factura', 'items': items_html, 'faltantes': [], **venc_trf}
 
     # Sin ítems en el HTML → candidato a NC financiera (recupero, un solo
@@ -463,6 +466,81 @@ def _detalle_via_pdf(page, comp: dict, log) -> dict | None:
             os.unlink(pdf_path)
         except OSError:
             pass
+
+
+# ── Enriquecer desde el PDF lo que el HTML no trae (dto, vto, TRF) ────────────
+
+def _bajar_pdf_texto(page, comp: dict, log) -> str | None:
+    """Baja el PDF del comprobante y devuelve su texto normalizado, o None.
+
+    Para completar dto/vencimiento/TRF que la tabla HTML del portal no trae. No
+    frena el sync: ante cualquier error devuelve None y el caller sigue con lo
+    que tenga. (Descarga propia, no toca `_detalle_via_pdf`, que sigue igual.)
+    """
+    import os
+    import tempfile
+
+    from services.kellerhoff_analizador import leer_texto_pdf
+    nro = comp.get('nro_comp_kh', '?')
+    pdf_btn = (
+        page.query_selector('a[onclick*="generarPDF"]') or
+        page.query_selector('a.btn_download') or
+        page.query_selector('button[onclick*="PDF"]')
+    )
+    if not pdf_btn:
+        return None
+    pdf_path = os.path.join(tempfile.gettempdir(), f'kh_enr_{nro}.pdf')
+    try:
+        with page.expect_download(timeout=30000) as dl_info:
+            pdf_btn.click()
+        dl_info.value.save_as(pdf_path)
+        return leer_texto_pdf(pdf_path)
+    except Exception as e:  # noqa: BLE001 — enriquecer es best-effort
+        log.warning('[KH-PDF-ENR] %s: no se pudo bajar el PDF: %s', nro, str(e)[:80])
+        return None
+    finally:
+        try:
+            os.unlink(pdf_path)
+        except OSError:
+            pass
+
+
+def _enriquecer_con_pdf(page, comp: dict, items: list[dict], venc_trf: dict, log) -> dict:
+    """Completa dto por barcode + vencimiento/TRF desde el PDF.
+
+    ADITIVO: no cambia los ítems ni su cantidad — solo rellena `dto_pct` que
+    venía None (la tabla HTML nunca lo trae) y vto/TRF vacíos. Baja el PDF SOLO
+    si falta alguno de esos datos. Devuelve el venc_trf (posiblemente completado).
+    Nunca rompe: si el PDF no baja o no matchea, queda todo como estaba.
+    """
+    nro = comp.get('nro_comp_kh', '?')
+    falta_dto = any(i.get('dto_pct') is None for i in items)
+    falta_vt = not venc_trf.get('vencimiento') and not venc_trf.get('trf')
+    if not (falta_dto or falta_vt):
+        return venc_trf
+    texto = _bajar_pdf_texto(page, comp, log)
+    if not texto:
+        return venc_trf
+    try:
+        from helpers import detectar_vencimiento_trf
+        from services.kellerhoff_analizador import dto_por_barcode
+        if falta_dto:
+            dmap = dto_por_barcode(texto)
+            n = 0
+            for it in items:
+                if it.get('dto_pct') is None and it.get('barcode') in dmap:
+                    it['dto_pct'] = dmap[it['barcode']]
+                    n += 1
+            log.warning('[KH-PDF-ENR] %s: dto completado en %d/%d ítem(s)',
+                        nro, n, len(items))
+        if falta_vt:
+            vt = detectar_vencimiento_trf(texto, fecha_factura=comp.get('fecha'))
+            venc_trf = {**venc_trf, **{k: v for k, v in vt.items() if v}}
+            log.warning('[KH-PDF-ENR] %s: vto=%s trf=%s',
+                        nro, venc_trf.get('vencimiento'), venc_trf.get('trf'))
+    except Exception as e:  # noqa: BLE001 — best-effort
+        log.warning('[KH-PDF-ENR] %s: error enriqueciendo: %s', nro, str(e)[:80])
+    return venc_trf
 
 
 # ── Detalle via HTML (fallback si no hay API key) ────────────────────────────
