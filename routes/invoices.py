@@ -838,9 +838,32 @@ def init_app(app):
                 from helpers import CONVERTER_DIR  # type: ignore
                 if _os.path.exists(_os.path.join(CONVERTER_DIR, invoice.pdf_filename)):
                     converter_token = invoice.pdf_filename
+            # Control aritmético: Σ importes de ítems vs. total. OJO: en las
+            # facturas con desglose fiscal (Kellerhoff, converter) los importes
+            # de los renglones son el NETO y el total suma IVA + percepciones +
+            # otros. Comparar Σ ítems contra el total crudo marca "difiere" por
+            # el monto de los impuestos aunque la factura esté perfecta (fue el
+            # falso positivo de la 292465). Se compara contra la base neta
+            # (total − impuestos) cuando hay desglose; si no, contra el total.
+            _suma_items = float(sum((it.importe or 0) for it in items))
+            _iva = float(invoice.total_iva or 0) or float(
+                (invoice.iva_25 or 0) + (invoice.iva_5 or 0) + (invoice.iva_105 or 0)
+                + (invoice.iva_21 or 0) + (invoice.iva_27 or 0))
+            _impuestos = _iva + float(invoice.percepciones or 0) + float(invoice.otros or 0)
+            _total = float(invoice.total or 0)
+            _esperado = (_total - _impuestos) if _impuestos else _total
+            control = {
+                'suma_items': _suma_items,
+                'total': _total,
+                'impuestos': _impuestos,
+                'esperado': _esperado,
+                'diff': abs(_suma_items - _esperado),
+                'ok': abs(_suma_items - _esperado) < 1,
+                'con_impuestos': _impuestos > 0,
+            }
             return render_template('invoice_items.html', invoice=invoice,
                                    items=items, prod_info=prod_info,
-                                   converter_token=converter_token)
+                                   converter_token=converter_token, control=control)
 
     @app.route('/invoice/<int:invoice_id>/refresh-numero', methods=['POST'])
     def invoice_refresh_numero(invoice_id):
