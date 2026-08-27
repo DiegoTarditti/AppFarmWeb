@@ -184,7 +184,9 @@
                             {% endif %}
                         </td>
                         <td class="py-2 px-2 text-[#6f6f6f] font-mono">
-                            {{ m.comprobante }}
+                            {% if m.origen == 'factura' and m.id %}
+                            <a href="{{ url_for('invoice_items', invoice_id=m.id) }}" class="text-emerald-700 hover:underline" title="Ver detalle de la factura (ítems, % Dto)">{{ m.comprobante }}</a>
+                            {% else %}{{ m.comprobante }}{% endif %}
                             {% if m.trf %}
                             <span class="inline-block ml-1 px-1 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700" title="TRF (oferta de laboratorio vía Kellerhoff): {{ m.trf }}">TRF</span>
                             {% endif %}
