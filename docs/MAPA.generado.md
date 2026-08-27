@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-26 15:17 · rama `main` · commit `5682656`
+Generado: 2026-08-27 08:48 · rama `fix/control-items-neto-impuestos` · commit `c3143a8`
 
 **811 rutas** en 78 archivos · **133 modelos** · **22 syncs** · **40 services** · **11 parsers**
 
@@ -810,14 +810,14 @@ Generado: 2026-08-26 15:17 · rama `main` · commit `5682656`
 |---|---|---|
 | `/api/invoice/<int:invoice_id>/differences` | GET | [`invoice_differences`](../routes/invoices.py#L682) |
 | `/api/upload` | POST | [`upload_files_api`](../routes/invoices.py#L278) |
-| `/invoice/<int:invoice_id>/apply-mapping` | POST | [`apply_mapping`](../routes/invoices.py#L1025) |
+| `/invoice/<int:invoice_id>/apply-mapping` | POST | [`apply_mapping`](../routes/invoices.py#L1048) |
 | `/invoice/<int:invoice_id>/auto-table` | POST | [`auto_table`](../routes/invoices.py#L311) |
-| `/invoice/<int:invoice_id>/compare` | GET | [`compare_view`](../routes/invoices.py#L946) |
-| `/invoice/<int:invoice_id>/differences/export` | GET | [`invoice_differences_export`](../routes/invoices.py#L914) |
-| `/invoice/<int:invoice_id>/erp-upload` | POST | [`invoice_erp_upload`](../routes/invoices.py#L987) |
+| `/invoice/<int:invoice_id>/compare` | GET | [`compare_view`](../routes/invoices.py#L969) |
+| `/invoice/<int:invoice_id>/differences/export` | GET | [`invoice_differences_export`](../routes/invoices.py#L937) |
+| `/invoice/<int:invoice_id>/erp-upload` | POST | [`invoice_erp_upload`](../routes/invoices.py#L1010) |
 | `/invoice/<int:invoice_id>/header` | POST | [`update_invoice_header`](../routes/invoices.py#L698) |
 | `/invoice/<int:invoice_id>/items` | GET | [`invoice_items`](../routes/invoices.py#L790) |
-| `/invoice/<int:invoice_id>/items/export` | GET | [`invoice_items_export`](../routes/invoices.py#L880) |
+| `/invoice/<int:invoice_id>/items/export` | GET | [`invoice_items_export`](../routes/invoices.py#L903) |
 | `/invoice/<int:invoice_id>/manual-items` | GET/POST | [`manual_items`](../routes/invoices.py#L619) |
 | `/invoice/<int:invoice_id>/map-columns` | GET/POST | [`map_columns`](../routes/invoices.py#L352) |
 | `/invoice/<int:invoice_id>/parse-helper` | GET | [`parse_helper`](../routes/invoices.py#L295) |
@@ -826,7 +826,7 @@ Generado: 2026-08-26 15:17 · rama `main` · commit `5682656`
 | `/invoice/<int:invoice_id>/pick-items` | GET | [`pick_items`](../routes/invoices.py#L467) |
 | `/invoice/<int:invoice_id>/pick-items/infer` | POST | [`pick_items_infer`](../routes/invoices.py#L483) |
 | `/invoice/<int:invoice_id>/pick-items/save` | POST | [`pick_items_save`](../routes/invoices.py#L523) |
-| `/invoice/<int:invoice_id>/refresh-numero` | POST | [`invoice_refresh_numero`](../routes/invoices.py#L846) |
+| `/invoice/<int:invoice_id>/refresh-numero` | POST | [`invoice_refresh_numero`](../routes/invoices.py#L869) |
 | `/results/<int:invoice_id>` | GET | [`show_results`](../routes/invoices.py#L735) |
 | `/upload` | POST | [`upload_files`](../routes/invoices.py#L203) |
 | `/uploads/pdf/<path:filename>` | GET | [`serve_invoice_pdf`](../routes/invoices.py#L199) |
