@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-27 12:01 · rama `feat/consulta-compras` · commit `057e0f1`
+Generado: 2026-08-27 12:05 · rama `feat/consulta-compras` · commit `b0992cf`
 
-**815 rutas** en 80 archivos · **133 modelos** · **22 syncs** · **41 services** · **11 parsers**
+**816 rutas** en 80 archivos · **133 modelos** · **22 syncs** · **41 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -447,7 +447,8 @@ Generado: 2026-08-27 12:01 · rama `feat/consulta-compras` · commit `057e0f1`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/compras/consulta` | GET | [`consulta_compras`](../routes/consulta_compras.py#L39) |
+| `/compras/consulta` | GET | [`consulta_compras`](../routes/consulta_compras.py#L125) |
+| `/compras/consulta/export.xlsx` | GET | [`consulta_compras_export`](../routes/consulta_compras.py#L141) |
 
 ### `routes/consulta_droga.py`
 

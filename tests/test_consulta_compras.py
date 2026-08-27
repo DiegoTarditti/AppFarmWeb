@@ -100,3 +100,25 @@ def test_sin_termino_no_lista():
     html = r.get_data(as_text=True)
     assert 'Escribí un producto' in html
     assert 'OPTAMOX' not in html
+
+
+def test_export_xlsx():
+    _seed()
+    c = _app().test_client()
+    r = c.get('/compras/consulta/export.xlsx?q=optamox')
+    assert r.status_code == 200
+    assert 'spreadsheetml' in r.headers['Content-Type']
+    assert r.headers['Content-Disposition'].endswith('.xlsx"')
+    # es un xlsx real (zip: empieza con 'PK') y trae el producto
+    body = r.get_data()
+    assert body[:2] == b'PK'
+    import io
+    import openpyxl
+    ws = openpyxl.load_workbook(io.BytesIO(body)).active
+    valores = [str(v) for row in ws.iter_rows(values_only=True) for v in row]
+    assert any('OPTAMOX' in v for v in valores)
+
+
+def test_export_sin_termino_da_400():
+    c = _app().test_client()
+    assert c.get('/compras/consulta/export.xlsx').status_code == 400

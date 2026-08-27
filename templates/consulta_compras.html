@@ -52,6 +52,9 @@
       <span class="px-3 py-1.5 rounded bg-white/5 border border-[color:var(--ds-surface-border)]" title="Descuento mínimo / promedio / máximo entre las compras con dto">
         Dto {{ '%g'|format(resumen.dto_min) }}% · <b>{{ '%.1f'|format(resumen.dto_prom) }}%</b> · {{ '%g'|format(resumen.dto_max) }}%</span>
       {% endif %}
+      <a href="{{ url_for('consulta_compras_export', q=q, desde=desde, hasta=hasta, proveedor=prov_cuit) }}"
+         class="px-3 py-1.5 rounded border border-[color:var(--ds-surface-border)] text-[color:var(--ds-text-mute)] hover:text-white ml-auto"
+         title="Descargar estas compras en Excel">📊 Excel</a>
     </div>
 
     <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)]">
