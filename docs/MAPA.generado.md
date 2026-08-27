@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-27 08:50 · rama `fix/control-items-neto-impuestos` · commit `7bff61f`
+Generado: 2026-08-27 11:57 · rama `main` · commit `1598f71`
 
-**811 rutas** en 78 archivos · **133 modelos** · **22 syncs** · **40 services** · **11 parsers**
+**812 rutas** en 79 archivos · **133 modelos** · **22 syncs** · **40 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -442,6 +442,12 @@ Generado: 2026-08-27 08:50 · rama `fix/control-items-neto-impuestos` · commit 
 | `/api/compras/transfer/<int:oferta_id>/renovar` | POST | [`api_compras_transfer_renovar`](../routes/compras_transfers.py#L155) |
 | `/api/compras/transfer/<int:oferta_id>/toggle` | POST | [`api_compras_transfer_toggle`](../routes/compras_transfers.py#L143) |
 | `/compras/transfers` | GET | [`compras_transfers`](../routes/compras_transfers.py#L24) |
+
+### `routes/consulta_compras.py`
+
+| Ruta | Métodos | Función |
+|---|---|---|
+| `/compras/consulta` | GET | [`consulta_compras`](../routes/consulta_compras.py#L39) |
 
 ### `routes/consulta_droga.py`
 

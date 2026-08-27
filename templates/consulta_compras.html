@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% set nav_active = "consulta_compras" %}
+{% block title %}Consulta de compras{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block main %}
+<div class="max-w-7xl mx-auto px-4 py-6">
+
+  <div class="mb-4">
+    <h1 class="text-xl font-bold flex items-center gap-2">🔎 Consulta de compras por artículo</h1>
+    <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-0.5">
+      Todas las compras de un producto (por descripción o EAN) en un rango de fechas · precio y descuento por factura</p>
+  </div>
+
+  {# ---- Filtros ---- #}
+  <form method="GET" class="flex flex-wrap items-end gap-2 mb-4">
+    <div class="flex-1 min-w-[220px]">
+      <label class="block text-[10px] uppercase tracking-wide text-[color:var(--ds-text-mute)] mb-1">Producto (descripción o EAN)</label>
+      <input type="search" name="q" value="{{ q }}" autofocus placeholder="Ej: optamox duo"
+             class="w-full px-3 py-2 text-sm rounded border border-[color:var(--ds-surface-border)]"
+             style="background:#2c2c2e;color:inherit">
+    </div>
+    <div>
+      <label class="block text-[10px] uppercase tracking-wide text-[color:var(--ds-text-mute)] mb-1">Desde</label>
+      <input type="date" name="desde" value="{{ desde }}"
+             class="px-2 py-2 text-sm rounded border border-[color:var(--ds-surface-border)]" style="background:#2c2c2e;color:inherit">
+    </div>
+    <div>
+      <label class="block text-[10px] uppercase tracking-wide text-[color:var(--ds-text-mute)] mb-1">Hasta</label>
+      <input type="date" name="hasta" value="{{ hasta }}"
+             class="px-2 py-2 text-sm rounded border border-[color:var(--ds-surface-border)]" style="background:#2c2c2e;color:inherit">
+    </div>
+    <div>
+      <label class="block text-[10px] uppercase tracking-wide text-[color:var(--ds-text-mute)] mb-1">Proveedor</label>
+      <select name="proveedor" class="px-2 py-2 text-sm rounded border border-[color:var(--ds-surface-border)]" style="background:#2c2c2e;color:inherit">
+        <option value="">Todos</option>
+        {% for p in proveedores %}
+        <option value="{{ p.cuit }}" {% if p.cuit == prov_cuit %}selected{% endif %}>{{ p.razon_social }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="px-4 py-2 text-sm rounded bg-[color:var(--ds-mint)] text-black font-semibold">Buscar</button>
+  </form>
+
+  {% if resumen %}
+    {% if resumen.n %}
+    <div class="flex flex-wrap gap-3 mb-3 text-sm">
+      <span class="px-3 py-1.5 rounded bg-white/5 border border-[color:var(--ds-surface-border)]"><b>{{ resumen.n }}</b> compra(s){% if resumen.truncado %} <span class="text-amber-400">(tope 500)</span>{% endif %}</span>
+      <span class="px-3 py-1.5 rounded bg-white/5 border border-[color:var(--ds-surface-border)]"><b>{{ resumen.unidades }}</b> unidades</span>
+      <span class="px-3 py-1.5 rounded bg-white/5 border border-[color:var(--ds-surface-border)]">$ {{ '{:,.2f}'.format(resumen.importe).replace(',','X').replace('.',',').replace('X','.') }} total</span>
+      {% if resumen.dto_prom is not none %}
+      <span class="px-3 py-1.5 rounded bg-white/5 border border-[color:var(--ds-surface-border)]" title="Descuento mínimo / promedio / máximo entre las compras con dto">
+        Dto {{ '%g'|format(resumen.dto_min) }}% · <b>{{ '%.1f'|format(resumen.dto_prom) }}%</b> · {{ '%g'|format(resumen.dto_max) }}%</span>
+      {% endif %}
+    </div>
+
+    <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)]">
+      <table class="w-full text-sm">
+        <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
+          <tr>
+            <th class="text-left px-3 py-2">Fecha</th>
+            <th class="text-left px-3 py-2">Factura</th>
+            <th class="text-left px-3 py-2">Proveedor</th>
+            <th class="text-left px-3 py-2">Producto</th>
+            <th class="text-left px-3 py-2">EAN</th>
+            <th class="text-right px-3 py-2">Cant.</th>
+            <th class="text-right px-3 py-2">P. Unit.</th>
+            <th class="text-right px-3 py-2">% Dto</th>
+            <th class="text-right px-3 py-2">Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in filas %}
+          <tr class="border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]">
+            <td class="px-3 py-1.5 whitespace-nowrap">{{ f.fecha.strftime('%d/%m/%Y') if f.fecha else '' }}</td>
+            <td class="px-3 py-1.5 whitespace-nowrap font-mono text-xs">
+              <a href="{{ url_for('invoice_items', invoice_id=f.invoice_id) }}" class="text-[color:var(--ds-mint)] hover:underline">{{ f.numero }}</a>
+              {% if f.tipo == 'NCR' %}<span class="ml-1 text-[9px] font-bold text-rose-400">NCR</span>{% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-[color:var(--ds-text-mute)]">{{ f.proveedor }}</td>
+            <td class="px-3 py-1.5">{{ f.descripcion }}</td>
+            <td class="px-3 py-1.5 font-mono text-xs text-[color:var(--ds-text-mute)]">{{ f.codigo_barra }}</td>
+            <td class="px-3 py-1.5 text-right font-mono">{{ f.cantidad }}</td>
+            <td class="px-3 py-1.5 text-right font-mono">{% if f.precio_unitario is not none %}${{ '{:,.2f}'.format(f.precio_unitario).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}</td>
+            <td class="px-3 py-1.5 text-right font-mono {% if f.dto %}text-[color:var(--ds-mint)] font-bold{% else %}text-[color:var(--ds-text-mute)]{% endif %}">{% if f.dto %}{{ '%g'|format(f.dto) }}%{% else %}—{% endif %}</td>
+            <td class="px-3 py-1.5 text-right font-mono">{% if f.importe is not none %}${{ '{:,.2f}'.format(f.importe).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.02] p-6 text-center text-sm text-[color:var(--ds-text-mute)]">
+      Sin compras para <b>{{ q }}</b>{% if desde or hasta %} en ese rango{% endif %}.
+    </div>
+    {% endif %}
+  {% else %}
+  <div class="rounded-lg border border-[color:var(--ds-surface-border)] bg-white/[0.02] p-6 text-center text-sm text-[color:var(--ds-text-mute)]">
+    Escribí un producto (o EAN) arriba y buscá.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
