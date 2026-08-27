@@ -240,8 +240,16 @@ def init_app(app):
         """Extracto de Kellerhoff DENTRO del módulo. Reusa el motor único
         (movimientos_proveedor) — misma data que /cuentas-corrientes, vista
         filtrada a Kellerhoff y enmarcada en el módulo (no un silo aparte)."""
-        desde = (request.args.get('desde') or '').strip() or None
-        hasta = (request.args.get('hasta') or '').strip() or None
+        # Default: últimos 30 días (solo si no vino ningún parámetro de fecha;
+        # campos vacíos a propósito = "Ver todo", se respeta).
+        _draw, _hraw = request.args.get('desde'), request.args.get('hasta')
+        if _draw is None and _hraw is None:
+            _hoy = date.today()
+            desde = (_hoy - timedelta(days=30)).isoformat()
+            hasta = _hoy.isoformat()
+        else:
+            desde = (_draw or '').strip() or None
+            hasta = (_hraw or '').strip() or None
         with get_db() as session:
             prov = _kh_provider(session)
             movimientos, resumen = ([], {'saldo': 0.0, 'total_prefac': 0.0})
@@ -255,13 +263,12 @@ def init_app(app):
                 movimientos = filtrar_por_fecha(movimientos, desde, hasta)
             prov_data = {'razon_social': prov.razon_social if prov else 'Kellerhoff',
                          'cuit': (prov.cuit if prov else '') or ''}
-        from datetime import date as _date
         return render_template('kellerhoff_cuenta_corriente.html',
                                provider=prov_data, movimientos=movimientos,
                                saldo_total=resumen['saldo'],
                                total_prefac=resumen.get('total_prefac', 0),
                                corte_resumenes=corte,
-                               desde=desde, hasta=hasta, hoy=_date.today())
+                               desde=desde, hasta=hasta, hoy=date.today())
 
     # ── Resúmenes de cuenta (el cierre semanal que emite Kellerhoff) ──────────
 

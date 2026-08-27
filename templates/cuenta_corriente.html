@@ -27,7 +27,7 @@
                        class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand">
                 <button type="submit" class="bg-black/[0.06] hover:bg-black/[0.10] text-[#1e1e1e] rounded-lg px-2.5 py-1 text-xs font-medium">Filtrar</button>
                 {% if desde or hasta %}
-                <a href="{{ url_for('cuentas_corrientes', proveedor=provider_id) }}" class="text-[#999] hover:text-[#1e1e1e] px-1" title="Limpiar filtro">✕</a>
+                <a href="{{ url_for('cuentas_corrientes', proveedor=provider_id, desde='', hasta='') }}" class="text-[#999] hover:text-[#1e1e1e] px-1 text-xs whitespace-nowrap" title="Ver todo el historial (sin filtro de fecha)">Ver todo</a>
                 {% endif %}
             </div>
             {% endif %}

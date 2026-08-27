@@ -141,8 +141,19 @@ def init_app(app):
 
             provider_id = request.args.get('proveedor', type=int)
             provider = session.get(database.Provider, provider_id) if provider_id else None
-            desde = (request.args.get('desde') or '').strip() or None
-            hasta = (request.args.get('hasta') or '').strip() or None
+            # Default: últimos 30 días. Solo en la primera carga (sin NINGÚN
+            # parámetro de fecha); si vienen los campos vacíos a propósito
+            # (el link "Ver todo"), se respeta = sin filtro.
+            from datetime import date as _date
+            from datetime import timedelta as _td
+            _draw, _hraw = request.args.get('desde'), request.args.get('hasta')
+            if _draw is None and _hraw is None:
+                _hoy = _date.today()
+                desde = (_hoy - _td(days=30)).isoformat()
+                hasta = _hoy.isoformat()
+            else:
+                desde = (_draw or '').strip() or None
+                hasta = (_hraw or '').strip() or None
 
             movimientos = []
             saldo_total = 0
@@ -162,7 +173,6 @@ def init_app(app):
             prov = {'id': provider.id, 'razon_social': provider.razon_social,
                     'cuit': provider.cuit or ''} if provider else None
 
-            from datetime import date as _date
             return render_template('cuenta_corriente.html', provider=prov,
                                    proveedores=prov_list, provider_id=provider_id or 0,
                                    movimientos=movimientos, saldo_total=saldo_total,
