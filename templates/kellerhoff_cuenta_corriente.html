@@ -21,7 +21,7 @@
   <input type="date" name="hasta" value="{{ hasta or '' }}" class="ds-input" style="width:auto; padding:4px 8px; font-size:12px;">
   <button type="submit" class="btn btn-secondary btn-sm">Filtrar</button>
   {% if desde or hasta %}
-  <a href="{{ url_for('kellerhoff_cuenta_corriente') }}" style="color:var(--ds-text-mute); padding:0 4px;" title="Limpiar filtro">✕</a>
+  <a href="{{ url_for('kellerhoff_cuenta_corriente', desde='', hasta='') }}" style="color:var(--ds-text-mute); padding:0 6px; font-size:12px;" title="Ver todo el historial (sin filtro de fecha)">Ver todo</a>
   {% endif %}
 </form>
 

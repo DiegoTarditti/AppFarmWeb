@@ -170,8 +170,10 @@ def test_el_saldo_acumulado_del_extracto_termina_en_el_saldo_final():
         prov = _armar_cuenta_completa(session)
         movs, resumen = movimientos_proveedor(session, prov)
 
-    assert movs[-1]['saldo'] == resumen['saldo']
-    assert [m['tipo'] for m in movs] == ['FAC', 'NCR', 'PREFAC', 'AJUSTE_POS', 'PAGO']
+    # El extracto se muestra DESCENDENTE por fecha (más nuevo primero), pero el
+    # saldo se acumula cronológico: el saldo final queda en la PRIMERA fila.
+    assert movs[0]['saldo'] == resumen['saldo']
+    assert [m['tipo'] for m in movs] == ['PAGO', 'AJUSTE_POS', 'PREFAC', 'NCR', 'FAC']
 
 
 def test_proveedor_sin_movimientos_da_saldo_cero():
