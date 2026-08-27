@@ -55,16 +55,20 @@ def test_una_carga_sin_stock_antes_se_verifica_con_el_snapshot_previo(smoke_clie
     """Las cargas registradas antes de que existiera `stock_antes` quedaban
     'pendiente' PARA SIEMPRE: el botón de verificar no las resolvía nunca. El
     "antes" existe igual — es el último snapshot previo a la carga."""
-    from datetime import datetime
+    from datetime import datetime, timedelta
     from unittest.mock import patch
 
     import database
     import routes.rowa as rowa
 
-    momento = datetime(2026, 8, 25, 18, 45)
+    # Relativo a "ahora": la ruta solo mira las cargas de las últimas 24h, así
+    # que una fecha fija hace que el test se pudra al pasar los días (fallaba con
+    # assert 0==1 días después de escribirlo). Igual reproduce el caso: carga
+    # reciente + snapshot 7 min antes.
+    momento = datetime.now() - timedelta(hours=2)
     with database.get_db() as s:
         # snapshot ANTES de la carga (el "antes" recuperable)
-        s.add(database.RowaSnapshot(tomado_en=datetime(2026, 8, 25, 18, 38),
+        s.add(database.RowaSnapshot(tomado_en=momento - timedelta(minutes=7),
                                     article_id='21398', cantidad=14))
         # la carga, sin stock_antes (como quedaron las viejas)
         s.add(database.RowaCarga(sesion_id='x', article_id='21398', cantidad=5,
