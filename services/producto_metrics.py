@@ -127,6 +127,67 @@ def metricas_producto(session, observer_id, id_farmacia=None, hoy=None):
     }
 
 
+def metricas_productos_bulk(session, observer_ids, id_farmacia=None, hoy=None):
+    """Igual que `metricas_producto` pero para muchos productos en 2 queries
+    (evita N+1 en listados tipo control-gondola/productos.html).
+
+    Devuelve {observer_id: dict} con las mismas claves de venta/promedio que
+    `metricas_producto` (ventas12, avg_3m, avg_12m, avg_monthly, rotacion,
+    slope, sin_historial, start_month). NO incluye stock/minimo/maximo: quien
+    lista productos en bulk típicamente ya tiene su propio stock (ej. sumado
+    robot+depósito en control_gondola) y traerlo de nuevo acá invitaría a
+    mostrar dos números de stock distintos para la misma fila.
+    """
+    from datetime import date as _date
+    if hoy is None:
+        hoy = _date.today()
+    if id_farmacia is None:
+        id_farmacia = farmacia_operativa()
+    observer_ids = list({oid for oid in observer_ids if oid is not None})
+    if not observer_ids:
+        return {}
+
+    meses = []
+    y, m = hoy.year, hoy.month
+    for _ in range(12):
+        meses.append((y, m))
+        m -= 1
+        if m == 0:
+            m, y = 12, y - 1
+    meses.reverse()
+
+    rows = (session.query(ObsVentaMensual.producto_observer,
+                          ObsVentaMensual.anio,
+                          ObsVentaMensual.mes,
+                          ObsVentaMensual.unidades)
+            .filter(ObsVentaMensual.id_farmacia == id_farmacia,
+                    ObsVentaMensual.producto_observer.in_(observer_ids))
+            .all())
+    por_pid = {}
+    for pid, anio, mes, unidades in rows:
+        por_pid.setdefault(pid, {})[(int(anio), int(mes))] = float(unidades or 0)
+
+    out = {}
+    for pid in observer_ids:
+        ventas_map = por_pid.get(pid, {})
+        ventas12 = [round(ventas_map.get((yy, mm), 0.0), 2) for (yy, mm) in meses]
+        completos = ventas12[:11]
+        avg_12m = sum(completos) / 11 if completos else 0.0
+        ultimos_3 = ventas12[8:11]
+        avg_3m = sum(ultimos_3) / 3 if ultimos_3 else 0.0
+        out[pid] = {
+            'ventas12': ventas12,
+            'avg_3m': round(avg_3m, 2),
+            'avg_12m': round(avg_12m, 2),
+            'avg_monthly': round(avg_12m, 2),
+            'rotacion': rotation_index(avg_12m),
+            'slope': round(_slope(ventas12), 4),
+            'sin_historial': sum(ventas12) == 0,
+            'start_month': meses[0][1],
+        }
+    return out
+
+
 def cobertura_dias(stock, avg_mensual, divisor=30.4):
     """Dias de cobertura = stock / (avg_mensual / divisor). Helper unico para
     estandarizar el divisor: 30.4 = 365.25/12 (mismo que usa el front en
