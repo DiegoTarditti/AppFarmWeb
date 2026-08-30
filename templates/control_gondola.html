@@ -72,27 +72,50 @@
           <th class="text-right px-3 py-2 w-24">En robot</th>
           <th class="text-right px-3 py-2 w-24">En depósito</th>
           <th class="text-right px-3 py-2 w-20">Total</th>
+          <th class="text-right px-3 py-2 w-24">Venta 12m</th>
+          <th class="text-right px-3 py-2 w-24">Prom/mes</th>
+          <th class="text-right px-3 py-2 w-24">Cobertura</th>
         </tr>
       </thead>
       <tbody>
         {% for f in filas %}
         <tr class="cg-fila border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]"
             data-nombre="{{ (f.nombre or '') | lower }}">
-          <td class="px-3 py-1.5">{{ f.nombre }}</td>
+          <td class="px-3 py-1.5">
+            <button type="button" onclick="openChartObs({{ f.pid }})" title="Ver gráfico histórico"
+                    class="inline-flex items-center text-[color:var(--ds-text-mute)] hover:text-[color:var(--ds-mint)] transition-colors mr-1 align-middle">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+              </svg>
+            </button>
+            {{ f.nombre }}
+          </td>
           <td class="px-3 py-1.5 text-right font-mono {% if f.en_robot %}text-[color:var(--ds-mint)]{% else %}text-[color:var(--ds-text-mute)]{% endif %}">{{ f.en_robot or '—' }}</td>
           <td class="px-3 py-1.5 text-right font-mono {% if f.deposito %}{% else %}text-[color:var(--ds-text-mute)]{% endif %}">{{ f.deposito or '—' }}</td>
           <td class="px-3 py-1.5 text-right font-mono font-bold">{{ f.total }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-[color:var(--ds-text-mute)]">{{ f.venta_12m or '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-[color:var(--ds-text-mute)]">{{ '%.1f'|format(f.prom_mes) if f.prom_mes else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono
+              {% if f.cobertura is none %}text-[color:var(--ds-text-mute)]
+              {% elif f.cobertura <= 7 %}text-rose-400 font-bold
+              {% elif f.cobertura <= 15 %}text-amber-400
+              {% endif %}">{{ (f.cobertura|round|int ~ ' d') if f.cobertura is not none else '—' }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   <p class="text-[10px] text-[color:var(--ds-text-mute)] mt-3 italic">
-    <b>En robot</b> = packs dentro de la máquina · <b>En depósito</b> = fuera del robot (góndola/estante).
-    El PDF trae una columna en blanco para anotar lo contado.
+    <b>En robot</b> = packs dentro de la máquina · <b>En depósito</b> = fuera del robot (góndola/estante) ·
+    <b>Venta 12m</b> = unidades vendidas en los últimos 12 meses · <b>Prom/mes</b> = promedio de los últimos
+    11 meses cerrados (excluye el mes actual, parcial) · <b>Cobertura</b> = días de stock al ritmo de venta
+    promedio. El PDF trae una columna en blanco para anotar lo contado.
   </p>
   {% endif %}
 </div>
+
+{% include '_grafico_historico.html' %}
 
 <script>
 function cgIr() {

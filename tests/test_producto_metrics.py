@@ -17,6 +17,7 @@ from services.producto_metrics import (
     cobertura_dias,
     farmacia_operativa,
     metricas_producto,
+    metricas_productos_bulk,
 )
 
 FARM = 10525          # operativa (default OBSERVER_ID_FARMACIA)
@@ -129,3 +130,44 @@ def test_cobertura_dias():
 
 def test_farmacia_operativa_default():
     assert farmacia_operativa() == 10525
+
+
+def test_bulk_coincide_con_metricas_producto(session_demo):
+    """metricas_productos_bulk debe dar los mismos avg_3m/avg_12m que la
+    version por-producto, para no mostrar numeros distintos entre listados
+    en bulk (ej. control-gondola) y el modal de grafico (que usa la version
+    single)."""
+    s = session_demo
+    meses = [(2025, 6), (2025, 7), (2025, 8), (2025, 9), (2025, 10), (2025, 11),
+             (2025, 12), (2026, 1), (2026, 2), (2026, 3), (2026, 4)]
+    for (y, mm) in meses:
+        _venta(s, 700, y, mm, 10)
+    _venta(s, 700, 2026, 5, 999)
+    s.add(ObsProducto(observer_id=701, descripcion='ProdDemo2', fecha_baja=None))
+    for (y, mm) in [(2026, 2), (2026, 3), (2026, 4)]:
+        _venta(s, 701, y, mm, 30)
+    s.commit()
+
+    individual = {700: metricas_producto(s, 700, hoy=HOY),
+                  701: metricas_producto(s, 701, hoy=HOY)}
+    bulk = metricas_productos_bulk(s, [700, 701], hoy=HOY)
+
+    for pid in (700, 701):
+        assert bulk[pid]['avg_12m'] == individual[pid]['avg_12m']
+        assert bulk[pid]['avg_3m'] == individual[pid]['avg_3m']
+        assert bulk[pid]['ventas12'] == individual[pid]['ventas12']
+        assert bulk[pid]['rotacion'] == individual[pid]['rotacion']
+        assert bulk[pid]['sin_historial'] == individual[pid]['sin_historial']
+
+
+def test_bulk_producto_sin_ventas(session_demo):
+    """Un pid en la lista sin ninguna fila de ventas -> ceros, no explota."""
+    s = session_demo
+    bulk = metricas_productos_bulk(s, [700, 9999], hoy=HOY)
+    assert bulk[9999]['avg_12m'] == 0.0
+    assert bulk[9999]['sin_historial'] is True
+    assert bulk[700]['avg_12m'] == 0.0
+
+
+def test_bulk_lista_vacia():
+    assert metricas_productos_bulk(database.SessionLocal(), []) == {}

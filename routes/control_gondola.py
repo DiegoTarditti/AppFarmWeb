@@ -28,6 +28,7 @@ from flask_login import login_required
 from sqlalchemy import func
 
 from database import ObsLaboratorio, ObsProducto, ObsStock, get_db
+from services.producto_metrics import cobertura_dias, metricas_productos_bulk
 
 # Opciones del filtro de arriba (orden pedido por Diego). Son INCLUSIVOS, no
 # exclusivos: "en robot" trae todo lo que tiene algo en el robot (aunque además
@@ -117,10 +118,27 @@ def _filas_de_lab(session, robot_map, lab_nombre):
         total = int(r.stock or 0)
         en_robot = robot_map.get(r.pid, (0,))[0]
         deposito = max(total - en_robot, 0)
-        filas.append({'nombre': (r.descripcion_custom or r.descripcion or '').strip(),
+        filas.append({'pid': r.pid,
+                      'nombre': (r.descripcion_custom or r.descripcion or '').strip(),
                       'laboratorio': lab_nombre,
                       'en_robot': en_robot, 'deposito': deposito,
                       'total': max(total, en_robot)})
+    return filas
+
+
+def _agregar_metricas_venta(session, filas):
+    """Suma venta_12m/prom_mes/cobertura a cada fila (in-place), en bulk (1
+    query para todas, no 1 por producto). La cobertura usa el `total` que ya
+    calculó `_filas_de_lab` (robot+depósito) en vez del stock de
+    `metricas_productos_bulk`, para que coincida con la columna Total de la
+    misma fila."""
+    metrics = metricas_productos_bulk(session, [f['pid'] for f in filas])
+    for f in filas:
+        m = metrics.get(f['pid'])
+        prom_mes = m['avg_12m'] if m else 0.0
+        f['venta_12m'] = round(sum(m['ventas12'])) if m else 0
+        f['prom_mes'] = prom_mes
+        f['cobertura'] = cobertura_dias(f['total'], prom_mes)
     return filas
 
 
@@ -147,9 +165,10 @@ def init_app(app):
         with get_db() as session:
             labs = _labs_con_stock(session)
             filas = _filas_de_lab(session, robot_map, lab) if lab else []
-        if lab:
-            filas = _aplicar_filtro(filas, filtro)
-            filas.sort(key=lambda f: f['nombre'].lower())
+            if lab:
+                filas = _aplicar_filtro(filas, filtro)
+                filas.sort(key=lambda f: f['nombre'].lower())
+                _agregar_metricas_venta(session, filas)
         return render_template('control_gondola.html', labs=labs, filas=filas,
                                lab=lab, filtro=filtro, sin_robot=sin_robot,
                                generado=datetime.now())
