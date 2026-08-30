@@ -37,18 +37,19 @@ no es un problema real.
 
 ---
 
-## 🔴 P0 — Re-sync de ventas (prod muestra ventas INFLADAS)
+## ✅ P0 — Re-sync de ventas (prod mostraba ventas INFLADAS) — resuelto 2026-08-30
 
-**Qué pasa:** el fix `ee12bc6` (ventas netas) hace que `sync_ventas_mensuales`
-reste devoluciones/notas de crédito. Pero **el dato viejo en `obs_ventas_mensuales`
-sigue inflado hasta correr el sync**. Mientras tanto, TODO lo que lee ventas
+**Qué pasaba:** el fix `ee12bc6` (ventas netas) hizo que `sync_ventas_mensuales`
+reste devoluciones/notas de crédito, pero el dato viejo en `obs_ventas_mensuales`
+seguía inflado hasta correr el sync. Mientras tanto, TODO lo que lee ventas
 (gráficos, avg_3m/12m de `producto_metrics`, sugeridos de armado, dashboard)
-muestra números más altos de lo real.
+mostraba números más altos de lo real.
 
-**Acción:** correr el sync de ventas desde la farmacia (LAN de ObServer) — botón
-"Sincronizar" / DockerPanel. Es local-only (no se puede desde Render).
-
-**Quién:** Diego, en la farmacia. **Esfuerzo:** 5 min (correr el sync).
+**Resuelto:** Diego corrió el sync varias veces desde la farmacia. Confirmado
+vía `/api/auto-sync/status`: corrida completa 2026-08-30 18:00–18:26, paso
+`ventas_mensuales` con `ok:true` (80.393 upserts) + `push_render` posterior
+(1.752.145 filas a Render). Los números de `producto_metrics` (incluidas las
+columnas nuevas de `/control-gondola`) ya reflejan datos correctos.
 
 ---
 
