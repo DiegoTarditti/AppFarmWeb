@@ -53,19 +53,19 @@ columnas nuevas de `/control-gondola`) ya reflejan datos correctos.
 
 ---
 
-## 🟠 P1 — Planificadores ignoran unidades_minima y cantidad_reposicion_fija
+## ✅ P1 — Planificadores ignoraban unidades_minima y cantidad_reposicion_fija — obsoleto, ya resuelto
 
-**Qué pasa:** `/pedido/prueba` (estacional) e `/informes/pedido-auto` NO respetan
-el mínimo de oferta (`OfertaMinimo.unidades_minima`) ni la cantidad fija de
-reposición (`Producto.cantidad_reposicion_fija`). El armado táctico
-(`/compras/dia/armar`) sí. Resultado: el planificador sugiere una cantidad que
-después no coincide con lo que sale al armar el pedido → confusión operativa.
-
-**Acción:** cablear ambos en el motor (`services/calculo_pedido.py` +
-`services/pedido_estacional.py`) y exponerlos como flags de config. Es
-prerequisito del "motor de pantallas" (ver `plan_motor_pantallas_pedido.md`).
-
-**Esfuerzo:** 2-3 h backend. **Detalle:** entrada en `mejoras_pendientes.md`.
+**Estaba desactualizado.** Este item describía un estado de código que ya no
+existe: `/informes/pedido-auto` fue borrado y migrado a `/pedido/prueba`
+(commit `39975e2`, 2026-05-19 — ver "✅ HECHO 2026-05-19" en
+`mejoras_pendientes.md`). Verificado 2026-08-30 contra `main` actual:
+`routes/pedido_prueba.py:308-323` aplica `helpers.aplicar_overrides_planificador()`
+(con `cant_fija_por_obs` y `oferta_min_por_obs`, bulk-cargados) a **ambos**
+sugeridos (estacional y "Día actual"), justo para que el planificador no
+diverja de `/compras/dia/armar`. El `cantidad_reposicion_fija=None` que
+todavía aparece en `services/pedido_estacional.py:612` es de
+`calcular_sugerido_dia_actual` (calcula el número crudo de comparación); el
+override real se aplica después, en `pedido_prueba.py`, a los dos por igual.
 
 ---
 
