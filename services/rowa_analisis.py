@@ -279,9 +279,30 @@ def peor_tipo_evento(eventos: list[dict]) -> str | None:
     return min((e["tipo"] for e in eventos), key=lambda t: _PRIORIDAD_TIPO_EVENTO.get(t, 99))
 
 
-def analizar_alturas(articulos, margen_mm: int = 15) -> dict:
-    """Distribución de alturas de packs para decidir separación de estantes."""
-    alturas = [p.height_mm for a in articulos for p in a.packs if p.height_mm]
+def analizar_alturas(articulos, margen_mm: int = 15, filas_analizadas=None) -> dict:
+    """Distribución de alturas de packs para decidir separación de estantes.
+
+    Si se pasa `filas_analizadas` (las `ArticuloAnalizado` ya cruzadas con
+    ObServer, con rotación por VENTAS REALES), cada separación candidata suma
+    además qué artículos quedarían afuera del canal agrupados por rotación y
+    cuánto movimiento mensual (`unid_mes_est`) representan. Sin eso, "cubre_pct"
+    trata igual a un producto que vende 1 vez por año que a uno que rota todos
+    los días — con el cruce se puede distinguir "aprieto el canal y solo
+    complico low-rotación" de "aprieto y dejo afuera lo que más se vende".
+
+    Un artículo puede tener packs de distinta altura (lotes/proveedores
+    distintos); se usa la altura MÁXIMA de sus packs — si algún pack no entra
+    en el canal, el artículo entero no entra.
+    """
+    alturas = []
+    altura_por_articulo: dict[str, int] = {}
+    for a in articulos:
+        for p in a.packs:
+            if not p.height_mm:
+                continue
+            alturas.append(p.height_mm)
+            if p.height_mm > altura_por_articulo.get(a.article_id, 0):
+                altura_por_articulo[a.article_id] = p.height_mm
     n = len(alturas)
     if not n:
         return {}
@@ -290,6 +311,8 @@ def analizar_alturas(articulos, margen_mm: int = 15) -> dict:
     for lo, hi in RANGOS_ALTURA:
         c = sum(1 for h in alturas if lo <= h < hi) if hi < 145 else sum(1 for h in alturas if lo <= h <= hi)
         dist.append({"rango": f"{lo}-{hi} mm", "packs": c, "pct": round(100 * c / n, 1)})
+
+    filas_por_aid = {f.article_id: f for f in filas_analizadas} if filas_analizadas else {}
 
     rendimiento = []
     base_filas = None
@@ -301,11 +324,27 @@ def analizar_alturas(articulos, margen_mm: int = 15) -> dict:
         filas_m = int(1000 // (sep + margen_mm))
         if sep == 80:
             base_filas = filas_m
-        rendimiento.append({
+        entry = {
             "canal_mm": sep,
             "cubre_pct": round(100 * cubre, 1),
             "filas_x_metro": filas_m,
-        })
+        }
+        if filas_por_aid:
+            excluidos = [aid for aid, h in altura_por_articulo.items() if h > sep]
+            riesgo = sorted(
+                (filas_por_aid[aid] for aid in excluidos
+                 if aid in filas_por_aid and filas_por_aid[aid].rotacion in ("Alta", "Media")),
+                key=lambda f: -(f.unid_mes_est or 0.0))
+            entry["riesgo_n"] = len(riesgo)
+            entry["riesgo_movimiento_mes"] = round(sum(f.unid_mes_est or 0.0 for f in riesgo), 1)
+            entry["riesgo_top"] = [
+                {"nombre": (f.nombre_obs or f.nombre or "")[:45],
+                 "rotacion": f.rotacion,
+                 "unid_mes": round(f.unid_mes_est or 0.0, 1),
+                 "altura_mm": altura_por_articulo[f.article_id]}
+                for f in riesgo[:8]
+            ]
+        rendimiento.append(entry)
     if base_filas:
         for r in rendimiento:
             r["vs_80mm"] = round((r["filas_x_metro"] - base_filas) / base_filas, 1)
@@ -318,6 +357,7 @@ def analizar_alturas(articulos, margen_mm: int = 15) -> dict:
         "margen_mm": margen_mm,
         "distribucion": dist,
         "rendimiento": rendimiento,
+        "con_movimiento": bool(filas_por_aid),
     }
 
 

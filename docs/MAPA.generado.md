@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-30 20:07 · rama `feat/control-gondola-metricas-ventas` · commit `3566f0d`
+Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62f4bd3`
 
 **816 rutas** en 80 archivos · **133 modelos** · **22 syncs** · **41 services** · **11 parsers**
 
@@ -1313,22 +1313,22 @@ Generado: 2026-08-30 20:07 · rama `feat/control-gondola-metricas-ventas` · com
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L94) |
-| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L1079) |
-| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L1046) |
-| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L757) |
-| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L871) |
-| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L928) |
-| `/rowa/carga/verificar` | POST | [`rowa_carga_verificar`](../routes/rowa.py#L988) |
-| `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L450) |
-| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L560) |
-| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L197) |
-| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L506) |
-| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L226) |
-| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L568) |
-| `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L433) |
-| `/rowa/planilla/export.<fmt>` | GET | [`rowa_planilla_export`](../routes/rowa.py#L311) |
-| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L1166) |
+| `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L96) |
+| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L1081) |
+| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L1048) |
+| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L759) |
+| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L873) |
+| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L930) |
+| `/rowa/carga/verificar` | POST | [`rowa_carga_verificar`](../routes/rowa.py#L990) |
+| `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L452) |
+| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L562) |
+| `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L199) |
+| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L508) |
+| `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L228) |
+| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L570) |
+| `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L435) |
+| `/rowa/planilla/export.<fmt>` | GET | [`rowa_planilla_export`](../routes/rowa.py#L313) |
+| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L1168) |
 
 ### `routes/sucursales.py`
 
