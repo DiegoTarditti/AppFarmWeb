@@ -108,6 +108,23 @@ WHITELIST: dict[str, list[tuple[str, str]]] = {
         ('git -C /opt/cartelera-badia pull', 'pull'),
         ('docker compose -f /opt/cartelera-badia/docker-compose.yml restart', 'restart'),
     ],
+    # ── AppLabo (repo aparte, /root/applabo, schema compartido con appfarmweb) ──
+    # El código va montado como volumen (.:/app en docker-compose.yml), así que
+    # alcanza con restart — no hace falta rebuild salvo que cambie
+    # requirements.txt/Dockerfile (ahí sí: `docker compose up -d --build web`,
+    # no está en la whitelist porque no hizo falta hasta ahora). El restart
+    # corre de nuevo `flask db upgrade` (está en el CMD del
+    # docker-compose.override.yml del server), así que las migraciones nuevas
+    # se aplican solas. A diferencia de cartelera, acá SÍ hace falta `cd` (no
+    # alcanza con -f al compose): el override vive al lado del compose base y
+    # docker compose solo lo auto-carga si el cwd es esa carpeta.
+    'actualizar-applabo': [
+        ('git -C /root/applabo pull', 'pull'),
+        ('cd /root/applabo && docker compose restart web', 'restart'),
+    ],
+    'restart-applabo':    [('cd /root/applabo && docker compose restart web', 'restart')],
+    'logs-applabo':       [('cd /root/applabo && docker compose logs --tail=50 web', 'logs')],
+    'status-applabo':     [('cd /root/applabo && docker compose ps', 'ps')],
 }
 
 
