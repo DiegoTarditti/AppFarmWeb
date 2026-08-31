@@ -320,7 +320,7 @@ def init_app(app):
         if fmt not in ("pdf", "xlsx"):
             abort(404)
         try:
-            planilla, _labs, generado, _syncs, sin_sync = _armar_planilla(
+            planilla, _labs, generado, _syncs, sin_sync, _candidatos = _armar_planilla(
                 request.args.get("dias", type=int))
         except (RowaError, OSError) as e:
             abort(503, description=str(e))
@@ -362,7 +362,7 @@ def init_app(app):
         return Response(contenido, mimetype=mime,
                         headers={"Content-Disposition": 'attachment; filename="%s"' % nombre})
 
-    def _armar_planilla(dias_pedidos=None, refresh=False):
+    def _armar_planilla(dias_pedidos=None, refresh=False, orden="lab"):
         """Junta la entrada y arma la planilla. La usan la pantalla y las descargas.
 
         Se arma desde ObServer y no desde el robot: `stock_info()` sólo devuelve
@@ -370,8 +370,12 @@ def init_app(app):
         más fuerte — robot en CERO con mercadería esperando en el depósito.
 
         La lógica vive en `services/rowa_planilla`; acá sólo se junta la entrada.
-        Devuelve (planilla, labs_disponibles, generado, syncs, sin_sync) y deja
-        que `RowaError` / `OSError` suban: cada llamador decide qué mostrar.
+        Devuelve (planilla, labs_disponibles, generado, syncs, sin_sync,
+        candidatos) y deja que `RowaError` / `OSError` suban: cada llamador
+        decide qué mostrar. `candidatos` = productos con stock en depósito y
+        SIN cupo asignado, ordenados por $ (ver `candidatos_sin_cupo`) — el
+        universo que la planilla de reposición no puede ver porque nunca tuvo
+        un canal decidido.
         """
         from sqlalchemy import func as _f
 
@@ -381,7 +385,11 @@ def init_app(app):
             ObsRowaProducto,
             ObsStock,
         )
-        from services.rowa_planilla import DIAS_AUTONOMIA, construir_planilla
+        from services.rowa_planilla import (
+            DIAS_AUTONOMIA,
+            candidatos_sin_cupo,
+            construir_planilla,
+        )
 
         dias = dias_pedidos or DIAS_AUTONOMIA
         dias = max(1, min(dias, 60))
@@ -396,7 +404,10 @@ def init_app(app):
                          session.query(ObsStock.producto_observer.label("pid"),
                                         _f.sum(ObsStock.stock_actual).label("stock"))
                          .group_by(ObsStock.producto_observer).all()}
-            prods = {p.observer_id: (p.descripcion, p.laboratorio_observer)
+            # precio_lista sale de Gestion.ProductosPreciosVigentes (sync premium,
+            # ver "Trampas de ObServer" en CLAUDE.md) — es la fuente exacta y por
+            # farmacia, a diferencia de Producto.precio_pvp local (sin poblar).
+            prods = {p.observer_id: (p.descripcion, p.laboratorio_observer, p.precio_lista)
                      for p in session.query(ObsProducto)
                      .filter(ObsProducto.fecha_baja.is_(None)).all()}
             labs = dict(session.query(ObsLaboratorio.observer_id,
@@ -407,7 +418,7 @@ def init_app(app):
             if pid not in prods:
                 continue
             snap, obs, en_robot, nombre = salidas.get(pid, (None, None, 0, None))
-            desc, lab_id = prods[pid]
+            desc, lab_id, precio = prods[pid]
             articulos.append({
                 "producto_observer": pid,
                 "nombre": nombre or desc,
@@ -418,26 +429,48 @@ def init_app(app):
                 "stock_total": stock_obs.get(pid),
                 "salidas_snapshot": snap,
                 "salidas_observer": obs,
+                "precio_pvp": precio,
             })
 
-        planilla = construir_planilla(articulos, dias_ventana, dias)
+        planilla = construir_planilla(articulos, dias_ventana, dias, orden=orden)
         labs_disponibles = sorted({f["laboratorio"] for f in planilla["filas"]
                                    if f["laboratorio"]})
+
+        # Candidatos sin cupo: TODO lo que tiene stock y NO está en `maximos`
+        # (nunca se le asignó un canal en el robot). Es el universo que
+        # `construir_planilla` descarta a propósito (ver su docstring).
+        sin_cupo_pids = set(stock_obs) - set(maximos)
+        crudos_sin_cupo = []
+        for pid in sin_cupo_pids:
+            if pid not in prods:
+                continue
+            desc, lab_id, precio = prods[pid]
+            crudos_sin_cupo.append({
+                "producto_observer": pid,
+                "nombre": desc,
+                "laboratorio": labs.get(lab_id) or "",
+                "stock_deposito": stock_obs.get(pid),
+                "precio_pvp": precio,
+            })
+        candidatos = candidatos_sin_cupo(crudos_sin_cupo)
+
         with get_db() as session:
             syncs = _frescura_syncs(session)
 
         # Sin el sync corrido no hay maximos y la planilla sale vacia: se avisa
         # en vez de mostrar una pantalla en blanco sin explicacion.
-        return planilla, labs_disponibles, data["generado"], syncs, not maximos
+        return planilla, labs_disponibles, data["generado"], syncs, not maximos, candidatos
 
     @app.route("/rowa/planilla")
     @login_required
     def rowa_planilla():
         """Pantalla de la planilla de carga."""
+        orden = "valor" if request.args.get("orden") == "valor" else "lab"
         try:
-            planilla, labs, generado, syncs, sin_sync = _armar_planilla(
+            planilla, labs, generado, syncs, sin_sync, candidatos = _armar_planilla(
                 request.args.get("dias", type=int),
-                refresh=bool(request.args.get("refresh")))
+                refresh=bool(request.args.get("refresh")),
+                orden=orden)
         except (RowaError, OSError) as e:
             return render_template("rowa_planilla.html", sin_robot=True, error=str(e))
         return render_template(
@@ -445,6 +478,7 @@ def init_app(app):
             syncs=syncs, sin_robot=False, generado=generado,
             filas=planilla["filas"], totales=planilla["totales"],
             labs_disponibles=labs, sin_sync=sin_sync,
+            candidatos=candidatos, orden=orden,
         )
 
     @app.route("/rowa/diferencias")

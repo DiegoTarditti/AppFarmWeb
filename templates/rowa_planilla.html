@@ -99,6 +99,10 @@
       <option value="corregir">Sólo a corregir el máximo</option>
       <option value="diferencia">Sólo diferencias</option>
     </select>
+    <a href="{{ url_for('rowa_planilla', dias=totales.dias_autonomia, orden=('lab' if orden == 'valor' else 'valor')) }}"
+       class="px-2 py-1 text-xs rounded border border-[color:var(--ds-surface-border)] {% if orden == 'valor' %}text-[color:var(--ds-mint)]{% else %}text-[color:var(--ds-text-mute)] hover:text-white{% endif %}"
+       title="Cambiar el orden de la tabla">
+      {% if orden == 'valor' %}💲 Ordenado por valor{% else %}↕ Ordenar por valor $ en depósito{% endif %}</a>
     <span id="pl-count" class="text-xs text-[color:var(--ds-text-mute)] ml-auto"></span>
     {# Los filtros son client-side: los botones los reenvian para que el papel
        coincida con lo que se esta mirando en pantalla. #}
@@ -122,6 +126,8 @@
           <th class="text-right px-3 py-2 w-20">Cobert.</th>
           <th class="text-right px-3 py-2 w-24 bg-[color:var(--ds-mint)]/10">A mover</th>
           <th class="text-right px-3 py-2 w-24" title="Cuántos packs habría que mover si se llenara hasta la Cantidad Máxima de ObServer">Hasta el máx</th>
+          <th class="text-right px-3 py-2 w-20" title="Precio de lista vigente (Gestion.ProductosPreciosVigentes)">Precio</th>
+          <th class="text-right px-3 py-2 w-24" title="Precio × unidades en depósito: plata parada fuera del robot">Valor depósito</th>
           <th class="text-left px-3 py-2 w-44">Avisos</th>
         </tr>
       </thead>
@@ -147,6 +153,9 @@
             <span class="font-mono font-bold text-base {% if f.a_mover_sug %}text-[color:var(--ds-mint)]{% else %}text-[color:var(--ds-text-mute)]{% endif %}">{{ f.a_mover_sug }}</span>
           </td>
           <td class="px-3 py-1.5 text-right font-mono text-[color:var(--ds-text-mute)]">{{ f.a_mover_max }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-[color:var(--ds-text-mute)]">{{ f.precio_pvp | round | int if f.precio_pvp else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono {% if f.valor_deposito %}text-[color:var(--ds-mint)]{% else %}text-[color:var(--ds-text-mute)]{% endif %}">
+            {{ '${:,}'.format(f.valor_deposito | round | int).replace(',', '.') if f.valor_deposito else '—' }}</td>
           <td class="px-3 py-1.5">
             {% if f.vacio %}<span class="text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded px-1">VACÍO</span>{% endif %}
             {% if f.parcial %}<span class="text-[9px] bg-white/10 text-[color:var(--ds-text-mute)] border border-[color:var(--ds-surface-border)] rounded px-1" title="El depósito no alcanza para llenar el hueco">parcial</span>{% endif %}
@@ -167,6 +176,43 @@
     Un artículo que aparece <i>parcial</i> una y otra vez no tiene un problema de carga:
     tiene el mínimo de compra corto.
   </p>
+
+  {% if candidatos %}
+  <section class="mt-8">
+    <h2 class="text-sm font-bold mb-1 flex items-center gap-2">💎 Candidatos sin cupo — alto valor en depósito
+      <span class="text-[11px] font-normal text-[color:var(--ds-text-mute)]">top {{ candidatos | length }}</span></h2>
+    <p class="text-[11px] text-[color:var(--ds-text-mute)] mb-2 max-w-3xl">
+      Estos productos <b>nunca tuvieron un canal asignado</b> en el robot (sin <code>Cantidad Máxima</code>
+      en ObServer) — hoy viven en depósito/góndola sin el control de packs/fechas que da la máquina.
+      Ordenados por plata parada: si alguno merece pasar a controlarse mejor, cargale la Cantidad Máxima
+      en ObServer y va a aparecer arriba, en la planilla de reposición normal.</p>
+    <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)] max-w-3xl">
+      <table class="w-full text-sm">
+        <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
+          <tr>
+            <th class="text-left px-3 py-2">Producto</th>
+            <th class="text-left px-3 py-2">Laboratorio</th>
+            <th class="text-right px-3 py-2 w-20">Depósito</th>
+            <th class="text-right px-3 py-2 w-20">Precio</th>
+            <th class="text-right px-3 py-2 w-28">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in candidatos %}
+          <tr class="border-t border-[color:var(--ds-surface-border)]">
+            <td class="px-3 py-1.5">{{ c.nombre }}</td>
+            <td class="px-3 py-1.5 text-[color:var(--ds-text-mute)]">{{ c.laboratorio or '—' }}</td>
+            <td class="px-3 py-1.5 text-right font-mono">{{ c.stock_deposito }}</td>
+            <td class="px-3 py-1.5 text-right font-mono text-[color:var(--ds-text-mute)]">{{ c.precio_pvp | round | int }}</td>
+            <td class="px-3 py-1.5 text-right font-mono font-bold text-amber-300">
+              ${{ '{:,}'.format(c.valor_deposito | round | int).replace(',', '.') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
 
   {% endif %}
 </div>
