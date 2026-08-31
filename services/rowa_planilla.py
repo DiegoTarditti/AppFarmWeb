@@ -79,9 +79,11 @@ def salidas_estimadas(salidas_snapshot: float | None,
 
 
 def _fila(pid, nombre, laboratorio, ean, en_robot, maximo, stock_total,
-          salidas, origen_salidas, dias_autonomia):
+          salidas, origen_salidas, dias_autonomia, precio_pvp=None):
     """Arma una fila con sus dos cantidades y sus avisos. Sin decidir nada."""
     deposito = None if stock_total is None else stock_total - en_robot
+    valor_deposito = (round(float(precio_pvp) * max(deposito or 0, 0), 2)
+                      if precio_pvp and deposito else None)
 
     # El robot no puede tener más que el stock total: es parte de él. Cuando pasa,
     # el depósito calculado da negativo y la fila no se puede resolver. Antes
@@ -108,6 +110,7 @@ def _fila(pid, nombre, laboratorio, ean, en_robot, maximo, stock_total,
             "a_mover_max": 0, "a_mover_sug": 0,
             "vacio": en_robot == 0, "parcial": False, "diferencia": diferencia,
             "sin_maximo": True, "sin_senal": salidas <= 0, "corregir_a": None,
+            "precio_pvp": precio_pvp, "valor_deposito": valor_deposito,
         }
 
     hueco = max(0, maximo - en_robot)
@@ -152,15 +155,22 @@ def _fila(pid, nombre, laboratorio, ean, en_robot, maximo, stock_total,
         "sin_maximo": False,
         "sin_senal": sin_senal,
         "corregir_a": objetivo if corregir else None,
+        "precio_pvp": precio_pvp, "valor_deposito": valor_deposito,
     }
 
 
 def construir_planilla(articulos, dias_ventana: float,
-                       dias_autonomia: int = DIAS_AUTONOMIA) -> dict:
+                       dias_autonomia: int = DIAS_AUTONOMIA,
+                       orden: str = "lab") -> dict:
     """Arma la planilla completa.
 
     `articulos`: iterable de dicts con producto_observer, nombre, laboratorio,
-    ean, en_robot, maximo, stock_total, salidas_snapshot, salidas_observer.
+    ean, en_robot, maximo, stock_total, salidas_snapshot, salidas_observer,
+    precio_pvp (opcional — sin precio, valor_deposito queda None).
+
+    `orden`: "lab" (default, por laboratorio y alfabético — para caminar el
+    depósito) o "valor" (por `valor_deposito` descendente — para priorizar
+    qué ir a buscar primero cuando lo que importa es la plata parada).
 
     Devuelve {filas, totales}. Sólo entran las filas con algo que hacer: mover
     packs, una diferencia que revisar, o un máximo sin cargar. Un artículo con
@@ -175,7 +185,8 @@ def construir_planilla(articulos, dias_ventana: float,
         f = _fila(
             a["producto_observer"], a.get("nombre") or "?", a.get("laboratorio") or "",
             a.get("ean") or "", int(a.get("en_robot") or 0), a.get("maximo"),
-            a.get("stock_total"), salidas, origen, dias_autonomia)
+            a.get("stock_total"), salidas, origen, dias_autonomia,
+            precio_pvp=a.get("precio_pvp"))
         hay_algo = (f["a_mover_max"] > 0 or f["a_mover_sug"] > 0 or f["diferencia"]
                     # Sin cupo sólo interesa si el artículo está adentro: hay que
                     # ir a cargarle el máximo en ObServer para que entre al
@@ -184,8 +195,11 @@ def construir_planilla(articulos, dias_ventana: float,
         if hay_algo:
             filas.append(f)
 
-    # Por laboratorio y alfabético: el depósito se camina un laboratorio a la vez.
-    filas.sort(key=lambda f: ((f["laboratorio"] or "~").lower(), (f["nombre"] or "").lower()))
+    if orden == "valor":
+        filas.sort(key=lambda f: -(f["valor_deposito"] or 0))
+    else:
+        # Por laboratorio y alfabético: el depósito se camina un laboratorio a la vez.
+        filas.sort(key=lambda f: ((f["laboratorio"] or "~").lower(), (f["nombre"] or "").lower()))
 
     return {
         "filas": filas,
@@ -204,3 +218,32 @@ def construir_planilla(articulos, dias_ventana: float,
             "dias_autonomia": dias_autonomia,
         },
     }
+
+
+def candidatos_sin_cupo(articulos, top_n: int = 30) -> list[dict]:
+    """Productos con stock en depósito y SIN cupo asignado en el robot
+    (`ObsRowaProducto.cantidad_maxima`), ordenados por valor $ parado.
+
+    No es la misma pregunta que `construir_planilla` (que sólo sabe reponer
+    cupos ya decididos): acá el universo es justamente lo que HOY no tiene
+    ningún canal en la máquina, y por eso vive **fuera de cualquier control**
+    del robot (packs, fechas, egresos). No hay "a mover" que calcular —no
+    existe un objetivo sin cupo—, sólo señala dónde mirar primero si se va a
+    decidir darle un canal.
+
+    `articulos`: iterable de dicts con producto_observer, nombre, laboratorio,
+    stock_deposito, precio_pvp. Sin alguno de los dos números no se puede
+    valorizar, así que esos quedan afuera (no se inventa un valor).
+    """
+    out = []
+    for a in articulos:
+        stock = a.get("stock_deposito") or 0
+        precio = a.get("precio_pvp")
+        if stock <= 0 or not precio:
+            continue
+        valor = round(float(precio) * stock, 2)
+        if valor <= 0:
+            continue
+        out.append({**a, "precio_pvp": float(precio), "valor_deposito": valor})
+    out.sort(key=lambda c: -c["valor_deposito"])
+    return out[:top_n]

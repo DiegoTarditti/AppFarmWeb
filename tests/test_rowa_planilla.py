@@ -9,6 +9,7 @@ import pytest
 from services.rowa_planilla import (
     DIAS_CONFIANZA_PLENA,
     FACTOR_OBSERVER,
+    candidatos_sin_cupo,
     confianza_snapshots,
     construir_planilla,
     salidas_estimadas,
@@ -16,11 +17,11 @@ from services.rowa_planilla import (
 
 
 def art(pid=1, nombre="PROD", lab="Lab", en_robot=2, maximo=6, stock_total=10,
-        snap=None, obs=None):
+        snap=None, obs=None, precio=None):
     return {"producto_observer": pid, "nombre": nombre, "laboratorio": lab,
             "ean": "779", "en_robot": en_robot, "maximo": maximo,
             "stock_total": stock_total, "salidas_snapshot": snap,
-            "salidas_observer": obs}
+            "salidas_observer": obs, "precio_pvp": precio}
 
 
 def sola(a, dias_ventana=14.0, dias_autonomia=7):
@@ -208,3 +209,73 @@ def test_los_totales_cuentan_los_sin_senal():
         art(pid=2, en_robot=0, maximo=6, stock_total=6, snap=2.0),
     ], dias_ventana=14.0)
     assert r["totales"]["sin_senal"] == 1
+
+
+# ── Precio y valor parado en depósito ─────────────────────────────────────
+def test_valor_deposito_es_precio_por_deposito():
+    """deposito = stock_total(10) - en_robot(2) = 8; precio 100 -> valor 800."""
+    f = sola(art(en_robot=2, maximo=6, stock_total=10, snap=5, precio=100.0))
+    assert f["precio_pvp"] == 100.0
+    assert f["valor_deposito"] == 800.0
+
+
+def test_sin_precio_valor_deposito_es_none():
+    f = sola(art(en_robot=2, maximo=6, stock_total=10, snap=5, precio=None))
+    assert f["valor_deposito"] is None
+
+
+def test_deposito_negativo_no_da_valor_negativo():
+    """Con diferencia (robot > total, deposito < 0) no se inventa un valor negativo:
+    se pisa a 0, no a un número negativo sin sentido de negocio."""
+    f = sola(art(en_robot=5, maximo=6, stock_total=2, snap=1, precio=50.0))
+    assert f["deposito"] == -3
+    assert f["valor_deposito"] == 0.0
+
+
+def test_orden_valor_ordena_por_valor_deposito_desc():
+    r = construir_planilla([
+        art(pid=1, nombre="BARATO", en_robot=0, maximo=6, stock_total=6, snap=1, precio=10.0),
+        art(pid=2, nombre="CARO", en_robot=0, maximo=6, stock_total=6, snap=1, precio=1000.0),
+        art(pid=3, nombre="SIN_PRECIO", en_robot=0, maximo=6, stock_total=6, snap=1, precio=None),
+    ], dias_ventana=14.0, orden="valor")
+    assert [f["nombre"] for f in r["filas"]] == ["CARO", "BARATO", "SIN_PRECIO"]
+
+
+def test_orden_default_sigue_siendo_por_laboratorio():
+    r = construir_planilla([
+        art(pid=1, nombre="ZZZ", lab="Bayer", snap=5, precio=999.0),
+        art(pid=2, nombre="AAA", lab="Bayer", snap=5, precio=1.0),
+    ], dias_ventana=14.0)  # sin `orden` -> default "lab"
+    assert [f["nombre"] for f in r["filas"]] == ["AAA", "ZZZ"]
+
+
+# ── Candidatos sin cupo (para "meter al robot") ───────────────────────────
+def _candidato(pid=1, nombre="X", lab="Lab", stock=5, precio=100.0):
+    return {"producto_observer": pid, "nombre": nombre, "laboratorio": lab,
+            "stock_deposito": stock, "precio_pvp": precio}
+
+
+def test_candidatos_ordenados_por_valor_desc():
+    out = candidatos_sin_cupo([
+        _candidato(pid=1, nombre="BARATO", stock=100, precio=1.0),   # valor 100
+        _candidato(pid=2, nombre="CARO", stock=2, precio=5000.0),    # valor 10000
+    ])
+    assert [c["nombre"] for c in out] == ["CARO", "BARATO"]
+    assert out[0]["valor_deposito"] == 10000.0
+
+
+def test_candidatos_sin_stock_o_sin_precio_quedan_afuera():
+    out = candidatos_sin_cupo([
+        _candidato(pid=1, stock=0, precio=100.0),      # sin stock
+        _candidato(pid=2, stock=5, precio=None),        # sin precio
+        _candidato(pid=3, stock=5, precio=100.0),        # válido
+    ])
+    assert len(out) == 1
+    assert out[0]["producto_observer"] == 3
+
+
+def test_candidatos_respeta_top_n():
+    crudos = [_candidato(pid=i, nombre=f"P{i}", stock=1, precio=float(i)) for i in range(10)]
+    out = candidatos_sin_cupo(crudos, top_n=3)
+    assert len(out) == 3
+    assert [c["nombre"] for c in out] == ["P9", "P8", "P7"]  # los de mayor valor
