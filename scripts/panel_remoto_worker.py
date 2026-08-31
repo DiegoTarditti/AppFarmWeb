@@ -332,5 +332,35 @@ def main() -> int:
         time.sleep(SEG)
 
 
+def cli_run(nombre: str) -> int:
+    """Corre UN comando de la WHITELIST directo (sin Render, sin loop) y sale.
+    Pensado para invocarse por SSH (ver panel-server.ps1 y el comando de
+    Claude Code) — misma lista y misma lógica que usa el loop de polling,
+    para no mantener dos copias de qué hace cada comando."""
+    steps = WHITELIST.get(nombre)
+    if not steps:
+        print(f'"{nombre}" no está en la whitelist. Usá --list para ver los disponibles.',
+              file=sys.stderr)
+        return 2
+    print(f'▶ {nombre}')
+    estado, output = ejecutar_pasos(steps)
+    print(output)
+    if estado == 'ok' and nombre in REINICIA_WEB:
+        print(f'esperando que el web vuelva (health {HEALTH_URL})…')
+        if esperar_web_sano():
+            print(f'✔ web sano tras restart · commit {_commit_actual()}')
+        else:
+            estado = 'error'
+            print(f'✗ web NO respondió en {HEALTH_TIMEOUT}s tras el restart')
+    print('--- OK ---' if estado == 'ok' else '--- ERROR ---')
+    return 0 if estado == 'ok' else 1
+
+
 if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ('--list', '-l'):
+            for nombre in WHITELIST:
+                print(nombre)
+            sys.exit(0)
+        sys.exit(cli_run(sys.argv[1]))
     sys.exit(main())

@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-31 09:56 · rama `main` · commit `0f9753f`
+Generado: 2026-08-31 14:23 · rama `feat/panel-cli-directo` · commit `ed885e1`
 
 **816 rutas** en 80 archivos · **133 modelos** · **22 syncs** · **41 services** · **11 parsers**
 
