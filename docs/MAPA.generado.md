@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62f4bd3`
+Generado: 2026-08-31 09:30 · rama `feat/panel-applabo` · commit `3e5593d`
 
 **816 rutas** en 80 archivos · **133 modelos** · **22 syncs** · **41 services** · **11 parsers**
 
@@ -187,12 +187,12 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | `/admin/cleanup-inactivos` | GET/POST | [`admin_cleanup_inactivos`](../routes/admin.py#L737) |
 | `/admin/cron-log` | GET | [`admin_cron_log`](../routes/admin.py#L403) |
 | `/admin/health` | GET | [`admin_health`](../routes/admin.py#L65) |
-| `/admin/panel` | GET | [`admin_panel`](../routes/admin.py#L822) |
-| `/admin/panel/comandos` | POST | [`admin_panel_encolar`](../routes/admin.py#L834) |
-| `/admin/panel/comandos/recientes` | GET | [`admin_panel_recientes`](../routes/admin.py#L861) |
+| `/admin/panel` | GET | [`admin_panel`](../routes/admin.py#L827) |
+| `/admin/panel/comandos` | POST | [`admin_panel_encolar`](../routes/admin.py#L839) |
+| `/admin/panel/comandos/recientes` | GET | [`admin_panel_recientes`](../routes/admin.py#L866) |
 | `/admin/reset-datos` | GET/POST | [`admin_reset_datos`](../routes/admin.py#L763) |
 | `/admin/seed-proveedores` | GET/POST | [`admin_seed_proveedores`](../routes/admin.py#L555) |
-| `/api/admin/actualizar` | POST | [`api_admin_actualizar`](../routes/admin.py#L973) |
+| `/api/admin/actualizar` | POST | [`api_admin_actualizar`](../routes/admin.py#L978) |
 | `/api/admin/alarmas` | GET | [`api_admin_alarmas`](../routes/admin.py#L389) |
 | `/api/admin/alarmas/probar-telegram` | POST | [`api_alarmas_probar_telegram`](../routes/admin.py#L501) |
 | `/api/admin/migrar/backfill-codigos-barra` | POST | [`api_migrar_backfill_codigos_barra`](../routes/admin.py#L571) |
@@ -205,8 +205,8 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | `/api/cron/recalcular-os-clientes` | POST | [`api_cron_recalcular_os_clientes`](../routes/admin.py#L659) |
 | `/api/dockerpanel-info` | GET | [`api_dockerpanel_info`](../routes/admin.py#L753) |
 | `/api/obs/recalcular-os-clientes` | POST | [`api_recalcular_os_clientes`](../routes/admin.py#L639) |
-| `/api/panel/comandos/<int:cmd_id>/resultado` | POST | [`api_panel_resultado`](../routes/admin.py#L947) |
-| `/api/panel/comandos/proximo` | GET | [`api_panel_proximo`](../routes/admin.py#L893) |
+| `/api/panel/comandos/<int:cmd_id>/resultado` | POST | [`api_panel_resultado`](../routes/admin.py#L952) |
+| `/api/panel/comandos/proximo` | GET | [`api_panel_proximo`](../routes/admin.py#L898) |
 | `/api/pedidos-nuevo/scope` | GET | [`api_pedidos_nuevo_scope`](../routes/admin.py#L290) |
 | `/pedidos-nuevo` | GET | [`pedidos_nuevo`](../routes/admin.py#L272) |
 
