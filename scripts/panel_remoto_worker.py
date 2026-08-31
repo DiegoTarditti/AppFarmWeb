@@ -16,6 +16,14 @@ Config (env vars):
 
 Reemplaza el _panel_remoto_loop del DockerPanel local, ahora que la app corre
 en el server (192.168.1.220) en vez de la PC de oficina.
+
+En el server, dos servicios systemd (appfarmweb-panel-remoto y
+appfarmweb-panel-remoto-lan) corren este archivo vía el symlink
+/root/panel_remoto_worker.py -> este mismo path. Como es un proceso Python de
+larga vida, un `git pull` solo no alcanza para que tome cambios acá — hace
+falta reiniciar esos dos servicios (actualizar.sh ya lo hace solo si este
+archivo cambió; a mano: `systemctl restart appfarmweb-panel-remoto
+appfarmweb-panel-remoto-lan`).
 """
 from __future__ import annotations
 
