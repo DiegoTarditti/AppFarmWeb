@@ -263,11 +263,16 @@
     <h2 class="text-sm font-bold mb-2">📏 Capacidad por altura de estantes
       <span class="text-[11px] font-normal text-[color:var(--ds-text-mute)]">
         prom {{ alturas.altura_prom }}mm · máx {{ alturas.altura_max }}mm</span></h2>
-    <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)] max-w-2xl">
+    <div class="overflow-x-auto rounded-lg border border-[color:var(--ds-surface-border)] {% if alturas.con_movimiento %}max-w-3xl{% else %}max-w-2xl{% endif %}">
       <table class="w-full text-sm">
         <thead class="bg-white/5 text-[11px] uppercase text-[color:var(--ds-text-mute)]">
           <tr><th class="text-left px-3 py-2">Canal (mm)</th><th class="text-right px-3 py-2">Cubre stock</th>
-              <th class="text-right px-3 py-2">Filas/metro</th><th class="text-right px-3 py-2">vs 80mm</th></tr>
+              <th class="text-right px-3 py-2">Filas/metro</th><th class="text-right px-3 py-2">vs 80mm</th>
+              {% if alturas.con_movimiento %}
+              <th class="text-right px-3 py-2" title="Artículos de rotación Alta/Media que NO entrarían en este canal">Riesgo</th>
+              <th class="text-right px-3 py-2" title="Unidades/mes de esos artículos, sumadas">u/mes en riesgo</th>
+              {% endif %}
+          </tr>
         </thead>
         <tbody>
           {% for r in alturas.rendimiento %}
@@ -277,6 +282,27 @@
             <td class="px-3 py-1.5 text-right">{{ r.filas_x_metro }}</td>
             <td class="px-3 py-1.5 text-right {% if r.vs_80mm and r.vs_80mm > 0 %}text-emerald-300{% endif %}">
               {{ '+' if r.vs_80mm and r.vs_80mm > 0 }}{{ r.vs_80mm }}</td>
+            {% if alturas.con_movimiento %}
+            <td class="px-3 py-1.5 text-right {% if r.riesgo_n %}text-amber-300 font-bold{% else %}text-[color:var(--ds-text-mute)]{% endif %}">
+              {% if r.riesgo_top %}
+              <details class="inline-block text-left">
+                <summary class="cursor-pointer list-none text-right">{{ r.riesgo_n }}</summary>
+                <ul class="mt-1 text-[10px] font-normal text-[color:var(--ds-text-mute)] normal-case space-y-0.5">
+                  {% for a in r.riesgo_top %}
+                  <li>{{ a.nombre }} · {{ a.rotacion }} · {{ a.unid_mes }}u/mes · {{ a.altura_mm }}mm</li>
+                  {% endfor %}
+                  {% if r.riesgo_n > r.riesgo_top | length %}
+                  <li>… y {{ r.riesgo_n - (r.riesgo_top | length) }} más</li>
+                  {% endif %}
+                </ul>
+              </details>
+              {% else %}
+              0
+              {% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-right {% if r.riesgo_movimiento_mes %}text-amber-300{% else %}text-[color:var(--ds-text-mute)]{% endif %}">
+              {{ r.riesgo_movimiento_mes or '—' }}</td>
+            {% endif %}
           </tr>
           {% endfor %}
         </tbody>
@@ -284,7 +310,12 @@
     </div>
     <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-2">
       Bajar canales altos a la altura que cubre el grueso del stock gana filas por metro.
-      Reservar 1-2 canales altos para lo poco que pasa 80mm (jarabes/jeringas).</p>
+      Reservar 1-2 canales altos para lo poco que pasa 80mm (jarabes/jeringas).
+      {% if alturas.con_movimiento %}
+      <b>Riesgo</b> = artículos de rotación Alta/Media que NO entrarían en ese canal (un pack más alto
+      que la separación) — antes de achicar, revisar esa lista: si tiene poco movimiento no complica,
+      si tiene mucho conviene dejarles un canal alto aparte en vez de apretar todo el estante.
+      {% endif %}</p>
   </section>
   {% endif %}
 
