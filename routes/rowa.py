@@ -68,7 +68,6 @@ def _cargar(refresh: bool = False) -> dict:
         arts = robot.stock_info(include_packs=True)
 
     filas, diag = analizar_stock(arts)
-    alturas = analizar_alturas(arts)
     try:
         with get_db() as session:
             cruce = cruzar_con_observer(session, filas)
@@ -77,6 +76,9 @@ def _cargar(refresh: bool = False) -> dict:
         diag = diagnosticar(filas)
     except Exception:  # noqa: BLE001 — sin DB/ObServer, se muestra el proxy
         cruce = {"matcheados": 0, "sin_match": len(filas), "error": "ObServer no disponible"}
+    # Alturas DESPUÉS del cruce: así cruza contra rotación por VENTAS REALES,
+    # no el proxy por antigüedad (ver docstring de analizar_alturas).
+    alturas = analizar_alturas(arts, filas_analizadas=filas)
 
     payload = {
         "robot": info, "filas": filas, "diag": diag, "alturas": alturas,
