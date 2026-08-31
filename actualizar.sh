@@ -43,6 +43,18 @@ else
   docker compose restart web bot
 fi
 
+# 2b) El panel remoto corre FUERA de docker (dos servicios systemd, ver
+# scripts/panel_remoto_worker.py) vía un symlink a este mismo repo
+# (/root/panel_remoto_worker.py -> scripts/panel_remoto_worker.py). El pull ya
+# actualizó el archivo en disco, pero el proceso Python no relee su propio
+# código solo — sin este restart, un cambio a ese script (ej. agregar un
+# comando a la whitelist) quedaría en el repo sin efecto hasta que alguien
+# lo note y reinicie a mano.
+if git diff --name-only "$ANTES" "$DESPUES" | grep -q '^scripts/panel_remoto_worker\.py$'; then
+  echo "▶ Cambió panel_remoto_worker.py → reiniciando los workers del panel remoto…"
+  systemctl restart appfarmweb-panel-remoto appfarmweb-panel-remoto-lan
+fi
+
 # 3) Esperar el arranque y mostrar estado.
 echo "▶ Esperando arranque…"
 sleep 8
