@@ -148,3 +148,83 @@ WAHA (whatsapp-web.js) para publicar pedidos a un grupo de WhatsApp y aceptar
 - Dedup chip de flag (`services/flags.py`).
 - Paleta de templates de reparto/caja/panel/envio/cadetes refrescada a tonos
   más claros (zebra striping en planilla). 2026-06-08.
+
+---
+
+## 🟡 P2 — Robot: bajar comprobantes de Kellerhoff → cuenta corriente (Diego 2026-08-18)
+
+Automatizar la descarga diaria de los comprobantes (facturas y notas de crédito)
+del portal de Kellerhoff y **cargarlos en la cuenta corriente del proveedor**,
+en vez de bajarlos a mano.
+
+**El robot (scraper):**
+- 1 vez por día, entra a `https://www.kellerhoff.com.ar/ctacte/ConsultaDeComprobantes`
+  con las credenciales de cliente (`badiar` / clave — en `.env`, NO hardcodear).
+- Lista los comprobantes, baja los **PDF nuevos** (dedup por número de
+  comprobante para no repetir).
+- Portal ASP.NET (dev: Nativo Sistemas), con **reCAPTCHA en el login** — es el
+  principal obstáculo. Ver si es v3 (invisible, suele dejar pasar a un bot que
+  se comporta como humano) o v2 (challenge). Si es v2, la salida robusta es
+  **mantener la sesión viva** (guardar cookies del login y reusarlas) para no
+  loguear cada día. Herramienta: Playwright headless (ya se usa en la cartelera
+  del mismo server).
+
+**La integración con cuentas corrientes (lo que pidió Diego):**
+- No dejar los PDF sueltos: engancharlos al flujo que ya existe. Tocar:
+  - `templates/cuenta_corriente.html` — hoy tiene "Importar comprobantes de ARCA"
+    (`comprobantes_importar`) y `cuenta_corriente_add(provider_id)`.
+  - `routes/providers.py` — ya maneja `pdf_filename` y `tipo_comprobante` (FAC/NC).
+  - `services/cuenta_corriente.py::clasificar_comprobante(tipo, total)`.
+- Por cada PDF: parsear nº, fecha, tipo (FAC/NC), total → crear el movimiento en
+  la CC del proveedor Kellerhoff con el PDF adjunto, clasificado (débito la
+  factura, crédito la NC). Reutilizar `clasificar_comprobante`.
+- Kellerhoff ya es proveedor conocido (ver `docs/kellerhoff_equivalencias.md`);
+  mapear al `provider_id` correcto.
+
+**Definir antes de arrancar:**
+- Confirmar autorización de Diego para automatizar el login (es su cuenta).
+- Ver el reCAPTCHA con un login de prueba → decide cuánto trabajo es.
+- Dónde corre: como sync/job del server (junto a los otros syncs) o script aparte.
+- ¿Sólo bajar + adjuntar, o también conciliar contra los pedidos/pagos ya
+  cargados? (empezar por bajar + cargar en CC; la conciliación, después.)
+
+---
+
+## 🟡 P2 — Cruce factura vs recepción desde ObServer (sin PDF/Excel) (Diego 2026-08-18)
+
+Hoy `/ingresos` cruza la factura (PDF parseado por IA, `services/factura_ia.py`)
+contra el **Excel del ERP subido a mano**. Se puede evitar el Excel/PDF leyendo
+la recepción directo de ObServer: **la data ya está accesible.**
+
+**Lo que hay (hallazgo 2026-08-18):**
+- El `observer_db` local ya tiene la tabla **`recepciones`** con la estructura
+  justa para el cruce:
+  `fecha_recepcion · proveedor_cuit · proveedor_nombre · numero_factura ·
+  codigo_barra (EAN) · descripcion · cantidad · precio_unitario · lote ·
+  vencimiento`. Indexada por `numero_factura`, `proveedor_cuit` y `codigo_barra`.
+- `observer_source.py` ya se conecta al ObServer real (SQL Server `ObServerGestion`,
+  pymssql) y lee precios/stock/ventas con credenciales que llegan a `Gestion.*`.
+
+**El pero:** la tabla `recepciones` tiene **~8 filas** → el **sync que la puebla
+desde ObServer no está corriendo en serio**. Es lo que `routes/observer.py` llama
+"traer recepciones desde ObServer todavía no está implementado"
+(`_recepciones_implementadas()` chequea `hasattr(observer_source,
+'get_recepciones_factura')`, que no existe).
+
+**Qué hacer:**
+1. **Terminar el sync de `recepciones`**: escribir `observer_source.get_recepciones_factura`
+   (o un sync batch) que lea las recepciones de ObServer (`dbo.` / `Gestion.`) y
+   pueble la tabla `recepciones` del observer_db. Definir la clave (nº factura +
+   CUIT proveedor) y la periodicidad (junto a los otros syncs).
+2. **Wirear `/ingresos`** (`routes/core.py` + `compare_invoice_vs_erp` en
+   `routes/invoices.py`) para que, si hay recepción en `recepciones` para ese nº
+   de factura, cruce contra eso en vez de pedir el Excel del ERP. El Excel/PDF
+   quedan como fallback y para el registro.
+
+**Enlace con el robot de Kellerhoff** (ver ítem anterior): los dos lados del
+cruce se automatizan —
+- **Factura** → la baja el robot de Kellerhoff (PDF + nº de factura).
+- **Mercadería** → sale de `recepciones` (ObServer), matcheada por `numero_factura`.
+
+→ Control factura-vs-ingreso **sin tipear ni subir nada**. La factura además va a
+la cuenta corriente (ítem anterior). Es el mismo dato sirviendo a los dos flujos.
