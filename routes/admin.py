@@ -815,6 +815,11 @@ def init_app(app):
         # Cartelera Badia (uvicorn systemd, API en CARTELERA_URL del agente)
         'actualizar-cartelera': '📺 Cartelera — Actualizar (git pull + restart)',
         'restart-cartelera': '📺 Cartelera — Restart',
+        # AppLabo (docker compose en /root/applabo, schema compartido con appfarmweb)
+        'actualizar-applabo': '🧪 AppLabo — Actualizar (git pull + restart)',
+        'restart-applabo': '🧪 AppLabo — Restart',
+        'logs-applabo': '🧪 AppLabo — Logs (50 líneas)',
+        'status-applabo': '🧪 AppLabo — Estado del contenedor',
     }
 
     @app.route('/admin/panel')
