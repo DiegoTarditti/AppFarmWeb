@@ -17,6 +17,37 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Análisis: qué productos caros conviene meter al robot Rowa (2026-08-30)
+
+**Idea de Diego**: además de la rotación (`/rowa/analisis`) y ahora la capacidad
+por altura cruzada con movimiento (ver `feat/rowa-alturas-vs-rotacion`), armar
+un análisis de **qué productos de precio alto conviene meter DENTRO del robot**
+para mejor control — el robot lleva un registro estricto de cada pack que
+entra/sale (packs, fechas, egresos), a diferencia del depósito/góndola donde
+el control es manual. Objetivo: reducir mermas/diferencias en los productos
+que más plata representan si se pierden o cuentan mal.
+
+**No implementado todavía.** Verificado 2026-08-30: no hay ningún análisis de
+"productos caros" ni cruce precio×ubicación(robot/depósito) en el código —
+grep de `precio.*robot`/`caro`/`hurto`/`merma` no encontró nada relacionado
+en `routes/rowa.py` ni `services/rowa_*.py`.
+
+**Qué haría falta**:
+- Precio por producto: ya existe `ObsProducto`/`Producto.precio_pvp` (o
+  `Gestion.ProductosPreciosVigentes` si hay acceso premium — ver "Trampas de
+  ObServer" en `CLAUDE.md`).
+- Cruzar con `ArticuloAnalizado.stock_deposito` (lo que hoy está FUERA del
+  robot, en `services/rowa_analisis.py`, cruzado en `rowa_observer.py`): de
+  los productos con `stock_deposito > 0`, ordenar por `precio_pvp * stock_deposito`
+  (valor parado fuera de control) y sugerir candidatos a meter al robot.
+- Definir el criterio de "conviene": ¿valor total en depósito, o valor por
+  unidad (si 1 sola unidad cara se pierde, duele igual que 10 baratas)? Charlar
+  con Diego el umbral antes de construir la regla.
+- Podría vivir como una cuarta sección en `/rowa/analisis` (rotación + capacidad
+  por altura + esto), o una vista propia si la lista es larga.
+
+---
+
 ## ⏳ Pendiente — Cadena de controles contra Kellerhoff (2026-08-24)
 
 **Diseño completo en [`docs/controles_kellerhoff.md`](controles_kellerhoff.md).**
