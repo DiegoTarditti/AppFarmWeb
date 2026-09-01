@@ -502,6 +502,7 @@
             if (d.errores) msg += ' · ' + d.errores + ' error(es)';
             setStatus(msg, true);
             if (_modo !== 'presentacion') cargarLista(_modo);  // refrescar la lista del modo
+            else if (d.aplicados) setTimeout(() => location.reload(), 900);  // la lista de abajo es server-side
         } catch { setStatus('Error de red', false); }
         finally { btnAplicar.disabled = false; }
     });
