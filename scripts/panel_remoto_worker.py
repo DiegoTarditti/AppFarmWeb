@@ -133,6 +133,18 @@ WHITELIST: dict[str, list[tuple[str, str]]] = {
     'restart-applabo':    [('cd /root/applabo && docker compose restart web', 'restart')],
     'logs-applabo':       [('cd /root/applabo && docker compose logs --tail=50 web', 'logs')],
     'status-applabo':     [('cd /root/applabo && docker compose ps', 'ps')],
+    # ── Asistencia Badia (repo aparte, docker compose en /opt/asistencia-badia/app) ──
+    # El código va montado como volumen (.:/app en docker-compose.yml), así que
+    # alcanza con restart — no hace falta rebuild salvo que cambie
+    # requirements.txt/Dockerfile. init_db() corre en el arranque de app.py
+    # (dentro del container), así que las migraciones nuevas se aplican solas.
+    'actualizar-asistencia': [
+        ('git -C /opt/asistencia-badia/app pull', 'pull'),
+        ('docker compose -f /opt/asistencia-badia/app/docker-compose.yml restart', 'restart'),
+    ],
+    'restart-asistencia': [('docker compose -f /opt/asistencia-badia/app/docker-compose.yml restart', 'restart')],
+    'logs-asistencia':    [('docker compose -f /opt/asistencia-badia/app/docker-compose.yml logs --tail=50', 'logs')],
+    'status-asistencia':  [('docker compose -f /opt/asistencia-badia/app/docker-compose.yml ps', 'ps')],
 }
 
 
