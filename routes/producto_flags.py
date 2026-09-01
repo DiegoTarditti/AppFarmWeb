@@ -115,6 +115,16 @@ def init_app(app):
                         .filter(ObsProducto.observer_id.in_(obs_ids))):
                     lab_by_oid[oid] = labdesc or ''
 
+            # es_fraccionable de ObServer (mirror local, sync_productos) — para
+            # avisar cuándo un fraccionado marcado a mano va a ser revertido por
+            # sync_fraccionado_master (corre cada hora, "ObServer manda").
+            fraccionable_by_oid = {}
+            if obs_ids:
+                for oid, esf in (session.query(
+                        ObsProducto.observer_id, ObsProducto.es_fraccionable)
+                        .filter(ObsProducto.observer_id.in_(obs_ids))):
+                    fraccionable_by_oid[oid] = bool(esf)
+
             # Stock de la farmacia operativa → "Frac." (cajas/unidades) tipo ObServer.
             from database import ObsStock
             from services.farmacia import farmacia_operativa
@@ -142,6 +152,11 @@ def init_app(app):
                     kel_desc, kel_codigo, kel_ean_eq = 'Kellerhoff no lo trae', '', ''
                 else:  # sin_resolver / sin_catalogo
                     kel_desc, kel_codigo, kel_ean_eq = '', '', ''
+                # En riesgo = local dice fraccionado=True pero ObServer dice
+                # es_fraccionable=False → sync_fraccionado_master lo va a pisar
+                # en su próxima corrida (cada hora). Sin observer_id no aplica
+                # (ese sync solo toca productos con observer_id).
+                riesgo = bool(prod.observer_id and not fraccionable_by_oid.get(prod.observer_id, True))
                 filas.append({
                     'ean': prod.codigo_barra,
                     'observer_id': prod.observer_id,
@@ -150,6 +165,7 @@ def init_app(app):
                     'lab': (prod.laboratorio.nombre if prod.laboratorio
                             else lab_by_oid.get(prod.observer_id, '')),
                     'fraccionado': bool(prod.fraccionado),
+                    'riesgo_revertir': riesgo,
                     'cantidad_envase': int(ce) if ce is not None else None,
                     'stock_actual': _stk,
                     'frac': frac,
@@ -309,11 +325,14 @@ def init_app(app):
             atr = session.get(ProductoAtributo, prod.id)
             cant = float(atr.cantidad_envase) if (atr and atr.cantidad_envase is not None) else None
             cant_obs = None
+            es_fraccionable_obs = None
             if prod.observer_id:
                 from database import ObsProducto
                 obs = session.get(ObsProducto, prod.observer_id)
-                if obs and obs.cantidad_envase is not None:
-                    cant_obs = float(obs.cantidad_envase)
+                if obs:
+                    es_fraccionable_obs = bool(obs.es_fraccionable)
+                    if obs.cantidad_envase is not None:
+                        cant_obs = float(obs.cantidad_envase)
             # Estado de equivalencia Kellerhoff (sobre el EAN que el export emite).
             from routes.kellerhoff import ean_export_de_producto, estado_equivalencia
             kel_ean = ean_export_de_producto(session, prod)
@@ -342,6 +361,7 @@ def init_app(app):
                 'fraccionado': bool(prod.fraccionado),
                 'cantidad_envase': cant,
                 'cantidad_envase_obs': cant_obs,
+                'es_fraccionable_obs': es_fraccionable_obs,
                 'es_pack': bool(prod.es_pack),
                 'cantidad_reposicion_fija': prod.cantidad_reposicion_fija,
                 'oferta': oferta,
@@ -583,7 +603,7 @@ def init_app(app):
             except (InvalidOperation, ValueError):
                 return jsonify({'ok': False, 'error': 'Envase común inválido.'}), 400
 
-        aplicados = materializados = sin_envase = errores = 0
+        aplicados = materializados = sin_envase = errores = en_riesgo = 0
         with get_db() as session:
             for oid in obs_ids:
                 ya_existia = (session.query(Producto)
@@ -595,10 +615,15 @@ def init_app(app):
                 if not ya_existia:
                     materializados += 1
                 prod.fraccionado = fraccionado
+                obs = session.get(ObsProducto, oid)
+                # Marcado fraccionado a mano pero ObServer dice que no lo es →
+                # sync_fraccionado_master lo va a revertir en su próxima corrida
+                # (corre cada hora, "ObServer manda" — decisión 2026-05-27).
+                if fraccionado and obs and not obs.es_fraccionable:
+                    en_riesgo += 1
                 # Envase: común si lo mandaron; sino el de ObServer del producto.
                 env = envase_comun
                 if env is None:
-                    obs = session.get(ObsProducto, oid)
                     env = obs.cantidad_envase if (obs and obs.cantidad_envase) else None
                 if env is not None and env > 0:
                     atr = session.get(ProductoAtributo, prod.id)
@@ -613,4 +638,5 @@ def init_app(app):
             session.commit()
         return jsonify({'ok': True, 'aplicados': aplicados,
                         'materializados': materializados,
-                        'sin_envase': sin_envase, 'errores': errores})
+                        'sin_envase': sin_envase, 'errores': errores,
+                        'en_riesgo': en_riesgo})

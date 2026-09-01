@@ -100,6 +100,9 @@
                     <input type="checkbox" id="pr-fraccionado" style="width:16px;height:16px;">
                     Se vende fraccionado (suelto, pero se pide por envase)
                 </label>
+                <div id="pr-riesgo-aviso" hidden style="margin-top:8px; padding:8px 10px; font-size:11px; border-radius:var(--ds-r-sm); background:#78350f; color:#fbbf24;">
+                    ⚠ ObServer dice que este producto <b>NO</b> es fraccionable — si lo marcás igual, una corrida automática (cada hora) lo va a revertir a "No". Corregilo en Gestion/ObServer si tiene que quedar fraccionado.
+                </div>
                 <div class="pf-field" style="margin-top:13px;">
                     <label class="pf-label">Cantidad por envase</label>
                     <input type="text" class="pf-input" id="pr-cant" inputmode="decimal" placeholder="vacío = usa el de ObServer">
@@ -184,7 +187,9 @@
                 <td class="text-[color:var(--ds-text-soft)]">{{ f.nombre }}</td>
                 <td><code>{{ f.ean }}</code></td>
                 <td class="text-[color:var(--ds-text-mute)]">{% if f.lab %}{{ f.lab }}{% else %}—{% endif %}</td>
-                <td>{% if f.fraccionado %}<span class="pp-badge si">Sí</span>{% else %}<span class="pp-badge no">No</span>{% endif %}</td>
+                <td>{% if f.fraccionado %}<span class="pp-badge si">Sí</span>{% else %}<span class="pp-badge no">No</span>{% endif %}
+                    {% if f.riesgo_revertir %}<span class="pp-badge" style="background:#78350f;color:#fbbf24;" title="ObServer dice que este producto NO es fraccionable — sync_fraccionado_master lo revierte a &quot;No&quot; en su próxima corrida (cada hora). Corregilo en Gestion/ObServer si tiene que quedar fraccionado.">⚠ se revierte</span>{% endif %}
+                </td>
                 <td style="text-align:right;">{% if f.cantidad_envase %}×{{ f.cantidad_envase }}{% else %}<span class="text-[#888]">—</span>{% endif %}</td>
                 <td style="text-align:right;"><code>{% if f.frac %}{{ f.frac }}{% else %}<span class="text-[#888]">—</span>{% endif %}</code></td>
                 {# Buscador inline de equivalencia Kellerhoff por fila #}
@@ -432,12 +437,21 @@
         updateSel(); sRes.classList.remove('open'); sInput.value = '';
         await precargar(p.codigo_barra);
     }
+    let _esFraccionableObs = null;  // null = desconocido/sin observer_id, no avisar
+    function _actualizarAvisoRiesgo() {
+        const aviso = $('pr-riesgo-aviso');
+        aviso.hidden = !($('pr-fraccionado').checked && _esFraccionableObs === false);
+    }
+    $('pr-fraccionado').addEventListener('change', _actualizarAvisoRiesgo);
+
     async function precargar(ean) {
         try {
             const r = await fetch('/api/producto/presentacion?ean=' + encodeURIComponent(ean), {credentials: 'same-origin'});
             const d = await r.json();
             if (!d.ok) return;
+            _esFraccionableObs = (d.es_fraccionable_obs != null) ? !!d.es_fraccionable_obs : null;
             $('pr-fraccionado').checked = !!d.fraccionado;
+            _actualizarAvisoRiesgo();
             $('pr-cant').value = d.cantidad_envase != null ? d.cantidad_envase : '';
             $('of-dto').value = (d.oferta && d.oferta.descuento_psl != null) ? d.oferta.descuento_psl : '';
             $('of-min').value = (d.oferta && d.oferta.unidades_minima) ? d.oferta.unidades_minima : 1;
@@ -500,6 +514,7 @@
             if (d.sin_lab) msg += ' · ' + d.sin_lab + ' sin lab';
             if (d.sin_envase) msg += ' · ' + d.sin_envase + ' sin envase';
             if (d.errores) msg += ' · ' + d.errores + ' error(es)';
+            if (d.en_riesgo) msg += ' · ⚠ ' + d.en_riesgo + ' se van a revertir (ObServer dice no fraccionable)';
             setStatus(msg, true);
             if (_modo !== 'presentacion') cargarLista(_modo);  // refrescar la lista del modo
             else if (d.aplicados) setTimeout(() => location.reload(), 900);  // la lista de abajo es server-side
