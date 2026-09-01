@@ -820,6 +820,11 @@ def init_app(app):
         'restart-applabo': '🧪 AppLabo — Restart',
         'logs-applabo': '🧪 AppLabo — Logs (50 líneas)',
         'status-applabo': '🧪 AppLabo — Estado del contenedor',
+        # Asistencia Badia (docker compose en /opt/asistencia-badia/app)
+        'actualizar-asistencia': '🕐 Asistencia Badia — Actualizar (git pull + restart)',
+        'restart-asistencia': '🕐 Asistencia Badia — Restart',
+        'logs-asistencia': '🕐 Asistencia Badia — Logs (50 líneas)',
+        'status-asistencia': '🕐 Asistencia Badia — Estado del contenedor',
     }
 
     @app.route('/admin/panel')
