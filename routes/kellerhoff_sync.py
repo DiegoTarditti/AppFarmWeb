@@ -159,8 +159,18 @@ def init_app(app):
         )
 
     @app.route('/kellerhoff/sync/ejecutar', methods=['POST'])
-    @login_required
     def kellerhoff_sync_ejecutar():
+        # Auth: mismo patrón que /api/auto-sync — token de máquina (header
+        # X-Auto-Sync-Token) O usuario logueado. Sin AUTO_SYNC_TOKEN seteado
+        # (caso actual en prod) queda abierto, para que el cron de
+        # /etc/cron.d/appfarmweb lo pueda llamar con curl sin sesión.
+        expected = os.environ.get('AUTO_SYNC_TOKEN', '').strip()
+        if expected:
+            from flask_login import current_user
+            sent = request.headers.get('X-Auto-Sync-Token', '').strip()
+            if sent != expected and not current_user.is_authenticated:
+                return jsonify({'ok': False, 'error': 'token invalido'}), 401
+
         # Lock en DB: si otro worker ya está sincronizando, rowcount==0 → 409.
         # Esto es lo que evita el segundo scraping en paralelo.
         if not _kh_lock_acquire():
