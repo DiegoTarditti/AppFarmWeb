@@ -654,6 +654,72 @@ def get_recepciones_factura(numero, proveedor_cuit=None, id_farmacia=None,
     } for f in filas if f['IdProducto']]
 
 
+def get_recepciones_multiples(numeros, id_farmacia=None):
+    """Como `get_recepciones_factura` (rama por número) pero para VARIOS
+    comprobantes a la vez, reusando una sola conexión — evita un login SQL
+    Server por ítem cuando se verifica un resumen entero (30-40 comprobantes).
+
+    Devuelve {numero_original: [items]|None}. `None` = ese número puntual
+    falló (error de red/consulta) — se sigue con el resto en vez de cortar
+    todo el lote por un ítem. `[]` = se consultó bien y no hay recepción.
+    """
+    conn = _connect()
+    if conn is None:
+        raise RuntimeError('ObServer no configurado o pymssql no disponible')
+    cfg = _config()
+    id_farmacia = id_farmacia or cfg['id_farmacia']
+
+    por_numero_filas = {}
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            for numero in numeros:
+                objetivo = _norm_nro(numero)
+                patron = _like_nro(numero)
+                if not objetivo or not patron:
+                    por_numero_filas[numero] = []
+                    continue
+                try:
+                    cur.execute("""
+                        SELECT IdProducto, CantidadRecepcionada qty, PrecioUnitario precio,
+                               NumerosFacturas nros, NumeroFactura nro_fac, NumeroRemito nro_rem
+                        FROM DW.Recepciones
+                        WHERE IdFarmacia = %s
+                          AND (NumeroFactura LIKE %s OR NumeroRemito LIKE %s
+                               OR NumerosFacturas LIKE %s)
+                    """, (id_farmacia, '%' + patron + '%',
+                          '%' + patron + '%', '%' + patron + '%'))
+                    filas = [f for f in cur.fetchall()
+                             if objetivo in [_norm_nro(f.get(k))
+                                             for k in ('nros', 'nro_fac', 'nro_rem')]]
+                    por_numero_filas[numero] = filas
+                except Exception:
+                    _log.exception('[KH-INGRESO] falló la consulta para %s — sigo con el resto', numero)
+                    por_numero_filas[numero] = None
+
+            prod_ids = sorted({
+                int(f['IdProducto'])
+                for filas in por_numero_filas.values() if filas
+                for f in filas if f['IdProducto']
+            })
+            descripciones = _descripciones_observer(cur, prod_ids)
+    finally:
+        conn.close()
+
+    eans = _eans_por_producto(prod_ids)
+    out = {}
+    for numero, filas in por_numero_filas.items():
+        if filas is None:
+            out[numero] = None
+            continue
+        out[numero] = [{
+            'codigo_barra': eans.get(int(f['IdProducto']), ''),
+            'descripcion': descripciones.get(int(f['IdProducto']), ''),
+            'cantidad': int(f['qty'] or 0),
+            'precio_unitario': float(f['precio'] or 0),
+        } for f in filas if f['IdProducto']]
+    return out
+
+
 def _descripciones_observer(cur, prod_ids):
     if not prod_ids:
         return {}

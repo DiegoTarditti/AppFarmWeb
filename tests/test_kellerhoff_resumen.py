@@ -373,3 +373,109 @@ def test_sin_total_impreso_el_checksum_dice_no_se_en_vez_de_no_cierra(tmp_path):
         assert guardado.total is None
         assert guardado.cuadra is None
         assert guardado.diferencia is None
+
+
+# ── verificar_ingresos_resumen: eslabón "ingreso" contra ObServer ───────────
+# get_recepciones_multiples pega al SQL Server real, así que en estos tests
+# se mockea — lo que se prueba es la lógica de encolar/persistir, no la query.
+
+def _mock_get_recepciones_multiples(por_numero):
+    """por_numero: {numero: filas|None} — construye el reemplazo de
+    observer_source.get_recepciones_multiples con esa respuesta fija."""
+    def _fake(numeros, id_farmacia=None):
+        return {n: por_numero.get(n, []) for n in numeros}
+    return _fake
+
+
+def test_verificar_ingresos_marca_encontrado_y_no_encontrado(tmp_path):
+    from unittest.mock import patch
+
+    import observer_source
+    from services.kellerhoff_resumen import verificar_ingresos_resumen
+
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+        items = _items(session, res['resumen_id'])
+        numeros = {it.numero: it for it in items}
+        assert len(numeros) == 3
+
+        # El primero de la lista "tiene" recepción, los otros dos no.
+        primero = next(iter(numeros))
+        fake = _mock_get_recepciones_multiples({
+            primero: [{'codigo_barra': '123', 'descripcion': 'x', 'cantidad': 1, 'precio_unitario': 0}],
+        })
+        with patch.object(observer_source, 'get_recepciones_multiples', fake):
+            conteo = verificar_ingresos_resumen(session, res['resumen_id'])
+
+        assert conteo == {'encontrados': 1, 'no_encontrados': 2, 'errores': 0, 'total': 3}
+        session.expunge_all()
+        refrescados = {it.numero: it for it in _items(session, res['resumen_id'])}
+        assert refrescados[primero].ingreso_verificado is True
+        assert refrescados[primero].ingreso_verificado_en is not None
+        for numero, it in refrescados.items():
+            if numero != primero:
+                assert it.ingreso_verificado is False
+
+
+def test_verificar_ingresos_no_corta_el_lote_por_un_item_que_falla(tmp_path):
+    """El objetivo de diseño: un ítem que falla (None) no aborta el resto —
+    se cuenta aparte y los demás se verifican igual, en la misma corrida."""
+    from unittest.mock import patch
+
+    import observer_source
+    from services.kellerhoff_resumen import verificar_ingresos_resumen
+
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+        items = _items(session, res['resumen_id'])
+        numeros = list({it.numero for it in items})
+        assert len(numeros) == 3
+
+        def _fake(nums, id_farmacia=None):
+            out = {}
+            for i, n in enumerate(nums):
+                out[n] = None if i == 0 else []   # el primero "falla"
+            return out
+
+        with patch.object(observer_source, 'get_recepciones_multiples', _fake):
+            conteo = verificar_ingresos_resumen(session, res['resumen_id'])
+
+        assert conteo['total'] == 3
+        assert conteo['errores'] == 1
+        assert conteo['encontrados'] + conteo['no_encontrados'] == 2
+
+        session.expunge_all()
+        refrescados = _items(session, res['resumen_id'])
+        # Los 2 que SÍ se pudieron consultar quedaron con un resultado persistido.
+        con_resultado = [it for it in refrescados if it.ingreso_verificado is not None]
+        assert len(con_resultado) == 2
+
+
+def test_ingreso_verificado_endurece_el_tilde(tmp_path):
+    """Antes de verificar: None no bloquea (test viejo). Después de verificar
+    en False: el renglón deja de estar tildado aunque tenga factura ligada."""
+    from unittest.mock import patch
+
+    import observer_source
+    from services.kellerhoff_resumen import verificar_ingresos_resumen
+
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        _factura(session, '00046-00279207', 915046.04)
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+
+        with patch.object(observer_source, 'get_recepciones_multiples',
+                          _mock_get_recepciones_multiples({})):  # nada encontrado
+            verificar_ingresos_resumen(session, res['resumen_id'])
+
+        session.expunge_all()
+        ligado = [it for it in _items(session, res['resumen_id']) if it.factura_id][0]
+        checks = estado_item(ligado)
+        assert checks['comprobante'] is True
+        assert checks['ingreso'] is False
+        assert item_tildado(ligado) is False
