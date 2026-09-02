@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62f4bd3`
+Generado: 2026-09-01 21:33 · rama `feat/rowa-planilla-valor-candidatos` · commit `7d7380a`
 
-**816 rutas** en 80 archivos · **133 modelos** · **22 syncs** · **41 services** · **11 parsers**
+**821 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -44,15 +44,15 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 |---|---|---|
 | `alarmas_notificadas` | `AlarmaNotificada` | [959](../database.py#L959) |
 | `analisis_ia_cache` | `AnalisisIaCache` | [2428](../database.py#L2428) |
-| `analisis_sesiones` | `AnalisisSesion` | [2555](../database.py#L2555) |
+| `analisis_sesiones` | `AnalisisSesion` | [2582](../database.py#L2582) |
 | `anunciantes` | `Anunciante` | [2306](../database.py#L2306) |
-| `api_keys` | `ApiKey` | [3214](../database.py#L3214) |
+| `api_keys` | `ApiKey` | [3241](../database.py#L3241) |
 | `archivos_compartidos` | `ArchivoCompartido` | [1266](../database.py#L1266) |
 | `backup_log` | `BackupLog` | [1147](../database.py#L1147) |
 | `barcode_mappings` | `BarcodeMapping` | [2035](../database.py#L2035) |
-| `bot_conversaciones` | `BotConversacion` | [3021](../database.py#L3021) |
-| `bot_interacciones` | `BotInteraccion` | [3189](../database.py#L3189) |
-| `bot_mensajes` | `BotMensaje` | [3083](../database.py#L3083) |
+| `bot_conversaciones` | `BotConversacion` | [3048](../database.py#L3048) |
+| `bot_interacciones` | `BotInteraccion` | [3216](../database.py#L3216) |
+| `bot_mensajes` | `BotMensaje` | [3110](../database.py#L3110) |
 | `cadencia_lab_snapshot` | `CadenciaLabSnapshot` | [2384](../database.py#L2384) |
 | `cadetes` | `Cadete` | [771](../database.py#L771) |
 | `ciudades` | `Ciudad` | [581](../database.py#L581) |
@@ -65,17 +65,18 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | `cron_log` | `CronLog` | [941](../database.py#L941) |
 | `cuentas_pago` | `CuentaPago` | [636](../database.py#L636) |
 | `descuentos_base` | `DescuentoBase` | [1358](../database.py#L1358) |
-| `devolucion_receta` | `DevolucionReceta` | [2771](../database.py#L2771) |
+| `devolucion_receta` | `DevolucionReceta` | [2798](../database.py#L2798) |
 | `documentos_pendientes` | `DocumentoPendiente` | [2348](../database.py#L2348) |
 | `domicilios_cliente` | `DomicilioCliente` | [704](../database.py#L704) |
 | `envio_config` | `EnvioConfig` | [733](../database.py#L733) |
 | `envio_tramos` | `EnvioTramo` | [677](../database.py#L677) |
 | `envio_zonas` | `EnvioZona` | [688](../database.py#L688) |
+| `equivalencias_compra` | `EquivalenciaCompra` | [2530](../database.py#L2530) |
 | `equivalencias_proveedor` | `EquivalenciaProveedor` | [1982](../database.py#L1982) |
 | `erp_stock` | `ErpStock` | [1905](../database.py#L1905) |
-| `estacionalidad_escenarios` | `EstacionalidadEscenario` | [2840](../database.py#L2840) |
-| `estacionalidad_productos` | `EstacionalidadProducto` | [2872](../database.py#L2872) |
-| `eventos_sla` | `EventoSLA` | [3146](../database.py#L3146) |
+| `estacionalidad_escenarios` | `EstacionalidadEscenario` | [2867](../database.py#L2867) |
+| `estacionalidad_productos` | `EstacionalidadProducto` | [2899](../database.py#L2899) |
+| `eventos_sla` | `EventoSLA` | [3173](../database.py#L3173) |
 | `export_templates` | `ExportTemplate` | [1187](../database.py#L1187) |
 | `factura_faltante` | `FacturaFaltante` | [1794](../database.py#L1794) |
 | `factura_items` | `InvoiceItem` | [1773](../database.py#L1773) |
@@ -83,7 +84,7 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | `farmacias` | `Farmacia` | [1091](../database.py#L1091) |
 | `formas_pago` | `FormaPago` | [627](../database.py#L627) |
 | `home_card_clicks` | `HomeCardClick` | [2478](../database.py#L2478) |
-| `informe_enviado` | `InformeEnviado` | [3132](../database.py#L3132) |
+| `informe_enviado` | `InformeEnviado` | [3159](../database.py#L3159) |
 | `invoice_batches` | `InvoiceBatch` | [1698](../database.py#L1698) |
 | `kellerhoff_catalogo` | `KellerhoffCatalogo` | [1598](../database.py#L1598) |
 | `kellerhoff_equivalencia` | `KellerhoffEquivalencia` | [1622](../database.py#L1622) |
@@ -91,10 +92,10 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | `kellerhoff_ofertas_fuente` | `KellerhoffOfertasFuente` | [1654](../database.py#L1654) |
 | `laboratorio_drogueria` | `LaboratorioDrogueria` | [1462](../database.py#L1462) |
 | `laboratorios` | `Laboratorio` | [91](../database.py#L91) |
-| `minimos_manuales` | `MinimoManual` | [3380](../database.py#L3380) |
+| `minimos_manuales` | `MinimoManual` | [3407](../database.py#L3407) |
 | `modulo_packs` | `ModuloPack` | [2190](../database.py#L2190) |
 | `modulos` | `Modulo` | [2177](../database.py#L2177) |
-| `motivo_devolucion` | `MotivoDevolucion` | [2619](../database.py#L2619) |
+| `motivo_devolucion` | `MotivoDevolucion` | [2646](../database.py#L2646) |
 | `mv_refresh_log` | `MvRefreshLog` | [1133](../database.py#L1133) |
 | `obs_categorias_clientes` | `ObsCategoriaCliente` | [341](../database.py#L341) |
 | `obs_clientes` | `ObsCliente` | [470](../database.py#L470) |
@@ -111,7 +112,7 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | `obs_operadores` | `ObsOperador` | [322](../database.py#L322) |
 | `obs_planes` | `ObsPlan` | [366](../database.py#L366) |
 | `obs_productos` | `ObsProducto` | [142](../database.py#L142) |
-| `obs_rowa_productos` | `ObsRowaProducto` | [3350](../database.py#L3350) |
+| `obs_rowa_productos` | `ObsRowaProducto` | [3377](../database.py#L3377) |
 | `obs_rubros` | `ObsRubro` | [120](../database.py#L120) |
 | `obs_stock` | `ObsStock` | [181](../database.py#L181) |
 | `obs_stock_snapshot_diario` | `ObsStockSnapshotDiario` | [1168](../database.py#L1168) |
@@ -119,9 +120,9 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | `obs_sync_log` | `ObsSyncLog` | [926](../database.py#L926) |
 | `obs_ventas_detalle` | `ObsVentaDetalle` | [258](../database.py#L258) |
 | `obs_ventas_mensuales` | `ObsVentaMensual` | [193](../database.py#L193) |
-| `ofertas_bot` | `OfertaBot` | [3096](../database.py#L3096) |
+| `ofertas_bot` | `OfertaBot` | [3123](../database.py#L3123) |
 | `ofertas_minimo` | `OfertaMinimo` | [1194](../database.py#L1194) |
-| `ofertas_registro` | `OfertaRegistro` | [3108](../database.py#L3108) |
+| `ofertas_registro` | `OfertaRegistro` | [3135](../database.py#L3135) |
 | `pack_equivalencias` | `PackEquivalencia` | [2492](../database.py#L2492) |
 | `pago_aplicaciones` | `PagoAplicacion` | [667](../database.py#L667) |
 | `pagos` | `Pago` | [650](../database.py#L650) |
@@ -136,15 +137,15 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | `pedido_obs_presets` | `PedidoObsPreset` | [759](../database.py#L759) |
 | `pedidos` | `Pedido` | [2205](../database.py#L2205) |
 | `pedidos_reparto` | `PedidoReparto` | [813](../database.py#L813) |
-| `plantilla_campos` | `PlantillaCampo` | [2584](../database.py#L2584) |
-| `plantillas` | `Plantilla` | [2599](../database.py#L2599) |
-| `plantillas_exportacion` | `PlantillaExportacion` | [2570](../database.py#L2570) |
+| `plantilla_campos` | `PlantillaCampo` | [2611](../database.py#L2611) |
+| `plantillas` | `Plantilla` | [2626](../database.py#L2626) |
+| `plantillas_exportacion` | `PlantillaExportacion` | [2597](../database.py#L2597) |
 | `procesos_compra` | `ProcesoCompra` | [2274](../database.py#L2274) |
 | `product_analytics` | `ProductAnalytics` | [2363](../database.py#L2363) |
 | `producto_atributos` | `ProductoAtributo` | [2130](../database.py#L2130) |
 | `producto_codigos_barra` | `ProductoCodigoBarra` | [2104](../database.py#L2104) |
 | `producto_flags` | `ProductoFlag` | [1577](../database.py#L1577) |
-| `producto_precios_hist` | `ProductoPrecioHist` | [2530](../database.py#L2530) |
+| `producto_precios_hist` | `ProductoPrecioHist` | [2557](../database.py#L2557) |
 | `productos` | `Producto` | [2046](../database.py#L2046) |
 | `productos_pendientes_revision` | `ProductoPendienteRevision` | [1035](../database.py#L1035) |
 | `proveedor_cronograma` | `ProveedorCronograma` | [1507](../database.py#L1507) |
@@ -152,16 +153,16 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | `proveedores` | `Provider` | [1325](../database.py#L1325) |
 | `reclamo_items` | `ClaimItem` | [1962](../database.py#L1962) |
 | `reclamos` | `Claim` | [1944](../database.py#L1944) |
-| `rendicion_grupo` | `RendicionGrupo` | [2713](../database.py#L2713) |
-| `rendicion_grupo_os` | `RendicionGrupoOS` | [2734](../database.py#L2734) |
-| `rendicion_lote` | `RendicionLote` | [2637](../database.py#L2637) |
-| `respuestas_rapidas` | `RespuestaRapida` | [3121](../database.py#L3121) |
+| `rendicion_grupo` | `RendicionGrupo` | [2740](../database.py#L2740) |
+| `rendicion_grupo_os` | `RendicionGrupoOS` | [2761](../database.py#L2761) |
+| `rendicion_lote` | `RendicionLote` | [2664](../database.py#L2664) |
+| `respuestas_rapidas` | `RespuestaRapida` | [3148](../database.py#L3148) |
 | `resumen_proveedor` | `ResumenProveedor` | [1815](../database.py#L1815) |
 | `resumen_proveedor_item` | `ResumenProveedorItem` | [1872](../database.py#L1872) |
-| `rol_filtro_obra_social` | `RolFiltroObraSocial` | [2749](../database.py#L2749) |
-| `rowa_cargas` | `RowaCarga` | [3298](../database.py#L3298) |
-| `rowa_nuevos` | `RowaNuevo` | [3331](../database.py#L3331) |
-| `rowa_snapshots` | `RowaSnapshot` | [3284](../database.py#L3284) |
+| `rol_filtro_obra_social` | `RolFiltroObraSocial` | [2776](../database.py#L2776) |
+| `rowa_cargas` | `RowaCarga` | [3325](../database.py#L3325) |
+| `rowa_nuevos` | `RowaNuevo` | [3358](../database.py#L3358) |
+| `rowa_snapshots` | `RowaSnapshot` | [3311](../database.py#L3311) |
 | `rutas_reparto` | `RutaReparto` | [795](../database.py#L795) |
 | `stock_differences` | `StockDifference` | [1927](../database.py#L1927) |
 | `sucursales` | `Sucursal` | [1306](../database.py#L1306) |
@@ -172,9 +173,9 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | `usuario_farmacias` | `UsuarioFarmacia` | [1115](../database.py#L1115) |
 | `usuarios` | `Usuario` | [2441](../database.py#L2441) |
 | `usuarios_pedidos` | `UsuarioPedido` | [1388](../database.py#L1388) |
-| `vendedor_bookmark` | `VendedorBookmark` | [2695](../database.py#L2695) |
-| `web_producto_imagen` | `WebProductoImagen` | [3268](../database.py#L3268) |
-| `web_rubros_publicados` | `WebRubroPublicado` | [3246](../database.py#L3246) |
+| `vendedor_bookmark` | `VendedorBookmark` | [2722](../database.py#L2722) |
+| `web_producto_imagen` | `WebProductoImagen` | [3295](../database.py#L3295) |
+| `web_rubros_publicados` | `WebRubroPublicado` | [3273](../database.py#L3273) |
 
 ## Rutas
 
@@ -397,32 +398,32 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/api/drogueria/<int:prov_id>/pedidos-emitidos` | GET | [`api_drogueria_pedidos_emitidos`](../routes/compras_dia.py#L586) |
-| `/api/lab-drog/asignar-bulk` | POST | [`api_lab_drog_asignar_bulk`](../routes/compras_dia.py#L2252) |
-| `/api/lab-drog/toggle` | POST | [`api_lab_drog_toggle`](../routes/compras_dia.py#L2225) |
-| `/api/matriz/drog-config` | POST | [`api_matriz_drog_config`](../routes/compras_dia.py#L2206) |
-| `/api/matriz/drog-visible` | POST | [`api_matriz_drog_visible`](../routes/compras_dia.py#L2193) |
+| `/api/lab-drog/asignar-bulk` | POST | [`api_lab_drog_asignar_bulk`](../routes/compras_dia.py#L2337) |
+| `/api/lab-drog/toggle` | POST | [`api_lab_drog_toggle`](../routes/compras_dia.py#L2310) |
+| `/api/matriz/drog-config` | POST | [`api_matriz_drog_config`](../routes/compras_dia.py#L2291) |
+| `/api/matriz/drog-visible` | POST | [`api_matriz_drog_visible`](../routes/compras_dia.py#L2278) |
 | `/api/pedido-emitido/<int:pedido_id>` | DELETE | [`api_pedido_emitido_borrar`](../routes/compras_dia.py#L652) |
-| `/api/pedido-emitido/<int:pedido_id>/export-plantilla` | GET | [`api_pedido_emitido_export_plantilla`](../routes/compras_dia.py#L2663) |
-| `/api/pedido-emitido/<int:pedido_id>/export-xls` | GET | [`api_pedido_emitido_export_xls`](../routes/compras_dia.py#L2888) |
-| `/api/pedido-emitido/<int:pedido_id>/importar-xls` | POST | [`api_pedido_importar_xls`](../routes/compras_dia.py#L2595) |
-| `/api/pedido-emitido/<int:pedido_id>/mapear-ean` | POST | [`api_pedido_mapear_ean`](../routes/compras_dia.py#L2526) |
-| `/api/pedido-emitido/<int:pedido_id>/recepcion` | POST | [`api_pedido_recepcion`](../routes/compras_dia.py#L2487) |
+| `/api/pedido-emitido/<int:pedido_id>/export-plantilla` | GET | [`api_pedido_emitido_export_plantilla`](../routes/compras_dia.py#L2748) |
+| `/api/pedido-emitido/<int:pedido_id>/export-xls` | GET | [`api_pedido_emitido_export_xls`](../routes/compras_dia.py#L2973) |
+| `/api/pedido-emitido/<int:pedido_id>/importar-xls` | POST | [`api_pedido_importar_xls`](../routes/compras_dia.py#L2680) |
+| `/api/pedido-emitido/<int:pedido_id>/mapear-ean` | POST | [`api_pedido_mapear_ean`](../routes/compras_dia.py#L2611) |
+| `/api/pedido-emitido/<int:pedido_id>/recepcion` | POST | [`api_pedido_recepcion`](../routes/compras_dia.py#L2572) |
 | `/api/pedidos-emitidos/todos` | GET | [`api_pedidos_emitidos_todos`](../routes/compras_dia.py#L610) |
-| `/api/pedidos/dia/buscar-producto` | GET | [`api_compras_dia_buscar_producto`](../routes/compras_dia.py#L1929) |
+| `/api/pedidos/dia/buscar-producto` | GET | [`api_compras_dia_buscar_producto`](../routes/compras_dia.py#L2014) |
 | `/api/pedidos/dia/countdown` | GET | [`api_compras_dia_countdown`](../routes/compras_dia.py#L666) |
-| `/api/pedidos/dia/emitir` | POST | [`api_compras_dia_emitir`](../routes/compras_dia.py#L2291) |
+| `/api/pedidos/dia/emitir` | POST | [`api_compras_dia_emitir`](../routes/compras_dia.py#L2376) |
 | `/api/pedidos/dia/horarios/<int:proveedor_id>` | GET/POST/DELETE | [`api_horarios_crud`](../routes/compras_dia.py#L688) |
-| `/api/producto/<int:prod_id>/excluir` | POST | [`api_producto_excluir`](../routes/compras_dia.py#L3002) |
-| `/api/producto/<int:prod_id>/reactivar` | POST | [`api_producto_reactivar`](../routes/compras_dia.py#L3023) |
-| `/api/usuarios-pedidos` | GET/POST | [`api_usuarios_pedidos`](../routes/compras_dia.py#L2961) |
-| `/api/usuarios-pedidos/<int:uid>` | DELETE | [`api_usuarios_pedidos_borrar`](../routes/compras_dia.py#L2991) |
-| `/compras/armar/exportar-minimos` | GET | [`compras_armar_exportar_minimos`](../routes/compras_dia.py#L1732) |
+| `/api/producto/<int:prod_id>/excluir` | POST | [`api_producto_excluir`](../routes/compras_dia.py#L3087) |
+| `/api/producto/<int:prod_id>/reactivar` | POST | [`api_producto_reactivar`](../routes/compras_dia.py#L3108) |
+| `/api/usuarios-pedidos` | GET/POST | [`api_usuarios_pedidos`](../routes/compras_dia.py#L3046) |
+| `/api/usuarios-pedidos/<int:uid>` | DELETE | [`api_usuarios_pedidos_borrar`](../routes/compras_dia.py#L3076) |
+| `/compras/armar/exportar-minimos` | GET | [`compras_armar_exportar_minimos`](../routes/compras_dia.py#L1817) |
 | `/compras/laboratorio` | GET | [`compras_laboratorio`](../routes/compras_dia.py#L375) |
 | `/compras/laboratorio/<int:obs_lab_id>/comprar-modulos` | POST | [`compras_laboratorio_comprar_modulos`](../routes/compras_dia.py#L465) |
-| `/compras/labs-drogerias` | GET | [`labs_drogerias_matriz`](../routes/compras_dia.py#L2126) |
-| `/compras/multi-lab` | GET | [`compras_multi_lab`](../routes/compras_dia.py#L1687) |
-| `/pedidos-emitidos` | GET | [`pedidos_emitidos_list`](../routes/compras_dia.py#L2372) |
-| `/pedidos-emitidos/<int:pedido_id>` | GET | [`pedido_emitido_detalle`](../routes/compras_dia.py#L2422) |
+| `/compras/labs-drogerias` | GET | [`labs_drogerias_matriz`](../routes/compras_dia.py#L2211) |
+| `/compras/multi-lab` | GET | [`compras_multi_lab`](../routes/compras_dia.py#L1772) |
+| `/pedidos-emitidos` | GET | [`pedidos_emitidos_list`](../routes/compras_dia.py#L2457) |
+| `/pedidos-emitidos/<int:pedido_id>` | GET | [`pedido_emitido_detalle`](../routes/compras_dia.py#L2507) |
 | `/pedidos/dia` | GET | [`compras_dia`](../routes/compras_dia.py#L129) |
 | `/pedidos/dia/armar` | GET | [`compras_dia_armar`](../routes/compras_dia.py#L747) |
 
@@ -678,6 +679,16 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | `/config/envio/zona/<int:zid>/delete` | POST | [`envio_zona_eliminar`](../routes/envio.py#L128) |
 | `/config/envio/zona/<int:zid>/geolocalizar` | POST | [`envio_zona_geo`](../routes/envio.py#L94) |
 | `/envio` | GET | [`envio_legacy_panel_redirect`](../routes/envio.py#L136) |
+
+### `routes/equivalencias_compra.py`
+
+| Ruta | Métodos | Función |
+|---|---|---|
+| `/api/equivalencia-compra` | POST | [`api_equivalencia_compra_confirmar`](../routes/equivalencias_compra.py#L60) |
+| `/api/equivalencia-compra/<int:eq_id>/desactivar` | POST | [`api_equivalencia_compra_desactivar`](../routes/equivalencias_compra.py#L116) |
+| `/api/equivalencia-compra/candidatos` | GET | [`api_equivalencia_compra_candidatos`](../routes/equivalencias_compra.py#L53) |
+| `/api/equivalencia-compra/descartar` | POST | [`api_equivalencia_compra_descartar`](../routes/equivalencias_compra.py#L91) |
+| `/productos/equivalencias-compra` | GET | [`equivalencias_compra_list`](../routes/equivalencias_compra.py#L29) |
 
 ### `routes/estacionalidad.py`
 
@@ -1314,21 +1325,21 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/rowa` | GET | [`rowa_dashboard`](../routes/rowa.py#L96) |
-| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L1081) |
-| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L1048) |
-| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L759) |
-| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L873) |
-| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L930) |
-| `/rowa/carga/verificar` | POST | [`rowa_carga_verificar`](../routes/rowa.py#L990) |
-| `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L452) |
-| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L562) |
+| `/rowa/analisis` | GET | [`rowa_analisis`](../routes/rowa.py#L1115) |
+| `/rowa/api/producto/<article_id>/historial-stock` | GET | [`rowa_historial_stock`](../routes/rowa.py#L1082) |
+| `/rowa/carga` | GET | [`rowa_carga`](../routes/rowa.py#L793) |
+| `/rowa/carga/export.<fmt>` | GET | [`rowa_carga_export`](../routes/rowa.py#L907) |
+| `/rowa/carga/registrar` | POST | [`rowa_carga_registrar`](../routes/rowa.py#L964) |
+| `/rowa/carga/verificar` | POST | [`rowa_carga_verificar`](../routes/rowa.py#L1024) |
+| `/rowa/diferencias` | GET | [`rowa_diferencias`](../routes/rowa.py#L486) |
+| `/rowa/egreso/<eid>` | GET | [`rowa_egreso`](../routes/rowa.py#L596) |
 | `/rowa/export` | GET | [`rowa_export_xlsx`](../routes/rowa.py#L199) |
-| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L508) |
+| `/rowa/extraer` | POST | [`rowa_extraer`](../routes/rowa.py#L542) |
 | `/rowa/limpieza/<tipo>` | GET | [`rowa_limpieza`](../routes/rowa.py#L228) |
-| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L570) |
-| `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L435) |
+| `/rowa/nuevo/<article_id>/toggle` | POST | [`rowa_nuevo_toggle`](../routes/rowa.py#L604) |
+| `/rowa/planilla` | GET | [`rowa_planilla`](../routes/rowa.py#L466) |
 | `/rowa/planilla/export.<fmt>` | GET | [`rowa_planilla_export`](../routes/rowa.py#L313) |
-| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L1168) |
+| `/rowa/snapshot/auto` | GET | [`rowa_snapshot_auto`](../routes/rowa.py#L1202) |
 
 ### `routes/sucursales.py`
 
@@ -1406,6 +1417,7 @@ Generado: 2026-08-30 21:41 · rama `feat/rowa-alturas-vs-rotacion` · commit `62
 | [`cuenta_corriente.py`](../services/cuenta_corriente.py) | Cálculo único de movimientos y saldo de la cuenta corriente de proveedores. |
 | [`dashboard_snapshot.py`](../services/dashboard_snapshot.py) | Refresco del snapshot product_analytics para el dashboard. |
 | [`descuentos.py`](../services/descuentos.py) | Lógica de descuentos para el flujo de compra rápida. |
+| [`equivalencias_compra.py`](../services/equivalencias_compra.py) | Detección de candidatos a equivalencia venta↔compra. |
 | [`eventos_sla.py`](../services/eventos_sla.py) | Helper para registrar eventos SLA (Diego 2026-06-22). |
 | [`factura_ia.py`](../services/factura_ia.py) | Extracción de facturas de droguerías a JSON estructurado vía Claude (Vision). |
 | [`farmacia.py`](../services/farmacia.py) | Resolución de la farmacia operativa (ObServer `id_farmacia`). |
