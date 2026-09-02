@@ -354,13 +354,15 @@ def init_app(app):
                 flash('Resumen no encontrado', 'error')
                 return redirect(url_for('kellerhoff_resumenes'))
 
-            from services.kellerhoff_resumen import estado_item, item_tildado
+            from services.kellerhoff_resumen import cruce_erp_map, estado_item, item_tildado
 
+            items_orm = (session.query(ResumenProveedorItem)
+                        .filter_by(resumen_id=r.id)
+                        .order_by(ResumenProveedorItem.fecha,
+                                  ResumenProveedorItem.numero).all())
+            cruce_erp = cruce_erp_map(session, items_orm)
             items = []
-            for it in (session.query(ResumenProveedorItem)
-                       .filter_by(resumen_id=r.id)
-                       .order_by(ResumenProveedorItem.fecha,
-                                 ResumenProveedorItem.numero).all()):
+            for it in items_orm:
                 items.append({
                     'fecha': it.fecha.strftime('%d/%m/%Y') if it.fecha else '',
                     'tipo': it.tipo, 'numero': it.numero,
@@ -368,8 +370,8 @@ def init_app(app):
                     'total': float(it.total or 0),
                     'factura_id': it.factura_id,
                     'pago_ajuste_id': it.pago_ajuste_id,
-                    'tildado': item_tildado(it),
-                    'checks': estado_item(it),
+                    'tildado': item_tildado(it, cruce_erp),
+                    'checks': estado_item(it, cruce_erp),
                 })
             n_items, n_tildados, cerrado = _contar_items(session, r.id)
             cab = {
@@ -433,6 +435,8 @@ def init_app(app):
 
         msg = (f"Ingresos verificados: {res['encontrados']} encontrados, "
                f"{res['no_encontrados']} sin recepción en ObServer")
+        if res.get('no_aplica'):
+            msg += f", {res['no_aplica']} no aplica (NC)"
         if res['errores']:
             msg += f", {res['errores']} con error (reintentá)"
         flash(msg, 'success' if not res['errores'] else 'warning')

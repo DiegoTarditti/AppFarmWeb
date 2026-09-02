@@ -14,6 +14,7 @@ import database
 from helpers import clave_comprobante
 from services.cuenta_corriente import corte_resumenes, movimientos_proveedor
 from services.kellerhoff_resumen import (
+    cruce_erp_map,
     estado_item,
     estado_resumen,
     item_tildado,
@@ -398,28 +399,33 @@ def test_verificar_ingresos_marca_encontrado_y_no_encontrado(tmp_path):
         session.commit()
         res = _importar(session, prov, tmp_path)
         items = _items(session, res['resumen_id'])
-        # La clave de búsqueda real es el remito cuando existe (así lo
-        # registra ObServer); la NCR del fixture no trae remito, ahí se
-        # busca por su propio número.
-        claves = {(it.numero_remito or it.numero): it for it in items}
-        assert len(claves) == 3
+        # La búsqueda real es por remito; la NCR del fixture no trae remito —
+        # queda excluida (no_aplica), no se le busca nada por su propio número.
+        con_remito = [it for it in items if it.numero_remito]
+        ncr = [it for it in items if not it.numero_remito]
+        assert len(con_remito) == 2
+        assert len(ncr) == 1
 
-        # La primera clave "tiene" recepción, las otras dos no.
-        primera = next(iter(claves))
+        # El primer remito "tiene" recepción, el segundo no.
+        primero, segundo = con_remito[0].numero_remito, con_remito[1].numero_remito
         fake = _mock_get_recepciones_multiples({
-            primera: [{'codigo_barra': '123', 'descripcion': 'x', 'cantidad': 1, 'precio_unitario': 0}],
+            primero: [{'codigo_barra': '123', 'descripcion': 'x', 'cantidad': 1, 'precio_unitario': 0}],
         })
         with patch.object(observer_source, 'get_recepciones_multiples', fake):
             conteo = verificar_ingresos_resumen(session, res['resumen_id'])
 
-        assert conteo == {'encontrados': 1, 'no_encontrados': 2, 'errores': 0, 'total': 3}
+        assert conteo == {'encontrados': 1, 'no_encontrados': 1, 'errores': 0,
+                          'no_aplica': 1, 'total': 3}
         session.expunge_all()
-        refrescados = {(it.numero_remito or it.numero): it for it in _items(session, res['resumen_id'])}
-        assert refrescados[primera].ingreso_verificado is True
-        assert refrescados[primera].ingreso_verificado_en is not None
-        for clave, it in refrescados.items():
-            if clave != primera:
-                assert it.ingreso_verificado is False
+        refrescados = {it.numero_remito: it for it in _items(session, res['resumen_id'])
+                      if it.numero_remito}
+        assert refrescados[primero].ingreso_verificado is True
+        assert refrescados[primero].ingreso_verificado_en is not None
+        assert refrescados[segundo].ingreso_verificado is False
+
+        # La NC nunca se toca: sigue en None (no aplica), no False.
+        ncr_refrescada = next(it for it in _items(session, res['resumen_id']) if it.tipo == 'NCR')
+        assert ncr_refrescada.ingreso_verificado is None
 
 
 def test_verificar_ingresos_no_corta_el_lote_por_un_item_que_falla(tmp_path):
@@ -435,8 +441,8 @@ def test_verificar_ingresos_no_corta_el_lote_por_un_item_que_falla(tmp_path):
         session.commit()
         res = _importar(session, prov, tmp_path)
         items = _items(session, res['resumen_id'])
-        numeros = list({it.numero for it in items})
-        assert len(numeros) == 3
+        con_remito = [it for it in items if it.numero_remito]
+        assert len(con_remito) == 2   # la NCR queda afuera (no_aplica), no entra al lote
 
         def _fake(nums, id_farmacia=None):
             out = {}
@@ -448,14 +454,15 @@ def test_verificar_ingresos_no_corta_el_lote_por_un_item_que_falla(tmp_path):
             conteo = verificar_ingresos_resumen(session, res['resumen_id'])
 
         assert conteo['total'] == 3
+        assert conteo['no_aplica'] == 1
         assert conteo['errores'] == 1
-        assert conteo['encontrados'] + conteo['no_encontrados'] == 2
+        assert conteo['encontrados'] + conteo['no_encontrados'] == 1
 
         session.expunge_all()
         refrescados = _items(session, res['resumen_id'])
-        # Los 2 que SÍ se pudieron consultar quedaron con un resultado persistido.
+        # El único que SÍ se pudo consultar quedó con un resultado persistido.
         con_resultado = [it for it in refrescados if it.ingreso_verificado is not None]
-        assert len(con_resultado) == 2
+        assert len(con_resultado) == 1
 
 
 def test_ingreso_verificado_endurece_el_tilde(tmp_path):
@@ -482,3 +489,138 @@ def test_ingreso_verificado_endurece_el_tilde(tmp_path):
         assert checks['comprobante'] is True
         assert checks['ingreso'] is False
         assert item_tildado(ligado) is False
+
+
+# ── Eslabón "ingreso" vs NC: no aplica, no es "falta" ────────────────────────
+
+def test_la_nc_de_mercaderia_no_se_marca_como_faltante(tmp_path):
+    """docs/controles_kellerhoff.md, Eslabón 4: una NC no tiene remito y no
+    genera ingreso — el check tiene que quedar en None (no aplica), no False
+    (falta), o cada semana marca faltantes falsos en las NC."""
+    from unittest.mock import patch
+
+    import observer_source
+    from services.kellerhoff_resumen import verificar_ingresos_resumen
+
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        # Liga la NC como recupero (pago_ajuste_id) para que "comprobante" dé
+        # True — así lo que se está probando es que "ingreso" en None no la
+        # tape, no una NC sin ningún lado que la controle.
+        _ajuste_nc(session, '0046A00063591', 69124.56)
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+
+        # Nada encontrado para nadie en ObServer.
+        with patch.object(observer_source, 'get_recepciones_multiples',
+                          _mock_get_recepciones_multiples({})):
+            conteo = verificar_ingresos_resumen(session, res['resumen_id'])
+
+        assert conteo['no_aplica'] == 1
+        session.expunge_all()
+        ncr = next(it for it in _items(session, res['resumen_id']) if it.tipo == 'NCR')
+        assert ncr.pago_ajuste_id is not None
+        assert ncr.ingreso_verificado is None            # no False
+        assert estado_item(ncr)['ingreso'] is None
+        # None no bloquea el tilde: la NC sigue tildándose por su lado
+        # financiero/comprobante normal, sin que "ingreso" la frene.
+        assert item_tildado(ncr) is True
+
+
+# ── cruce_erp: conectado con "Verificar ingresos" ────────────────────────────
+
+def _con_item_factura(session, prov, ean='7790000000001', cant=5):
+    """Factura ligada al primer FAC del fixture, con un ítem para poder
+    cruzar cantidades contra lo que traiga ObServer."""
+    inv = _factura(session, '00046-00279207', 915046.04)
+    session.add(database.InvoiceItem(factura_id=inv.id, codigo_barra=ean,
+                                     descripcion='PROD TEST', cantidad=cant))
+    session.flush()
+    return inv
+
+
+def test_verificar_ingresos_guarda_el_cruce_de_cantidades_cuando_coincide(tmp_path):
+    from unittest.mock import patch
+
+    import observer_source
+    from services.kellerhoff_resumen import verificar_ingresos_resumen
+
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        inv = _con_item_factura(session, prov, ean='7790000000001', cant=5)
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+
+        it = next(x for x in _items(session, res['resumen_id']) if x.factura_id == inv.id)
+        fake = _mock_get_recepciones_multiples({
+            it.numero_remito: [{'codigo_barra': '7790000000001', 'descripcion': 'PROD TEST',
+                               'cantidad': 5, 'precio_unitario': 0}],
+        })
+        with patch.object(observer_source, 'get_recepciones_multiples', fake):
+            verificar_ingresos_resumen(session, res['resumen_id'])
+
+        session.expunge_all()
+        inv_refrescada = session.get(database.Invoice, inv.id)
+        assert inv_refrescada.erp_carga_id is not None
+        diffs = (session.query(database.StockDifference)
+                .filter_by(factura_id=inv.id).all())
+        assert diffs == []   # cantidad y código coinciden exacto → sin diferencias
+
+        m = cruce_erp_map(session, _items(session, res['resumen_id']))
+        assert m[inv.id] is True
+        it_refrescado = next(x for x in _items(session, res['resumen_id']) if x.factura_id == inv.id)
+        assert estado_item(it_refrescado, m)['cruce_erp'] is True
+
+
+def test_verificar_ingresos_guarda_el_cruce_de_cantidades_cuando_difiere(tmp_path):
+    from unittest.mock import patch
+
+    import observer_source
+    from services.kellerhoff_resumen import verificar_ingresos_resumen
+
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        inv = _con_item_factura(session, prov, ean='7790000000002', cant=10)
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+
+        it = next(x for x in _items(session, res['resumen_id']) if x.factura_id == inv.id)
+        fake = _mock_get_recepciones_multiples({
+            # ObServer dice que llegaron 6, la factura dice 10 → diferencia.
+            it.numero_remito: [{'codigo_barra': '7790000000002', 'descripcion': 'PROD TEST',
+                               'cantidad': 6, 'precio_unitario': 0}],
+        })
+        with patch.object(observer_source, 'get_recepciones_multiples', fake):
+            verificar_ingresos_resumen(session, res['resumen_id'])
+
+        session.expunge_all()
+        diffs = (session.query(database.StockDifference)
+                .filter_by(factura_id=inv.id).all())
+        assert len(diffs) == 1
+        assert diffs[0].diferencia == 4   # 10 - 6
+
+        m = cruce_erp_map(session, _items(session, res['resumen_id']))
+        assert m[inv.id] is False
+        it_refrescado = next(x for x in _items(session, res['resumen_id']) if x.factura_id == inv.id)
+        checks = estado_item(it_refrescado, m)
+        assert checks['cruce_erp'] is False
+        # Con diferencias de cantidad, el renglón no puede quedar tildado.
+        assert item_tildado(it_refrescado, m) is False
+
+
+def test_cruce_erp_map_no_incluye_facturas_nunca_cruzadas(tmp_path):
+    """Distinción clave (mismo criterio que /results/<id>): ausente del mapa
+    = nunca se cruzó, no es lo mismo que False."""
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        inv = _con_item_factura(session, prov)
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+
+        items = _items(session, res['resumen_id'])
+        m = cruce_erp_map(session, items)
+        assert inv.id not in m
+
+        it = next(x for x in items if x.factura_id == inv.id)
+        checks = estado_item(it, m)
+        assert checks['cruce_erp'] is None
