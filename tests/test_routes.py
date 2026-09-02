@@ -273,6 +273,54 @@ class TestCompareViewErpDeOtroChequeo:
         assert 'PROD SOLO ERP' in body
 
 
+class TestShowResultsTresEstados:
+    """/invoice/<id> (show_results) confundía "nunca se cruzó" con "coincide":
+    ambos casos dan differences=[] (get_saved_differences es solo una query
+    por factura_id, no sabe si CORRIÓ algo). El síntoma real: una factura con
+    erp_carga_id=None mostraba "coincidencia exacta con ERP" en vez de avisar
+    que no había nada para comparar."""
+
+    def test_nunca_cruzada_no_dice_que_coincide(self, client, db_session):
+        prov = _make_provider(db_session, razon='SIN CRUZAR', cuit='30-SNC-1')
+        inv = _make_invoice(db_session, prov, numero='FNC01')
+        assert inv.erp_carga_id is None
+        db_session.commit()
+
+        resp = client.get(f'/results/{inv.id}')
+        assert resp.status_code == 200
+        body = resp.data.decode('utf-8')
+        assert 'coincidencia exacta con ERP' not in body
+        assert 'La factura coincide con el stock ERP' not in body
+        assert 'nunca se cruzó' in body
+        assert 'Todavía no se cruzó' in body
+
+    def test_cruzada_sin_diferencias_si_dice_que_coincide(self, client, db_session):
+        prov = _make_provider(db_session, razon='COINCIDE', cuit='30-COI-1')
+        inv = _make_invoice(db_session, prov, numero='FCO01')
+        inv.erp_carga_id = 555
+        db_session.commit()
+
+        resp = client.get(f'/results/{inv.id}')
+        assert resp.status_code == 200
+        body = resp.data.decode('utf-8')
+        assert 'coincidencia exacta con ERP' in body
+        assert 'nunca se cruzó' not in body
+
+    def test_cruzada_con_diferencias_las_muestra(self, client, db_session):
+        prov = _make_provider(db_session, razon='CON DIFS', cuit='30-CDF-1')
+        inv = _make_invoice(db_session, prov, numero='FCD01')
+        inv.erp_carga_id = 666
+        _make_diff(db_session, inv)
+        db_session.commit()
+
+        resp = client.get(f'/results/{inv.id}')
+        assert resp.status_code == 200
+        body = resp.data.decode('utf-8')
+        assert '1 diferencias detectadas' in body
+        assert 'nunca se cruzó' not in body
+        assert 'coincidencia exacta con ERP' not in body
+
+
 class TestCompareViewSugerencias:
     """El cruce manual sugiere el renglón parecido, sin aplicarlo solo."""
 

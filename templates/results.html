@@ -93,7 +93,9 @@
                 <h1 class="page-header__title">Resultados del <span class="glow-text">cruce</span></h1>
                 <p class="page-header__subtitle">
                     {{ invoice.proveedor_razon or '—' }} · {{ invoice.fecha }} ·
-                    {% if differences %}{{ differences|length }} diferencias detectadas{% else %}coincidencia exacta con ERP{% endif %}
+                    {% if invoice.erp_carga_id is none %}nunca se cruzó contra ERP
+                    {% elif differences %}{{ differences|length }} diferencias detectadas
+                    {% else %}coincidencia exacta con ERP{% endif %}
                 </p>
             </div>
             <div class="page-header__actions">
@@ -304,6 +306,21 @@
             </div>
         </form>
 
+        {% elif invoice.erp_carga_id is none %}
+        <div class="card empty-state">
+            <div class="empty-state__icon">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+                </svg>
+            </div>
+            <div class="display font-bold text-lg mb-1">Todavía no se cruzó</div>
+            <div class="text-sm mb-3" style="color:var(--ds-text-soft);">
+                Esta factura no tiene ningún Excel de ERP ni sync de ObServer cargado — no confundir con "coincide".
+            </div>
+            <a href="{{ url_for('compare_view', invoice_id=invoice.id) }}" class="btn btn-mint btn-sm">
+                Cruzar contra ERP / ObServer →
+            </a>
+        </div>
         {% else %}
         <div class="card empty-state">
             <div class="empty-state__icon">

@@ -55,6 +55,22 @@ def flask_app(init_test_db, tmp_path_factory):
         color = '#888'
     app.jinja_env.globals['entorno'] = _Entorno()
 
+    # Filtro custom que solo se registra en app.py (no se importa acá a propósito,
+    # para no ejecutar todo el módulo de arranque real) — mismo cálculo.
+    @app.template_filter('arg_currency')
+    def _arg_currency(value):
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return '—'
+        int_part, dec_part = f'{value:.2f}'.split('.')
+        int_formatted = ''
+        for i, ch in enumerate(reversed(int_part)):
+            if i and i % 3 == 0:
+                int_formatted = '.' + int_formatted
+            int_formatted = ch + int_formatted
+        return f'{int_formatted},{dec_part}'
+
     from flask import url_for as _real_url_for
     def _tolerant_url_for(endpoint, **values):
         try:
