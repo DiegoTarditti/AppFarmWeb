@@ -81,6 +81,9 @@ def exigir_login():
                       # Filtro droguería: herramienta standalone sin login.
                       'filtro_drogueria', 'filtro_drogueria_generar',
                       'api_auto_sync', 'api_auto_sync_status',
+                      # Cron interno (curl desde /etc/cron.d/appfarmweb): auth
+                      # propia via AUTO_SYNC_TOKEN, igual que api_auto_sync.
+                      'kellerhoff_sync_ejecutar',
                       # WhatsApp Cloud API webhook (llamado por Meta, sin sesión)
                       'whatsapp_webhook_get', 'whatsapp_webhook_post',
                       'whatsapp_reenganche',
