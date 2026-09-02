@@ -1895,6 +1895,11 @@ class ResumenProveedorItem(Base):
     # para siempre por un comprobante que está perfectamente bien procesado.
     pago_ajuste_id = Column(Integer, ForeignKey('pagos_ajustes_cc.id', ondelete='SET NULL'),
                             nullable=True)
+    # Eslabón 4 del control ("ingreso"): ¿ObServer tiene una recepción para
+    # este comprobante? None = sin verificar todavía, True = encontrada,
+    # False = se buscó y NO está (ver services/kellerhoff_resumen.estado_item).
+    ingreso_verificado = Column(Boolean, nullable=True)
+    ingreso_verificado_en = Column(DateTime, nullable=True)
     __table_args__ = (
         Index('idx_resumen_item_resumen', 'resumen_id'),
         Index('idx_resumen_item_clave', 'clave'),
@@ -5861,6 +5866,10 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE resumen_proveedor_item ADD COLUMN IF NOT EXISTS pago_ajuste_id INTEGER "
         "REFERENCES pagos_ajustes_cc(id) ON DELETE SET NULL"))
+    conn.execute(text(
+        "ALTER TABLE resumen_proveedor_item ADD COLUMN IF NOT EXISTS ingreso_verificado BOOLEAN"))
+    conn.execute(text(
+        "ALTER TABLE resumen_proveedor_item ADD COLUMN IF NOT EXISTS ingreso_verificado_en TIMESTAMP"))
     # Mismo caso en el módulo Rowa: la columna se sumó al modelo `RowaNuevo`
     # cuando la tabla ya estaba creada.
     conn.execute(text(

@@ -43,6 +43,15 @@
         {% if resumen.generado_en %} · generado {{ resumen.generado_en }}{% endif %}
       </p>
     </div>
+    {% if observer_disponible %}
+    <form method="post" action="{{ url_for('kellerhoff_resumen_verificar_ingresos', resumen_id=resumen.id) }}"
+          onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Verificando…'; return true;">
+      <button type="submit" class="btn btn-violet btn-sm"
+              title="Cruza cada comprobante contra DW.Recepciones de ObServer. No corta ante el primero que falle: revisa todos y avisa el resultado completo.">
+        🔎 Verificar ingresos (ObServer)
+      </button>
+    </form>
+    {% endif %}
   </header>
 
   {% if resumen.cuadra is false %}
@@ -120,6 +129,7 @@
             <th>Remito</th>
             <th class="th-right">Total</th>
             <th class="th-center">Nuestro comprobante</th>
+            <th class="th-center" title="Cruce contra DW.Recepciones de ObServer">Ingreso</th>
           </tr>
         </thead>
         <tbody>
@@ -128,10 +138,10 @@
             <td class="td-center">
               {% if it.tildado %}
               <span style="color:#22c55e;font-weight:700;"
-                    title="Controlado: encontramos este comprobante de nuestro lado">✓</span>
+                    title="Controlado: pasó todos los checks implementados hasta ahora">✓</span>
               {% else %}
               <span style="color:var(--ds-orange);font-weight:700;"
-                    title="Sin controlar: no encontramos este comprobante">○</span>
+                    title="Sin controlar: falta algún check (ver Nuestro comprobante / Ingreso)">○</span>
               {% endif %}
             </td>
             <td style="font-size:12px;">{{ it.fecha }}</td>
@@ -148,7 +158,7 @@
             <td class="td-center">
               {% if it.factura_id %}
               <a href="{{ url_for('show_results', invoice_id=it.factura_id) }}"
-                 class="badge" style="background:rgba(59,130,246,.14);color:#3b82f6;">factura</a>
+                 class="badge" style="background:rgba(59,130,246,.14);color:#3b82f6;">{{ 'NC' if it.tipo == 'NCR' else 'factura' }}</a>
               {% elif it.pago_ajuste_id %}
               <span class="badge" style="background:rgba(168,85,247,.14);color:#a855f7;"
                     title="NC financiera: es un recupero de un anunciante, va a su cuenta corriente y no crea factura">
@@ -159,6 +169,17 @@
                     title="Kellerhoff te lo cobra y no lo encontramos de nuestro lado: falta bajarlo del portal, o es un comprobante que no reconocemos">
                 no está
               </span>
+              {% endif %}
+            </td>
+            <td class="td-center">
+              {% if it.checks.ingreso is none %}
+              <span class="badge" style="background:rgba(120,120,120,.12);color:var(--ds-text-mute);"
+                    title="Todavía no se corrió «Verificar ingresos» para este resumen">sin verificar</span>
+              {% elif it.checks.ingreso %}
+              <span style="color:#22c55e;font-weight:700;" title="ObServer tiene una recepción para este comprobante">✓</span>
+              {% else %}
+              <span style="color:#ef4444;font-weight:700;"
+                    title="ObServer NO tiene recepción registrada para este comprobante — solo mira cantidades, no precio (PrecioUnitario siempre viene en 0 de ObServer)">✗</span>
               {% endif %}
             </td>
           </tr>

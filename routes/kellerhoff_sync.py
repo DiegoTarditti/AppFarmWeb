@@ -392,8 +392,51 @@ def init_app(app):
                 'n_items': n_items, 'n_tildados': n_tildados,
                 'pendientes': n_items - n_tildados, 'cerrado': cerrado,
             }
+
+        from flask_login import current_user
+
+        import observer_source
+        observer_disponible = bool(
+            current_user.is_authenticated
+            and current_user.rol in ('farmacia', 'dev', 'admin')
+            and observer_source.observer_disponible()
+        )
         return render_template('kellerhoff_resumen_detalle.html',
-                               resumen=cab, items=items)
+                               resumen=cab, items=items,
+                               observer_disponible=observer_disponible)
+
+    @app.route('/kellerhoff/resumen/<int:resumen_id>/verificar-ingresos', methods=['POST'])
+    @login_required
+    def kellerhoff_resumen_verificar_ingresos(resumen_id):
+        """Corre el cruce contra ObServer (DW.Recepciones) para todos los
+        ítems del resumen — no corta ante el primero que falle o no aparezca,
+        junta todo y avisa el resultado al final."""
+        from flask_login import current_user
+
+        import observer_source
+        if not (current_user.rol in ('farmacia', 'dev', 'admin')
+                and observer_source.observer_disponible()):
+            flash('ObServer no está disponible en este momento.', 'error')
+            return redirect(url_for('kellerhoff_resumen_detalle', resumen_id=resumen_id))
+
+        from services.kellerhoff_resumen import verificar_ingresos_resumen
+        with get_db() as session:
+            r = session.get(ResumenProveedor, resumen_id)
+            if r is None:
+                flash('Resumen no encontrado', 'error')
+                return redirect(url_for('kellerhoff_resumenes'))
+            try:
+                res = verificar_ingresos_resumen(session, resumen_id)
+            except RuntimeError as e:
+                flash(f'No se pudo consultar ObServer: {e}', 'error')
+                return redirect(url_for('kellerhoff_resumen_detalle', resumen_id=resumen_id))
+
+        msg = (f"Ingresos verificados: {res['encontrados']} encontrados, "
+               f"{res['no_encontrados']} sin recepción en ObServer")
+        if res['errores']:
+            msg += f", {res['errores']} con error (reintentá)"
+        flash(msg, 'success' if not res['errores'] else 'warning')
+        return redirect(url_for('kellerhoff_resumen_detalle', resumen_id=resumen_id))
 
     @app.route('/kellerhoff/sync/ligar', methods=['POST'])
     @login_required

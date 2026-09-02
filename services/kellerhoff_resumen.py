@@ -206,17 +206,64 @@ CHECKS = ('comprobante', 'ingreso', 'arca', 'pago')
 def estado_item(item):
     """{check: True | False | None} de un renglón del resumen.
 
-    None = no evaluado todavía (el control no existe), que NO es lo mismo que
-    False = lo evaluamos y no está.
+    None = no evaluado todavía (el control no existe, o no se corrió), que NO
+    es lo mismo que False = lo evaluamos y no está.
     """
     return {
         # Encontramos el comprobante de nuestro lado. Puede ser una factura o,
         # si es una NC financiera, un ajuste de cuenta corriente.
         'comprobante': bool(item.factura_id or item.pago_ajuste_id),
-        'ingreso': None,    # eslabón 4: cruce contra DW.Recepciones
+        # Eslabón 4: ¿ObServer tiene una recepción para este comprobante?
+        # None hasta que se corra "Verificar ingresos" (ver
+        # verificar_ingresos_resumen) — ahí queda True/False persistido.
+        'ingreso': item.ingreso_verificado,
         'arca': None,       # Invoice.origen == 'arca' / cae
         'pago': None,       # suma de PagoAplicacion vs total
     }
+
+
+def verificar_ingresos_resumen(session, resumen_id):
+    """Corre el cruce contra ObServer (DW.Recepciones) para TODOS los ítems
+    del resumen y persiste el resultado en `ingreso_verificado`.
+
+    No corta ante el primer error o comprobante no encontrado: sigue con el
+    resto y junta todo para revisar al final (mismo criterio que /batch con
+    varias facturas — nunca se corta el lote entero por un ítem puntual).
+    Devuelve un resumen de conteos.
+    """
+    import observer_source
+    from database import ResumenProveedorItem, now_ar
+
+    items = (session.query(ResumenProveedorItem)
+             .filter_by(resumen_id=resumen_id).all())
+    if not items:
+        return {'encontrados': 0, 'no_encontrados': 0, 'errores': 0, 'total': 0}
+
+    numeros = [it.numero for it in items if it.numero]
+    resultados = observer_source.get_recepciones_multiples(numeros)
+
+    conteo = {'encontrados': 0, 'no_encontrados': 0, 'errores': 0, 'total': len(items)}
+    ahora = now_ar()
+    for it in items:
+        if not it.numero:
+            conteo['errores'] += 1
+            continue
+        recepciones = resultados.get(it.numero)
+        if recepciones is None:
+            # Ese ítem puntual falló en ObServer (ver get_recepciones_multiples) —
+            # se deja como estaba (no se pisa un True/False previo con un error
+            # transitorio) y se cuenta aparte para que el operador sepa que hay
+            # que reintentar, no que "no está".
+            conteo['errores'] += 1
+            continue
+        it.ingreso_verificado = bool(recepciones)
+        it.ingreso_verificado_en = ahora
+        if recepciones:
+            conteo['encontrados'] += 1
+        else:
+            conteo['no_encontrados'] += 1
+    session.commit()
+    return conteo
 
 
 def item_tildado(item):
