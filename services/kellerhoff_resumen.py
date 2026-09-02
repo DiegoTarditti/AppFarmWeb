@@ -239,16 +239,23 @@ def verificar_ingresos_resumen(session, resumen_id):
     if not items:
         return {'encontrados': 0, 'no_encontrados': 0, 'errores': 0, 'total': 0}
 
-    numeros = [it.numero for it in items if it.numero]
+    # ObServer registra la recepción contra el REMITO, no la factura (son
+    # series de numeración distintas — comprobado contra datos reales: la
+    # factura 0046A00193832 no aparece en DW.Recepciones, pero su remito
+    # 0047R00204015 sí). Las NCR no traen remito, ahí no queda otra que
+    # buscar por el número de la propia NC.
+    clave_por_item = {it.id: (it.numero_remito or it.numero) for it in items}
+    numeros = sorted({v for v in clave_por_item.values() if v})
     resultados = observer_source.get_recepciones_multiples(numeros)
 
     conteo = {'encontrados': 0, 'no_encontrados': 0, 'errores': 0, 'total': len(items)}
     ahora = now_ar()
     for it in items:
-        if not it.numero:
+        clave = clave_por_item.get(it.id)
+        if not clave:
             conteo['errores'] += 1
             continue
-        recepciones = resultados.get(it.numero)
+        recepciones = resultados.get(clave)
         if recepciones is None:
             # Ese ítem puntual falló en ObServer (ver get_recepciones_multiples) —
             # se deja como estaba (no se pisa un True/False previo con un error
