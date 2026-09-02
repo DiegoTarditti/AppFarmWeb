@@ -148,7 +148,7 @@
             <td class="td-center">
               {% if it.factura_id %}
               <a href="{{ url_for('show_results', invoice_id=it.factura_id) }}"
-                 class="badge" style="background:rgba(59,130,246,.14);color:#3b82f6;">factura</a>
+                 class="badge" style="background:rgba(59,130,246,.14);color:#3b82f6;">{{ 'NC' if it.tipo == 'NCR' else 'factura' }}</a>
               {% elif it.pago_ajuste_id %}
               <span class="badge" style="background:rgba(168,85,247,.14);color:#a855f7;"
                     title="NC financiera: es un recupero de un anunciante, va a su cuenta corriente y no crea factura">
