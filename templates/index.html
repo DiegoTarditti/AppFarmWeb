@@ -593,6 +593,19 @@
                             </div>
                         </div>
                     </a>
+                    {# Card especial: Equivalencias de compra (se vende un producto, se pide otro distinto). #}
+                    <a href="{{ url_for('equivalencias_compra_list') }}" class="card card-action home-card"
+                       data-card-text="equivalencias compra venta suelto caja alikal">
+                        <div class="action-content">
+                            <div class="icon-tile icon-tile-info">🔗</div>
+                            <div class="action-content__body">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="action-content__title">Equivalencias de compra</span>
+                                </div>
+                                <div class="action-content__desc">Productos que se venden sueltos pero se piden como otro artículo (ej. sobre vs. caja).</div>
+                            </div>
+                        </div>
+                    </a>
                     {% endif %}
                     {% if cat_key == 'otras_entidades' %}
                     {# Card especial: Obras Sociales con acción rápida a chequeo
