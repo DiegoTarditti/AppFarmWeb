@@ -1035,6 +1035,57 @@ def init_app(app):
                         ventas_por_pid[pid_v][offset] += int(uds or 0)
                         montos_por_pid[pid_v][offset] += float(mto or 0)
 
+            # Equivalencias venta↔compra (ver database.py EquivalenciaCompra):
+            # productos que se VENDEN como un observer_id pero se PIDEN como
+            # otro distinto (ej. sobre suelto vendido vs. caja a comprar). La
+            # demanda del "venta" se redirige a la fila de "compra" (que es la
+            # única pedible), y el "venta" se oculta más abajo en el loop.
+            venta_a_compra = {}
+            compra_equiv_desc = {}
+            compra_envase_extra = {}
+            if obs_pids:
+                from database import EquivalenciaCompra
+                equivalencias_activas = (
+                    session.query(EquivalenciaCompra)
+                    .filter(EquivalenciaCompra.activo.is_(True))
+                    .filter(EquivalenciaCompra.producto_compra_observer_id.in_(obs_pids))
+                    .all())
+                if equivalencias_activas:
+                    venta_oids = [e.producto_venta_observer_id for e in equivalencias_activas]
+                    venta_desc_por_oid = dict(
+                        session.query(ObsProducto.observer_id, ObsProducto.descripcion)
+                        .filter(ObsProducto.observer_id.in_(venta_oids)).all())
+                    compra_envase_extra = dict(
+                        session.query(ObsProducto.observer_id, ObsProducto.cantidad_envase)
+                        .filter(ObsProducto.observer_id.in_(
+                            [e.producto_compra_observer_id for e in equivalencias_activas])).all())
+                    venta_ventas, venta_montos = {}, {}
+                    rows_vm_venta = (
+                        session.query(ObsVentaMensual.producto_observer,
+                                      ObsVentaMensual.anio, ObsVentaMensual.mes,
+                                      func.sum(ObsVentaMensual.unidades),
+                                      func.sum(ObsVentaMensual.monto))
+                        .filter(ObsVentaMensual.producto_observer.in_(venta_oids))
+                        .group_by(ObsVentaMensual.producto_observer,
+                                  ObsVentaMensual.anio, ObsVentaMensual.mes)
+                        .all())
+                    for pid_v, anio, mes, uds, mto in rows_vm_venta:
+                        offset = (anio - start_year) * 12 + (mes - start_month)
+                        if 0 <= offset <= 11:
+                            venta_ventas.setdefault(pid_v, [0] * 12)[offset] += int(uds or 0)
+                            venta_montos.setdefault(pid_v, [0.0] * 12)[offset] += float(mto or 0)
+                    for eq in equivalencias_activas:
+                        v_oid, c_oid = eq.producto_venta_observer_id, eq.producto_compra_observer_id
+                        vs = venta_ventas.get(v_oid, [0] * 12)
+                        vm = venta_montos.get(v_oid, [0.0] * 12)
+                        ventas_por_pid.setdefault(c_oid, [0] * 12)
+                        montos_por_pid.setdefault(c_oid, [0.0] * 12)
+                        for i in range(12):
+                            ventas_por_pid[c_oid][i] += vs[i]
+                            montos_por_pid[c_oid][i] += vm[i]
+                        venta_a_compra[v_oid] = c_oid
+                        compra_equiv_desc[c_oid] = venta_desc_por_oid.get(v_oid, f'observer_id {v_oid}')
+
             # Resolver Producto local + flags excluido / no_pedir +
             # cantidad_reposicion_fija (override del cálculo dinámico).
             local_por_obs = {}
@@ -1171,6 +1222,10 @@ def init_app(app):
                 # reactivar y a_pedir=0 por default.
                 if local and local['excluido']:
                     continue
+                # Equivalencia venta→compra: el "venta" no es pedible como
+                # tal, su demanda ya se redirigió a la fila de "compra" arriba.
+                if r.pid in venta_a_compra:
+                    continue
                 lab_local_id = (local['lab_local_id'] if local else None) \
                                 or lab_obs_to_local.get(r.lab_obs_id) \
                                 or local_lab_por_norm.get(obs_lab_norm.get(r.lab_obs_id, ''))
@@ -1185,6 +1240,11 @@ def init_app(app):
                 stock_actual = int(r.stock or 0)
                 ventas_arr = ventas_por_pid.get(r.pid, [0]*12)
                 montos_arr = montos_por_pid.get(r.pid, [0.0]*12)
+                if r.pid in compra_equiv_desc:
+                    # Fila "compra" de una equivalencia: u12m propio de ObServer
+                    # queda desactualizado (el producto casi no se vende como
+                    # tal) — se recalcula sobre la demanda ya redirigida.
+                    u12m_int = sum(ventas_arr)
                 # PVP del ÚLTIMO MES con ventas (monto/unidades de ese mes).
                 # Más fiel que el promedio 12m bajo inflación. 0 si nunca vendió.
                 pvp_est = pvp_reciente(ventas_arr, montos_arr)
@@ -1282,14 +1342,34 @@ def init_app(app):
                     'rotacion': rotacion_cls,
                     'ventas_mensuales': ventas_arr,
                 }
-                _result = calcular_a_pedir(_cfg, _ctx_base)
+                # Equivalencia venta→compra: forzar redondeo a múltiplo del
+                # envase de la caja (mecanismo genérico ya existente en
+                # calcular_a_pedir, `redondeo == 'multiplo_pack'`).
+                _cfg_efectivo = _cfg
+                via_equivalencia = False
+                equivalencia_desc = None
+                equivalencia_envase = None
+                if r.pid in compra_equiv_desc:
+                    _envase_eq = (local.get('cantidad_envase') if local else None) \
+                                 or compra_envase_extra.get(r.pid)
+                    if _envase_eq and _envase_eq > 1:
+                        _cfg_efectivo = dict(_cfg, redondeo='multiplo_pack')
+                        _ctx_base['pack_quantity'] = int(_envase_eq)
+                        # El stock de la caja está en "cajas" (nativo de ObServer
+                        # para ese SKU); la demanda redirigida está en unidades
+                        # sueltas del "venta" — convertir para no mezclar escalas.
+                        _ctx_base['stock_actual'] = int(stock_actual * _envase_eq)
+                        via_equivalencia = True
+                        equivalencia_desc = compra_equiv_desc[r.pid]
+                        equivalencia_envase = int(_envase_eq)
+                _result = calcular_a_pedir(_cfg_efectivo, _ctx_base)
                 a_pedir = _result['a_pedir']
                 # Si cant_fija aplicó override, calcular el "sin override" para
                 # mostrar tachado en la UI ("habría pedido X, pero override → Y").
                 a_pedir_sin_override = None
                 if _result.get('override_aplicado') and cant_fija:
                     _ctx_no_ov = dict(_ctx_base, cantidad_reposicion_fija=None)
-                    a_pedir_sin_override = calcular_a_pedir(_cfg, _ctx_no_ov).get('a_pedir')
+                    a_pedir_sin_override = calcular_a_pedir(_cfg_efectivo, _ctx_no_ov).get('a_pedir')
 
                 # Urgente = bajo o igual al mínimo. No urgente = entró sólo por
                 # cobertura insuficiente (stock arriba del mín pero rota rápido).
@@ -1311,9 +1391,14 @@ def init_app(app):
                     'pid': r.pid,
                     'producto_id_local': local['id'] if local else None,
                     # Presentación: para mostrar equivalencia en cajas (sin tocar
-                    # la cantidad en unidades). Solo si fraccionado + envase>1.
-                    'fraccionado': bool(local and local.get('fraccionado')),
-                    'cantidad_envase': (local.get('cantidad_envase') if local else None),
+                    # la cantidad en unidades). Solo si fraccionado + envase>1,
+                    # o si es la "caja" de una equivalencia venta→compra (mismo
+                    # tratamiento visual: a_pedir queda en unidades sueltas del
+                    # producto que se vende, acá se muestra en cajas).
+                    'fraccionado': bool(local and local.get('fraccionado')) or via_equivalencia,
+                    'cantidad_envase': equivalencia_envase or (local.get('cantidad_envase') if local else None),
+                    'via_equivalencia': via_equivalencia,
+                    'equivalencia_desc': equivalencia_desc,
                     'desc': r.desc,
                     'droga_nombre': r.droga_nombre or '',
                     'lab_nombre': r.lab_nombre or '—',

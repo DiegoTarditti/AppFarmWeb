@@ -760,6 +760,12 @@
                         <span class="text-[9px] bg-rose-100 text-rose-700 border border-rose-300 px-1 py-0.5 rounded mr-1 font-bold" title="Marcado como 'No pedir'. Reactivá desde la columna Acciones.">⛔ NO PEDIR</span>
                         {% endif %}
                         {{ it.desc }}
+                        {% if it.via_equivalencia %}
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ml-1 align-middle bg-sky-100 text-sky-700 border-sky-300"
+                              title="Este producto casi no tiene venta propia — la demanda viene de '{{ it.equivalencia_desc }}', que se vende suelto pero se pide como este envase. Configurado en /productos/equivalencias-compra.">
+                            🔗 vía {{ it.equivalencia_desc }}
+                        </span>
+                        {% endif %}
                         {% if it.of_kell %}
                         <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ml-1 align-middle bg-amber-100 text-amber-800 border-amber-300"
                               title="Kellerhoff — oferta por cantidad: {{ it.of_kell.descuento_pct | round(1) }}% comprando {{ it.of_kell.unidades_minimas }}+ (rota en ≤1 mes de venta)">
