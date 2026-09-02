@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-02 12:00 · rama `cablear-ingreso-observer-resumen-kellerhoff` · commit `1126979`
+Generado: 2026-09-02 12:03 · rama `cablear-ingreso-observer-resumen-kellerhoff` · commit `642dd63`
 
 **822 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
 
@@ -880,13 +880,13 @@ Generado: 2026-09-02 12:00 · rama `cablear-ingreso-observer-resumen-kellerhoff`
 | `/kellerhoff` | GET | [`kellerhoff_index`](../routes/kellerhoff_sync.py#L206) |
 | `/kellerhoff/cuenta-corriente` | GET | [`kellerhoff_cuenta_corriente`](../routes/kellerhoff_sync.py#L249) |
 | `/kellerhoff/resumen/<int:resumen_id>` | GET | [`kellerhoff_resumen_detalle`](../routes/kellerhoff_sync.py#L348) |
-| `/kellerhoff/resumen/<int:resumen_id>/verificar-ingresos` | POST | [`kellerhoff_resumen_verificar_ingresos`](../routes/kellerhoff_sync.py#L409) |
+| `/kellerhoff/resumen/<int:resumen_id>/verificar-ingresos` | POST | [`kellerhoff_resumen_verificar_ingresos`](../routes/kellerhoff_sync.py#L410) |
 | `/kellerhoff/resumenes` | GET | [`kellerhoff_resumenes`](../routes/kellerhoff_sync.py#L287) |
 | `/kellerhoff/resumenes/importar` | POST | [`kellerhoff_resumen_importar`](../routes/kellerhoff_sync.py#L311) |
 | `/kellerhoff/sync` | GET | [`kellerhoff_sync`](../routes/kellerhoff_sync.py#L109) |
 | `/kellerhoff/sync/ejecutar` | POST | [`kellerhoff_sync_ejecutar`](../routes/kellerhoff_sync.py#L162) |
 | `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L199) |
-| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L441) |
+| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L443) |
 
 ### `routes/laboratorios.py`
 
