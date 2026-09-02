@@ -2527,6 +2527,33 @@ class PackEquivalencia(Base):
     )
 
 
+class EquivalenciaCompra(Base):
+    """Equivalencia venta↔compra: un producto que se VENDE de una forma (ej.
+    "ALIKAL LIMON SOB x 1", sobre suelto) pero se COMPRA como otro producto
+    distinto del catálogo (ej. "ALIKAL LIMON EXPENDEDOR SOB x 30", la caja).
+
+    No confundir con `fraccionado`+`cantidad_envase` (Producto/ProductoAtributo):
+    ese caso es UN SOLO producto vendido suelto y pedido por su propio envase.
+    Acá son DOS filas distintas de obs_productos sin relación en el modelo.
+
+    UNIQUE(producto_venta_observer_id): un producto vendido mapea a una sola
+    caja de compra.
+    """
+    __tablename__ = 'equivalencias_compra'
+    id                          = Column(Integer, primary_key=True)
+    producto_venta_observer_id  = Column(Integer, nullable=False, unique=True)
+    # index=True NO usado a propósito: el índice ya lo crea la migración con
+    # nombre custom (idx_equiv_compra_compra) — evita el ix_* duplicado que
+    # generaba index=True (mismo problema ya resuelto en PackEquivalencia).
+    producto_compra_observer_id = Column(Integer, nullable=False)
+    activo                      = Column(Boolean, nullable=False, default=True)
+    fuente                      = Column(String(20), nullable=False, default='manual')  # 'manual' | 'sugerido'
+    nota                        = Column(String(255), nullable=True)
+    creado_en                   = Column(DateTime, default=now_ar)
+    creado_por                  = Column(String(120), nullable=True)
+    actualizado_en              = Column(DateTime, default=now_ar, onupdate=now_ar)
+
+
 class ProductoPrecioHist(Base):
     """Snapshot de precio por producto + proveedor en cada factura importada.
     Append-only: cada fila es un punto histórico.
@@ -5088,6 +5115,28 @@ def _pg_add_columns(conn):
     conn.execute(text("UPDATE modulo_packs SET cant_modulo = cantidad, cantidad = 1 WHERE cant_modulo IS NULL AND cantidad != 1"))
     # Drop UNIQUE de ean_pack global: un EAN puede pertenecer a varios módulos
     conn.execute(text("ALTER TABLE modulo_packs DROP CONSTRAINT IF EXISTS modulo_packs_ean_pack_key"))
+    # Equivalencia venta↔compra: producto que se VENDE (ej. sobre suelto) vs
+    # producto que hay que PEDIR al proveedor (ej. caja), cuando son dos filas
+    # distintas de obs_productos sin relación (no es el caso de
+    # fraccionado+cantidad_envase, que es el mismo producto). Clave por
+    # observer_id porque el "suelto" suele no tener ficha local/EAN.
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS equivalencias_compra (
+            id SERIAL PRIMARY KEY,
+            producto_venta_observer_id INTEGER UNIQUE NOT NULL,
+            producto_compra_observer_id INTEGER NOT NULL,
+            activo BOOLEAN NOT NULL DEFAULT true,
+            fuente VARCHAR(20) NOT NULL DEFAULT 'manual',
+            nota VARCHAR(255),
+            creado_en TIMESTAMP DEFAULT NOW(),
+            creado_por VARCHAR(120),
+            actualizado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_equiv_compra_compra "
+        "ON equivalencias_compra(producto_compra_observer_id)"
+    ))
     conn.execute(text(
         "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) NOT NULL DEFAULT 'drogueria'"
     ))
