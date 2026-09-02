@@ -70,6 +70,8 @@
     <a href="{{ url_for('productos_list') }}" class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">← Productos</a>
     <h1>🛠 Configurar producto</h1>
     <span class="text-[11px] text-[color:var(--ds-text-mute)]">presentación · oferta · repo fija · pack — {{ filas | length }} con presentación</span>
+    <a href="{{ url_for('equivalencias_compra_list') }}" class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition ml-auto"
+       title="Productos que se venden como un artículo pero se piden como otro distinto (ej. sobre suelto vs. caja)">🔗 Equivalencias de compra →</a>
 </div>
 
 <div class="pp-wrap">

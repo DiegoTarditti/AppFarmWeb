@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% set nav_active = "productos" %}
+{% block title %}Equivalencias de compra{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.eq-topbar { background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line); padding: 12px 24px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.eq-topbar h1 { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0; }
+.eq-wrap { padding: 18px 24px; display: flex; flex-direction: column; gap: 18px; max-width: 1200px; }
+.eq-card { background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); overflow: visible; }
+.eq-card-head { padding: 12px 16px; border-bottom: 1px solid var(--ds-line); background: rgba(0,0,0,.10);
+    border-top-left-radius: var(--ds-r-lg); border-top-right-radius: var(--ds-r-lg);
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.eq-card-head h3 { font-size: 13px; font-weight: 700; color: var(--ds-text); margin: 0; }
+.eq-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.eq-table th { padding: 8px 12px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--ds-text-mute); font-weight: 600; border-bottom: 1px solid var(--ds-line);
+    background: var(--ds-surface); position: sticky; top: 0; z-index: 5; }
+.eq-table td { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: top; }
+.eq-table tr:hover td { background: rgba(255,255,255,.03); }
+.eq-table code { font-family: 'JetBrains Mono', monospace; color: var(--ds-text-mute); }
+.eq-badge { display:inline-flex; padding:1px 7px; border-radius:999px; font-size:10px; font-weight:600; }
+.eq-badge.alta { background: rgba(95,230,188,.15); color: var(--ds-mint); border:1px solid rgba(95,230,188,.3); }
+.eq-badge.media { background: rgba(251,191,36,.15); color: #fbbf24; border:1px solid rgba(251,191,36,.3); }
+.eq-btn { font-size: 11px; padding: 4px 10px; border-radius: var(--ds-r-sm); border: 1px solid var(--ds-line);
+    cursor: pointer; background: var(--ds-surface-2); color: var(--ds-text); white-space: nowrap; }
+.eq-btn.mint { color: var(--ds-mint); border-color: rgba(95,230,188,.35); }
+.eq-btn.mint:hover { background: rgba(95,230,188,.10); }
+.eq-btn.muted:hover { color: #f87171; border-color: rgba(248,113,113,.35); }
+.eq-empty { padding:24px; text-align:center; color:var(--ds-text-mute); font-size:13px; }
+.pf-field { margin-bottom: 13px; }
+.pf-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); font-weight: 600; display: block; margin-bottom: 4px; }
+.pf-input { width: 100%; background: var(--ds-surface-2); border: 1px solid var(--ds-line); border-radius: var(--ds-r-sm);
+    padding: 7px 10px; font-size: 13px; color: var(--ds-text); font-family: inherit; }
+.pf-ac-wrap { position: relative; }
+.pf-ac-results { position: absolute; top: 100%; left: 0; right: 0; background: var(--ds-surface-2);
+    border: 1px solid var(--ds-line); border-radius: var(--ds-r-sm); max-height: 280px; overflow-y: auto; z-index: 50;
+    box-shadow: 0 6px 18px rgba(0,0,0,.35); display: none; }
+.pf-ac-results.open { display: block; }
+.pf-ac-item { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.04); cursor: pointer; font-size: 12px; }
+.pf-ac-item:hover { background: rgba(95,230,188,.10); }
+.pf-ac-item .ac-nombre { color: var(--ds-text); font-weight: 600; }
+.pf-ac-item .ac-meta { color: var(--ds-text-mute); font-size: 10px; margin-top: 2px; }
+.pf-chosen { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(95,230,188,.10);
+    border: 1px solid rgba(95,230,188,.35); border-radius: var(--ds-r-sm); font-size: 12px; }
+.pf-chosen .chosen-clear { background: transparent; border: none; color: var(--ds-text-mute); cursor: pointer; font-size: 15px; padding: 0 4px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="eq-topbar">
+    <a href="{{ url_for('productos_presentaciones') }}" class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">← Presentación</a>
+    <h1>🔗 Equivalencias de compra</h1>
+    <span class="text-[11px] text-[color:var(--ds-text-mute)]">se vende un producto, se pide otro distinto — {{ filas | length }} confirmadas</span>
+</div>
+
+<div class="eq-wrap">
+    {# ── Sugeridos por heurística ── #}
+    <div class="eq-card">
+        <div class="eq-card-head">
+            <h3>🤖 Sugeridos</h3>
+            <span id="eq-sug-count" class="text-[11px] text-[color:var(--ds-text-mute)]"></span>
+        </div>
+        <div id="eq-sug-body">
+            <div class="eq-empty">Cargando candidatos…</div>
+        </div>
+    </div>
+
+    {# ── Carga manual ── #}
+    <div class="eq-card">
+        <div class="eq-card-head"><h3>✍ Cargar a mano</h3></div>
+        <div style="padding: 16px 18px; display: grid; grid-template-columns: 1fr 1fr auto; gap: 14px; align-items: start;">
+            <div class="pf-field" style="margin-bottom:0;">
+                <label class="pf-label">Se vende (el que tiene ventas)</label>
+                <div class="pf-ac-wrap" id="eq-ac-venta-wrap">
+                    <input type="text" class="pf-input" id="eq-venta-search" placeholder='Ej: "alikal limon sob"' autocomplete="off">
+                    <div class="pf-ac-results" id="eq-venta-results"></div>
+                </div>
+                <div id="eq-venta-chosen" style="margin-top:6px;"></div>
+            </div>
+            <div class="pf-field" style="margin-bottom:0;">
+                <label class="pf-label">Se compra (la caja/envase)</label>
+                <div class="pf-ac-wrap" id="eq-ac-compra-wrap">
+                    <input type="text" class="pf-input" id="eq-compra-search" placeholder='Ej: "alikal limon expendedor"' autocomplete="off">
+                    <div class="pf-ac-results" id="eq-compra-results"></div>
+                </div>
+                <div id="eq-compra-chosen" style="margin-top:6px;"></div>
+            </div>
+            <button type="button" class="eq-btn mint" id="eq-guardar-manual" style="margin-top:20px;">Guardar</button>
+        </div>
+        <div id="eq-manual-status" class="text-[11px]" style="padding: 0 18px 14px;"></div>
+    </div>
+
+    {# ── Confirmadas ── #}
+    <div class="eq-card">
+        <div class="eq-card-head">
+            <h3>Confirmadas</h3>
+            <input type="text" id="eq-filtro" class="pf-input" placeholder="Filtrar…" style="width:220px;">
+        </div>
+        <div id="eq-conf-body">
+        {% if filas %}
+        <div style="overflow:auto; max-height:55vh;">
+        <table class="eq-table">
+            <thead><tr>
+                <th>Se vende</th><th>Se compra</th><th style="text-align:right;">Envase</th>
+                <th>Lab</th><th>Fuente</th><th>Desde</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for f in filas %}
+            <tr class="eq-row" data-txt="{{ (f.venta_desc ~ ' ' ~ f.compra_desc ~ ' ' ~ f.lab) | lower }}">
+                <td class="text-[color:var(--ds-text-soft)]">{{ f.venta_desc }}<br><code>{{ f.venta_oid }}</code></td>
+                <td class="text-[color:var(--ds-text-soft)]">{{ f.compra_desc }}<br><code>{{ f.compra_oid }}</code></td>
+                <td style="text-align:right;">{% if f.compra_envase %}×{{ f.compra_envase }}{% else %}<span class="text-[#888]">—</span>{% endif %}</td>
+                <td class="text-[color:var(--ds-text-mute)]">{{ f.lab or '—' }}</td>
+                <td class="text-[color:var(--ds-text-mute)]">{{ f.fuente }}</td>
+                <td class="text-[color:var(--ds-text-mute)]">{{ f.creado_en }}</td>
+                <td><button type="button" class="eq-btn muted eq-desactivar" data-id="{{ f.id }}">Desactivar</button></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% else %}
+        <div class="eq-empty">Todavía no hay equivalencias confirmadas.</div>
+        {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ── Filtro de la lista de confirmadas ──
+(function() {
+    const inp = document.getElementById('eq-filtro');
+    if (!inp) return;
+    inp.addEventListener('input', () => {
+        const tokens = inp.value.toLowerCase().split(/\s+/).filter(Boolean);
+        document.querySelectorAll('.eq-row').forEach(r => {
+            r.style.display = tokens.every(t => r.dataset.txt.includes(t)) ? '' : 'none';
+        });
+    });
+})();
+
+// ── Desactivar confirmada ──
+document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.eq-desactivar');
+    if (!btn) return;
+    btn.disabled = true;
+    try {
+        const r = await fetch(`/api/equivalencia-compra/${btn.dataset.id}/desactivar`, {method: 'POST', credentials: 'same-origin'});
+        const d = await r.json();
+        if (d.ok) btn.closest('tr').remove();
+    } catch {} finally { btn.disabled = false; }
+});
+
+// ── Sugeridos ──
+(function() {
+    const body = document.getElementById('eq-sug-body');
+    const count = document.getElementById('eq-sug-count');
+
+    async function cargar() {
+        body.innerHTML = '<div class="eq-empty">Cargando candidatos…</div>';
+        try {
+            const r = await fetch('/api/equivalencia-compra/candidatos', {credentials: 'same-origin'});
+            const d = await r.json();
+            const items = (d.ok && d.data) ? d.data : [];
+            count.textContent = items.length ? `${items.length} candidato(s)` : '';
+            if (!items.length) {
+                body.innerHTML = '<div class="eq-empty">No hay candidatos nuevos.</div>';
+                return;
+            }
+            body.innerHTML = `
+            <div style="overflow:auto; max-height:55vh;">
+            <table class="eq-table">
+                <thead><tr>
+                    <th>Se vende</th><th style="text-align:right;">u12m</th>
+                    <th>Caja sugerida</th><th style="text-align:right;">Envase</th>
+                    <th style="text-align:right;">Ventas/stock caja</th><th>Lab</th>
+                    <th style="text-align:right;">Score</th><th></th>
+                </tr></thead>
+                <tbody>${items.map(it => `
+                    <tr>
+                        <td class="text-[color:var(--ds-text-soft)]">${escapeHtml(it.venta_desc)}<br><code>${it.venta_observer_id}</code></td>
+                        <td style="text-align:right;">${it.venta_u12m}</td>
+                        <td class="text-[color:var(--ds-text-soft)]">${escapeHtml(it.compra_desc)}<br><code>${it.compra_observer_id}</code></td>
+                        <td style="text-align:right;">×${it.compra_envase}</td>
+                        <td style="text-align:right;">${it.compra_u12m}u / ${it.compra_stock ?? '—'} stock</td>
+                        <td class="text-[color:var(--ds-text-mute)]">${escapeHtml(it.lab_nombre)}</td>
+                        <td style="text-align:right;"><span class="eq-badge ${it.score >= 0.9 ? 'alta' : 'media'}">${it.score}</span></td>
+                        <td style="white-space:nowrap;">
+                            <button type="button" class="eq-btn mint eq-confirmar" data-venta="${it.venta_observer_id}" data-compra="${it.compra_observer_id}">Confirmar</button>
+                            <button type="button" class="eq-btn muted eq-descartar" data-venta="${it.venta_observer_id}" data-compra="${it.compra_observer_id}">Descartar</button>
+                        </td>
+                    </tr>`).join('')}</tbody>
+            </table>
+            </div>`;
+        } catch {
+            body.innerHTML = '<div class="eq-empty">Error al cargar candidatos.</div>';
+        }
+    }
+
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.eq-confirmar, .eq-descartar');
+        if (!btn) return;
+        const esConfirmar = btn.classList.contains('eq-confirmar');
+        btn.disabled = true;
+        try {
+            const url = esConfirmar ? '/api/equivalencia-compra' : '/api/equivalencia-compra/descartar';
+            const body_ = esConfirmar
+                ? {producto_venta_observer_id: +btn.dataset.venta, producto_compra_observer_id: +btn.dataset.compra, desde_sugerido: true}
+                : {producto_venta_observer_id: +btn.dataset.venta, producto_compra_observer_id: +btn.dataset.compra};
+            const r = await fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body_)});
+            const d = await r.json();
+            if (d.ok) {
+                btn.closest('tr').remove();
+                if (esConfirmar) location.reload();  // refresca la lista de confirmadas de abajo
+            }
+        } catch {} finally { btn.disabled = false; }
+    });
+
+    cargar();
+})();
+
+// ── Carga manual: dos autocompletes contra /api/productos (todo el catálogo, con o sin EAN) ──
+(function() {
+    function crearAutocomplete(prefix) {
+        const input = document.getElementById(`eq-${prefix}-search`);
+        const results = document.getElementById(`eq-${prefix}-results`);
+        const wrap = document.getElementById(`eq-ac-${prefix}-wrap`);
+        const chosenBox = document.getElementById(`eq-${prefix}-chosen`);
+        let seleccionado = null, deb = null, seq = 0;
+
+        input.addEventListener('input', () => {
+            const q = input.value.trim();
+            if (q.length < 2) { results.classList.remove('open'); return; }
+            clearTimeout(deb);
+            deb = setTimeout(async () => {
+                const mySeq = ++seq;
+                try {
+                    const r = await fetch('/api/productos?q=' + encodeURIComponent(q) + '&limit=15', {credentials: 'same-origin'});
+                    if (mySeq !== seq || !r.ok) return;
+                    const d = await r.json();
+                    const items = d.data || [];
+                    if (!items.length) { results.innerHTML = '<div class="pf-ac-item">Sin coincidencias</div>'; results.classList.add('open'); return; }
+                    results.innerHTML = items.map((p, i) => `
+                        <div class="pf-ac-item" data-i="${i}">
+                            <div class="ac-nombre">${escapeHtml(p.descripcion)}</div>
+                            <div class="ac-meta">${p.codigo_barra ? '<code>' + escapeHtml(p.codigo_barra) + '</code> · ' : ''}observer_id ${p.observer_id}${p.laboratorio_nombre ? ' · ' + escapeHtml(p.laboratorio_nombre) : ''}</div>
+                        </div>`).join('');
+                    results.classList.add('open');
+                    results.querySelectorAll('.pf-ac-item').forEach(el => el.addEventListener('click', () => {
+                        if (el.dataset.i === undefined) return;
+                        seleccionado = items[+el.dataset.i];
+                        chosenBox.innerHTML = `<div class="pf-chosen"><span style="flex:1;">${escapeHtml(seleccionado.descripcion)} <code>${seleccionado.observer_id}</code></span><button type="button" class="chosen-clear">×</button></div>`;
+                        chosenBox.querySelector('.chosen-clear').addEventListener('click', () => { seleccionado = null; chosenBox.innerHTML = ''; });
+                        results.classList.remove('open');
+                        input.value = '';
+                    }));
+                } catch { results.classList.remove('open'); }
+            }, 250);
+        });
+        document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) results.classList.remove('open'); });
+        return () => seleccionado;
+    }
+
+    const getVenta = crearAutocomplete('venta');
+    const getCompra = crearAutocomplete('compra');
+    const status = document.getElementById('eq-manual-status');
+
+    document.getElementById('eq-guardar-manual').addEventListener('click', async () => {
+        const venta = getVenta(), compra = getCompra();
+        if (!venta || !compra) {
+            status.textContent = 'Elegí un producto en ambos campos.';
+            status.className = 'text-[11px] text-rose-400';
+            return;
+        }
+        status.textContent = 'Guardando…';
+        status.className = 'text-[11px] text-[#9ca3af]';
+        try {
+            const r = await fetch('/api/equivalencia-compra', {
+                method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({producto_venta_observer_id: venta.observer_id, producto_compra_observer_id: compra.observer_id}),
+            });
+            const d = await r.json();
+            if (!d.ok) { status.textContent = d.error || 'Error'; status.className = 'text-[11px] text-rose-400'; return; }
+            status.textContent = '✓ Guardado';
+            status.className = 'text-[11px] text-[color:var(--ds-mint)]';
+            setTimeout(() => location.reload(), 600);
+        } catch { status.textContent = 'Error de red'; status.className = 'text-[11px] text-rose-400'; }
+    });
+})();
+</script>
+{% endblock %}
