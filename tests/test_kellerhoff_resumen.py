@@ -398,24 +398,27 @@ def test_verificar_ingresos_marca_encontrado_y_no_encontrado(tmp_path):
         session.commit()
         res = _importar(session, prov, tmp_path)
         items = _items(session, res['resumen_id'])
-        numeros = {it.numero: it for it in items}
-        assert len(numeros) == 3
+        # La clave de búsqueda real es el remito cuando existe (así lo
+        # registra ObServer); la NCR del fixture no trae remito, ahí se
+        # busca por su propio número.
+        claves = {(it.numero_remito or it.numero): it for it in items}
+        assert len(claves) == 3
 
-        # El primero de la lista "tiene" recepción, los otros dos no.
-        primero = next(iter(numeros))
+        # La primera clave "tiene" recepción, las otras dos no.
+        primera = next(iter(claves))
         fake = _mock_get_recepciones_multiples({
-            primero: [{'codigo_barra': '123', 'descripcion': 'x', 'cantidad': 1, 'precio_unitario': 0}],
+            primera: [{'codigo_barra': '123', 'descripcion': 'x', 'cantidad': 1, 'precio_unitario': 0}],
         })
         with patch.object(observer_source, 'get_recepciones_multiples', fake):
             conteo = verificar_ingresos_resumen(session, res['resumen_id'])
 
         assert conteo == {'encontrados': 1, 'no_encontrados': 2, 'errores': 0, 'total': 3}
         session.expunge_all()
-        refrescados = {it.numero: it for it in _items(session, res['resumen_id'])}
-        assert refrescados[primero].ingreso_verificado is True
-        assert refrescados[primero].ingreso_verificado_en is not None
-        for numero, it in refrescados.items():
-            if numero != primero:
+        refrescados = {(it.numero_remito or it.numero): it for it in _items(session, res['resumen_id'])}
+        assert refrescados[primera].ingreso_verificado is True
+        assert refrescados[primera].ingreso_verificado_en is not None
+        for clave, it in refrescados.items():
+            if clave != primera:
                 assert it.ingreso_verificado is False
 
 
