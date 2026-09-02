@@ -394,6 +394,7 @@ def init_app(app):
             }
 
         from flask_login import current_user
+
         import observer_source
         observer_disponible = bool(
             current_user.is_authenticated
@@ -411,6 +412,7 @@ def init_app(app):
         ítems del resumen — no corta ante el primero que falle o no aparezca,
         junta todo y avisa el resultado al final."""
         from flask_login import current_user
+
         import observer_source
         if not (current_user.rol in ('farmacia', 'dev', 'admin')
                 and observer_source.observer_disponible()):
