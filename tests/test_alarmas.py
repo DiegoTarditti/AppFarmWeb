@@ -216,11 +216,11 @@ def _factura(s, numero='0046-00001', total=100.0):
     return inv
 
 
-def _diff(s, factura_id, cant_fac=10, cant_erp=6):
+def _diff(s, factura_id, cant_fac=10, cant_erp=6, observaciones=''):
     s.add(StockDifference(factura_id=factura_id, codigo_barra='BC1',
                           descripcion='PROD', cantidad_factura=cant_fac,
                           cantidad_erp=cant_erp, diferencia=cant_fac - cant_erp,
-                          observaciones=''))
+                          observaciones=observaciones))
     s.commit()
 
 
@@ -253,6 +253,22 @@ def test_check_kellerhoff_dispara_con_diferencia_del_cruce_automatico(session):
     assert a is not None
     assert a.severidad == SEV_ALTA
     assert '1 factura' in a.valor_actual
+
+
+def test_check_kellerhoff_ignora_articulos_no_encontrados_en_erp(session):
+    """Medido el 2026-09-03: 95% de las 'diferencias' eran EAN que no existe
+    en el catálogo local (compare_invoice_vs_erp no pudo ni identificar el
+    producto) — eso NO es un faltante, es un hueco de catálogo. Solo
+    'No coincide con ERP' (producto identificado, cantidad distinta) cuenta."""
+    from services.kellerhoff_resumen import MARCA_CRUCE_AUTOMATICO
+
+    inv = _factura(session)
+    inv.erp_filename = MARCA_CRUCE_AUTOMATICO
+    session.commit()
+    _diff(session, inv.id, observaciones='Artículo no encontrado en ERP')
+
+    a = alarmas.check_kellerhoff_diferencias_ingreso(session)
+    assert a is None
 
 
 def test_check_kellerhoff_cuenta_facturas_no_diferencias(session):
