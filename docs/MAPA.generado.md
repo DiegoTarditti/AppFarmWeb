@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-03 13:45 · rama `main` · commit `f3ffe98`
+Generado: 2026-09-03 13:52 · rama `main` · commit `27cfacd`
 
 **823 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
 
@@ -1057,15 +1057,15 @@ Generado: 2026-09-03 13:45 · rama `main` · commit `f3ffe98`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/api/ofertas/import-candidatos` | POST | [`api_ofertas_import_candidatos`](../routes/ofertas_import.py#L1178) |
-| `/api/ofertas/import-candidatos-bulk` | POST | [`api_ofertas_import_candidatos_bulk`](../routes/ofertas_import.py#L1036) |
-| `/api/ofertas/import-guardar` | POST | [`api_ofertas_import_guardar`](../routes/ofertas_import.py#L1196) |
-| `/api/ofertas/import-ia` | POST | [`api_ofertas_import_ia`](../routes/ofertas_import.py#L699) |
-| `/api/ofertas/import-match-ia` | POST | [`api_ofertas_import_match_ia`](../routes/ofertas_import.py#L1069) |
-| `/api/ofertas/import-preview` | POST | [`api_ofertas_import_preview`](../routes/ofertas_import.py#L661) |
-| `/api/ofertas/import-validar` | POST | [`api_ofertas_import_validar`](../routes/ofertas_import.py#L745) |
-| `/api/ofertas/import/lab/<int:lab_id>/productos` | GET | [`api_ofertas_lab_productos`](../routes/ofertas_import.py#L625) |
-| `/ofertas/import` | GET | [`ofertas_import_page`](../routes/ofertas_import.py#L580) |
+| `/api/ofertas/import-candidatos` | POST | [`api_ofertas_import_candidatos`](../routes/ofertas_import.py#L1202) |
+| `/api/ofertas/import-candidatos-bulk` | POST | [`api_ofertas_import_candidatos_bulk`](../routes/ofertas_import.py#L1060) |
+| `/api/ofertas/import-guardar` | POST | [`api_ofertas_import_guardar`](../routes/ofertas_import.py#L1220) |
+| `/api/ofertas/import-ia` | POST | [`api_ofertas_import_ia`](../routes/ofertas_import.py#L723) |
+| `/api/ofertas/import-match-ia` | POST | [`api_ofertas_import_match_ia`](../routes/ofertas_import.py#L1093) |
+| `/api/ofertas/import-preview` | POST | [`api_ofertas_import_preview`](../routes/ofertas_import.py#L685) |
+| `/api/ofertas/import-validar` | POST | [`api_ofertas_import_validar`](../routes/ofertas_import.py#L769) |
+| `/api/ofertas/import/lab/<int:lab_id>/productos` | GET | [`api_ofertas_lab_productos`](../routes/ofertas_import.py#L649) |
+| `/ofertas/import` | GET | [`ofertas_import_page`](../routes/ofertas_import.py#L604) |
 
 ### `routes/panel.py`
 
