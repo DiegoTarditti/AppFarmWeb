@@ -11,7 +11,6 @@ from database import (
     Laboratorio,
     Producto,
     ProductoAtributo,
-    ProductoCodigoBarra,
     ProductoFlag,
     TipoPedidoConfig,
     get_db,
@@ -19,19 +18,13 @@ from database import (
 
 
 def _resolver_producto_por_ean(session, ean):
-    """Producto master por cualquier EAN: principal, alt1/2/3 o tabla 1-a-N."""
-    prod = session.query(Producto).filter_by(codigo_barra=ean).first()
-    if prod:
-        return prod
-    prod = (session.query(Producto)
-            .filter((Producto.codigo_barra_alt1 == ean)
-                    | (Producto.codigo_barra_alt2 == ean)
-                    | (Producto.codigo_barra_alt3 == ean)).first())
-    if prod:
-        return prod
-    pcb = (session.query(ProductoCodigoBarra)
-           .filter_by(codigo_barra=ean).first())
-    return pcb.producto if pcb else None
+    """Producto master por cualquier EAN: principal, tabla 1-a-N u
+    obs_codigos_barras (delega en el resolver central de helpers.py — ver
+    ahí el porqué del fallback a ObServer: nuestro catálogo es un
+    subconjunto chico del de ObServer y un EAN externo puede no coincidir
+    con el que tenemos cargado a mano)."""
+    from helpers import _find_producto
+    return _find_producto(session, ean)
 
 
 def _flag_configs(session):
