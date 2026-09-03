@@ -17,6 +17,66 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Control de ingresos de Kellerhoff: más datos a la vista (2026-09-03)
+
+Salió de revisar en producción por qué una compra aparecía como recibida cuando no
+había entrado. Ver `fix(consulta-compras)` (#390) por el bug de fondo ya arreglado.
+
+1. **Pantalla de sync (`/kellerhoff/sync`) — dos columnas nuevas.**
+   - **Nº de remito**, cuando ya lo tenemos. Es la clave contra la que ObServer
+     registra la recepción, así que tenerlo a la vista evita saltar al resumen.
+   - **Estado del chequeo de ingreso** de ese comprobante: **OK** / **con
+     diferencias** / sin chequear, y desde ahí **poder ir a ver esas
+     diferencias** (link al cruce de la factura).
+
+2. **Badge "parcial" en el resumen semanal.** Hoy la combinación `INGRESO ✓ +
+   CRUCE ✗` ES la firma de un ingreso parcial ("vino un remito, pero lo que trajo
+   no es lo que se facturó"), solo que está repartida en dos columnas con dos
+   tildes que parecen decir lo mismo y nadie las relaciona. Mostrar
+   `parcial · 1 de 13`. Caso real: la factura `00046-00317100` tiene recepción
+   (1 MODIALEX) pero no entró el OBETIDE — "no vino nada" y "vino la mitad" son
+   reclamos distintos a la droguería.
+
+3. **Informe de faltantes CON IMPORTE.** `stock_differences` guarda cantidades;
+   ninguna pantalla suma pesos. El caso de arriba son **$301.338,70 en una sola
+   línea** — el número que hace que alguien levante el teléfono.
+
+4. **Barrido de las 229 filas de "Artículo no encontrado en ERP"**: separar
+   faltantes reales (el mismo EAN cruza bien en otras facturas del período) de
+   huecos de catálogo. Es solo lectura y responde "cuánta plata más hay suelta".
+
+5. **Progreso real en "Verificar ingresos".** El PR #389 dejó spinner + reloj,
+   que es feedback de vida, no de avance. Un "12 de 36 comprobantes" necesita
+   job asincrónico + polling; el patrón ya existe en `/kellerhoff/sync`
+   (`pollEstado`).
+
+6. **Packs: segunda vuelta.** El PR #387 convierte pack↔unidad con las dos
+   señales duras (`pack_equivalencias` y `obs_productos.cantidad_envase`).
+   Queda SANCOR (`PACK X24`, 4 facturado / 96 en el ingreso), que no está en la
+   tabla: necesita la regex de descripción **corroborada por el precio**. Ojo —
+   medido: para factor 2 el precio NO alcanza (un descuento del 45% da ratio ~2),
+   así que un x2 no se puede resolver por precio.
+
+7. **Dos bugs latentes, sin tocar.** `precio_erp` se llena con `0` por el `or 0`
+   de `services/kellerhoff_resumen.py`, y `templates/invoice_items.html` divide
+   ese precio (que es unitario) por la cantidad. No se notan hoy porque la
+   columna "P. ERP" nunca se muestra — `PrecioUnitario` viene en cero en las
+   187.555 filas de `DW.Recepciones`, así que el precio de compra no está en el
+   ingreso.
+
+### Horarios (pedido 2026-09-03) — implementado en este PR
+
+El sync vive en **`/etc/cron.d/appfarmweb`** del 220 (no en `crontab -l`, ni en
+timers, ni en DockerPanel — buscar ahí primero la próxima vez). Pasa de
+`0 10,16 * * *` a **10:30, 13:15, 16:30, 18:30 y 22:30**.
+
+El control de ingresos corre **2 h después de cada sync** — se agregan cinco
+`OnCalendar` a `scripts/appfarmweb-kellerhoff-ingresos.timer` (12:30, 15:15,
+18:30, 20:30, 00:30), además de la pasada diaria de 05:30 que se mantiene como
+red de seguridad. El desfasaje es a propósito: la factura aparece en el portal
+antes de que la mercadería se reciba e ingrese a ObServer.
+
+
 ## ⏳ Pendiente — Análisis: qué productos caros conviene meter al robot Rowa (2026-08-30)
 
 **Idea de Diego**: además de la rotación (`/rowa/analisis`) y ahora la capacidad
