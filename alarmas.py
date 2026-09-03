@@ -264,13 +264,22 @@ def check_kellerhoff_diferencias_ingreso(session) -> Optional[Alarma]:
     (Invoice.erp_filename == MARCA_CRUCE_AUTOMATICO) — un Excel subido a mano
     o un /observer/factura/<id>/sync manual no cuentan acá, tienen su propia
     pantalla de revisión (/results/<id>) y no son parte de este chequeo.
+
+    Excluye observaciones == 'Artículo no encontrado en ERP': medido el
+    2026-09-03, el 95% de las "diferencias" eran esto — el EAN de la factura
+    no existe en el catálogo local (Producto/ProductoCodigoBarra), así que
+    compare_invoice_vs_erp no puede saber si ObServer lo trajo bajo otro
+    código. Eso es un hueco de catálogo, no un faltante: contarlo infla la
+    alarma con ruido y le hace perder confianza. "No coincide con ERP" (el
+    producto SÍ se identificó) es la señal real.
     """
     try:
         from database import Invoice, StockDifference
         from services.kellerhoff_resumen import MARCA_CRUCE_AUTOMATICO
         n = (session.query(Invoice.id)
              .join(StockDifference, StockDifference.factura_id == Invoice.id)
-             .filter(Invoice.erp_filename == MARCA_CRUCE_AUTOMATICO)
+             .filter(Invoice.erp_filename == MARCA_CRUCE_AUTOMATICO,
+                     StockDifference.observaciones != 'Artículo no encontrado en ERP')
              .distinct().count())
     except Exception:
         return None
