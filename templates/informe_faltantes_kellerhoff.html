@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Faltantes de ingreso — Informes{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+  .fk-page { padding: 10px 24px 24px; }
+  .fk-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+  .fk-head h1 { font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:700;
+                color:var(--ds-text); margin:0; }
+  .fk-sub { font-size:12px; color:var(--ds-text-mute); margin-bottom:14px; max-width:78ch; }
+
+  .fk-kpis { display:flex; gap:26px; flex-wrap:wrap; padding:14px 18px; margin-bottom:14px;
+             background:var(--ds-surface); border:1px solid var(--ds-line);
+             border-radius:var(--ds-r-md); }
+  .fk-kpi small { display:block; font-size:10px; text-transform:uppercase;
+                  letter-spacing:.07em; color:var(--ds-text-mute); margin-bottom:3px; }
+  .fk-kpi span { font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .fk-kpi .plata { color:var(--ds-mint); }
+  .fk-kpi .ciego { color:var(--ds-text-mute); }
+
+  .fk-filtros { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .fk-filtros input, .fk-filtros select {
+    background:var(--ds-surface-2); border:1px solid var(--ds-line);
+    border-radius:var(--ds-r-sm); padding:5px 9px; font-size:13px; color:var(--ds-text);
+  }
+  .fk-filtros input:focus, .fk-filtros select:focus { outline:none; border-color:var(--ds-mint); }
+  .fk-lbl { font-size:11px; color:var(--ds-text-mute); }
+
+  .fk-card { padding:0; overflow:hidden; background:var(--ds-surface);
+             border:1px solid var(--ds-line); border-radius:var(--ds-r-md); }
+  .fk-card__body { overflow:auto; max-height:66vh; }
+  .fk-card__body table { width:100%; font-size:13px; border-collapse:collapse; }
+  .fk-card__body thead { position:sticky; top:0; z-index:5; }
+  .fk-card__body thead th {
+    padding:10px 14px; font-size:10px; font-weight:700; letter-spacing:.08em;
+    text-transform:uppercase; text-align:left;
+    background:var(--ds-surface); border-bottom:1px solid var(--ds-line);
+  }
+  .fk-card__body tbody td { padding:9px 14px; border-bottom:1px solid var(--ds-line); }
+  .fk-card__body tbody tr:hover { background:rgba(95,230,188,.04); }
+  .fk-num { text-align:right; font-variant-numeric:tabular-nums;
+            font-family:ui-monospace, monospace; }
+  .fk-ean { font-family:ui-monospace, monospace; font-size:11px; color:var(--ds-text-mute); }
+  .fk-badge { display:inline-block; padding:2px 7px; border-radius:5px;
+              font-size:10px; font-weight:700; }
+  .fk-vacio { padding:26px; text-align:center; color:var(--ds-text-mute); font-size:13px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="fk-page">
+
+  <div class="fk-head">
+    <h1>💸 Faltantes de ingreso</h1>
+  </div>
+  <p class="fk-sub">
+    Diferencias del cruce factura ↔ ingreso de ObServer, ordenadas por <strong>plata</strong>.
+    Un faltante de 2 unidades de $150.000 no es lo mismo que uno de 2 unidades de $300, y
+    hasta ahora las dos se veían igual porque solo se guardaban cantidades.
+  </p>
+
+  <div class="fk-kpis">
+    <div class="fk-kpi">
+      <small>Reclamable</small>
+      <span class="plata">$ {{ '{:,.2f}'.format(total_reclamable).replace(',','X').replace('.',',').replace('X','.') }}</span>
+    </div>
+    <div class="fk-kpi">
+      <small>Líneas reclamables</small>
+      <span>{{ n_reclamable }}</span>
+    </div>
+    <div class="fk-kpi">
+      <small>Sin poder opinar</small>
+      <span class="ciego">$ {{ '{:,.2f}'.format(total_hueco).replace(',','X').replace('.',',').replace('X','.') }}</span>
+    </div>
+    <div class="fk-kpi">
+      <small>Líneas ciegas</small>
+      <span class="ciego">{{ n_hueco }}</span>
+    </div>
+    <div class="fk-kpi">
+      <small>Facturas cruzadas</small>
+      <span>{{ n_facturas }}</span>
+    </div>
+  </div>
+
+  {# Esta aclaración NO es decorativa: sin ella el segundo total se lee como plata
+     perdida y no lo es. Es la parte del control que no puede opinar. #}
+  <p class="fk-sub">
+    <strong>Reclamable</strong> = o el producto se identificó y la cantidad no coincide, o su
+    EAN cruza bien en otra factura del período — el catálogo sabe resolver ese código, así que
+    su ausencia en <em>este</em> ingreso es un faltante.
+    <strong>Sin poder opinar</strong> = el EAN no cruza en ningún lado.
+    <em>No es plata perdida: es plata sobre la que el control está ciego.</em> Sumarla al reclamo
+    sería inventar un faltante; ignorarla, tapar que hay un punto ciego.
+  </p>
+
+  <form method="get" class="fk-filtros">
+    <span class="fk-lbl">Desde</span>
+    <input type="date" name="desde" value="{{ desde.isoformat() if desde else '' }}">
+    <span class="fk-lbl">Hasta</span>
+    <input type="date" name="hasta" value="{{ hasta.isoformat() if hasta else '' }}">
+    <span class="fk-lbl">Mostrar</span>
+    <select name="solo">
+      <option value="reclamable" {% if solo == 'reclamable' %}selected{% endif %}>Solo reclamables</option>
+      <option value="hueco"      {% if solo == 'hueco' %}selected{% endif %}>Solo los ciegos</option>
+      <option value="todo"       {% if solo == 'todo' %}selected{% endif %}>Todo</option>
+    </select>
+    <button type="submit" class="btn btn-mint btn-sm">Filtrar</button>
+  </form>
+
+  <div class="fk-card">
+    <div class="fk-card__body">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Factura</th>
+            <th>Producto</th>
+            <th>EAN</th>
+            <th class="fk-num">Fact.</th>
+            <th class="fk-num">Ingresó</th>
+            <th class="fk-num">Importe</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in filas %}
+          <tr>
+            <td>{{ f.fecha.strftime('%d/%m/%Y') if f.fecha else '—' }}</td>
+            <td>
+              <a href="{{ url_for('show_results', invoice_id=f.invoice_id) }}"
+                 class="fk-ean" style="color:var(--ds-mint);text-decoration:none;"
+                 title="Ver el cruce completo">{{ f.numero }}</a>
+            </td>
+            <td>{{ f.descripcion }}</td>
+            <td class="fk-ean">{{ f.codigo_barra or '—' }}</td>
+            <td class="fk-num">{{ f.cantidad_factura }}</td>
+            <td class="fk-num">{{ f.cantidad_erp }}</td>
+            <td class="fk-num" style="font-weight:700;">
+              {% if f.importe %}$ {{ '{:,.2f}'.format(f.importe).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}
+            </td>
+            <td>
+              {% if f.reclamable %}
+              <span class="fk-badge" style="background:rgba(95,230,188,.14);color:var(--ds-mint);"
+                    title="{{ f.observaciones }}{% if f.cruza_en %} · este EAN cruza bien en {{ f.cruza_en }} factura(s) del período{% endif %}">reclamable</span>
+              {% else %}
+              <span class="fk-badge" style="background:rgba(120,120,120,.12);color:var(--ds-text-mute);"
+                    title="{{ f.observaciones }} · el EAN no cruza en ninguna factura del período, así que no se puede saber si entró">sin poder opinar</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="fk-vacio">
+            No hay diferencias en el período — o todavía no se cruzó ninguna factura.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
