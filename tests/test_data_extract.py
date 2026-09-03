@@ -294,6 +294,102 @@ class TestCompareInvoiceVsErp:
         assert len(diffs) == 1
         assert 'no encontrado' in diffs[0]['observaciones'].lower()
 
+    # ── pack↔unidad: la factura cuenta cajas, el ingreso unidades ─────────────
+
+    def _obs_producto(self, session, observer_id, ean, cantidad_envase, descripcion='PROD'):
+        """Un producto del catálogo ObServer con su EAN y su contenido de envase."""
+        from database import ObsCodigoBarras, ObsProducto
+        session.add(ObsProducto(observer_id=observer_id, descripcion=descripcion,
+                                cantidad_envase=cantidad_envase))
+        session.add(ObsCodigoBarras(id_codigo_barras=observer_id * 10 + 1,
+                                    producto_observer=observer_id,
+                                    codigo_barras=ean, orden=1))
+        session.flush()
+
+    def test_pack_equivalencia_resuelve_la_diferencia(self, session):
+        """Caso OPTAMOX real (2026-09-03): la factura trae 2 packs de 10 y el
+        ingreso registra 20 unidades. El pack ya estaba en `pack_equivalencias`
+        hace rato — el cruce simplemente no miraba la tabla."""
+        from database import PackEquivalencia
+        session.add(PackEquivalencia(ean_pack='EAN_PACK_OPT', ean_unidad='EAN_UNID_OPT',
+                                     cantidad=10, desc_pack='OPTAMOX PACK X 10'))
+        session.flush()
+        inv = _make_invoice(session, [{'codigo_barra': 'EAN_PACK_OPT',
+                                       'descripcion': 'OPTAMOX DUO 1 GR CPR X 8 PACK X 10',
+                                       'cantidad': 2}])
+        _make_erp(session, [{'codigo_barra': 'EAN_PACK_OPT',
+                             'descripcion': 'OPTAMOX DUO', 'cantidad': 20}], inv)
+        assert compare_invoice_vs_erp(session, inv.id) == []
+
+    def test_cantidad_envase_resuelve_sin_pack_equivalencia(self, session):
+        """Caso LOTRIAL: no está en `pack_equivalencias`, pero ObServer sabe que
+        el envase facturado trae 100 y el del ingreso 10 → factor 10.
+
+        Ojo con la precondición: pack y unidad son productos DISTINTOS de
+        ObServer, así que el puente por catálogo (que exige el mismo
+        producto_observer) no los une. Para que la conversión llegue a
+        aplicarse, los dos lados tienen que haber matcheado antes por otra vía
+        — acá por descripción."""
+        self._obs_producto(session, 91001, 'EAN_PACK_LOT', 100, 'LOTRIAL (PACK 10X10) COM x 100')
+        self._obs_producto(session, 91002, 'EAN_UNID_LOT', 10, 'LOTRIAL 10 mg (PACK) COM x 10')
+        inv = _make_invoice(session, [{'codigo_barra': 'EAN_PACK_LOT',
+                                       'descripcion': 'LOTRIAL 10 MG', 'cantidad': 2}])
+        _make_erp(session, [{'codigo_barra': 'EAN_UNID_LOT',
+                             'descripcion': 'LOTRIAL 10 MG', 'cantidad': 20}], inv)
+        assert compare_invoice_vs_erp(session, inv.id) == []
+
+    def test_multiplo_exacto_sin_pack_declarado_sigue_siendo_diferencia(self, session):
+        """EL test que define el criterio. Caso TAPON P/OIDOS real: facturado 2,
+        recibido 1 — "múltiplo exacto x2" para cualquier detector aritmético, y
+        un faltante de verdad. Sin pack declarado (ni tabla ni cantidad_envase
+        distinta) NO se convierte nada. Inferir el factor de que las cantidades
+        den múltiplo habría silenciado 5 faltantes reales de 14."""
+        inv = _make_invoice(session, [{'codigo_barra': 'EAN_TAPON',
+                                       'descripcion': 'TAPON P/OIDOS OTOSAN 1 PAR AD', 'cantidad': 2}])
+        _make_erp(session, [{'codigo_barra': 'EAN_TAPON',
+                             'descripcion': 'TAPON P/OIDOS OTOSAN', 'cantidad': 1}], inv)
+        diffs = compare_invoice_vs_erp(session, inv.id)
+        assert len(diffs) == 1
+        assert diffs[0]['diferencia'] == 1
+        assert diffs[0]['observaciones'] == 'No coincide con ERP'
+
+    def test_mismo_producto_de_ambos_lados_no_convierte(self, session):
+        """Si el ingreso quedó bajo el MISMO producto que factura, el cociente de
+        cantidad_envase es 1: no hay pack que convertir aunque el envase sea
+        grande. Evita normalizar contra sí mismo."""
+        self._obs_producto(session, 91003, 'EAN_MISMO', 100, 'ALGO COM x 100')
+        inv = _make_invoice(session, [{'codigo_barra': 'EAN_MISMO', 'descripcion': 'ALGO', 'cantidad': 3}])
+        _make_erp(session, [{'codigo_barra': 'EAN_MISMO', 'descripcion': 'ALGO', 'cantidad': 1}], inv)
+        diffs = compare_invoice_vs_erp(session, inv.id)
+        assert len(diffs) == 1
+        assert diffs[0]['diferencia'] == 2
+
+    def test_pack_con_faltante_real_reporta_en_unidades(self, session):
+        """Pack declarado PERO además falta mercadería: 2 packs de 10 = 20
+        unidades, llegaron 15 → 5 de diferencia, dicha en unidades y explicando
+        la conversión (si no, la resta no cierra contra las columnas)."""
+        from database import PackEquivalencia
+        session.add(PackEquivalencia(ean_pack='EAN_PACK_F', ean_unidad='EAN_UNID_F', cantidad=10))
+        session.flush()
+        inv = _make_invoice(session, [{'codigo_barra': 'EAN_PACK_F', 'descripcion': 'ALGO PACK X 10', 'cantidad': 2}])
+        _make_erp(session, [{'codigo_barra': 'EAN_PACK_F', 'descripcion': 'ALGO', 'cantidad': 15}], inv)
+        diffs = compare_invoice_vs_erp(session, inv.id)
+        assert len(diffs) == 1
+        assert diffs[0]['cantidad_factura'] == 20
+        assert diffs[0]['diferencia'] == 5
+        assert 'x10' in diffs[0]['observaciones']
+
+    def test_envase_no_entero_no_convierte(self, session):
+        """Cociente que no da entero exacto (400 ml contra 150 ml) no es un pack:
+        son presentaciones distintas del mismo producto. No se toca."""
+        self._obs_producto(session, 91004, 'EAN_400', 400, 'NUTRILON Lata POL x 400')
+        self._obs_producto(session, 91005, 'EAN_150', 150, 'NUTRILON Lata POL x 150')
+        inv = _make_invoice(session, [{'codigo_barra': 'EAN_400', 'descripcion': 'NUTRILON HA', 'cantidad': 10}])
+        _make_erp(session, [{'codigo_barra': 'EAN_150', 'descripcion': 'NUTRILON HA', 'cantidad': 20}], inv)
+        diffs = compare_invoice_vs_erp(session, inv.id)
+        assert len(diffs) == 1
+        assert diffs[0]['diferencia'] == -10
+
 
 # ── save_barcode_mapping ──────────────────────────────────────────────────────
 
@@ -547,3 +643,61 @@ class TestCreateClaim:
     def test_raises_on_invalid_invoice(self, session):
         with pytest.raises(ValueError, match='Factura no encontrada'):
             create_claim(session, 999999, [])
+
+
+# ── backfill de pack_equivalencias.cantidad ───────────────────────────────────
+
+class TestBackfillPackEquivalenciasCantidad:
+    """El Excel dejó las 10 filas de producción con cantidad=1 (medido el
+    2026-09-03), así que la tabla no convertía nada. El factor está en
+    desc_pack."""
+
+    def _run(self, session, dry_run):
+        import database
+        from scripts.backfill_pack_equivalencias_cantidad import ejecutar
+        orig = getattr(database, 'SessionLocal', None)
+        database.SessionLocal = lambda: session
+        # `ejecutar` cierra la sesión al terminar; en el test la seguimos usando.
+        session.close = lambda: None
+        try:
+            return ejecutar(dry_run=dry_run)
+        finally:
+            if orig is not None:
+                database.SessionLocal = orig
+
+    def _fila(self, session, ean, desc, cantidad=1):
+        from database import PackEquivalencia
+        pe = PackEquivalencia(ean_pack=ean, ean_unidad='', cantidad=cantidad, desc_pack=desc)
+        session.add(pe)
+        session.flush()
+        return pe
+
+    def test_completa_cantidad_desde_desc_pack(self, session, monkeypatch):
+        monkeypatch.setattr('database.init_engine', lambda *a, **k: None)
+        pe = self._fila(session, 'E1', 'OPTAMOX DUO 1G COMP REC X 8 PACK X 10')
+        stats = self._run(session, dry_run=False)
+        assert stats['actualizadas'] == 1
+        assert pe.cantidad == 10
+
+    def test_dry_run_no_escribe(self, session, monkeypatch):
+        monkeypatch.setattr('database.init_engine', lambda *a, **k: None)
+        pe = self._fila(session, 'E2', 'SERTAL COMP X 200 (PACK X 20 ) VL')
+        stats = self._run(session, dry_run=True)
+        assert stats['actualizadas'] == 1
+        assert pe.cantidad == 1
+
+    def test_no_pisa_lo_cargado_a_mano(self, session, monkeypatch):
+        monkeypatch.setattr('database.init_engine', lambda *a, **k: None)
+        pe = self._fila(session, 'E3', 'ALGO PACK X 10', cantidad=6)
+        stats = self._run(session, dry_run=False)
+        assert stats['ya_tenian'] == 1
+        assert pe.cantidad == 6
+
+    def test_sin_factor_declarado_no_inventa(self, session, monkeypatch):
+        """'X 10 COMP' es la presentación, no un pack. Sin PACK explícito no
+        se toca — mismo criterio que el cruce."""
+        monkeypatch.setattr('database.init_engine', lambda *a, **k: None)
+        pe = self._fila(session, 'E4', 'LOTRIAL 10 MG CPR X 100')
+        stats = self._run(session, dry_run=False)
+        assert stats['sin_factor'] == 1
+        assert pe.cantidad == 1
