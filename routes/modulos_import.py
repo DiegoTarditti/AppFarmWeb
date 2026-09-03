@@ -271,7 +271,8 @@ def init_app(app):
         Cuando se cumplen los 3 → pack. El regex 'PACK X N' aporta cantidad.
         """
         import producto_matcher as pm
-        from database import ObsVentaMensual, Producto
+        from database import ObsVentaMensual
+        from helpers import _eans_a_observer_ids
         data = request.get_json(silent=True) or {}
         items = data.get('items') or []
         usar_historico = bool(data.get('usar_historico'))
@@ -299,11 +300,7 @@ def init_app(app):
             con_ventas = set()
             if usar_historico:
                 todos_eans = {_ean_o_codigo(it) for it in items if _ean_o_codigo(it)}
-                ean_a_obs = dict(
-                    session.query(Producto.codigo_barra, Producto.observer_id)
-                    .filter(Producto.codigo_barra.in_(todos_eans),
-                            Producto.observer_id.isnot(None)).all()
-                ) if todos_eans else {}
+                ean_a_obs = _eans_a_observer_ids(session, todos_eans) if todos_eans else {}
                 obs_ids = {oid for oid in ean_a_obs.values() if oid}
                 if obs_ids:
                     rows = (session.query(ObsVentaMensual.producto_observer)

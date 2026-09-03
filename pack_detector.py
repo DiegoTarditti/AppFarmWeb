@@ -48,7 +48,8 @@ def detectar_packs(modules, session, saltear_registrados=True):
     Cada candidato: {ean_pack, desc_pack, cantidad, ean_unidad_sug, desc_unidad_sug,
                      fuente, modulo, destacado, tiene_regex, sin_ventas, confianza}
     """
-    from database import ModuloPack, ObsProducto, ObsVentaMensual, Producto
+    from database import ModuloPack, ObsProducto, ObsVentaMensual
+    from helpers import _eans_a_observer_ids
 
     ya_registrados = set()
     if saltear_registrados:
@@ -63,12 +64,9 @@ def detectar_packs(modules, session, saltear_registrados=True):
             if e:
                 todos_eans.add(e)
 
-    # Map EAN → observer_id
-    ean_a_obs = dict(
-        session.query(Producto.codigo_barra, Producto.observer_id)
-        .filter(Producto.codigo_barra.in_(todos_eans),
-                Producto.observer_id.isnot(None)).all()
-    )
+    # Map EAN → observer_id (Producto propio → producto_codigos_barra →
+    # catálogo ObServer, ver helpers._eans_a_observer_ids)
+    ean_a_obs = _eans_a_observer_ids(session, todos_eans)
     obs_ids = {oid for oid in ean_a_obs.values() if oid}
     con_ventas = set()
     if obs_ids:
