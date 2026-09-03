@@ -140,3 +140,39 @@ def test_factura_sin_cruzar_no_entra_ni_como_evidencia():
     assert '444555666' not in html
     s.rollback()
     s.close()
+
+
+def test_ingreso_de_mas_no_es_reclamable():
+    """Caso SANCOR real: 4 packs facturados, 96 unidades ingresadas (pack x24
+    todavía sin resolver). Entró MÁS de lo facturado — no falta nada. Contarlo
+    como plata reclamable inflaba el total en más de $800.000 (medido en
+    producción el 2026-09-03), que es el error exacto contra el que existe este
+    informe."""
+    s = database.SessionLocal()
+    a = _factura(s, 'F-SOBRA')
+    _item(s, a, '7798181642517', 'SANCOR BEBE ADVANCED 2 ENV X200 PACK X24', 4, 109842.74)
+    _dif(s, a, '7798181642517', 'SANCOR BEBE', 4, 96, 'No coincide con ERP')
+    s.commit()
+
+    c = _app().test_client()
+    assert '7798181642517' not in c.get('/informes/faltantes-kellerhoff').get_data(as_text=True)
+    html = c.get('/informes/faltantes-kellerhoff?solo=sobrante').get_data(as_text=True)
+    assert 'ingresó de más' in html
+    s.rollback()
+    s.close()
+
+
+def test_reclamo_prorratea_las_unidades_que_faltan():
+    """Si se facturaron 10 a $100.000 y llegaron 6, el reclamo son las 4 que
+    faltan ($40.000), no la línea entera."""
+    s = database.SessionLocal()
+    a = _factura(s, 'F-PRORRATA')
+    _item(s, a, '555000111', 'ALGO CARO', 10, 100000.0)
+    _dif(s, a, '555000111', 'ALGO CARO', 10, 6, 'No coincide con ERP')
+    s.commit()
+
+    html = _app().test_client().get('/informes/faltantes-kellerhoff').get_data(as_text=True)
+    assert '40.000,00' in html
+    assert '$ 100.000,00</span>' not in html   # el total de línea solo va en el title
+    s.rollback()
+    s.close()
