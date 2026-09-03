@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-03 15:42 · rama `fix/quitar-backfill-pack-innecesario` · commit `fabeebd`
+Generado: 2026-09-03 16:11 · rama `feat/verificar-ingresos-progreso` · commit `1ccecdf`
 
 **823 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
 
@@ -449,8 +449,8 @@ Generado: 2026-09-03 15:42 · rama `fix/quitar-backfill-pack-innecesario` · com
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/compras/consulta` | GET | [`consulta_compras`](../routes/consulta_compras.py#L150) |
-| `/compras/consulta/export.xlsx` | GET | [`consulta_compras_export`](../routes/consulta_compras.py#L166) |
+| `/compras/consulta` | GET | [`consulta_compras`](../routes/consulta_compras.py#L179) |
+| `/compras/consulta/export.xlsx` | GET | [`consulta_compras_export`](../routes/consulta_compras.py#L195) |
 
 ### `routes/consulta_droga.py`
 
