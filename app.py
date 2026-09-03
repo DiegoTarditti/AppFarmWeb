@@ -95,6 +95,7 @@ def exigir_login():
                       # Crons externos: auth propia via X-Cron-Secret header.
                       'api_cron_recalcular_os_clientes',
                       'api_cron_notificar_alarmas',
+                      'api_cron_kellerhoff_verificar_ingresos',
                       # Panel remoto: auth propia via X-Panel-Token header.
                       'api_panel_proximo', 'api_panel_resultado', 'api_admin_actualizar',
                       # Sync local↔Render: auth propia via X-Panel-Token header.
