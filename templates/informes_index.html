@@ -73,6 +73,15 @@
             </div>
         </div>
 
+        {# ═══════════════════ CONTROL DE COMPRAS ═══════════════════ #}
+        <div class="inf-section mb-5">
+            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2"><span>💸</span> Control de compras</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {{ inf_card('informe_faltantes_kellerhoff', '💸', 'rose', 'Nuevo', 'amber', 'Faltantes de ingreso',
+                   'Lo facturado que no entró, ordenado por plata. Separa lo reclamable de lo que el control no puede ver.', 'faltantes reclamo kellerhoff ingreso cruce diferencias plata') }}
+            </div>
+        </div>
+
         {# ═══════════════════ OFERTAS ═══════════════════ #}
         <div class="inf-section mb-5">
             <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2"><span>🏷️</span> Ofertas y descuentos</h2>

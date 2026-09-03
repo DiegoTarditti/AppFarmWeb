@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-03 15:42 · rama `fix/quitar-backfill-pack-innecesario` · commit `fabeebd`
+Generado: 2026-09-03 17:14 · rama `chore/cron-sync-horarios-y-backlog` · commit `6281dfb`
 
-**823 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
+**824 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -795,6 +795,7 @@ Generado: 2026-09-03 15:42 · rama `fix/quitar-backfill-pack-innecesario` · com
 | `/informes/cronicos-pami/afiliado` | GET | [`informe_cronicos_pami_afiliado`](../routes/informes.py#L572) |
 | `/informes/drogas-sin-alternativa` | GET | [`informe_drogas_sin_alternativa`](../routes/informes.py#L1395) |
 | `/informes/eventos-sla` | GET | [`informes_eventos_sla`](../routes/informes.py#L275) |
+| `/informes/faltantes-kellerhoff` | GET | [`informe_faltantes_kellerhoff`](../routes/informes.py#L3554) |
 | `/informes/lab-cobertura-moleculas` | GET | [`informe_lab_cobertura_moleculas`](../routes/informes.py#L1137) |
 | `/informes/lab-cobertura-moleculas/analizar` | POST | [`informe_lab_cobertura_moleculas_analizar`](../routes/informes.py#L1144) |
 | `/informes/lab-gap-marcas` | GET | [`informe_lab_gap_marcas`](../routes/informes.py#L959) |

@@ -3548,3 +3548,119 @@ def init_app(app):
             total_valor=round(total_valor, 2), total_unid=total_unid,
             n_filas=len(filas), n_nunca=nunca,
         )
+
+    @app.route('/informes/faltantes-kellerhoff')
+    @login_required
+    def informe_faltantes_kellerhoff():
+        """Las diferencias del cruce factura↔ingreso, ordenadas por PLATA.
+
+        `stock_differences` guardaba cantidades y ninguna pantalla sumaba pesos,
+        así que un faltante de 2 unidades de $150.000 se veía igual que uno de
+        2 unidades de $300. El importe es lo que decide si vale la pena
+        reclamarle a la droguería, y sale de `factura_items` — la misma línea
+        que originó la diferencia.
+
+        Separa dos cosas que NO son lo mismo (medido el 2026-09-03 sobre 229
+        filas: 29 contra 200):
+
+        · RECLAMABLE — o el producto se identificó y la cantidad no coincide, o
+          es un "no encontrado" cuyo EAN SÍ cruza bien en otra factura del
+          período. En los dos casos el catálogo sabe resolver ese código, así
+          que su ausencia en ESTE ingreso es un faltante, no una limitación
+          nuestra. Verificado a mano contra DW.Recepciones en dos casos (OBETIDE
+          1,7 MG $301.338 y NUTRILON HA $538.904): los dos, ingresos parciales
+          reales.
+
+        · HUECO DE CATÁLOGO — el EAN no cruza en ningún lado. No es plata
+          perdida: es una línea sobre la que el control no puede opinar. Sumarla
+          al reclamo sería inventar un faltante; ignorarla, tapar que hay un
+          punto ciego. Por eso se muestran los dos totales, separados.
+        """
+        from database import InvoiceItem, StockDifference
+        from routes.consulta_compras import _parse_fecha
+
+        desde = _parse_fecha(request.args.get('desde'))
+        hasta = _parse_fecha(request.args.get('hasta'))
+        solo = request.args.get('solo') or 'reclamable'
+
+        with database.get_db() as session:
+            # Universo: facturas que SE CRUZARON. Sin cruce no hay diferencias, y
+            # su ausencia no significa que todo entró (ver el ✓ falso que motivó
+            # este informe) — así que esas facturas no entran ni como evidencia.
+            base = session.query(database.Invoice).filter(
+                database.Invoice.erp_carga_id.isnot(None))
+            if desde:
+                base = base.filter(database.Invoice.fecha >= desde)
+            if hasta:
+                base = base.filter(database.Invoice.fecha <= hasta)
+            facturas = {inv.id: inv for inv in base.all()}
+            if not facturas:
+                return render_template('informe_faltantes_kellerhoff.html',
+                                       filas=[], desde=desde, hasta=hasta, solo=solo,
+                                       total_reclamable=0.0, total_hueco=0.0,
+                                       n_reclamable=0, n_hueco=0, n_facturas=0)
+            fids = list(facturas)
+
+            difs = (session.query(StockDifference)
+                    .filter(StockDifference.factura_id.in_(fids)).all())
+            claves_dif = {(d.factura_id, (d.codigo_barra or '').strip()) for d in difs}
+
+            # Importe por (factura, EAN) y, de paso, en cuántas facturas ese EAN
+            # cruzó SIN diferencia — que es la evidencia de que el catálogo lo
+            # resuelve.
+            importes = {}
+            cruza_ok = {}
+            for it in (session.query(InvoiceItem)
+                       .filter(InvoiceItem.factura_id.in_(fids)).all()):
+                ean = (it.codigo_barra or '').strip()
+                if not ean:
+                    continue
+                clave = (it.factura_id, ean)
+                imp = float(it.importe) if it.importe is not None else (
+                    float(it.precio_unitario or 0) * (it.cantidad or 0))
+                importes[clave] = importes.get(clave, 0.0) + imp
+                if clave not in claves_dif:
+                    cruza_ok[ean] = cruza_ok.get(ean, 0) + 1
+
+            filas = []
+            for d in difs:
+                ean = (d.codigo_barra or '').strip()
+                inv = facturas[d.factura_id]
+                no_encontrado = 'no encontrado' in (d.observaciones or '').lower()
+                otras = cruza_ok.get(ean, 0)
+                # "No coincide con ERP" ya implica producto identificado.
+                reclamable = (not no_encontrado) or otras > 0
+                filas.append({
+                    'invoice_id': d.factura_id,
+                    'fecha': inv.fecha,
+                    'numero': inv.numero_factura,
+                    'codigo_barra': ean,
+                    'descripcion': d.descripcion or '',
+                    'cantidad_factura': d.cantidad_factura or 0,
+                    'cantidad_erp': d.cantidad_erp or 0,
+                    'diferencia': d.diferencia or 0,
+                    'observaciones': d.observaciones or '',
+                    'importe': round(importes.get((d.factura_id, ean), 0.0), 2),
+                    'reclamable': reclamable,
+                    'cruza_en': otras,
+                })
+
+        total_reclamable = sum(f['importe'] for f in filas if f['reclamable'])
+        total_hueco = sum(f['importe'] for f in filas if not f['reclamable'])
+        n_reclamable = sum(1 for f in filas if f['reclamable'])
+        n_hueco = len(filas) - n_reclamable
+
+        if solo == 'reclamable':
+            filas = [f for f in filas if f['reclamable']]
+        elif solo == 'hueco':
+            filas = [f for f in filas if not f['reclamable']]
+        filas.sort(key=lambda f: -f['importe'])
+
+        return render_template(
+            'informe_faltantes_kellerhoff.html',
+            filas=filas, desde=desde, hasta=hasta, solo=solo,
+            total_reclamable=round(total_reclamable, 2),
+            total_hueco=round(total_hueco, 2),
+            n_reclamable=n_reclamable, n_hueco=n_hueco,
+            n_facturas=len(facturas),
+        )
