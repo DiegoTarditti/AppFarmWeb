@@ -430,6 +430,38 @@ def compare_invoice_vs_erp(session, factura_id):
         for m in session.query(BarcodeMapping).filter_by(proveedor_id=proveedor_id).all():
             mappings_by_factura_barcode[m.codigo_barra_factura] = m.codigo_barra_erp
 
+    # Bridge directo vía el catálogo de ObServer (obs_codigos_barras), SIN pasar
+    # por Producto/ProductoCodigoBarra. El proveedor factura con un EAN propio
+    # que no siempre coincide con el que ObServer registra al ingreso, y nuestro
+    # catálogo interno (~600 productos curados a mano) es un subconjunto chico
+    # de los ~125k que ObServer ya conoce — nunca lo va a tener completo. Si
+    # ObServer ya sabe que el EAN de factura y algún EAN del ERP son el mismo
+    # producto_observer, alcanza con eso: no hace falta tener un Producto local.
+    from database import ObsCodigoBarras
+    obs_id_by_ean = {}
+    _eans_a_resolver = ({line.codigo_barra for line in invoice_items if line.codigo_barra}
+                        | set(erp_by_barcode.keys()))
+    if _eans_a_resolver:
+        for ean, oid in (session.query(ObsCodigoBarras.codigo_barras, ObsCodigoBarras.producto_observer)
+                         .filter(ObsCodigoBarras.codigo_barras.in_(_eans_a_resolver),
+                                 ObsCodigoBarras.fecha_baja.is_(None)).all()):
+            obs_id_by_ean[ean] = oid
+    # Mismo criterio que erp_by_desc: un producto_observer ambiguo (dos ítems
+    # del ERP resolviendo al mismo id) se descarta en vez de adivinar.
+    erp_by_obs_id = {}
+    _obs_id_ambiguos = set()
+    for bc, item in erp_by_barcode.items():
+        oid = obs_id_by_ean.get(bc)
+        if oid is None:
+            continue
+        anterior = erp_by_obs_id.get(oid)
+        if anterior is not None and anterior is not item:
+            _obs_id_ambiguos.add(oid)
+        else:
+            erp_by_obs_id[oid] = item
+    for oid in _obs_id_ambiguos:
+        erp_by_obs_id.pop(oid, None)
+
     # Resolver cada línea a su ítem de ERP y AGRUPAR: una misma factura puede
     # traer el mismo producto en varios renglones (ej. "2 + 1" bonificación).
     # El ingreso del ERP viene consolidado (cantidad 3), así que hay que sumar
@@ -463,6 +495,12 @@ def compare_invoice_vs_erp(session, factura_id):
             mapped_erp_barcode = mappings_by_factura_barcode[line.codigo_barra]
             erp = erp_by_barcode.get(mapped_erp_barcode)
             match_type = 'mapping'
+
+        # Paso 4 (ambas estrategias, último recurso): bridge directo vía
+        # catálogo de ObServer — ver comentario donde se arma obs_id_by_ean.
+        if erp is None and line.codigo_barra in obs_id_by_ean:
+            erp = erp_by_obs_id.get(obs_id_by_ean[line.codigo_barra])
+            match_type = 'observer'
 
         # Guardar precio unitario del ERP en el ítem de factura
         if erp and erp.precio_unitario is not None:
@@ -499,6 +537,8 @@ def compare_invoice_vs_erp(session, factura_id):
             obs = 'Coincidencia por descripción (código de barra diferente)'
         elif g['match_type'] == 'mapping':
             obs = f'Coincidencia por correspondencia guardada ({erp.codigo_barra})'
+        elif g['match_type'] == 'observer':
+            obs = f'Coincidencia por catálogo ObServer (código de barra diferente: {erp.codigo_barra})'
         else:
             obs = 'No coincide con ERP'
 
