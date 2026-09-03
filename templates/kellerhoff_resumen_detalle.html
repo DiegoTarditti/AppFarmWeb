@@ -27,6 +27,22 @@
   .kpi__item span { font-size:17px; font-weight:700; }
   .badge { display:inline-block; padding:2px 7px; border-radius:5px;
            font-size:10px; font-weight:700; }
+
+  /* Progreso de "Verificar ingresos". Mismo lenguaje visual que la barra
+     indeterminada de /kellerhoff/sync: la verificación consulta ObServer
+     comprobante por comprobante y puede tardar bastante, así que hace falta
+     algo EN MOVIMIENTO — con el botón deshabilitado y el texto cambiado
+     nomás no se distingue de una pantalla colgada. */
+  @keyframes kh-slide {
+    0%   { margin-left: -40%; }
+    50%  { margin-left: 100%; }
+    100% { margin-left: -40%; }
+  }
+  @keyframes kh-spin { to { transform: rotate(360deg); } }
+  .kh-spin { display:inline-block; animation: kh-spin .9s linear infinite; }
+  .verif-bar { height:4px; background:var(--ds-line); border-radius:2px; overflow:hidden; }
+  .verif-bar > div { height:4px; border-radius:2px; background:var(--ds-mint);
+                     width:40%; animation: kh-slide 1.5s ease-in-out infinite; }
 </style>
 {% endblock %}
 
@@ -44,13 +60,28 @@
       </p>
     </div>
     {% if observer_disponible %}
-    <form method="post" action="{{ url_for('kellerhoff_resumen_verificar_ingresos', resumen_id=resumen.id) }}"
-          onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Verificando…'; return true;">
-      <button type="submit" class="btn btn-violet btn-sm"
-              title="Cruza cada comprobante contra DW.Recepciones de ObServer. No corta ante el primero que falle: revisa todos y avisa el resultado completo.">
-        🔎 Verificar ingresos (ObServer)
-      </button>
-    </form>
+    <div style="min-width:260px;">
+      <form method="post" id="form-verificar"
+            action="{{ url_for('kellerhoff_resumen_verificar_ingresos', resumen_id=resumen.id) }}">
+        <button type="submit" id="btn-verificar" class="btn btn-violet btn-sm"
+                title="Cruza cada comprobante contra DW.Recepciones de ObServer. No corta ante el primero que falle: revisa todos y avisa el resultado completo.">
+          🔎 Verificar ingresos (ObServer)
+        </button>
+      </form>
+      {# Se muestra al enviar y queda hasta que el POST vuelve y recarga la
+         página. Es la única señal de vida: el request es sincrónico y puede
+         tardar minutos (una consulta a ObServer por comprobante). #}
+      <div id="verif-progreso" class="hidden" style="margin-top:10px;">
+        <div class="verif-bar"><div></div></div>
+        <p style="font-size:12px;color:var(--ds-text-mute);margin-top:6px;">
+          Consultando ObServer comprobante por comprobante ·
+          <span id="verif-reloj" class="mono-xs">0s</span>
+        </p>
+        <p style="font-size:11px;color:var(--ds-text-mute);margin-top:2px;">
+          Puede tardar unos minutos. No cierres ni recargues la pestaña.
+        </p>
+      </div>
+    </div>
     {% endif %}
   </header>
 
@@ -210,4 +241,34 @@
 
 </div>
 </div>
+
+<script>
+// Feedback de "Verificar ingresos". El POST es sincrónico y puede tardar
+// minutos, así que sin esto la pantalla queda idéntica y no se distingue de
+// una colgada. El reloj es lo que más sirve: una barra animada sola no dice
+// si pasaron 5 segundos o 3 minutos.
+(function () {
+  const form = document.getElementById('form-verificar');
+  if (!form) return;                       // ObServer no disponible: no se renderiza
+  const btn  = document.getElementById('btn-verificar');
+  const prog = document.getElementById('verif-progreso');
+  const reloj = document.getElementById('verif-reloj');
+
+  form.addEventListener('submit', function () {
+    if (btn.disabled) return;              // corta el doble submit
+    btn.disabled = true;
+    btn.innerHTML = '<span class="kh-spin">◠</span> Verificando…';
+    prog.classList.remove('hidden');
+
+    const t0 = Date.now();
+    setInterval(function () {
+      const s = Math.floor((Date.now() - t0) / 1000);
+      reloj.textContent = s < 60 ? s + 's'
+                                 : Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+    }, 1000);
+    // Sin preventDefault: el form sigue su curso normal y la respuesta
+    // recarga la página con el flash del resultado.
+  });
+})();
+</script>
 {% endblock %}
