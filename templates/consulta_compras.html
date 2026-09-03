@@ -70,6 +70,7 @@
             <th class="text-right px-3 py-2">P. Unit.</th>
             <th class="text-right px-3 py-2">% Dto</th>
             <th class="text-right px-3 py-2">Importe</th>
+            <th class="text-center px-3 py-2" title="Recepción de ObServer — solo para Kellerhoff, ver «Verificar ingresos» en el resumen semanal">Ingreso</th>
           </tr>
         </thead>
         <tbody>
@@ -87,6 +88,15 @@
             <td class="px-3 py-1.5 text-right font-mono">{% if f.precio_unitario is not none %}${{ '{:,.2f}'.format(f.precio_unitario).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}</td>
             <td class="px-3 py-1.5 text-right font-mono {% if f.dto %}text-[color:var(--ds-mint)] font-bold{% else %}text-[color:var(--ds-text-mute)]{% endif %}">{% if f.dto %}{{ '%g'|format(f.dto) }}%{% else %}—{% endif %}</td>
             <td class="px-3 py-1.5 text-right font-mono">{% if f.importe is not none %}${{ '{:,.2f}'.format(f.importe).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}</td>
+            <td class="px-3 py-1.5 text-center">
+              {% if f.ingreso_verificado is none %}
+              <span class="text-[color:var(--ds-text-mute)]" title="{% if f.numero_remito %}Todavía no se verificó{% else %}No es de Kellerhoff, o sin remito capturado{% endif %}">—</span>
+              {% elif f.ingreso_verificado %}
+              <span class="text-[color:var(--ds-mint)] font-bold" title="ObServer tiene recepción para el remito {{ f.numero_remito }}">✓</span>
+              {% else %}
+              <span class="text-rose-400 font-bold" title="ObServer NO tiene recepción para el remito {{ f.numero_remito }}">✗</span>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>

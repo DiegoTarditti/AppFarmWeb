@@ -254,6 +254,38 @@ def check_matview_sin_refresh(session) -> Optional[Alarma]:
     return None
 
 
+def check_kellerhoff_diferencias_ingreso(session) -> Optional[Alarma]:
+    """Facturas de Kellerhoff donde el cruce automático contra ObServer
+    (services.kellerhoff_resumen.verificar_ingresos_recientes, cron diario)
+    encontró diferencia de CANTIDAD — la droguería factura una cantidad y
+    ObServer registró haber recibido otra.
+
+    Solo cuenta StockDifference que vienen de ESE cruce automático
+    (Invoice.erp_filename == MARCA_CRUCE_AUTOMATICO) — un Excel subido a mano
+    o un /observer/factura/<id>/sync manual no cuentan acá, tienen su propia
+    pantalla de revisión (/results/<id>) y no son parte de este chequeo.
+    """
+    try:
+        from database import Invoice, StockDifference
+        from services.kellerhoff_resumen import MARCA_CRUCE_AUTOMATICO
+        n = (session.query(Invoice.id)
+             .join(StockDifference, StockDifference.factura_id == Invoice.id)
+             .filter(Invoice.erp_filename == MARCA_CRUCE_AUTOMATICO)
+             .distinct().count())
+    except Exception:
+        return None
+    if n:
+        return Alarma(
+            nombre='Kellerhoff: diferencias de cantidad contra ObServer',
+            severidad=SEV_ALTA,
+            valor_actual=f'{n} factura(s) con diferencia',
+            threshold='0',
+            accion='Revisar /kellerhoff/resumenes → columna "Cruce ERP" marcada ✗',
+            link='/kellerhoff/resumenes',
+        )
+    return None
+
+
 # ─── Registro y evaluación masiva ────────────────────────────────────────────
 
 # Lista de chequeos a evaluar. Para sumar uno nuevo: definir la función arriba
@@ -266,6 +298,7 @@ CHECKS = [
     check_obs_codigos_barras_desfasada,
     check_pedidos_pendientes_viejos,
     check_matview_sin_refresh,
+    check_kellerhoff_diferencias_ingreso,
 ]
 
 

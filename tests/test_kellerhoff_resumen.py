@@ -624,3 +624,63 @@ def test_cruce_erp_map_no_incluye_facturas_nunca_cruzadas(tmp_path):
         it = next(x for x in items if x.factura_id == inv.id)
         checks = estado_item(it, m)
         assert checks['cruce_erp'] is None
+
+
+# ── verificar_ingresos_recientes: el cron diario ─────────────────────────────
+
+def test_verificar_ingresos_recientes_solo_procesa_la_ventana(tmp_path):
+    """Un resumen de hace 2 meses no se re-verifica cada día para siempre —
+    solo los de las últimas N semanas (default 4), donde tiene sentido que
+    una recepción tardía todavía pueda aparecer."""
+    from datetime import date, timedelta
+    from unittest.mock import patch
+
+    import observer_source
+    from services.kellerhoff_resumen import verificar_ingresos_recientes
+
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        session.commit()
+        res_reciente = _importar(session, prov, tmp_path)
+
+        texto_viejo = RESUMEN_TXT.replace('S34-2026', 'S01-2026')
+        res_viejo = _importar(session, prov, tmp_path, texto=texto_viejo)
+
+        # Forzar las fechas: uno adentro de la ventana de 4 semanas, otro afuera.
+        r_reciente = session.get(database.ResumenProveedor, res_reciente['resumen_id'])
+        r_reciente.periodo_desde = date.today() - timedelta(days=3)
+        r_viejo = session.get(database.ResumenProveedor, res_viejo['resumen_id'])
+        r_viejo.periodo_desde = date.today() - timedelta(days=60)
+        session.commit()
+
+        with patch.object(observer_source, 'get_recepciones_multiples',
+                          _mock_get_recepciones_multiples({})):
+            total = verificar_ingresos_recientes(session, semanas=4)
+
+        assert total['resumenes'] == 1
+        assert total['total'] == 3   # los 3 ítems del resumen reciente
+
+
+def test_verificar_ingresos_recientes_no_corta_por_un_resumen_que_falla(tmp_path):
+    """Mismo criterio de diseño que verificar_ingresos_resumen: un resumen
+    que revienta no tiene que tapar a los demás."""
+    from datetime import date, timedelta
+    from unittest.mock import patch
+
+    from services.kellerhoff_resumen import verificar_ingresos_recientes
+
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+        r = session.get(database.ResumenProveedor, res['resumen_id'])
+        r.periodo_desde = date.today() - timedelta(days=1)
+        session.commit()
+
+        import services.kellerhoff_resumen as mod
+        with patch.object(mod, 'verificar_ingresos_resumen',
+                          side_effect=RuntimeError('boom')):
+            total = verificar_ingresos_recientes(session, semanas=4)
+
+        # No propaga la excepción, y el resumen roto no se cuenta.
+        assert total['resumenes'] == 0

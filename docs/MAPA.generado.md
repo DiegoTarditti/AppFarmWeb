@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-03 07:58 · rama `timer-local-notificar-alarmas` · commit `c2dd77f`
+Generado: 2026-09-03 08:32 · rama `main` · commit `53117f1`
 
-**822 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
+**823 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -185,29 +185,30 @@ Generado: 2026-09-03 07:58 · rama `timer-local-notificar-alarmas` · commit `c2
 |---|---|---|
 | `/admin` | GET | [`admin_index`](../routes/admin.py#L47) |
 | `/admin/alarmas` | GET | [`admin_alarmas`](../routes/admin.py#L257) |
-| `/admin/cleanup-inactivos` | GET/POST | [`admin_cleanup_inactivos`](../routes/admin.py#L737) |
+| `/admin/cleanup-inactivos` | GET/POST | [`admin_cleanup_inactivos`](../routes/admin.py#L773) |
 | `/admin/cron-log` | GET | [`admin_cron_log`](../routes/admin.py#L403) |
 | `/admin/health` | GET | [`admin_health`](../routes/admin.py#L65) |
-| `/admin/panel` | GET | [`admin_panel`](../routes/admin.py#L832) |
-| `/admin/panel/comandos` | POST | [`admin_panel_encolar`](../routes/admin.py#L844) |
-| `/admin/panel/comandos/recientes` | GET | [`admin_panel_recientes`](../routes/admin.py#L871) |
-| `/admin/reset-datos` | GET/POST | [`admin_reset_datos`](../routes/admin.py#L763) |
-| `/admin/seed-proveedores` | GET/POST | [`admin_seed_proveedores`](../routes/admin.py#L555) |
-| `/api/admin/actualizar` | POST | [`api_admin_actualizar`](../routes/admin.py#L983) |
+| `/admin/panel` | GET | [`admin_panel`](../routes/admin.py#L868) |
+| `/admin/panel/comandos` | POST | [`admin_panel_encolar`](../routes/admin.py#L880) |
+| `/admin/panel/comandos/recientes` | GET | [`admin_panel_recientes`](../routes/admin.py#L907) |
+| `/admin/reset-datos` | GET/POST | [`admin_reset_datos`](../routes/admin.py#L799) |
+| `/admin/seed-proveedores` | GET/POST | [`admin_seed_proveedores`](../routes/admin.py#L591) |
+| `/api/admin/actualizar` | POST | [`api_admin_actualizar`](../routes/admin.py#L1019) |
 | `/api/admin/alarmas` | GET | [`api_admin_alarmas`](../routes/admin.py#L389) |
 | `/api/admin/alarmas/probar-telegram` | POST | [`api_alarmas_probar_telegram`](../routes/admin.py#L501) |
-| `/api/admin/migrar/backfill-codigos-barra` | POST | [`api_migrar_backfill_codigos_barra`](../routes/admin.py#L571) |
-| `/api/admin/migrar/bridge-productos-observer` | POST | [`api_migrar_bridge_productos_observer`](../routes/admin.py#L614) |
-| `/api/admin/popular-productos-desde-obs` | POST | [`api_admin_popular_productos_desde_obs`](../routes/admin.py#L594) |
+| `/api/admin/migrar/backfill-codigos-barra` | POST | [`api_migrar_backfill_codigos_barra`](../routes/admin.py#L607) |
+| `/api/admin/migrar/bridge-productos-observer` | POST | [`api_migrar_bridge_productos_observer`](../routes/admin.py#L650) |
+| `/api/admin/popular-productos-desde-obs` | POST | [`api_admin_popular_productos_desde_obs`](../routes/admin.py#L630) |
 | `/api/cron-log` | POST | [`api_cron_log_externo`](../routes/admin.py#L459) |
 | `/api/cron-log/purgar` | POST | [`api_cron_log_purgar`](../routes/admin.py#L487) |
-| `/api/cron/limpiar-home-card-clicks` | POST | [`api_cron_limpiar_home_card_clicks`](../routes/admin.py#L693) |
+| `/api/cron/kellerhoff-verificar-ingresos` | POST | [`api_cron_kellerhoff_verificar_ingresos`](../routes/admin.py#L554) |
+| `/api/cron/limpiar-home-card-clicks` | POST | [`api_cron_limpiar_home_card_clicks`](../routes/admin.py#L729) |
 | `/api/cron/notificar-alarmas` | POST | [`api_cron_notificar_alarmas`](../routes/admin.py#L515) |
-| `/api/cron/recalcular-os-clientes` | POST | [`api_cron_recalcular_os_clientes`](../routes/admin.py#L659) |
-| `/api/dockerpanel-info` | GET | [`api_dockerpanel_info`](../routes/admin.py#L753) |
-| `/api/obs/recalcular-os-clientes` | POST | [`api_recalcular_os_clientes`](../routes/admin.py#L639) |
-| `/api/panel/comandos/<int:cmd_id>/resultado` | POST | [`api_panel_resultado`](../routes/admin.py#L957) |
-| `/api/panel/comandos/proximo` | GET | [`api_panel_proximo`](../routes/admin.py#L903) |
+| `/api/cron/recalcular-os-clientes` | POST | [`api_cron_recalcular_os_clientes`](../routes/admin.py#L695) |
+| `/api/dockerpanel-info` | GET | [`api_dockerpanel_info`](../routes/admin.py#L789) |
+| `/api/obs/recalcular-os-clientes` | POST | [`api_recalcular_os_clientes`](../routes/admin.py#L675) |
+| `/api/panel/comandos/<int:cmd_id>/resultado` | POST | [`api_panel_resultado`](../routes/admin.py#L993) |
+| `/api/panel/comandos/proximo` | GET | [`api_panel_proximo`](../routes/admin.py#L939) |
 | `/api/pedidos-nuevo/scope` | GET | [`api_pedidos_nuevo_scope`](../routes/admin.py#L290) |
 | `/pedidos-nuevo` | GET | [`pedidos_nuevo`](../routes/admin.py#L272) |
 
@@ -448,8 +449,8 @@ Generado: 2026-09-03 07:58 · rama `timer-local-notificar-alarmas` · commit `c2
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/compras/consulta` | GET | [`consulta_compras`](../routes/consulta_compras.py#L125) |
-| `/compras/consulta/export.xlsx` | GET | [`consulta_compras_export`](../routes/consulta_compras.py#L141) |
+| `/compras/consulta` | GET | [`consulta_compras`](../routes/consulta_compras.py#L150) |
+| `/compras/consulta/export.xlsx` | GET | [`consulta_compras_export`](../routes/consulta_compras.py#L166) |
 
 ### `routes/consulta_droga.py`
 

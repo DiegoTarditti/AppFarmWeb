@@ -58,6 +58,29 @@ ssh root@SERVER "journalctl -u appfarmweb-alarmas -n 50 --no-pager"
 ssh root@SERVER "systemctl list-timers appfarmweb-alarmas"
 ```
 
+## Timer compañero: `appfarmweb-kellerhoff-ingresos`
+
+Mismo mecanismo, mismo `CRON_SECRET`, pero **una vez por día** (`OnCalendar`,
+no `OnUnitInactiveSec`) — re-corre `verificar_ingresos_resumen` para los
+resúmenes de Kellerhoff de las últimas 4 semanas (por si una recepción se
+cargó tarde en ObServer). Las diferencias de cantidad que encuentra las
+levanta `alarmas.check_kellerhoff_diferencias_ingreso`, que ya viaja con
+`appfarmweb-alarmas.timer` — este timer NO manda Telegram por su cuenta,
+solo deja los datos actualizados.
+
+```bash
+scp scripts/appfarmweb-kellerhoff-ingresos.service.template root@SERVER:/tmp/
+scp scripts/appfarmweb-kellerhoff-ingresos.timer root@SERVER:/tmp/
+ssh root@SERVER "
+  sed -i 's|<PONER_CRON_SECRET_ACA>|EL_MISMO_SECRET_DE_APPFARMWEB_ALARMAS|' /tmp/appfarmweb-kellerhoff-ingresos.service.template
+  mv /tmp/appfarmweb-kellerhoff-ingresos.service.template /etc/systemd/system/appfarmweb-kellerhoff-ingresos.service
+  mv /tmp/appfarmweb-kellerhoff-ingresos.timer /etc/systemd/system/appfarmweb-kellerhoff-ingresos.timer
+  chmod 640 /etc/systemd/system/appfarmweb-kellerhoff-ingresos.service
+  systemctl daemon-reload
+  systemctl enable --now appfarmweb-kellerhoff-ingresos.timer
+"
+```
+
 ## Pendiente
 
 Decidir si el cron de GitHub Actions (`cron-alarmas.yml`, contra Render)

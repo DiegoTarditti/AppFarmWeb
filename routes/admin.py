@@ -550,6 +550,42 @@ def init_app(app):
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)}), 500
 
+    @app.route('/api/cron/kellerhoff-verificar-ingresos', methods=['POST'])
+    def api_cron_kellerhoff_verificar_ingresos():
+        """Re-corre el cruce contra ObServer (DW.Recepciones) para los
+        resúmenes de Kellerhoff de las últimas semanas — pensado para un
+        timer diario LOCAL (no GitHub Actions/Render: ObServer es LAN-only,
+        solo alcanzable desde donde corre el DockerPanel). Ver
+        scripts/README-alarmas.md para el porqué del timer local en vez de
+        GitHub Actions.
+
+        Las diferencias que encuentra las levanta
+        alarmas.check_kellerhoff_diferencias_ingreso, que ya viaja con el
+        timer de notificar-alarmas — no hace falta notificar acá de nuevo.
+
+        Auth: header X-Cron-Secret (mismo patrón que notificar-alarmas).
+        """
+        ok, err = _check_cron_secret()
+        if not ok:
+            return jsonify({'ok': False, 'error': err[0]}), err[1]
+
+        import observer_source
+        if not observer_source.observer_disponible():
+            return jsonify({'ok': False, 'error': 'ObServer no disponible'}), 503
+
+        import cron_log
+        from services.kellerhoff_resumen import verificar_ingresos_recientes
+
+        semanas = request.args.get('semanas', 4, type=int)
+        try:
+            with cron_log.registrar('kellerhoff_verificar_ingresos', origen='cron') as log:
+                with database.get_db() as session:
+                    res = verificar_ingresos_recientes(session, semanas=semanas)
+                log.metadata = res
+            return jsonify({'ok': True, **res})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
     @app.route('/admin/seed-proveedores', methods=['GET', 'POST'])
     @requiere_permiso('usuarios', 'admin')
     def admin_seed_proveedores():

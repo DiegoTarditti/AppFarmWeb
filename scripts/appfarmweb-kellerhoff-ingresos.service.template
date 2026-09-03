@@ -1,0 +1,11 @@
+[Unit]
+Description=Re-verificar ingresos ObServer de Kellerhoff (últimas semanas)
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/appfarmweb
+Environment="CRON_SECRET=<PONER_CRON_SECRET_ACA>"
+ExecStart=/root/appfarmweb/scripts/kellerhoff_verificar_ingresos.sh
+StandardOutput=journal
+StandardError=journal
