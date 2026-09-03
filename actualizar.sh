@@ -35,9 +35,16 @@ fi
 echo "  nuevo:    $(git rev-parse --short HEAD)"
 
 # 2) ¿Cambió algo que obligue a rebuildar la imagen?
-if git diff --name-only "$ANTES" "$DESPUES" | grep -qE '^(requirements\.txt|Dockerfile)$'; then
+CAMBIADOS="$(git diff --name-only "$ANTES" "$DESPUES")"
+if echo "$CAMBIADOS" | grep -qE '^(requirements\.txt|Dockerfile)$'; then
   echo "▶ Cambió requirements.txt/Dockerfile → rebuild de la imagen (puede tardar)…"
   docker compose up -d --build web bot
+elif echo "$CAMBIADOS" | grep -qE '^docker-compose(\.override)?\.yml$'; then
+  # `restart` reusa el container ya creado — un `environment:` nuevo en el
+  # compose no se aplica así. Hace falta recrear (sin rebuild, no cambió
+  # código de la imagen).
+  echo "▶ Cambió docker-compose.yml → recrear el container (sin rebuild)…"
+  docker compose up -d web bot
 else
   echo "▶ Solo código/templates → restart rápido…"
   docker compose restart web bot
