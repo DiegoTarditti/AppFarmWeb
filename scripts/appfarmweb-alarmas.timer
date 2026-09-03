@@ -1,0 +1,10 @@
+[Unit]
+Description=Corre notificar_alarmas cada 30 min (mismo intervalo que el cron de GitHub Actions contra Render)
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=30min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

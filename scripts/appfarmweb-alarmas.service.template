@@ -1,0 +1,11 @@
+[Unit]
+Description=Notificar alarmas del sistema a Telegram (datos reales de este server, no Render)
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/appfarmweb
+Environment="CRON_SECRET=<PONER_CRON_SECRET_ACA>"
+ExecStart=/root/appfarmweb/scripts/notificar_alarmas.sh
+StandardOutput=journal
+StandardError=journal
