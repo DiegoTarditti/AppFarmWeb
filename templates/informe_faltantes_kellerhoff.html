@@ -79,6 +79,10 @@
       <span class="ciego">{{ n_hueco }}</span>
     </div>
     <div class="fk-kpi">
+      <small>Ingresó de más</small>
+      <span class="ciego">{{ n_sobrante }}</span>
+    </div>
+    <div class="fk-kpi">
       <small>Facturas cruzadas</small>
       <span>{{ n_facturas }}</span>
     </div>
@@ -90,6 +94,10 @@
     <strong>Reclamable</strong> = o el producto se identificó y la cantidad no coincide, o su
     EAN cruza bien en otra factura del período — el catálogo sabe resolver ese código, así que
     su ausencia en <em>este</em> ingreso es un faltante.
+    Se cuentan <strong>solo las unidades que faltan</strong>, no la línea entera: si se
+    facturaron 10 y llegaron 6, el reclamo son 4.
+    <strong>Ingresó de más</strong> = llegó más de lo facturado — packs todavía sin resolver
+    o entregas de más; no hay nada que reclamar.
     <strong>Sin poder opinar</strong> = el EAN no cruza en ningún lado.
     <em>No es plata perdida: es plata sobre la que el control está ciego.</em> Sumarla al reclamo
     sería inventar un faltante; ignorarla, tapar que hay un punto ciego.
@@ -104,6 +112,7 @@
     <select name="solo">
       <option value="reclamable" {% if solo == 'reclamable' %}selected{% endif %}>Solo reclamables</option>
       <option value="hueco"      {% if solo == 'hueco' %}selected{% endif %}>Solo los ciegos</option>
+      <option value="sobrante"   {% if solo == 'sobrante' %}selected{% endif %}>Ingresó de más</option>
       <option value="todo"       {% if solo == 'todo' %}selected{% endif %}>Todo</option>
     </select>
     <button type="submit" class="btn btn-mint btn-sm">Filtrar</button>
@@ -137,13 +146,18 @@
             <td class="fk-ean">{{ f.codigo_barra or '—' }}</td>
             <td class="fk-num">{{ f.cantidad_factura }}</td>
             <td class="fk-num">{{ f.cantidad_erp }}</td>
-            <td class="fk-num" style="font-weight:700;">
-              {% if f.importe %}$ {{ '{:,.2f}'.format(f.importe).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}
+            <td class="fk-num" style="font-weight:700;"
+                title="Total de la línea: $ {{ '{:,.2f}'.format(f.importe).replace(',','X').replace('.',',').replace('X','.') }}">
+              {% set _v = f.importe_reclamable if f.reclamable else f.importe %}
+              {% if _v %}$ {{ '{:,.2f}'.format(_v).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}
             </td>
             <td>
               {% if f.reclamable %}
               <span class="fk-badge" style="background:rgba(95,230,188,.14);color:var(--ds-mint);"
                     title="{{ f.observaciones }}{% if f.cruza_en %} · este EAN cruza bien en {{ f.cruza_en }} factura(s) del período{% endif %}">reclamable</span>
+              {% elif f.sobrante %}
+              <span class="fk-badge" style="background:rgba(234,88,12,.12);color:var(--ds-orange);"
+                    title="{{ f.observaciones }} · llegó más de lo facturado ({{ f.cantidad_erp }} contra {{ f.cantidad_factura }}). Puede ser un pack sin resolver o una entrega de más — no hay nada que reclamar">ingresó de más</span>
               {% else %}
               <span class="fk-badge" style="background:rgba(120,120,120,.12);color:var(--ds-text-mute);"
                     title="{{ f.observaciones }} · el EAN no cruza en ninguna factura del período, así que no se puede saber si entró">sin poder opinar</span>
