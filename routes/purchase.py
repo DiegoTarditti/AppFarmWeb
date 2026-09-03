@@ -46,7 +46,8 @@ def _detectar_packs_en_modulos(modules, session):
                      desc_unidad_sug, fuente, modulo, destacado, tiene_regex,
                      tuvo_ventas (del pack), confianza ('alta'|'media'|'baja')}
     """
-    from database import ModuloPack, ObsProducto, ObsVentaMensual, Producto
+    from database import ModuloPack, ObsProducto, ObsVentaMensual
+    from helpers import _eans_a_observer_ids
     ya_registrados = {ep for (ep,) in session.query(ModuloPack.ean_pack).all()}
 
     # 1. Juntar todos los EANs del archivo para bulk lookup
@@ -57,12 +58,10 @@ def _detectar_packs_en_modulos(modules, session):
             if e:
                 todos_eans.add(e)
 
-    # 2. Map EAN → observer_id via tabla productos local
-    ean_a_obs = dict(
-        session.query(Producto.codigo_barra, Producto.observer_id)
-        .filter(Producto.codigo_barra.in_(todos_eans),
-                Producto.observer_id.isnot(None)).all()
-    )
+    # 2. Map EAN → observer_id (Producto propio → producto_codigos_barra →
+    # catálogo ObServer, ver helpers._eans_a_observer_ids: un EAN de módulo
+    # externo puede no ser el "principal" cargado a mano acá)
+    ean_a_obs = _eans_a_observer_ids(session, todos_eans)
 
     # 3. Set de observer_ids con ventas > 0 en los últimos 12 meses
     from datetime import datetime

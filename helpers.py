@@ -702,6 +702,54 @@ def _find_producto(session, codigo_barra):
     return None
 
 
+def _eans_a_observer_ids(session, eans):
+    """Bulk EAN → observer_id, con el mismo cascade que `_find_producto`:
+    `productos.codigo_barra` directo → `producto_codigos_barra` (1-a-N
+    local) → `obs_codigos_barras` (catálogo de ObServer, ~125k productos
+    vs los ~600 curados a mano acá). Usado por los detectores de pack de
+    módulos de laboratorio para decidir "sin ventas históricas": un EAN de
+    un módulo Excel externo puede no ser el EAN "principal" que tenemos
+    cargado localmente, y sin este fallback el detector lo trata como
+    "nunca vendido" (falso positivo de pack) aunque el producto exista y
+    tenga historial.
+
+    Returns: dict {ean: observer_id}. Solo incluye los EANs que resolvieron
+    a un observer_id (no None).
+    """
+    eans_clean = {str(e).strip() for e in eans if e and str(e).strip()}
+    if not eans_clean:
+        return {}
+    out = {}
+    for ean, oid in (session.query(Producto.codigo_barra, Producto.observer_id)
+                     .filter(Producto.codigo_barra.in_(eans_clean),
+                             Producto.observer_id.isnot(None)).all()):
+        out[ean] = oid
+    pendientes = eans_clean - out.keys()
+    if pendientes:
+        try:
+            from database import ProductoCodigoBarra
+            rows = (session.query(ProductoCodigoBarra.codigo_barra, Producto.observer_id)
+                    .join(Producto, Producto.id == ProductoCodigoBarra.producto_id)
+                    .filter(ProductoCodigoBarra.codigo_barra.in_(pendientes),
+                            Producto.observer_id.isnot(None)).all())
+            for ean, oid in rows:
+                out.setdefault(ean, oid)
+            pendientes = pendientes - out.keys()
+        except Exception:
+            pass
+    if pendientes:
+        try:
+            from database import ObsCodigoBarras
+            rows = (session.query(ObsCodigoBarras.codigo_barras, ObsCodigoBarras.producto_observer)
+                    .filter(ObsCodigoBarras.codigo_barras.in_(pendientes),
+                            ObsCodigoBarras.fecha_baja.is_(None)).all())
+            for ean, oid in rows:
+                out.setdefault(ean, oid)
+        except Exception:
+            pass
+    return out
+
+
 def _ensure_producto(session, codigo_barra, *, descripcion=None, precio_pvp=None,
                      laboratorio_id=None, fecha_compra=None, codigo_alfabeta=None):
     """Garantiza un Producto local para ``codigo_barra``.

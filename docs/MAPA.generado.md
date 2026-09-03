@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-03 13:52 · rama `main` · commit `27cfacd`
+Generado: 2026-09-03 14:07 · rama `main` · commit `d4d4360`
 
 **823 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
 
@@ -962,7 +962,7 @@ Generado: 2026-09-03 13:52 · rama `main` · commit `27cfacd`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/api/modulos/import-guardar` | POST | [`api_modulos_import_guardar`](../routes/modulos_import.py#L483) |
+| `/api/modulos/import-guardar` | POST | [`api_modulos_import_guardar`](../routes/modulos_import.py#L480) |
 | `/api/modulos/import-preview` | POST | [`api_modulos_import_preview`](../routes/modulos_import.py#L180) |
 | `/api/modulos/import-validar` | POST | [`api_modulos_import_validar`](../routes/modulos_import.py#L256) |
 | `/modulos/import` | GET | [`modulos_import_page`](../routes/modulos_import.py#L166) |
@@ -1244,35 +1244,35 @@ Generado: 2026-09-03 13:52 · rama `main` · commit `27cfacd`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/api/pedido/<int:pedido_id>/indicadores` | GET | [`api_pedido_indicadores`](../routes/purchase.py#L1061) |
-| `/api/pedido/<int:pedido_id>/vincular-observer` | POST | [`api_pedido_vincular_observer`](../routes/purchase.py#L1359) |
-| `/order/<int:pedido_id>` | GET | [`order_detail`](../routes/purchase.py#L1586) |
-| `/order/<int:pedido_id>/analizar-ia` | POST | [`order_analizar_ia`](../routes/purchase.py#L2360) |
-| `/order/<int:pedido_id>/canal` | POST | [`order_set_canal`](../routes/purchase.py#L2422) |
-| `/order/<int:pedido_id>/clear-state` | POST | [`order_clear_state`](../routes/purchase.py#L2034) |
-| `/order/<int:pedido_id>/confirmar` | POST | [`order_confirmar`](../routes/purchase.py#L2000) |
-| `/order/<int:pedido_id>/delete` | POST | [`order_delete`](../routes/purchase.py#L1414) |
-| `/order/<int:pedido_id>/export-plantilla/<int:plantilla_id>` | POST | [`order_export_plantilla_unified`](../routes/purchase.py#L2476) |
-| `/order/<int:pedido_id>/export-prov-plantilla` | POST | [`order_export_prov_plantilla`](../routes/purchase.py#L2287) |
-| `/order/<int:pedido_id>/export/<fmt>` | GET | [`order_export_file`](../routes/purchase.py#L1428) |
-| `/order/<int:pedido_id>/export/<step>/<fmt>` | POST | [`order_export`](../routes/purchase.py#L2606) |
-| `/order/<int:pedido_id>/export/plantilla` | POST | [`order_export_plantilla`](../routes/purchase.py#L2218) |
-| `/order/<int:pedido_id>/modules-template` | GET | [`order_modules_template`](../routes/purchase.py#L2091) |
-| `/order/<int:pedido_id>/mostrar-hasta` | POST | [`order_mostrar_hasta`](../routes/purchase.py#L1386) |
-| `/order/<int:pedido_id>/parse-modules` | POST | [`order_parse_modules`](../routes/purchase.py#L2158) |
-| `/order/<int:pedido_id>/save-module-matches` | POST | [`order_save_module_matches`](../routes/purchase.py#L2050) |
-| `/order/<int:pedido_id>/save-packs` | POST | [`order_save_packs`](../routes/purchase.py#L2185) |
-| `/order/<int:pedido_id>/save-state` | POST | [`order_save_state`](../routes/purchase.py#L2015) |
-| `/orders` | GET | [`orders_list`](../routes/purchase.py#L932) |
-| `/purchase` | GET | [`purchase_index`](../routes/purchase.py#L324) |
-| `/purchase/analyze` | POST | [`purchase_analyze`](../routes/purchase.py#L330) |
-| `/purchase/batch` | POST | [`purchase_batch`](../routes/purchase.py#L391) |
-| `/purchase/export/<uid>/<fmt>` | POST | [`purchase_export`](../routes/purchase.py#L499) |
-| `/purchase/processed` | GET | [`purchase_processed`](../routes/purchase.py#L363) |
-| `/purchase/results/<uid>` | GET | [`purchase_results`](../routes/purchase.py#L431) |
-| `/purchase/save-order/<uid>` | POST | [`purchase_save_order`](../routes/purchase.py#L702) |
-| `/purchase/suggest` | GET | [`purchase_suggest`](../routes/purchase.py#L793) |
-| `/purchase/suggest/create-order` | POST | [`purchase_suggest_create_order`](../routes/purchase.py#L870) |
+| `/api/pedido/<int:pedido_id>/indicadores` | GET | [`api_pedido_indicadores`](../routes/purchase.py#L1060) |
+| `/api/pedido/<int:pedido_id>/vincular-observer` | POST | [`api_pedido_vincular_observer`](../routes/purchase.py#L1358) |
+| `/order/<int:pedido_id>` | GET | [`order_detail`](../routes/purchase.py#L1585) |
+| `/order/<int:pedido_id>/analizar-ia` | POST | [`order_analizar_ia`](../routes/purchase.py#L2359) |
+| `/order/<int:pedido_id>/canal` | POST | [`order_set_canal`](../routes/purchase.py#L2421) |
+| `/order/<int:pedido_id>/clear-state` | POST | [`order_clear_state`](../routes/purchase.py#L2033) |
+| `/order/<int:pedido_id>/confirmar` | POST | [`order_confirmar`](../routes/purchase.py#L1999) |
+| `/order/<int:pedido_id>/delete` | POST | [`order_delete`](../routes/purchase.py#L1413) |
+| `/order/<int:pedido_id>/export-plantilla/<int:plantilla_id>` | POST | [`order_export_plantilla_unified`](../routes/purchase.py#L2475) |
+| `/order/<int:pedido_id>/export-prov-plantilla` | POST | [`order_export_prov_plantilla`](../routes/purchase.py#L2286) |
+| `/order/<int:pedido_id>/export/<fmt>` | GET | [`order_export_file`](../routes/purchase.py#L1427) |
+| `/order/<int:pedido_id>/export/<step>/<fmt>` | POST | [`order_export`](../routes/purchase.py#L2605) |
+| `/order/<int:pedido_id>/export/plantilla` | POST | [`order_export_plantilla`](../routes/purchase.py#L2217) |
+| `/order/<int:pedido_id>/modules-template` | GET | [`order_modules_template`](../routes/purchase.py#L2090) |
+| `/order/<int:pedido_id>/mostrar-hasta` | POST | [`order_mostrar_hasta`](../routes/purchase.py#L1385) |
+| `/order/<int:pedido_id>/parse-modules` | POST | [`order_parse_modules`](../routes/purchase.py#L2157) |
+| `/order/<int:pedido_id>/save-module-matches` | POST | [`order_save_module_matches`](../routes/purchase.py#L2049) |
+| `/order/<int:pedido_id>/save-packs` | POST | [`order_save_packs`](../routes/purchase.py#L2184) |
+| `/order/<int:pedido_id>/save-state` | POST | [`order_save_state`](../routes/purchase.py#L2014) |
+| `/orders` | GET | [`orders_list`](../routes/purchase.py#L931) |
+| `/purchase` | GET | [`purchase_index`](../routes/purchase.py#L323) |
+| `/purchase/analyze` | POST | [`purchase_analyze`](../routes/purchase.py#L329) |
+| `/purchase/batch` | POST | [`purchase_batch`](../routes/purchase.py#L390) |
+| `/purchase/export/<uid>/<fmt>` | POST | [`purchase_export`](../routes/purchase.py#L498) |
+| `/purchase/processed` | GET | [`purchase_processed`](../routes/purchase.py#L362) |
+| `/purchase/results/<uid>` | GET | [`purchase_results`](../routes/purchase.py#L430) |
+| `/purchase/save-order/<uid>` | POST | [`purchase_save_order`](../routes/purchase.py#L701) |
+| `/purchase/suggest` | GET | [`purchase_suggest`](../routes/purchase.py#L792) |
+| `/purchase/suggest/create-order` | POST | [`purchase_suggest_create_order`](../routes/purchase.py#L869) |
 
 ### `routes/reparto.py`
 
