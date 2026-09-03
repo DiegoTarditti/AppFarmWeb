@@ -24,7 +24,7 @@ from alarmas import (
     contar_por_severidad,
     evaluar_todas,
 )
-from database import ClienteOsInferida, CronLog
+from database import ClienteOsInferida, CronLog, Invoice, StockDifference
 
 
 @pytest.fixture
@@ -202,3 +202,69 @@ def test_cache_force_revalua(session):
     m = re.search(r'(\d+)', cron_err.valor_actual)
     assert m is not None
     assert int(m.group(1)) >= 2
+
+
+# ── check_kellerhoff_diferencias_ingreso ────────────────────────────────────
+
+def _factura(s, numero='0046-00001', total=100.0):
+    from datetime import date
+    inv = Invoice(numero_factura=numero, fecha=date.today(),
+                  proveedor_razon='Kellerhoff', proveedor_cuit='30-53975649-0',
+                  tipo_comprobante='FAC', total=total)
+    s.add(inv)
+    s.flush()
+    return inv
+
+
+def _diff(s, factura_id, cant_fac=10, cant_erp=6):
+    s.add(StockDifference(factura_id=factura_id, codigo_barra='BC1',
+                          descripcion='PROD', cantidad_factura=cant_fac,
+                          cantidad_erp=cant_erp, diferencia=cant_fac - cant_erp,
+                          observaciones=''))
+    s.commit()
+
+
+def test_check_kellerhoff_no_dispara_sin_diferencias(session):
+    a = alarmas.check_kellerhoff_diferencias_ingreso(session)
+    assert a is None
+
+
+def test_check_kellerhoff_ignora_diferencias_de_excel_manual(session):
+    """Un StockDifference de un Excel subido a mano (u otro sync manual) NO
+    tiene que contar acá — solo lo que vino del cruce automático diario."""
+    inv = _factura(session)
+    inv.erp_filename = 'algun-excel-subido-a-mano.xlsx'
+    session.commit()
+    _diff(session, inv.id)
+
+    a = alarmas.check_kellerhoff_diferencias_ingreso(session)
+    assert a is None
+
+
+def test_check_kellerhoff_dispara_con_diferencia_del_cruce_automatico(session):
+    from services.kellerhoff_resumen import MARCA_CRUCE_AUTOMATICO
+
+    inv = _factura(session)
+    inv.erp_filename = MARCA_CRUCE_AUTOMATICO
+    session.commit()
+    _diff(session, inv.id)
+
+    a = alarmas.check_kellerhoff_diferencias_ingreso(session)
+    assert a is not None
+    assert a.severidad == SEV_ALTA
+    assert '1 factura' in a.valor_actual
+
+
+def test_check_kellerhoff_cuenta_facturas_no_diferencias(session):
+    """2 diferencias en la MISMA factura cuentan como 1 factura, no 2."""
+    from services.kellerhoff_resumen import MARCA_CRUCE_AUTOMATICO
+
+    inv = _factura(session)
+    inv.erp_filename = MARCA_CRUCE_AUTOMATICO
+    session.commit()
+    _diff(session, inv.id, cant_fac=10, cant_erp=6)
+    _diff(session, inv.id, cant_fac=5, cant_erp=5)  # sin diferencia real, pero está la fila
+
+    a = alarmas.check_kellerhoff_diferencias_ingreso(session)
+    assert a is not None
+    assert '1 factura' in a.valor_actual

@@ -5,8 +5,13 @@ producto (por descripción o EAN) en un rango de fechas → cada compra con fech
 nº de factura, proveedor, cantidad, precio unitario, %Dto e importe. Sirve para
 ver el histórico de precios/descuentos de un producto entre droguerías.
 
-(El "nº de ingreso" = recepción de ObServer queda pendiente: hoy no se captura,
-ver get_recepciones_factura.)
+Ingreso ObServer: solo se muestra para facturas de Kellerhoff que ya pasaron
+por "Verificar ingresos" en su resumen semanal (ver services/kellerhoff_resumen)
+— ahí sí se conoce el remito, que es contra lo que ObServer registra la
+recepción (ver docs/controles_kellerhoff.md). El resto de los proveedores no
+tiene remito capturado en `Invoice`, así que no hay contra qué cruzar; buscar
+en vivo por número de factura da una tasa de acierto muy baja (medido:
+la mayoría de las recepciones quedan bajo el remito, no la factura).
 """
 from __future__ import annotations
 
@@ -54,12 +59,28 @@ def _consultar(session, q, desde, hasta, prov_cuit):
         query = query.filter(Invoice.proveedor_cuit == prov_cuit)
     rows = (query.order_by(Invoice.fecha.desc(),
                            InvoiceItem.descripcion).limit(_LIMITE).all())
+
+    # Ingreso ObServer: lo que ya haya quedado de correr "Verificar ingresos"
+    # en el resumen de Kellerhoff (ver docstring del módulo) — una query bulk,
+    # no una por fila.
+    from database import ResumenProveedorItem
+    fids = {inv.id for _it, inv in rows}
+    ingreso_por_factura = {}
+    if fids:
+        for it_r in (session.query(ResumenProveedorItem)
+                     .filter(ResumenProveedorItem.factura_id.in_(fids)).all()):
+            ingreso_por_factura[it_r.factura_id] = {
+                'numero_remito': it_r.numero_remito or '',
+                'ingreso_verificado': it_r.ingreso_verificado,
+            }
+
     filas = []
     tot_u = 0
     tot_imp = 0.0
     dtos = []
     for it, inv in rows:
         dto = float(it.dto) if it.dto is not None else None
+        ing = ingreso_por_factura.get(inv.id)
         filas.append({
             'invoice_id': inv.id,
             'fecha': inv.fecha,
@@ -72,6 +93,8 @@ def _consultar(session, q, desde, hasta, prov_cuit):
             'precio_unitario': float(it.precio_unitario) if it.precio_unitario is not None else None,
             'dto': dto,
             'importe': float(it.importe) if it.importe is not None else None,
+            'numero_remito': ing['numero_remito'] if ing else '',
+            'ingreso_verificado': ing['ingreso_verificado'] if ing else None,
         })
         tot_u += it.cantidad or 0
         tot_imp += float(it.importe or 0)
@@ -98,7 +121,7 @@ def _xlsx(filas, q) -> bytes:
     ws.title = 'Compras'
     cols = [('Fecha', 12), ('Factura', 16), ('Tipo', 7), ('Proveedor', 28),
             ('EAN', 16), ('Producto', 42), ('Cant.', 8), ('P. Unitario', 13),
-            ('% Dto', 8), ('Importe', 14)]
+            ('% Dto', 8), ('Importe', 14), ('Remito', 16), ('Ingreso', 12)]
     ws.append([c[0] for c in cols])
     for i, (_t, w) in enumerate(cols, start=1):
         cell = ws.cell(row=1, column=i)
@@ -106,12 +129,14 @@ def _xlsx(filas, q) -> bytes:
         cell.fill = PatternFill('solid', fgColor='1C1C1E')
         cell.alignment = Alignment(horizontal='center')
         ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+    _ing_txt = {True: 'OK', False: 'DIFIERE', None: ''}
     for f in filas:
         ws.append([
             f['fecha'].strftime('%d/%m/%Y') if f['fecha'] else '',
             f['numero'], f['tipo'], f['proveedor'], f['codigo_barra'],
             f['descripcion'], f['cantidad'],
             f['precio_unitario'], f['dto'], f['importe'],
+            f.get('numero_remito', ''), _ing_txt[f.get('ingreso_verificado')],
         ])
     buf = io.BytesIO()
     wb.save(buf)

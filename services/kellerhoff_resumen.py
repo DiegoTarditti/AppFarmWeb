@@ -14,11 +14,17 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from helpers import _normalize_quadrupled, clave_comprobante, extract_text_with_ocr_fallback
 
 log = logging.getLogger(__name__)
+
+# Marca en Invoice.erp_filename para las cargas que vienen del cruce
+# automático contra ObServer (_guardar_cruce_erp) — así una alarma puede
+# distinguir "esto lo cruzamos nosotros" de un Excel subido a mano o un
+# /observer/factura/<id>/sync manual (que usan otros textos).
+MARCA_CRUCE_AUTOMATICO = 'ObServer (verificar ingresos)'
 
 # 22.08.2026 FAC 0046A00279207 0047R00293853 915.046,04
 # 22.08.2026 NCR 0046A00063591               -69.124,56   ← las NC no traen remito
@@ -279,7 +285,7 @@ def _guardar_cruce_erp(session, factura_id, recepciones):
         'cantidad': r['cantidad'],
         'precio_unitario': r.get('precio_unitario') or 0,
     } for r in recepciones]
-    inv.erp_filename = 'ObServer (verificar ingresos)'
+    inv.erp_filename = MARCA_CRUCE_AUTOMATICO
     inv.erp_carga_id = save_erp_to_db(session, erp_items)
     session.commit()
     differences = compare_invoice_vs_erp(session, factura_id)
@@ -339,6 +345,39 @@ def verificar_ingresos_resumen(session, resumen_id):
             conteo['no_encontrados'] += 1
     session.commit()
     return conteo
+
+
+def verificar_ingresos_recientes(session, semanas=4):
+    """Re-corre verificar_ingresos_resumen para los resúmenes de las últimas
+    N semanas — pensado para un cron diario (ver /api/cron/kellerhoff-
+    verificar-ingresos), no para clickear a mano.
+
+    Por qué re-verificar lo ya verificado: una recepción puede cargarse en
+    ObServer DÍAS después del comprobante (visto en producción: el resumen
+    S35-2026 recién generado tenía varias sin recepción todavía — no eran
+    faltantes, era que nadie había hecho el check-in físico aún). Correr esto
+    una sola vez deja plantados esos "✗" para siempre aunque la mercadería
+    haya llegado. `verificar_ingresos_resumen` es idempotente por ítem, así
+    que repetirlo no duplica nada — solo actualiza lo que cambió.
+    """
+    from database import ResumenProveedor, now_ar
+
+    corte = now_ar().date() - timedelta(days=semanas * 7)
+    resumenes = (session.query(ResumenProveedor)
+                .filter(ResumenProveedor.periodo_desde >= corte).all())
+
+    total = {'resumenes': 0, 'encontrados': 0, 'no_encontrados': 0,
+            'errores': 0, 'no_aplica': 0, 'total': 0}
+    for r in resumenes:
+        try:
+            c = verificar_ingresos_resumen(session, r.id)
+        except Exception:
+            log.exception('[KH-CRON] verificar_ingresos_resumen falló para resumen %s — sigo con el resto', r.id)
+            continue
+        total['resumenes'] += 1
+        for k in ('encontrados', 'no_encontrados', 'errores', 'no_aplica', 'total'):
+            total[k] += c.get(k, 0)
+    return total
 
 
 def item_tildado(item, cruce_erp=None):

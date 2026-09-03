@@ -1,0 +1,10 @@
+[Unit]
+Description=Corre kellerhoff_verificar_ingresos una vez por día
+
+[Timer]
+OnCalendar=*-*-* 05:30:00
+Persistent=true
+AccuracySec=5min
+
+[Install]
+WantedBy=timers.target
