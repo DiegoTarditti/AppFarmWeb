@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-03 11:07 · rama `main` · commit `203cc11`
+Generado: 2026-09-03 13:45 · rama `main` · commit `f3ffe98`
 
 **823 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
 
@@ -1149,17 +1149,17 @@ Generado: 2026-09-03 11:07 · rama `main` · commit `203cc11`
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/api/producto-nombre` | GET | [`api_producto_nombre`](../routes/producto_flags.py#L302) |
-| `/api/producto/config-bulk` | POST | [`api_producto_config_bulk`](../routes/producto_flags.py#L500) |
-| `/api/producto/configurados` | GET | [`api_producto_configurados`](../routes/producto_flags.py#L461) |
-| `/api/producto/oferta` | POST | [`api_producto_oferta_guardar`](../routes/producto_flags.py#L412) |
-| `/api/producto/presentacion` | GET | [`api_producto_presentacion`](../routes/producto_flags.py#L312) |
-| `/api/producto/presentacion` | POST | [`api_producto_presentacion_guardar`](../routes/producto_flags.py#L373) |
-| `/api/producto/presentacion-bulk` | POST | [`api_producto_presentacion_bulk`](../routes/producto_flags.py#L583) |
-| `/productos/flags` | GET | [`producto_flags_list`](../routes/producto_flags.py#L181) |
-| `/productos/flags/<int:flag_id>/eliminar` | POST | [`producto_flags_eliminar`](../routes/producto_flags.py#L291) |
-| `/productos/flags/asignar` | POST | [`producto_flags_asignar`](../routes/producto_flags.py#L242) |
-| `/productos/presentaciones` | GET | [`productos_presentaciones`](../routes/producto_flags.py#L84) |
+| `/api/producto-nombre` | GET | [`api_producto_nombre`](../routes/producto_flags.py#L295) |
+| `/api/producto/config-bulk` | POST | [`api_producto_config_bulk`](../routes/producto_flags.py#L493) |
+| `/api/producto/configurados` | GET | [`api_producto_configurados`](../routes/producto_flags.py#L454) |
+| `/api/producto/oferta` | POST | [`api_producto_oferta_guardar`](../routes/producto_flags.py#L405) |
+| `/api/producto/presentacion` | GET | [`api_producto_presentacion`](../routes/producto_flags.py#L305) |
+| `/api/producto/presentacion` | POST | [`api_producto_presentacion_guardar`](../routes/producto_flags.py#L366) |
+| `/api/producto/presentacion-bulk` | POST | [`api_producto_presentacion_bulk`](../routes/producto_flags.py#L576) |
+| `/productos/flags` | GET | [`producto_flags_list`](../routes/producto_flags.py#L174) |
+| `/productos/flags/<int:flag_id>/eliminar` | POST | [`producto_flags_eliminar`](../routes/producto_flags.py#L284) |
+| `/productos/flags/asignar` | POST | [`producto_flags_asignar`](../routes/producto_flags.py#L235) |
+| `/productos/presentaciones` | GET | [`productos_presentaciones`](../routes/producto_flags.py#L77) |
 
 ### `routes/productos.py`
 
