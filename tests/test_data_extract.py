@@ -250,6 +250,50 @@ class TestCompareInvoiceVsErp:
         assert len(diffs) == 1
         assert diffs[0]['codigo_barra'] == 'NOMATCH'
 
+    def _obs_bridge(self, session, observer_id, ean_factura, ean_erp, descripcion='PROD OBS'):
+        """Registra en el catálogo de ObServer que dos EAN distintos (el de
+        factura del proveedor y el que ObServer usa al ingreso) son el mismo
+        producto_observer — sin que exista ningún Producto local."""
+        from database import ObsCodigoBarras, ObsProducto
+        session.add(ObsProducto(observer_id=observer_id, descripcion=descripcion))
+        session.add(ObsCodigoBarras(id_codigo_barras=observer_id * 10 + 1,
+                                    producto_observer=observer_id,
+                                    codigo_barras=ean_factura, orden=1))
+        session.add(ObsCodigoBarras(id_codigo_barras=observer_id * 10 + 2,
+                                    producto_observer=observer_id,
+                                    codigo_barras=ean_erp, orden=2))
+        session.flush()
+
+    def test_observer_bridge_step4_sin_diferencia(self, session):
+        """Caso Kellerhoff: EAN de factura y EAN de ingreso son distintos y
+        ningún Producto local los tiene cargados, pero ObServer ya sabe que
+        son el mismo producto_observer → matchea, sin diferencia real."""
+        self._obs_bridge(session, 90001, 'FAC_EAN_KH', 'ERP_EAN_KH', 'ACEMUK 600')
+        inv = _make_invoice(session, [{'codigo_barra': 'FAC_EAN_KH', 'descripcion': 'ACEMUK 600', 'cantidad': 3}])
+        _make_erp(session, [{'codigo_barra': 'ERP_EAN_KH', 'descripcion': 'ACEMUK 600', 'cantidad': 3}], inv)
+        diffs = compare_invoice_vs_erp(session, inv.id)
+        assert diffs == []
+
+    def test_observer_bridge_step4_con_diferencia(self, session):
+        """Mismo bridge, pero cantidad distinta → sigue reportando la
+        diferencia real (el bridge resuelve el match, no la esconde)."""
+        self._obs_bridge(session, 90002, 'FAC_EAN_2', 'ERP_EAN_2', 'DELTISONA')
+        inv = _make_invoice(session, [{'codigo_barra': 'FAC_EAN_2', 'descripcion': 'DELTISONA B 40MG CPR X20', 'cantidad': 5}])
+        _make_erp(session, [{'codigo_barra': 'ERP_EAN_2', 'descripcion': 'DELTISONA-B 40 mg COM x 20 (ObServer)', 'cantidad': 2}], inv)
+        diffs = compare_invoice_vs_erp(session, inv.id)
+        assert len(diffs) == 1
+        assert diffs[0]['diferencia'] == 3
+        assert 'observer' in diffs[0]['observaciones'].lower()
+
+    def test_observer_bridge_no_aplica_sin_bridge(self, session):
+        """Sin el bridge de ObServer (EAN nunca vistos por ese catálogo)
+        sigue cayendo en 'no encontrado', como antes de este fix."""
+        inv = _make_invoice(session, [{'codigo_barra': 'FAC_SIN_BRIDGE', 'descripcion': 'X', 'cantidad': 1}])
+        _make_erp(session, [{'codigo_barra': 'ERP_SIN_BRIDGE', 'descripcion': 'Y', 'cantidad': 1}], inv)
+        diffs = compare_invoice_vs_erp(session, inv.id)
+        assert len(diffs) == 1
+        assert 'no encontrado' in diffs[0]['observaciones'].lower()
+
 
 # ── save_barcode_mapping ──────────────────────────────────────────────────────
 
