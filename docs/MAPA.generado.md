@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-03 08:32 · rama `main` · commit `53117f1`
+Generado: 2026-09-03 08:37 · rama `fix-ruta-publica-cron-kellerhoff-ingresos` · commit `c1151d8`
 
 **823 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
 
