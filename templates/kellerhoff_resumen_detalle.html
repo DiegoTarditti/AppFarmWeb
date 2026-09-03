@@ -130,6 +130,7 @@
             <th class="th-right">Total</th>
             <th class="th-center">Nuestro comprobante</th>
             <th class="th-center" title="Cruce contra DW.Recepciones de ObServer">Ingreso</th>
+            <th class="th-center" title="Cruce de cantidades línea por línea contra lo que trajo ObServer">Cruce ERP</th>
           </tr>
         </thead>
         <tbody>
@@ -172,7 +173,10 @@
               {% endif %}
             </td>
             <td class="td-center">
-              {% if it.checks.ingreso is none %}
+              {% if not it.numero_remito %}
+              <span class="badge" style="background:rgba(120,120,120,.12);color:var(--ds-text-mute);"
+                    title="Las NC no tienen remito y no generan ingreso de mercadería — no aplica">N/A</span>
+              {% elif it.checks.ingreso is none %}
               <span class="badge" style="background:rgba(120,120,120,.12);color:var(--ds-text-mute);"
                     title="Todavía no se corrió «Verificar ingresos» para este resumen">sin verificar</span>
               {% elif it.checks.ingreso %}
@@ -180,6 +184,21 @@
               {% else %}
               <span style="color:#ef4444;font-weight:700;"
                     title="ObServer NO tiene recepción registrada para este comprobante — solo mira cantidades, no precio (PrecioUnitario siempre viene en 0 de ObServer)">✗</span>
+              {% endif %}
+            </td>
+            <td class="td-center">
+              {% if not it.factura_id %}
+              <span class="badge" style="background:rgba(120,120,120,.12);color:var(--ds-text-mute);"
+                    title="No hay factura ligada de nuestro lado — no hay ítems contra qué cruzar cantidades">N/A</span>
+              {% elif it.checks.cruce_erp is none %}
+              <span class="badge" style="background:rgba(120,120,120,.12);color:var(--ds-text-mute);"
+                    title="Nunca se cruzó (ver «Verificar ingresos» arriba, o cruzalo a mano desde la factura)">sin cruzar</span>
+              {% elif it.checks.cruce_erp %}
+              <a href="{{ url_for('show_results', invoice_id=it.factura_id) }}"
+                 style="color:#22c55e;font-weight:700;text-decoration:none;" title="Coincide, sin diferencias">✓</a>
+              {% else %}
+              <a href="{{ url_for('show_results', invoice_id=it.factura_id) }}"
+                 style="color:#ef4444;font-weight:700;text-decoration:none;" title="Hay diferencias de cantidad — ver detalle">✗</a>
               {% endif %}
             </td>
           </tr>

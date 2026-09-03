@@ -195,19 +195,41 @@ def importar_resumen(session, pdf_path, proveedor_id, pdf_filename=None):
 
 # ── Control: ¿está tildado el renglón? ¿está cerrada la semana? ──────────────
 
-# Los checks que componen el tilde de un renglón, en orden. Hoy sólo está
-# implementado el primero; los demás devuelven None = "todavía no lo evaluamos"
-# y NO bloquean el tilde. El día que exista el eslabón 4 (ingreso), o las
-# columnas de ARCA y pago, se completan acá y el tilde se endurece solo — sin
+# Los checks que componen el tilde de un renglón, en orden. Los que no están
+# implementados devuelven None = "todavía no lo evaluamos" y NO bloquean el
+# tilde. Cuando se completan (ARCA, pago) el tilde se endurece solo — sin
 # migración y sin tocar la UI. Ver `docs/controles_kellerhoff.md`.
-CHECKS = ('comprobante', 'ingreso', 'arca', 'pago')
+CHECKS = ('comprobante', 'ingreso', 'cruce_erp', 'arca', 'pago')
 
 
-def estado_item(item):
+def cruce_erp_map(session, items):
+    """{factura_id: True|False} para los ítems con factura_id ligada.
+
+    True = tiene ERP cargado y sin diferencias. False = tiene ERP cargado y
+    hay diferencias. Ausente del dict = nunca se cruzó nada (mismo criterio
+    que /results/<id>, ver templates/results.html) — NO es lo mismo que
+    "coincide", por eso no se completa con False."""
+    from database import Invoice, StockDifference
+
+    fids = [it.factura_id for it in items if it.factura_id]
+    if not fids:
+        return {}
+    cargados = {fid for fid, in session.query(Invoice.id)
+               .filter(Invoice.id.in_(fids), Invoice.erp_carga_id.isnot(None))}
+    if not cargados:
+        return {}
+    con_diffs = {fid for fid, in session.query(StockDifference.factura_id)
+                .filter(StockDifference.factura_id.in_(cargados)).distinct()}
+    return {fid: (fid not in con_diffs) for fid in cargados}
+
+
+def estado_item(item, cruce_erp=None):
     """{check: True | False | None} de un renglón del resumen.
 
-    None = no evaluado todavía (el control no existe, o no se corrió), que NO
-    es lo mismo que False = lo evaluamos y no está.
+    None = no evaluado todavía (el control no existe, o no se corrió, o no
+    aplica a este renglón), que NO es lo mismo que False = lo evaluamos y no
+    está. `cruce_erp` es el dict de `cruce_erp_map` (bulk, uno por resumen);
+    sin pasarlo queda None para todos, que es correcto para tests unitarios.
     """
     return {
         # Encontramos el comprobante de nuestro lado. Puede ser una factura o,
@@ -215,16 +237,60 @@ def estado_item(item):
         'comprobante': bool(item.factura_id or item.pago_ajuste_id),
         # Eslabón 4: ¿ObServer tiene una recepción para este comprobante?
         # None hasta que se corra "Verificar ingresos" (ver
-        # verificar_ingresos_resumen) — ahí queda True/False persistido.
+        # verificar_ingresos_resumen) — ahí queda True/False persistido. Las
+        # NC no tienen remito y no generan ingreso: quedan en None (no
+        # aplica) para siempre, nunca se les corre la verificación.
         'ingreso': item.ingreso_verificado,
+        # Cruce de cantidades (StockDifference) — hoy se completa solo cuando
+        # "Verificar ingresos" encontró una recepción y pudo cruzarla (ver
+        # verificar_ingresos_resumen); antes de eso, o si nunca hubo Excel/
+        # sync manual, queda None.
+        'cruce_erp': (cruce_erp or {}).get(item.factura_id) if item.factura_id else None,
         'arca': None,       # Invoice.origen == 'arca' / cae
         'pago': None,       # suma de PagoAplicacion vs total
     }
 
 
+def _guardar_cruce_erp(session, factura_id, recepciones):
+    """Guarda el cruce de cantidades (StockDifference) para UNA factura con
+    los ítems ya traídos de ObServer — mismo motor que usa
+    /observer/factura/<id>/sync a mano, llamado en loop desde
+    verificar_ingresos_resumen.
+
+    `save_erp_to_db` reemplaza `erp_stock` (tabla GLOBAL, un solo snapshot a
+    la vez) en cada llamada — llamarla 30-40 veces seguidas dentro de un
+    resumen dice que, al terminar el lote, sólo la última factura "es dueña"
+    del snapshot vivo (ver `erp_pertenece_a_factura`). No importa para lo que
+    lee esta función: `Invoice.erp_carga_id` y `StockDifference` quedan
+    persistidos y correctos por factura, que es lo que usan `results.html` y
+    `cruce_erp_map`. Sólo `/invoice/<id>/compare` podría mostrar el aviso de
+    "otro chequeo" para una factura vieja del mismo lote — no se pisa nada
+    higiénicamente, es la misma limitación que ya tenía el botón manual.
+    """
+    from data_extract import compare_invoice_vs_erp, save_differences, save_erp_to_db
+    from database import Invoice
+
+    inv = session.get(Invoice, factura_id)
+    if inv is None:
+        return
+    erp_items = [{
+        'codigo_barra': r['codigo_barra'],
+        'descripcion': r['descripcion'],
+        'cantidad': r['cantidad'],
+        'precio_unitario': r.get('precio_unitario') or 0,
+    } for r in recepciones]
+    inv.erp_filename = 'ObServer (verificar ingresos)'
+    inv.erp_carga_id = save_erp_to_db(session, erp_items)
+    session.commit()
+    differences = compare_invoice_vs_erp(session, factura_id)
+    save_differences(session, factura_id, differences)
+
+
 def verificar_ingresos_resumen(session, resumen_id):
     """Corre el cruce contra ObServer (DW.Recepciones) para TODOS los ítems
-    del resumen y persiste el resultado en `ingreso_verificado`.
+    del resumen: persiste `ingreso_verificado` (existencia) y, cuando hay
+    factura ligada y se encontró la recepción, también el cruce de
+    cantidades (`StockDifference`, vía `_guardar_cruce_erp`).
 
     No corta ante el primer error o comprobante no encontrado: sigue con el
     resto y junta todo para revisar al final (mismo criterio que /batch con
@@ -237,25 +303,25 @@ def verificar_ingresos_resumen(session, resumen_id):
     items = (session.query(ResumenProveedorItem)
              .filter_by(resumen_id=resumen_id).all())
     if not items:
-        return {'encontrados': 0, 'no_encontrados': 0, 'errores': 0, 'total': 0}
+        return {'encontrados': 0, 'no_encontrados': 0, 'errores': 0, 'no_aplica': 0, 'total': 0}
 
     # ObServer registra la recepción contra el REMITO, no la factura (son
     # series de numeración distintas — comprobado contra datos reales: la
     # factura 0046A00193832 no aparece en DW.Recepciones, pero su remito
-    # 0047R00204015 sí). Las NCR no traen remito, ahí no queda otra que
-    # buscar por el número de la propia NC.
-    clave_por_item = {it.id: (it.numero_remito or it.numero) for it in items}
-    numeros = sorted({v for v in clave_por_item.values() if v})
+    # 0047R00204015 sí). Las NCR no traen remito Y, por diseño (ver
+    # docs/controles_kellerhoff.md, "Eslabón 4"), una NC no genera ingreso de
+    # mercadería — no es "falta el ingreso", es que estructuralmente no puede
+    # haber uno. Se excluyen de la búsqueda: no se les toca ingreso_verificado
+    # (queda None = no aplica; ver estado_item, que lo lee por numero_remito).
+    con_remito = [it for it in items if it.numero_remito]
+    numeros = sorted({it.numero_remito for it in con_remito})
     resultados = observer_source.get_recepciones_multiples(numeros)
 
-    conteo = {'encontrados': 0, 'no_encontrados': 0, 'errores': 0, 'total': len(items)}
+    conteo = {'encontrados': 0, 'no_encontrados': 0, 'errores': 0,
+             'no_aplica': len(items) - len(con_remito), 'total': len(items)}
     ahora = now_ar()
-    for it in items:
-        clave = clave_por_item.get(it.id)
-        if not clave:
-            conteo['errores'] += 1
-            continue
-        recepciones = resultados.get(clave)
+    for it in con_remito:
+        recepciones = resultados.get(it.numero_remito)
         if recepciones is None:
             # Ese ítem puntual falló en ObServer (ver get_recepciones_multiples) —
             # se deja como estaba (no se pisa un True/False previo con un error
@@ -267,15 +333,17 @@ def verificar_ingresos_resumen(session, resumen_id):
         it.ingreso_verificado_en = ahora
         if recepciones:
             conteo['encontrados'] += 1
+            if it.factura_id:
+                _guardar_cruce_erp(session, it.factura_id, recepciones)
         else:
             conteo['no_encontrados'] += 1
     session.commit()
     return conteo
 
 
-def item_tildado(item):
+def item_tildado(item, cruce_erp=None):
     """True si todos los checks YA IMPLEMENTADOS del renglón están OK."""
-    evaluados = [v for v in estado_item(item).values() if v is not None]
+    evaluados = [v for v in estado_item(item, cruce_erp).values() if v is not None]
     return bool(evaluados) and all(evaluados)
 
 
@@ -289,7 +357,8 @@ def estado_resumen(session, resumen_id):
 
     items = (session.query(database.ResumenProveedorItem)
              .filter_by(resumen_id=resumen_id).all())
-    tildados = sum(1 for it in items if item_tildado(it))
+    cruce_erp = cruce_erp_map(session, items)
+    tildados = sum(1 for it in items if item_tildado(it, cruce_erp))
     return len(items), tildados, bool(items) and tildados == len(items)
 
 
