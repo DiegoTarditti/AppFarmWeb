@@ -104,6 +104,30 @@ def _guardar_modo_drog(data):
                                 Producto.laboratorio_id.isnot(None)).all())
                 for cb, lid in rows:
                     ean_to_lab.setdefault(cb, lid)
+            # Match adicional via catálogo de ObServer (obs_codigos_barras):
+            # el EAN de un import de droguería es un dato externo que puede
+            # no coincidir con el que tenemos cargado a mano en Producto —
+            # mismo motivo que el fix de compare_invoice_vs_erp en
+            # data_extract.py. ObServer ya conoce ~125k productos contra
+            # los ~600 curados localmente.
+            faltantes = [e for e in eans_unicos if e not in ean_to_lab]
+            if faltantes:
+                from database import ObsCodigoBarras
+                obs_rows = (session.query(ObsCodigoBarras.codigo_barras,
+                                          ObsCodigoBarras.producto_observer)
+                           .filter(ObsCodigoBarras.codigo_barras.in_(faltantes),
+                                   ObsCodigoBarras.fecha_baja.is_(None)).all())
+                if obs_rows:
+                    obs_ids = {oid for _, oid in obs_rows}
+                    lab_by_observer_id = {
+                        p.observer_id: p.laboratorio_id for p in
+                        session.query(Producto)
+                        .filter(Producto.observer_id.in_(obs_ids),
+                                Producto.laboratorio_id.isnot(None)).all()
+                    }
+                    for cb, oid in obs_rows:
+                        if oid in lab_by_observer_id:
+                            ean_to_lab.setdefault(cb, lab_by_observer_id[oid])
 
         # Reemplazar todas las ofertas activas de esta drog (auditoría: dejamos
         # las viejas con activo=False).
