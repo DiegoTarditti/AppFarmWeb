@@ -1,8 +1,27 @@
 [Unit]
-Description=Corre kellerhoff_verificar_ingresos una vez por día
+Description=Corre kellerhoff_verificar_ingresos después de cada sync (y una vez de madrugada)
 
 [Timer]
+# La red de seguridad de siempre: una pasada diaria que reintenta las últimas 4
+# semanas, para las recepciones que ObServer carga días después del comprobante.
 OnCalendar=*-*-* 05:30:00
+
+# Una corrida 2 h después de cada sync de Kellerhoff (/etc/cron.d/appfarmweb:
+# 10:30, 13:15, 16:30, 18:30, 22:30). El desfasaje es a propósito: la factura
+# aparece en el portal antes de que la mercadería se reciba y se ingrese a
+# ObServer, así que verificar en el momento del sync daría "no encontrado" en
+# todo lo del día.
+#
+# No hace falta decirle QUÉ facturas mirar: el endpoint
+# /api/cron/kellerhoff-verificar-ingresos re-verifica las últimas 4 semanas
+# enteras y es idempotente, así que cada corrida arrastra también lo que quedó
+# pendiente de las anteriores.
+OnCalendar=*-*-* 12:30:00
+OnCalendar=*-*-* 15:15:00
+OnCalendar=*-*-* 18:30:00
+OnCalendar=*-*-* 20:30:00
+OnCalendar=*-*-* 00:30:00
+
 Persistent=true
 AccuracySec=5min
 
