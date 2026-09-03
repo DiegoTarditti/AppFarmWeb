@@ -138,6 +138,130 @@ def meses_sin_vender(ventas):
     return 12
 
 
+# ── ventas-multi: filtros compartidos entre la pantalla y el export ─────────
+# Antes esta lógica estaba copiada a mano en las dos rutas ("Reusar la misma
+# lógica de query (copia del handler de la pantalla)", decía el comentario
+# viejo) — un cambio en una y no en la otra hace que el Excel muestre datos
+# distintos a lo que se ve en pantalla, en silencio. Única fuente de verdad.
+
+_VENTAS_MULTI_GROUP_BYS = ('producto', 'droga', 'laboratorio', 'medico', 'mes', 'dia', 'os')
+
+
+def _parse_filtros_ventas_multi(args):
+    """Lee los filtros de /informes/ventas-multi desde el querystring
+    (`request.args`, tanto de la pantalla como del export)."""
+    from datetime import timedelta as _td
+
+    def _parse_d(s):
+        try:
+            return date.fromisoformat(s) if s else None
+        except (ValueError, TypeError):
+            return None
+
+    hoy = date.today()
+    # Rubro: si no viene en la URL, default = 12 (Medicamentos). Para "Todos"
+    # el user pasa rubro_id=0 explícito.
+    if 'rubro_id' in args:
+        rubro_id = args.get('rubro_id', type=int)
+    else:
+        rubro_id = 12
+    if rubro_id == 0:
+        rubro_id = None
+    group_by = (args.get('group_by') or 'producto').strip()
+    if group_by not in _VENTAS_MULTI_GROUP_BYS:
+        group_by = 'producto'
+    return {
+        'desde': _parse_d(args.get('desde')) or (hoy - _td(days=30)),
+        'hasta': _parse_d(args.get('hasta')) or hoy,
+        'droga_id': args.get('droga_id', type=int),
+        'producto_id': args.get('producto_id', type=int),
+        'medico_id': args.get('medico_id', type=int),
+        'os_id': args.get('os_id', type=int),
+        'lab_id': args.get('lab_id', type=int),
+        'rubro_id': rubro_id,
+        'excluir_sin_droga': args.get('excluir_sin_droga') == '1',
+        # "Solo con receta": filtra por ObsProducto.id_tipo_venta_control != 'L'.
+        # Valores: L=Venta Libre, R=Bajo Receta, A=Receta Archivada,
+        # 1-4=Psicotrópico, 5-8=Estupefaciente. Todo lo no-libre requiere receta.
+        'solo_con_receta': args.get('solo_con_receta') == '1',
+        'group_by': group_by,
+    }
+
+
+def _base_query_ventas_multi(session, f):
+    """Arma el query base filtrado de ObsVentaDetalle para /informes/ventas-multi,
+    a partir del dict que devuelve `_parse_filtros_ventas_multi`.
+
+    Devuelve (base, ya_joined_obs, etiquetas). `ya_joined_obs` lo necesitan los
+    callers que agrupan por una columna de ObsProducto (droga/laboratorio): si
+    ya está en True no hay que volver a joinear esa tabla, o Postgres tira
+    DuplicateAlias. `etiquetas` son los nombres resueltos para mostrar en la
+    UI (la pantalla los usa para el banner de filtros activos; el export los
+    ignora).
+    """
+    from database import (
+        ObsLaboratorio,
+        ObsMedico,
+        ObsNombreDroga,
+        ObsObraSocial,
+        ObsProducto,
+        ObsSubrubro,
+        ObsVentaDetalle,
+    )
+    from helpers import excluir_no_medicamentos_ovd, medicos_observer_ids_compartidos, ventas_periodo_filter
+
+    etiquetas = {'droga_nombre': None, 'producto_desc': None, 'medico_nombre': None,
+                'os_nombre': None, 'lab_nombre': None}
+
+    base = (session.query(ObsVentaDetalle)
+            .filter(ventas_periodo_filter(ObsVentaDetalle, f['desde'], f['hasta']),
+                    excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session)))
+    if f['producto_id']:
+        base = base.filter(ObsVentaDetalle.producto_observer == f['producto_id'])
+        op = session.get(ObsProducto, f['producto_id'])
+        if op:
+            etiquetas['producto_desc'] = op.descripcion
+    if f['medico_id']:
+        ids_med = medicos_observer_ids_compartidos(session, f['medico_id'])
+        base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
+        m = session.get(ObsMedico, f['medico_id'])
+        if m:
+            etiquetas['medico_nombre'] = m.nombre
+    if f['os_id']:
+        base = base.filter(ObsVentaDetalle.obra_social_observer == f['os_id'])
+        os_obj = session.get(ObsObraSocial, f['os_id'])
+        if os_obj:
+            etiquetas['os_nombre'] = os_obj.descripcion
+
+    # Cualquiera de estos filtros requiere joinear ObsProducto — se hace UNA
+    # sola vez acá, no en cada rama de group_by.
+    ya_joined_obs = False
+    if f['droga_id'] or f['excluir_sin_droga'] or f['rubro_id'] or f['solo_con_receta'] or f['lab_id']:
+        base = base.join(ObsProducto, ObsProducto.observer_id == ObsVentaDetalle.producto_observer)
+        ya_joined_obs = True
+    if f['droga_id']:
+        base = base.filter(ObsProducto.nombre_droga_observer == f['droga_id'])
+        d = session.get(ObsNombreDroga, f['droga_id'])
+        if d:
+            etiquetas['droga_nombre'] = d.descripcion
+    if f['lab_id']:
+        base = base.filter(ObsProducto.laboratorio_observer == f['lab_id'])
+        lab_obj = session.get(ObsLaboratorio, f['lab_id'])
+        if lab_obj:
+            etiquetas['lab_nombre'] = lab_obj.descripcion
+    if f['excluir_sin_droga']:
+        base = base.filter(ObsProducto.nombre_droga_observer.isnot(None))
+    if f['solo_con_receta']:
+        base = base.filter(ObsProducto.id_tipo_venta_control.isnot(None),
+                           ObsProducto.id_tipo_venta_control != 'L')
+    if f['rubro_id']:
+        base = base.join(
+            ObsSubrubro, ObsSubrubro.observer_id == ObsProducto.subrubro_observer,
+        ).filter(ObsSubrubro.rubro_observer == f['rubro_id'])
+
+    return base, ya_joined_obs, etiquetas
+
+
 def init_app(app):
 
     @app.route('/informes')
@@ -1751,51 +1875,17 @@ def init_app(app):
         """Cruce de ventas por droga / producto / médico / fecha — pivot
         configurable. Filtros opcionales y group_by para agrupar resultados.
         """
-        from datetime import date as _date
-        from datetime import timedelta as _td
-
         from sqlalchemy import func as _func
 
-        from database import (
-            ObsMedico,
-            ObsNombreDroga,
-            ObsProducto,
-            ObsVentaDetalle,
-        )
+        from database import ObsMedico, ObsNombreDroga, ObsProducto, ObsVentaDetalle
 
-        def _parse_d(s):
-            try:
-                return _date.fromisoformat(s) if s else None
-            except (ValueError, TypeError):
-                return None
-
-        hoy = _date.today()
-        desde = _parse_d(request.args.get('desde')) or (hoy - _td(days=30))
-        hasta = _parse_d(request.args.get('hasta')) or hoy
-        droga_id = request.args.get('droga_id', type=int)
-        producto_id = request.args.get('producto_id', type=int)
-        medico_id = request.args.get('medico_id', type=int)
-        os_id = request.args.get('os_id', type=int)
-        lab_id = request.args.get('lab_id', type=int)
-        # Rubro: si no viene en URL, default = 12 (Medicamentos). Para "Todos"
-        # el user pasa rubro_id=0 explícito.
-        if 'rubro_id' in request.args:
-            rubro_id = request.args.get('rubro_id', type=int)
-        else:
-            rubro_id = 12  # Medicamentos por default
-        if rubro_id == 0:
-            rubro_id = None
-        excluir_sin_droga = request.args.get('excluir_sin_droga') == '1'
-        # "Solo con receta": filtra por ObsProducto.id_tipo_venta_control != 'L'.
-        # Valores: L=Venta Libre, R=Bajo Receta, A=Receta Archivada,
-        # 1-4=Psicotrópico, 5-8=Estupefaciente. Todo lo no-libre requiere receta.
-        solo_con_receta = request.args.get('solo_con_receta') == '1'
-        group_by = (request.args.get('group_by') or 'producto').strip()
-        if group_by not in ('producto', 'droga', 'laboratorio', 'medico', 'mes', 'dia', 'os'):
-            group_by = 'producto'
-
-        # Etiquetas opcionales para los filtros aplicados (mostrar en UI).
-        droga_nombre = producto_desc = medico_nombre = os_nombre = lab_nombre = None
+        f = _parse_filtros_ventas_multi(request.args)
+        desde, hasta = f['desde'], f['hasta']
+        droga_id, producto_id = f['droga_id'], f['producto_id']
+        medico_id, os_id, lab_id = f['medico_id'], f['os_id'], f['lab_id']
+        rubro_id = f['rubro_id']
+        excluir_sin_droga, solo_con_receta = f['excluir_sin_droga'], f['solo_con_receta']
+        group_by = f['group_by']
 
         rows = []
         total_cantidad = 0.0
@@ -1804,60 +1894,9 @@ def init_app(app):
         # Solo ejecutamos el cruce si algún filtro fue aplicado o es rango corto.
         # Sin filtros + 30d puede ser pesado, lo dejamos correr igual capeado a 200.
         with database.get_db() as session:
-            from helpers import excluir_no_medicamentos_ovd, ventas_periodo_filter
-            base = (session.query(ObsVentaDetalle)
-                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
-                            excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session)))
-            if producto_id:
-                base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
-                op = session.get(ObsProducto, producto_id)
-                if op:
-                    producto_desc = op.descripcion
-            if medico_id:
-                from helpers import medicos_observer_ids_compartidos
-                ids_med = medicos_observer_ids_compartidos(session, medico_id)
-                base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
-                m = session.get(ObsMedico, medico_id)
-                if m:
-                    medico_nombre = m.nombre
-            if os_id:
-                from database import ObsObraSocial
-                base = base.filter(ObsVentaDetalle.obra_social_observer == os_id)
-                os_obj = session.get(ObsObraSocial, os_id)
-                if os_obj:
-                    os_nombre = os_obj.descripcion
-            ya_joined_obs = False
-            ya_joined_subrubro = False
-            if droga_id or excluir_sin_droga or rubro_id or solo_con_receta or lab_id:
-                # Cualquiera de estos requiere joinear ObsProducto.
-                base = base.join(
-                    ObsProducto,
-                    ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
-                )
-                ya_joined_obs = True
-            if droga_id:
-                base = base.filter(ObsProducto.nombre_droga_observer == droga_id)
-                d = session.get(ObsNombreDroga, droga_id)
-                if d:
-                    droga_nombre = d.descripcion
-            if lab_id:
-                from database import ObsLaboratorio
-                base = base.filter(ObsProducto.laboratorio_observer == lab_id)
-                lab_obj = session.get(ObsLaboratorio, lab_id)
-                if lab_obj:
-                    lab_nombre = lab_obj.descripcion
-            if excluir_sin_droga:
-                base = base.filter(ObsProducto.nombre_droga_observer.isnot(None))
-            if solo_con_receta:
-                base = base.filter(ObsProducto.id_tipo_venta_control.isnot(None),
-                                   ObsProducto.id_tipo_venta_control != 'L')
-            if rubro_id:
-                from database import ObsSubrubro
-                base = base.join(
-                    ObsSubrubro,
-                    ObsSubrubro.observer_id == ObsProducto.subrubro_observer,
-                ).filter(ObsSubrubro.rubro_observer == rubro_id)
-                ya_joined_subrubro = True
+            base, ya_joined_obs, etq = _base_query_ventas_multi(session, f)
+            droga_nombre, producto_desc = etq['droga_nombre'], etq['producto_desc']
+            medico_nombre, os_nombre, lab_nombre = etq['medico_nombre'], etq['os_nombre'], etq['lab_nombre']
 
             # GROUP BY según el pivot elegido.
             if group_by == 'producto':
@@ -2060,14 +2099,14 @@ def init_app(app):
             tl_por_mes = {f'{int(r.a)}-{int(r.m):02d}': (float(r.c or 0), float(r.i or 0))
                           for r in tl_q.all()}
             tl_labels = []
-            cur = _date(desde.year, desde.month, 1)
-            fin_mes = _date(hasta.year, hasta.month, 1)
+            cur = date(desde.year, desde.month, 1)
+            fin_mes = date(hasta.year, hasta.month, 1)
             while cur <= fin_mes:
                 tl_labels.append(f'{cur.year}-{cur.month:02d}')
                 if cur.month == 12:
-                    cur = _date(cur.year + 1, 1, 1)
+                    cur = date(cur.year + 1, 1, 1)
                 else:
-                    cur = _date(cur.year, cur.month + 1, 1)
+                    cur = date(cur.year, cur.month + 1, 1)
             timeline = {
                 'labels': tl_labels,
                 'cantidad': [tl_por_mes.get(lb, (0, 0))[0] for lb in tl_labels],
@@ -2113,83 +2152,25 @@ def init_app(app):
         """Exporta la tabla del informe a XLSX. Acepta los mismos filtros
         que la pantalla. Genera un workbook con headers + filas.
         """
-        from datetime import date as _date
-        from datetime import timedelta as _td
         from io import BytesIO
 
         from sqlalchemy import func as _func
 
-        from database import (
-            ObsMedico,
-            ObsNombreDroga,
-            ObsProducto,
-            ObsVentaDetalle,
-        )
+        from database import ObsMedico, ObsNombreDroga, ObsProducto, ObsVentaDetalle
 
-        def _parse_d(s):
-            try:
-                return _date.fromisoformat(s) if s else None
-            except (ValueError, TypeError):
-                return None
+        f = _parse_filtros_ventas_multi(request.args)
+        desde, hasta = f['desde'], f['hasta']
+        droga_id, producto_id = f['droga_id'], f['producto_id']
+        medico_id, os_id, lab_id = f['medico_id'], f['os_id'], f['lab_id']
+        rubro_id = f['rubro_id']
+        excluir_sin_droga, solo_con_receta = f['excluir_sin_droga'], f['solo_con_receta']
+        group_by = f['group_by']
 
-        hoy = _date.today()
-        desde = _parse_d(request.args.get('desde')) or (hoy - _td(days=30))
-        hasta = _parse_d(request.args.get('hasta')) or hoy
-        droga_id = request.args.get('droga_id', type=int)
-        producto_id = request.args.get('producto_id', type=int)
-        medico_id = request.args.get('medico_id', type=int)
-        lab_id = request.args.get('lab_id', type=int)
-        os_id = request.args.get('os_id', type=int)
-        # Rubro: mismo comportamiento que la pantalla — default 12 (Medicamentos),
-        # 0 explícito = "Todos" → None.
-        if 'rubro_id' in request.args:
-            rubro_id = request.args.get('rubro_id', type=int)
-        else:
-            rubro_id = 12
-        if rubro_id == 0:
-            rubro_id = None
-        excluir_sin_droga = request.args.get('excluir_sin_droga') == '1'
-        solo_con_receta = request.args.get('solo_con_receta') == '1'
-        group_by = (request.args.get('group_by') or 'producto').strip()
-        if group_by not in ('producto', 'droga', 'laboratorio', 'medico', 'mes', 'dia', 'os'):
-            group_by = 'producto'
-
-        # Reusar la misma lógica de query (copia del handler de la pantalla).
+        # Mismos filtros que la pantalla — una sola fuente de verdad
+        # (_base_query_ventas_multi), para que el Excel nunca pueda
+        # desincronizarse de lo que se ve en /informes/ventas-multi.
         with database.get_db() as session:
-            from helpers import excluir_no_medicamentos_ovd, ventas_periodo_filter
-            base = (session.query(ObsVentaDetalle)
-                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
-                            excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session)))
-            if producto_id:
-                base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
-            if medico_id:
-                from helpers import medicos_observer_ids_compartidos
-                ids_med = medicos_observer_ids_compartidos(session, medico_id)
-                base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
-            if os_id:
-                base = base.filter(ObsVentaDetalle.obra_social_observer == os_id)
-            ya_joined_obs = False
-            if droga_id or solo_con_receta or lab_id or rubro_id or excluir_sin_droga:
-                base = base.join(
-                    ObsProducto,
-                    ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
-                )
-                ya_joined_obs = True
-            if droga_id:
-                base = base.filter(ObsProducto.nombre_droga_observer == droga_id)
-            if lab_id:
-                base = base.filter(ObsProducto.laboratorio_observer == lab_id)
-            if excluir_sin_droga:
-                base = base.filter(ObsProducto.nombre_droga_observer.isnot(None))
-            if solo_con_receta:
-                base = base.filter(ObsProducto.id_tipo_venta_control.isnot(None),
-                                   ObsProducto.id_tipo_venta_control != 'L')
-            if rubro_id:
-                from database import ObsSubrubro
-                base = base.join(
-                    ObsSubrubro,
-                    ObsSubrubro.observer_id == ObsProducto.subrubro_observer,
-                ).filter(ObsSubrubro.rubro_observer == rubro_id)
+            base, ya_joined_obs, _etq = _base_query_ventas_multi(session, f)
 
             rows_data = []
             if group_by == 'producto':
