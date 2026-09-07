@@ -387,6 +387,39 @@ class TestInvoiceItemsVolver:
         assert '← Volver' not in resp.data.decode('utf-8')
 
 
+class TestInvoiceItemsRemito:
+    """Pedido del usuario: mostrar el Nº de remito en el encabezado de
+    /invoice/<id>/items cuando la factura entró en un resumen semanal —
+    es la clave contra la que ObServer registra la recepción."""
+
+    def test_muestra_el_remito_si_esta_en_un_resumen(self, client, db_session):
+        from database import ResumenProveedor, ResumenProveedorItem
+
+        prov = _make_provider(db_session, razon='CON REMITO', cuit='30-CRE-1')
+        inv = _make_invoice(db_session, prov, numero='FRE01')
+        db_session.flush()
+        resumen = ResumenProveedor(proveedor_id=prov.id, numero='S99-2026')
+        db_session.add(resumen)
+        db_session.flush()
+        db_session.add(ResumenProveedorItem(
+            resumen_id=resumen.id, factura_id=inv.id,
+            numero_remito='0047R00999999'))
+        db_session.commit()
+
+        resp = client.get(f'/invoice/{inv.id}/items')
+        body = resp.data.decode('utf-8')
+        assert 'Remito' in body
+        assert '0047R00999999' in body
+
+    def test_sin_resumen_no_muestra_el_campo_remito(self, client, db_session):
+        prov = _make_provider(db_session, razon='SIN REMITO', cuit='30-SRE-1')
+        inv = _make_invoice(db_session, prov, numero='FSR01')
+        db_session.commit()
+
+        resp = client.get(f'/invoice/{inv.id}/items')
+        assert 'Remito' not in resp.data.decode('utf-8')
+
+
 class TestCompareViewSugerencias:
     """El cruce manual sugiere el renglón parecido, sin aplicarlo solo."""
 

@@ -132,6 +132,12 @@
                     <p class="field-label">Fecha</p>
                     <p class="field-value">{{ invoice.fecha }}</p>
                 </div>
+                {% if numero_remito %}
+                <div>
+                    <p class="field-label">Remito</p>
+                    <p class="field-value mono">{{ numero_remito }}</p>
+                </div>
+                {% endif %}
                 <div>
                     <p class="field-label">Total artículos</p>
                     <p class="field-value mint">{{ items|length }}</p>
