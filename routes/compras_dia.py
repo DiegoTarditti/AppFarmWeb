@@ -2016,7 +2016,7 @@ def init_app(app):
         Devuelve datos listos para agregar como fila al armado: stock, mínimo,
         u12m, lab, cubre_lab según la droguería pasada por ?prov.
         """
-        from sqlalchemy import and_, func
+        from sqlalchemy import and_, func, or_
 
         from database import (
             Laboratorio,
@@ -2027,6 +2027,9 @@ def init_app(app):
             ObsStock,
             ObsVentaDetalle,
             Producto,
+        )
+        from database import (
+            OfertaMinimo as _OM,
         )
         q = (request.args.get('q') or '').strip()
         prov_id = request.args.get('prov', type=int)
@@ -2108,6 +2111,22 @@ def init_app(app):
                 labs_cubiertos = set(r[0] for r in session.query(
                     LaboratorioDrogueria.laboratorio_id
                 ).distinct().all())
+            # En modo oferta (droguería con OfertaMinimo cargada, ej. multi-lab)
+            # un producto agregado a mano puede ser de un lab que la matriz
+            # lab↔drog no cubre para esta drog — pero si está en la oferta de
+            # ESTA droguería, ella lo vende sí o sí. Mismo criterio que el
+            # listado principal (`cubre_lab = True if oferta_pids else ...`,
+            # ver /pedidos/dia/armar): sin esto, agregar a mano cualquier
+            # producto de la oferta quedaba con la cantidad bloqueada (bug
+            # real, reportado 2026-09-07).
+            eans_oferta_prov = set()
+            if prov_id:
+                hoy_of = _date.today()
+                eans_oferta_prov = {r[0] for r in (
+                    session.query(_OM.ean)
+                    .filter(_OM.drogueria_id == prov_id, _OM.activo.is_(True),
+                            or_(_OM.vigencia_hasta.is_(None), _OM.vigencia_hasta >= hoy_of))
+                    .all()) if r[0]}
 
             eans_buscar = {}
             if obs_ids:
@@ -2119,7 +2138,6 @@ def init_app(app):
                             .all()):
                     eans_buscar[ecb.producto_observer] = ecb.codigo_barras
 
-            from database import OfertaMinimo as _OM
             eans_buscar_set = {v for v in eans_buscar.values() if v}
             ofertas_buscar = {}
             if eans_buscar_set:
@@ -2200,7 +2218,7 @@ def init_app(app):
                     'u7d':  int(v7d_rows2.get(r.observer_id, 0) or 0),
                     'u12m': u12m_int,
                     'a_pedir': a_pedir,
-                    'cubre_lab': lab_local_id in labs_cubiertos,
+                    'cubre_lab': (ean_b in eans_oferta_prov) or (lab_local_id in labs_cubiertos),
                     'ean': ean_b,
                     **(ofertas_buscar.get(ean_b, {'oferta_dto': None, 'oferta_min': None})),
                 })
