@@ -379,6 +379,32 @@ class TestCompareInvoiceVsErp:
         assert diffs[0]['diferencia'] == 5
         assert 'x10' in diffs[0]['observaciones']
 
+    def test_bridge_observer_no_dispara_conversion_de_pack(self, session):
+        """El match vía Paso 4 (bridge directo por catálogo ObServer, ver
+        test_observer_bridge_step4_*) SIEMPRE es el mismo producto_observer
+        de los dos lados — por diseño, _factor_pack no convierte nada en ese
+        caso (oid_fac == oid_erp corta antes de mirar cantidad_envase),
+        aunque el catálogo tenga cargado un cantidad_envase grande para ese
+        producto. Si esto se rompiera, un match por ObServer con envase
+        cargado podría inflar/esconder una diferencia real por error."""
+        self._obs_producto(session, 91006, 'FAC_EAN_BRIDGE', 100, 'PROD BRIDGE')
+        from database import ObsCodigoBarras
+        session.add(ObsCodigoBarras(id_codigo_barras=910062, producto_observer=91006,
+                                    codigo_barras='ERP_EAN_BRIDGE', orden=2))
+        session.flush()
+        inv = _make_invoice(session, [{'codigo_barra': 'FAC_EAN_BRIDGE',
+                                       'descripcion': 'PROD BRIDGE FACTURA', 'cantidad': 3}])
+        _make_erp(session, [{'codigo_barra': 'ERP_EAN_BRIDGE',
+                             'descripcion': 'PROD BRIDGE INGRESO', 'cantidad': 3}], inv)
+        assert compare_invoice_vs_erp(session, inv.id) == []
+
+        _make_erp(session, [{'codigo_barra': 'ERP_EAN_BRIDGE',
+                             'descripcion': 'PROD BRIDGE INGRESO', 'cantidad': 1}], inv)
+        diffs = compare_invoice_vs_erp(session, inv.id)
+        assert len(diffs) == 1
+        assert diffs[0]['diferencia'] == 2   # 3 - 1, SIN multiplicar por el envase (100)
+        assert 'observer' in diffs[0]['observaciones'].lower()
+
     def test_envase_no_entero_no_convierte(self, session):
         """Cociente que no da entero exacto (400 ml contra 150 ml) no es un pack:
         son presentaciones distintas del mismo producto. No se toca."""
