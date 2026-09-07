@@ -307,12 +307,15 @@ def init_app(app):
     @app.route('/kellerhoff/resumenes')
     @login_required
     def kellerhoff_resumenes():
+        from services.kellerhoff_resumen import estado_resumen_facturas
+
         with get_db() as session:
             resumenes = []
             for r in (session.query(ResumenProveedor)
                       .filter_by(proveedor_id=KELLERHOFF_PROVIDER_ID)
                       .order_by(ResumenProveedor.periodo_desde.desc()).all()):
                 n_items, n_ligados, cerrado = _contar_items(session, r.id)
+                n_facturas, n_facturas_tildadas = estado_resumen_facturas(session, r.id)
                 resumenes.append({
                     'id': r.id, 'numero': r.numero,
                     'periodo': _fmt_periodo(r),
@@ -323,6 +326,7 @@ def init_app(app):
                                            if r.primer_vencimiento else ''),
                     'n_items': n_items, 'n_ligados': n_ligados,
                     'cerrado': cerrado, 'pendientes': n_items - n_ligados,
+                    'n_facturas': n_facturas, 'n_facturas_tildadas': n_facturas_tildadas,
                     'importado_en': (r.importado_en.strftime('%d/%m/%Y %H:%M')
                                      if r.importado_en else ''),
                 })

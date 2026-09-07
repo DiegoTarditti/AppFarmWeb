@@ -72,6 +72,7 @@
             <th class="th-right">Total</th>
             <th>1° vencimiento</th>
             <th>Control</th>
+            <th title="Solo facturas (FAC) tildadas, sin contar NC">Facturas</th>
             <th>Importado</th>
           </tr>
         </thead>
@@ -109,10 +110,18 @@
                      background:{{ '#22c55e' if r.cerrado else 'var(--ds-orange)' }};"></div>
               </div>
             </td>
+            <td class="mono-xs" style="font-size:12px;"
+                title="{{ r.n_facturas_tildadas }} de {{ r.n_facturas }} facturas tildadas (no cuenta NC)">
+              {% if r.n_facturas %}
+              {{ r.n_facturas_tildadas }}/{{ r.n_facturas }}
+              {% else %}
+              <span style="color:var(--ds-text-mute);">—</span>
+              {% endif %}
+            </td>
             <td style="font-size:11px;color:var(--ds-text-mute);">{{ r.importado_en }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="6" style="padding:28px;text-align:center;color:var(--ds-text-mute);font-size:13px;">
+          <tr><td colspan="7" style="padding:28px;text-align:center;color:var(--ds-text-mute);font-size:13px;">
             Todavía no importaste ningún resumen.
           </td></tr>
           {% endfor %}
