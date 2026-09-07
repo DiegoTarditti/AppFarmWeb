@@ -378,3 +378,58 @@ def test_la_cuenta_corriente_del_modulo_dice_en_que_resumen_entro(smoke_client):
     html = smoke_client.get('/kellerhoff/cuenta-corriente').data.decode('utf-8')
     assert 'Resumen' in html, 'falta la columna'
     assert 'S34-2026' in html, 'no se dibujó en qué resumen entró la factura'
+
+
+def test_agregar_producto_a_mano_respeta_la_oferta_multi_lab(smoke_client):
+    """Bug real reportado 2026-09-07: en una droguería con oferta multi-lab
+    cargada (ej. Ciafarma/DNM Farma), agregar un producto a mano con
+    "+ Agregar producto..." dejaba la cantidad BLOQUEADA si el laboratorio
+    del producto no estaba mapeado a esa droguería en LaboratorioDrogueria
+    — aunque el producto SÍ estuviera en la oferta de esa misma droguería.
+    El listado principal ya resolvía esto (`cubre_lab = True if oferta_pids
+    else ...`, con el motivo explicado en el código); la búsqueda de
+    "agregar producto" nunca tuvo el mismo criterio."""
+    import database
+    from database import (
+        ObsCodigoBarras,
+        ObsLaboratorio,
+        ObsProducto,
+        OfertaMinimo,
+        Provider,
+    )
+
+    with database.get_db() as session:
+        prov = Provider(razon_social='DROG OFERTA TEST', cuit='30-DOT-1')
+        session.add(prov)
+        session.flush()
+        # Laboratorio SIN mapeo LaboratorioDrogueria a esta droguería —
+        # a propósito, para probar que la oferta igual habilita la cantidad.
+        session.add(ObsLaboratorio(observer_id=95001, descripcion='LAB SIN MAPEO'))
+        session.add(ObsProducto(observer_id=95001, descripcion='PRODUCTO OFERTA TEST XYZ',
+                                laboratorio_observer=95001))
+        session.add(ObsCodigoBarras(id_codigo_barras=950011, producto_observer=95001,
+                                    codigo_barras='EAN_OFERTA_TEST_XYZ', orden=1))
+        session.add(OfertaMinimo(drogueria_id=prov.id, ean='EAN_OFERTA_TEST_XYZ',
+                                 activo=True, tipo_descuento='con_minimo'))
+        session.commit()
+        prov_id = prov.id
+
+    resp = smoke_client.get(
+        f'/api/pedidos/dia/buscar-producto?q=OFERTA+TEST+XYZ&prov={prov_id}')
+    data = resp.get_json()
+    assert data['ok'] is True
+    assert len(data['items']) == 1
+    assert data['items'][0]['cubre_lab'] is True
+
+    # Sin oferta cargada para esa droguería, el mismo producto (lab sin
+    # mapeo) sigue bloqueado — el fix no debe volverse un "siempre True".
+    with database.get_db() as session:
+        prov2 = Provider(razon_social='DROG SIN OFERTA TEST', cuit='30-DST-1')
+        session.add(prov2)
+        session.commit()
+        prov2_id = prov2.id
+
+    resp2 = smoke_client.get(
+        f'/api/pedidos/dia/buscar-producto?q=OFERTA+TEST+XYZ&prov={prov2_id}')
+    data2 = resp2.get_json()
+    assert data2['items'][0]['cubre_lab'] is False
