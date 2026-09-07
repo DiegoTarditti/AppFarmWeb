@@ -86,52 +86,6 @@ nunca. _(PR #320)_
 
 ---
 
-## P0 — El robot está medio vacío y nada avisa
-
-**`sug_cargar` da CERO en los 3.501 artículos.** La columna "Cargar" de
-`/rowa/carga` es estructuralmente siempre cero: la pantalla que existe para
-decidir qué reponer no puede responder su propia pregunta.
-
-El motivo está en [`_recomendar()`](../services/rowa_analisis.py): sólo sabe
-**reducir**. Durmiente → dejar 1, Baja → dejar la mitad, y para Alta/Media
-devuelve `sug_en_robot = cantidad`, o sea "dejá lo que hay". Nunca fija un
-objetivo, y como `sug_cargar = sug_en_robot − cantidad`, no puede dar positivo.
-
-Mientras tanto hay **11.458 lugares libres**.
-
-**Lo que falta es un mínimo del robot, que es otra cosa que el mínimo total:**
-
-| | mínimo total | mínimo en robot |
-|---|---|---|
-| pregunta | ¿cuándo le compro al proveedor? | ¿cuánto de lo que tengo va adentro? |
-| lo maneja | lead time del proveedor | frecuencia de recarga |
-| recurso escaso | plata | **espacio** |
-| dónde vive | `obs_stock.minimo` | **no existe** |
-
-La fórmula tiene todo lo necesario ya andando:
-
-```
-minimo_robot = min(salidas_dia × dias_autonomia, CantidadMaxima)
-```
-
-Simulado, acotado por el cupo real:
-
-| días | artículos a reponer | packs a cargar |
-|---|---|---|
-| 7 | 215 | 406 |
-| 10 | 398 | 826 |
-| 15 | 475 | 1.122 |
-| 21 | 596 | 1.851 |
-| 30 | 598 | 1.873 |
-
-Entre 21 y 30 casi no cambia: ahí ya manda el techo físico y no la demanda. El
-punto de rendimiento decreciente está cerca de los **21 días**.
-
-**Bloqueado por una decisión operativa**: cuántos días de autonomía se quiere que
-tenga el robot. Es de Diego/Lisandro, no técnica.
-
----
-
 ## P1 — ObServer tiene un módulo Rowa que no estamos leyendo
 
 Apareció el 24/8/2026 mirando una captura de la pantalla de ObServer. Existe
@@ -165,8 +119,9 @@ leemos de `DW.StockFarmaciasProductos.Maximo`, la misma fila de donde salen
 da 18/7/1/1/0/0 contra los 10 y 6 reales. Usarlo como techo pone un límite
 equivocado.
 
-- [ ] **Sumar `Varios.Rowa_Productos` al sync.** Barato, sólo lectura, y
-      desbloquea el techo del P0.
+- [x] **Sumar `Varios.Rowa_Productos` al sync.** Hecho: `database.ObsRowaProducto`
+      + query en `observer_source.py`, usado en `routes/rowa.py` y
+      `services/rowa_planilla.py`.
 - [ ] Investigar `Rowa_Ingresos` y `Rowa_Solicitudes`: los nombres sugieren que
       el flujo estaba pensado en los dos sentidos.
 
@@ -209,12 +164,12 @@ confunden y hacen ruido.
       registrar"**, y ese rojo sugiere problema. Sin registros, TODO aumento va a
       ser rojo para siempre: el color deja de informar y se vuelve ruido. Pasarlo
       a algo neutro — *"ingreso detectado"* —, que es lo que realmente es.
-- [ ] Decidir qué pasa con el **PR #338** (hacía verificables las cargas viejas):
-      si el registro se discontinúa, no tiene sentido mergearlo.
+- [ ] **PR #338** (hacía verificables las cargas viejas) — **descartar, no mergear**:
+      todo lo de carga del robot se discontinúa, los informes (rotación,
+      cobertura, críticos) siguen.
 
-**Pregunta abierta**: ¿se conserva el input "Cargar" de la planilla como campo de
-trabajo —para anotar cuánto mover mientras se recorre el depósito— sacando sólo
-el guardado, o se va entero?
+**Resuelto**: el input "Cargar" de la planilla **se va entero**, no queda como
+campo de trabajo — mismo criterio que el resto de esta sección.
 
 ### Lo que NO se toca
 
@@ -264,13 +219,6 @@ mercadería sigue en la cinta sin almacenar, o el robot la rechazó.
       horas**. Por eso salen ~7 tomas por día. El freno está en el endpoint, no
       en quien lo llama. Falta decidir cuál de los dos números es el correcto y
       alinear el otro.
-- [ ] _(texto original, para contexto)_ **El cron de snapshots corre menos de lo que debería.**
-      `_calcular_salidas_diarias` mira 14 días, pero sólo hay **26 snapshots en
-      3,94 días** — uno cada ~3,6 h. `/rowa/snapshot/auto` está pensado para
-      tomar uno si el último tiene más de **50 minutos**, o sea que en esa
-      ventana deberían ser ~115. Cuantos más snapshots, mejor se miden las bajas
-      (una venta y una reposición entre dos tomas se cancelan). Verificar cada
-      cuánto lo llama el cron externo.
 - [ ] **`n_criticos` no coincide con lo que se ve.** La ruta lo calcula con
       `urgencia < 2` y el filtro de pantalla usa `urgencia < 3`. Son dos cosas
       distintas con el mismo nombre; el KPI dice 126 y la lista muestra 222.
