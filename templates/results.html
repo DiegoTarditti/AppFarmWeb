@@ -99,18 +99,23 @@
                 </p>
             </div>
             <div class="page-header__actions">
+                {% if request.args.get('volver') %}
+                <a href="{{ request.args.get('volver') }}" class="btn btn-ghost btn-sm">← Volver</a>
+                {% endif %}
                 <a href="{{ url_for('pick_fields', invoice_id=invoice.id) }}" class="btn btn-ghost btn-sm">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"/>
                     </svg>
                     Del PDF
                 </a>
+                {% if invoice.origen != 'kh_portal' %}
                 <button type="button" onclick="toggleEdit()" id="btn-edit" class="btn btn-secondary btn-sm">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                     </svg>
                     Editar encabezado
                 </button>
+                {% endif %}
                 <a href="{{ url_for('invoice_items', invoice_id=invoice.id) }}" class="btn btn-secondary btn-sm">
                     Ver ítems ({{ invoice.total_articulos or '?' }})
                 </a>

@@ -321,6 +321,72 @@ class TestShowResultsTresEstados:
         assert 'coincidencia exacta con ERP' not in body
 
 
+class TestShowResultsVolverYEditarEncabezado:
+    """Pedido del usuario: /results/<id> se enlaza desde 4 pantallas de
+    Kellerhoff y no tenía forma de volver — se agrega un link opcional
+    '← Volver' vía ?volver=<url>. Y "Editar encabezado" no tiene sentido
+    para facturas de Kellerhoff (vienen siempre con header correcto del
+    sync automático), a diferencia de una factura manual con parseo fallido."""
+
+    def test_sin_volver_no_muestra_el_link(self, client, db_session):
+        prov = _make_provider(db_session, razon='SIN VOLVER', cuit='30-SVO-1')
+        inv = _make_invoice(db_session, prov, numero='FSV01')
+        db_session.commit()
+
+        resp = client.get(f'/results/{inv.id}')
+        assert '← Volver' not in resp.data.decode('utf-8')
+
+    def test_con_volver_muestra_el_link_a_esa_url(self, client, db_session):
+        prov = _make_provider(db_session, razon='CON VOLVER', cuit='30-CVO-1')
+        inv = _make_invoice(db_session, prov, numero='FCV01')
+        db_session.commit()
+
+        resp = client.get(f'/results/{inv.id}?volver=/kellerhoff/sync')
+        body = resp.data.decode('utf-8')
+        assert '← Volver' in body
+        assert 'href="/kellerhoff/sync"' in body
+
+    def test_editar_encabezado_oculto_para_facturas_de_kellerhoff(self, client, db_session):
+        prov = _make_provider(db_session, razon='KH PORTAL', cuit='30-KHP-1')
+        inv = _make_invoice(db_session, prov, numero='FKH01')
+        inv.origen = 'kh_portal'
+        db_session.commit()
+
+        resp = client.get(f'/results/{inv.id}')
+        assert 'Editar encabezado' not in resp.data.decode('utf-8')
+
+    def test_editar_encabezado_sigue_para_facturas_no_kellerhoff(self, client, db_session):
+        prov = _make_provider(db_session, razon='MANUAL', cuit='30-MAN-1')
+        inv = _make_invoice(db_session, prov, numero='FMA01')
+        db_session.commit()
+
+        resp = client.get(f'/results/{inv.id}')
+        assert 'Editar encabezado' in resp.data.decode('utf-8')
+
+
+class TestInvoiceItemsVolver:
+    """Mismo mecanismo de '← Volver' que /results/<id>, para cuando se
+    llega acá directo desde consulta_compras.html (sin pasar por resultados)."""
+
+    def test_con_volver_muestra_el_link(self, client, db_session):
+        prov = _make_provider(db_session, razon='ITEMS VOLVER', cuit='30-IVO-1')
+        inv = _make_invoice(db_session, prov, numero='FIV01')
+        db_session.commit()
+
+        resp = client.get(f'/invoice/{inv.id}/items?volver=/informes/consulta-compras')
+        body = resp.data.decode('utf-8')
+        assert '← Volver' in body
+        assert 'href="/informes/consulta-compras"' in body
+
+    def test_sin_volver_no_muestra_el_link(self, client, db_session):
+        prov = _make_provider(db_session, razon='ITEMS SIN VOLVER', cuit='30-ISV-1')
+        inv = _make_invoice(db_session, prov, numero='FSI01')
+        db_session.commit()
+
+        resp = client.get(f'/invoice/{inv.id}/items')
+        assert '← Volver' not in resp.data.decode('utf-8')
+
+
 class TestCompareViewSugerencias:
     """El cruce manual sugiere el renglón parecido, sin aplicarlo solo."""
 

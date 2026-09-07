@@ -90,6 +90,9 @@
                 </p>
             </div>
             <div class="page-header__actions">
+                {% if request.args.get('volver') %}
+                <a href="{{ request.args.get('volver') }}" class="btn btn-ghost btn-sm">← Volver</a>
+                {% endif %}
                 <a href="{{ url_for('invoice_items_export', invoice_id=invoice.id) }}" class="btn btn-secondary btn-sm">
                     📥 Exportar XLS
                 </a>
