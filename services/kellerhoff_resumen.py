@@ -432,6 +432,27 @@ def estado_resumen(session, resumen_id):
     return len(items), tildados, bool(items) and tildados == len(items)
 
 
+def estado_resumen_facturas(session, resumen_id):
+    """(n_facturas, n_facturas_tildadas) — mismo rollup que estado_resumen,
+    pero contando SOLO comprobantes tipo FAC.
+
+    Separado a propósito de estado_resumen (que mezcla FAC + NCR): las NC
+    son casi todas recuperos financieros o de mercadería con su propia
+    lógica de tildado, y mezclarlas en un solo contador de "renglones"
+    hace que el número no responda una pregunta concreta — ni "cuántas
+    facturas reales controlé" ni "cuántos comprobantes en total". Este
+    devuelve específicamente lo primero, sin tocar el control general
+    (el badge "N sin tildar" + la barra) que ya existe.
+    """
+    import database
+
+    items = (session.query(database.ResumenProveedorItem)
+             .filter_by(resumen_id=resumen_id, tipo='FAC').all())
+    cruce_erp = cruce_erp_map(session, items)
+    tildadas = sum(1 for it in items if item_tildado(it, cruce_erp))
+    return len(items), tildadas
+
+
 def _indice_facturas(session, proveedor_id):
     """{clave_comprobante: factura_id} de todas las facturas del proveedor.
 

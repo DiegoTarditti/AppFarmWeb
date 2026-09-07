@@ -18,6 +18,7 @@ from services.kellerhoff_resumen import (
     diferencias_count_map,
     estado_item,
     estado_resumen,
+    estado_resumen_facturas,
     item_tildado,
     parse_resumen_texto,
 )
@@ -298,6 +299,24 @@ def test_la_semana_cierra_cuando_estan_todos(tmp_path):
         n, tildados, cerrado = estado_resumen(session, res['resumen_id'])
 
     assert (n, tildados, cerrado) == (3, 3, True)
+
+
+def test_estado_resumen_facturas_no_cuenta_las_nc(tmp_path):
+    """Pedido del usuario: separar 'cuántas facturas hay y cuántas están
+    tildadas' del control general (que mezcla FAC + NC). Mismo fixture que
+    test_la_semana_cierra_cuando_estan_todos: 2 FAC + 1 NC = 3 renglones en
+    total, pero solo 2 son facturas."""
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        _factura(session, '00046-00279207', 915046.04)
+        _factura(session, '00046-00279939', 151817.02)
+        _ajuste_nc(session, '0046A00063591', 69124.56)
+        session.commit()
+
+        res = _importar(session, prov, tmp_path)
+        n_fac, fac_tildadas = estado_resumen_facturas(session, res['resumen_id'])
+
+    assert (n_fac, fac_tildadas) == (2, 2)
 
 
 def test_la_nc_financiera_tilda_aunque_no_exista_como_factura(tmp_path):

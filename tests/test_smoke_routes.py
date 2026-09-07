@@ -275,6 +275,17 @@ def test_listado_de_resumenes_dibuja_el_estado_de_la_semana(smoke_client):
     assert 'sin tildar' in html, 'no se dibujó el pendiente de la semana'
 
 
+def test_listado_de_resumenes_dibuja_la_columna_de_facturas(smoke_client):
+    """Pedido del usuario: columna nueva que separa cuántas FACTURAS hay
+    (sin contar NC) y cuántas están tildadas, sin tocar el control general
+    ("N sin tildar" + barra) que ya existía. Fixture: 2 FAC + 1 NC, las 3
+    tildadas — el control general sigue viendo 3, la columna nueva ve 2."""
+    _sembrar_resumen(cerrado=True)
+    html = smoke_client.get('/kellerhoff/resumenes').data.decode('utf-8')
+    assert '✓ cerrado' in html, 'el control general debe seguir viendo la semana cerrada (3/3)'
+    assert '2/2' in html, 'la columna de facturas debe mostrar 2 de 2, no 3 de 3'
+
+
 def test_detalle_marca_tildado_el_recupero_que_no_es_factura(smoke_client):
     """La NC financiera no crea Invoice: se liga contra el ajuste de cta cte.
     Si no, la semana no cerraría nunca."""
