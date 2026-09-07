@@ -81,12 +81,28 @@ ssh root@SERVER "
 "
 ```
 
-## Pendiente
+## Filtrar qué checks corren en Render (`ALARMAS_CHECKS_INCLUIR`)
 
-Decidir si el cron de GitHub Actions (`cron-alarmas.yml`, contra Render)
-se apaga o se deja — algunos checks (`check_recalculo_os_atrasado`,
-`check_cron_log_grande`) pueden seguir siendo válidos ahí si Render corre
-sus propios crons. Los que dependen de datos que solo genera el DockerPanel
-local (`check_sync_observer_parado`, `check_obs_codigos_barras_desfasada`,
-`check_matview_sin_refresh`) son falsos positivos estructurales en Render y
-deberían silenciarse ahí o retirarse del `CHECKS` que corre contra esa base.
+Decidido 2026-09-07: el cron de GitHub Actions (`cron-alarmas.yml`, contra
+Render) queda prendido pero **acotado**, en vez de apagarlo del todo —
+`check_recalculo_os_atrasado` y `check_cron_log_grande` siguen siendo
+válidos ahí porque Render corre sus propios crons (`cron-os-recalcular.yml`
+puebla `ClienteOsInferida` y `cron_log` en la base de Render). El resto
+(`check_sync_observer_parado`, `check_obs_codigos_barras_desfasada`,
+`check_matview_sin_refresh`, etc.) depende de datos que solo genera el
+DockerPanel local y son falsos positivos estructurales ahí.
+
+`alarmas.evaluar_todas()` ahora respeta la env var `ALARMAS_CHECKS_INCLUIR`
+(nombres de función de `alarmas.py` separados por coma) — si está vacía o
+no seteada, corre `CHECKS` completo (el caso de `.220`, no tocar nada acá).
+Para acotar Render: agregar en su Environment
+
+```
+ALARMAS_CHECKS_INCLUIR=check_recalculo_os_atrasado,check_cron_log_grande
+```
+
+y redeployar. Motivo del cambio, además del ruido estructural: el propio
+cron de GitHub Actions viene fallando de forma intermitente por HTTP 502
+(cold-start del free tier de Render) — no son alarmas reales perdidas,
+pero cuantos menos checks evalúe esa base, menos superficie para falsos
+positivos de cualquier tipo.

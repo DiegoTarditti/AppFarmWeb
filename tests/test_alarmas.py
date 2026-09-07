@@ -134,6 +134,32 @@ def test_check_cron_log_grande_no_dispara_chico(session):
     assert a is None
 
 
+# ── ALARMAS_CHECKS_INCLUIR (filtro para Render) ─────────────────────────────
+
+def test_checks_a_correr_sin_env_var_devuelve_todos(monkeypatch):
+    monkeypatch.delenv('ALARMAS_CHECKS_INCLUIR', raising=False)
+    assert alarmas._checks_a_correr() == alarmas.CHECKS
+
+
+def test_checks_a_correr_con_env_var_filtra(monkeypatch):
+    monkeypatch.setenv('ALARMAS_CHECKS_INCLUIR',
+                       'check_recalculo_os_atrasado,check_cron_log_grande')
+    nombres = {c.__name__ for c in alarmas._checks_a_correr()}
+    assert nombres == {'check_recalculo_os_atrasado', 'check_cron_log_grande'}
+
+
+def test_evaluar_todas_respeta_el_filtro(monkeypatch, session):
+    """Con el filtro puesto, un check excluido (cron_errors) no debe disparar
+    aunque las condiciones se cumplan — evaluar_todas no debe ni evaluarlo."""
+    monkeypatch.setenv('ALARMAS_CHECKS_INCLUIR', 'check_recalculo_os_atrasado')
+    _agregar_cron_log(session, 'algo', estado='error', hace_horas=1)  # dispararía check_cron_errors_24h
+    todas = evaluar_todas(session, force=True)
+    nombres = {a.nombre for a in todas}
+    assert 'Cron con errores (24h)' not in nombres
+    # El único check habilitado sí corre (cliente_os_inferida vacía → dispara).
+    assert 'cliente_os_inferida vacía' in nombres
+
+
 # ── evaluar_todas ────────────────────────────────────────────────────────
 
 def test_evaluar_todas_ordena_por_severidad(session):
