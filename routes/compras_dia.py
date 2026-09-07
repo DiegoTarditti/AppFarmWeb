@@ -2111,22 +2111,22 @@ def init_app(app):
                 labs_cubiertos = set(r[0] for r in session.query(
                     LaboratorioDrogueria.laboratorio_id
                 ).distinct().all())
-            # En modo oferta (droguería con OfertaMinimo cargada, ej. multi-lab)
-            # un producto agregado a mano puede ser de un lab que la matriz
-            # lab↔drog no cubre para esta drog — pero si está en la oferta de
-            # ESTA droguería, ella lo vende sí o sí. Mismo criterio que el
-            # listado principal (`cubre_lab = True if oferta_pids else ...`,
-            # ver /pedidos/dia/armar): sin esto, agregar a mano cualquier
-            # producto de la oferta quedaba con la cantidad bloqueada (bug
-            # real, reportado 2026-09-07).
-            eans_oferta_prov = set()
+            # Droguería con oferta multi-lab activa (ej. Ciafarma, DNM Farma):
+            # se asume que vende CUALQUIER producto que se le agregue a mano acá,
+            # esté o no ya cargado en la oferta — la matriz lab↔drog no aplica
+            # (mismo criterio que el listado principal, `cubre_lab = True if
+            # oferta_pids else ...` en /pedidos/dia/armar, y mismo motivo: "si
+            # no, todo saldría 'otra drog' y no se podría emitir nada"). Sin
+            # esto, agregar a mano un producto que la droguería sí vende pero
+            # que todavía no está en su oferta cargada quedaba con la cantidad
+            # bloqueada (bug real, reportado 2026-09-07 probando DNM Farma).
+            hay_oferta_prov = False
             if prov_id:
                 hoy_of = _date.today()
-                eans_oferta_prov = {r[0] for r in (
-                    session.query(_OM.ean)
-                    .filter(_OM.drogueria_id == prov_id, _OM.activo.is_(True),
-                            or_(_OM.vigencia_hasta.is_(None), _OM.vigencia_hasta >= hoy_of))
-                    .all()) if r[0]}
+                hay_oferta_prov = session.query(_OM.id).filter(
+                    _OM.drogueria_id == prov_id, _OM.activo.is_(True),
+                    or_(_OM.vigencia_hasta.is_(None), _OM.vigencia_hasta >= hoy_of),
+                ).first() is not None
 
             eans_buscar = {}
             if obs_ids:
@@ -2218,7 +2218,7 @@ def init_app(app):
                     'u7d':  int(v7d_rows2.get(r.observer_id, 0) or 0),
                     'u12m': u12m_int,
                     'a_pedir': a_pedir,
-                    'cubre_lab': (ean_b in eans_oferta_prov) or (lab_local_id in labs_cubiertos),
+                    'cubre_lab': True if hay_oferta_prov else (lab_local_id in labs_cubiertos),
                     'ean': ean_b,
                     **(ofertas_buscar.get(ean_b, {'oferta_dto': None, 'oferta_min': None})),
                 })
