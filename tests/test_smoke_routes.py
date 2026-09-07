@@ -392,14 +392,19 @@ def test_la_cuenta_corriente_del_modulo_dice_en_que_resumen_entro(smoke_client):
 
 
 def test_agregar_producto_a_mano_respeta_la_oferta_multi_lab(smoke_client):
-    """Bug real reportado 2026-09-07: en una droguería con oferta multi-lab
-    cargada (ej. Ciafarma/DNM Farma), agregar un producto a mano con
-    "+ Agregar producto..." dejaba la cantidad BLOQUEADA si el laboratorio
-    del producto no estaba mapeado a esa droguería en LaboratorioDrogueria
-    — aunque el producto SÍ estuviera en la oferta de esa misma droguería.
-    El listado principal ya resolvía esto (`cubre_lab = True if oferta_pids
-    else ...`, con el motivo explicado en el código); la búsqueda de
-    "agregar producto" nunca tuvo el mismo criterio."""
+    """Bug real reportado 2026-09-07 probando DNM Farma: en una droguería con
+    oferta multi-lab activa (ej. Ciafarma/DNM Farma), agregar un producto a
+    mano con "+ Agregar producto..." dejaba la cantidad BLOQUEADA si el
+    laboratorio del producto no estaba mapeado a esa droguería en
+    LaboratorioDrogueria — el listado principal ya resolvía esto
+    (`cubre_lab = True if oferta_pids else ...`), la búsqueda de "agregar
+    producto" nunca tuvo el mismo criterio.
+
+    Alcance confirmado con el usuario: una droguería con oferta multi-lab
+    activa se asume que vende CUALQUIER producto agregado a mano ahí, esté
+    o no ya cargado en esa oferta — no hace falta agregarlo primero desde
+    "Gestionar ofertas" (caso real: agregó a mano un producto que no
+    estaba en las 3 líneas de la oferta de prueba y quedó bloqueado igual)."""
     import database
     from database import (
         ObsCodigoBarras,
@@ -413,8 +418,10 @@ def test_agregar_producto_a_mano_respeta_la_oferta_multi_lab(smoke_client):
         prov = Provider(razon_social='DROG OFERTA TEST', cuit='30-DOT-1')
         session.add(prov)
         session.flush()
-        # Laboratorio SIN mapeo LaboratorioDrogueria a esta droguería —
-        # a propósito, para probar que la oferta igual habilita la cantidad.
+        # Dos productos de labs SIN mapeo LaboratorioDrogueria a esta
+        # droguería — a propósito. Solo el primero está en la oferta
+        # cargada; el segundo simula el "agregado a mano que no estaba
+        # en la oferta" del caso real.
         session.add(ObsLaboratorio(observer_id=95001, descripcion='LAB SIN MAPEO'))
         session.add(ObsProducto(observer_id=95001, descripcion='PRODUCTO OFERTA TEST XYZ',
                                 laboratorio_observer=95001))
@@ -422,6 +429,10 @@ def test_agregar_producto_a_mano_respeta_la_oferta_multi_lab(smoke_client):
                                     codigo_barras='EAN_OFERTA_TEST_XYZ', orden=1))
         session.add(OfertaMinimo(drogueria_id=prov.id, ean='EAN_OFERTA_TEST_XYZ',
                                  activo=True, tipo_descuento='con_minimo'))
+        session.add(ObsProducto(observer_id=95002, descripcion='PRODUCTO FUERA DE OFERTA XYZ',
+                                laboratorio_observer=95001))
+        session.add(ObsCodigoBarras(id_codigo_barras=950021, producto_observer=95002,
+                                    codigo_barras='EAN_FUERA_OFERTA_XYZ', orden=1))
         session.commit()
         prov_id = prov.id
 
@@ -432,8 +443,15 @@ def test_agregar_producto_a_mano_respeta_la_oferta_multi_lab(smoke_client):
     assert len(data['items']) == 1
     assert data['items'][0]['cubre_lab'] is True
 
-    # Sin oferta cargada para esa droguería, el mismo producto (lab sin
-    # mapeo) sigue bloqueado — el fix no debe volverse un "siempre True".
+    # El producto NO cargado en la oferta también queda editable: alcanza
+    # con que la droguería tenga ALGUNA oferta multi-lab activa.
+    resp_fuera = smoke_client.get(
+        f'/api/pedidos/dia/buscar-producto?q=FUERA+DE+OFERTA+XYZ&prov={prov_id}')
+    data_fuera = resp_fuera.get_json()
+    assert data_fuera['items'][0]['cubre_lab'] is True
+
+    # Sin ninguna oferta cargada para esa droguería, el mismo producto
+    # (lab sin mapeo) sigue bloqueado — el fix no es un "siempre True" global.
     with database.get_db() as session:
         prov2 = Provider(razon_social='DROG SIN OFERTA TEST', cuit='30-DST-1')
         session.add(prov2)
