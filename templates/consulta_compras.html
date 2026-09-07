@@ -70,7 +70,7 @@
             <th class="text-right px-3 py-2">P. Unit.</th>
             <th class="text-right px-3 py-2">% Dto</th>
             <th class="text-right px-3 py-2">Importe</th>
-            <th class="text-center px-3 py-2" title="Recepción de ObServer — solo para Kellerhoff, ver «Verificar ingresos» en el resumen semanal">Ingreso</th>
+            <th class="text-center px-3 py-2" title="Si ESTE artículo entró por el ingreso de ObServer, según el cruce de la factura — solo para Kellerhoff, ver «Verificar ingresos» en el resumen semanal">Ingreso</th>
           </tr>
         </thead>
         <tbody>
@@ -90,11 +90,13 @@
             <td class="px-3 py-1.5 text-right font-mono">{% if f.importe is not none %}${{ '{:,.2f}'.format(f.importe).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}</td>
             <td class="px-3 py-1.5 text-center">
               {% if f.ingreso_verificado is none %}
-              <span class="text-[color:var(--ds-text-mute)]" title="{% if f.numero_remito %}Todavía no se verificó{% else %}No es de Kellerhoff, o sin remito capturado{% endif %}">—</span>
+              <span class="text-[color:var(--ds-text-mute)]" title="{% if f.numero_remito %}La factura todavía no se cruzó contra el ingreso{% if f.ingreso_factura %} (el remito {{ f.numero_remito }} sí tiene recepción, pero eso es de la factura entera, no de este artículo){% endif %}{% else %}No es de Kellerhoff, o sin remito capturado{% endif %}">—</span>
               {% elif f.ingreso_verificado %}
-              <span class="text-[color:var(--ds-mint)] font-bold" title="ObServer tiene recepción para el remito {{ f.numero_remito }}">✓</span>
+              <span class="text-[color:var(--ds-mint)] font-bold" title="Este artículo cruzó sin diferencia contra el ingreso de ObServer{% if f.numero_remito %} (remito {{ f.numero_remito }}){% endif %}">✓</span>
               {% else %}
-              <span class="text-rose-400 font-bold" title="ObServer NO tiene recepción para el remito {{ f.numero_remito }}">✗</span>
+              <a href="{{ url_for('show_results', invoice_id=f.invoice_id) }}"
+                 class="text-rose-400 font-bold" style="text-decoration:none;"
+                 title="Facturado {{ f.cantidad }}, ingresó {{ f.ingreso_cant_erp if f.ingreso_cant_erp is not none else 0 }}{% if f.ingreso_obs %} · {{ f.ingreso_obs }}{% endif %} — ver el cruce completo">✗</a>
               {% endif %}
             </td>
           </tr>

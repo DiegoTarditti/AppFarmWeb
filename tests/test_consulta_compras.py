@@ -122,3 +122,64 @@ def test_export_xlsx():
 def test_export_sin_termino_da_400():
     c = _app().test_client()
     assert c.get('/compras/consulta/export.xlsx').status_code == 400
+
+
+# ── Columna "Ingreso": es del RENGLÓN, no de la factura ───────────────────────
+
+def _seed_ingreso(cant_erp=None, cruzada=True, ingreso_factura=True):
+    """Una factura de Kellerhoff con un renglón, cruzada o no.
+
+    cant_erp=None → el cruce no dejó diferencia para ese EAN (entró bien).
+    cant_erp=0    → el cruce dice que no ingresó nada de ese artículo.
+    """
+    from database import ResumenProveedorItem, StockDifference
+    s = database.SessionLocal()
+    inv = Invoice(numero_factura='00046-00317100', fecha=date(2026, 9, 1),
+                  proveedor_razon='DROGUERIA KELLERHOFF S.A.', proveedor_cuit='30539756490',
+                  tipo_comprobante='FAC', total=301338)
+    if cruzada:
+        inv.erp_carga_id = 12345
+    s.add(inv)
+    s.flush()
+    s.add(InvoiceItem(factura_id=inv.id, codigo_barra='7796285300579',
+                      descripcion='OBETIDE 1,7 MG INY JER PRELL X 4',
+                      cantidad=2, precio_unitario=150669.35, dto=None, importe=301338.70))
+    # El remito TIENE recepción: es lo que hacía que el renglón cobrara ✓ por herencia.
+    s.add(ResumenProveedorItem(resumen_id=1, numero_remito='0047R00333564',
+                               factura_id=inv.id, ingreso_verificado=ingreso_factura))
+    if cant_erp is not None:
+        s.add(StockDifference(factura_id=inv.id, codigo_barra='7796285300579',
+                              descripcion='OBETIDE 1,7 MG INY JER PRELL X 4',
+                              cantidad_factura=2, cantidad_erp=cant_erp,
+                              diferencia=2 - cant_erp,
+                              observaciones='Artículo no encontrado en ERP'))
+    s.commit()
+    return inv
+
+
+def test_ingreso_marca_cruz_aunque_la_factura_tenga_recepcion():
+    """Caso real 00046-00317100 (2026-09-03): el remito tiene recepción — de un
+    MODIALEX — así que la columna daba ✓ al renglón del OBETIDE, que según el
+    cruce ingresó 0 de 2. Un faltante de $301.338,70 con tilde de recibido."""
+    _seed_ingreso(cant_erp=0, ingreso_factura=True)
+    r = _app().test_client().get('/compras/consulta?q=obetide')
+    html = r.get_data(as_text=True)
+    assert 'Facturado 2, ingresó 0' in html
+    assert '✗' in html
+
+
+def test_ingreso_marca_ok_cuando_el_renglon_cruzo_sin_diferencia():
+    _seed_ingreso(cant_erp=None, ingreso_factura=True)
+    r = _app().test_client().get('/compras/consulta?q=obetide')
+    html = r.get_data(as_text=True)
+    assert 'cruzó sin diferencia' in html
+
+
+def test_ingreso_sin_cruzar_no_afirma_nada():
+    """Sin cruce no hay diferencias, y "no hay diferencias" NO es un ✓: sería
+    afirmar que entró porque nunca se comparó."""
+    _seed_ingreso(cant_erp=None, cruzada=False, ingreso_factura=True)
+    r = _app().test_client().get('/compras/consulta?q=obetide')
+    html = r.get_data(as_text=True)
+    assert 'todavía no se cruzó' in html
+    assert 'no de este artículo' in html   # el dato de factura queda en el tooltip

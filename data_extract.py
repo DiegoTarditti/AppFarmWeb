@@ -462,6 +462,50 @@ def compare_invoice_vs_erp(session, factura_id):
     for oid in _obs_id_ambiguos:
         erp_by_obs_id.pop(oid, None)
 
+    # Equivalencia pack↔unidad: cuántas unidades del ingreso vale 1 unidad
+    # facturada. El proveedor puede facturar CAJAS mientras ObServer registra el
+    # ingreso en unidades sueltas — medido el 2026-09-03 sobre las 14 diferencias
+    # reales del cruce automático: OPTAMOX facturado 2 contra 20 en el ingreso
+    # (pack de 10), LOTRIAL 2 contra 20 en dos facturas distintas. No son
+    # faltantes, es la misma mercadería contada en otra unidad.
+    #
+    # Dos fuentes, las dos DECLARADAS — nunca se infiere el factor de que las
+    # cantidades den múltiplo exacto. Ese atajo habría silenciado 5 faltantes
+    # reales de esas mismas 14 filas (TAPON P/OIDOS e ISET, facturado 2 /
+    # recibido 1: "múltiplo exacto x2" para cualquier detector aritmético, y
+    # faltantes de verdad). Regla del proyecto: falso negativo > falso positivo,
+    # y acá el falso positivo esconde justo lo que la alarma busca.
+    from database import PackEquivalencia
+    _eans_factura = {line.codigo_barra for line in invoice_items if line.codigo_barra}
+    pack_equiv = {}
+    if _eans_factura:
+        for pe in (session.query(PackEquivalencia)
+                   .filter(PackEquivalencia.ean_pack.in_(_eans_factura),
+                           PackEquivalencia.cantidad > 1).all()):
+            pack_equiv[pe.ean_pack] = int(pe.cantidad)
+    from helpers import _contenido_por_ean
+    contenido = _contenido_por_ean(session, _eans_factura | set(erp_by_barcode.keys()))
+
+    def _factor_pack(ean_factura, erp_item):
+        """Unidades de ingreso que representa 1 unidad facturada (1 = sin conversión).
+
+        1. `pack_equivalencias` — dato curado a mano, manda.
+        2. `obs_productos.cantidad_envase` — el cociente de contenido entre el
+           producto facturado y el del ingreso. Solo si son productos DISTINTOS
+           (si el ingreso quedó bajo el mismo EAN el cociente es 1 y no hay nada
+           que convertir) y el cociente da entero exacto ≥ 2.
+        """
+        n = pack_equiv.get(ean_factura)
+        if n:
+            return n
+        oid_fac, env_fac = contenido.get(ean_factura, (None, None))
+        oid_erp, env_erp = contenido.get(erp_item.codigo_barra, (None, None))
+        if not env_fac or not env_erp or oid_fac is None or oid_fac == oid_erp:
+            return 1
+        ratio = env_fac / env_erp
+        n = int(round(ratio))
+        return n if (n >= 2 and abs(ratio - n) < 1e-6) else 1
+
     # Resolver cada línea a su ítem de ERP y AGRUPAR: una misma factura puede
     # traer el mismo producto en varios renglones (ej. "2 + 1" bonificación).
     # El ingreso del ERP viene consolidado (cantidad 3), así que hay que sumar
@@ -528,11 +572,21 @@ def compare_invoice_vs_erp(session, factura_id):
         g = grupos[key]
         erp = g['erp']
         cantidad_erp = erp.cantidad if erp else 0
-        diferencia = g['cantidad_factura'] - cantidad_erp
+        # Llevar la factura a la unidad del ingreso antes de restar (ver
+        # _factor_pack). Sin esto, 2 packs de 10 contra 20 unidades daba -18.
+        factor = _factor_pack(g['codigo_barra'], erp) if erp is not None else 1
+        cantidad_factura_conv = g['cantidad_factura'] * factor
+        diferencia = cantidad_factura_conv - cantidad_erp
         if diferencia == 0:
             continue
         if erp is None:
             obs = 'Artículo no encontrado en ERP'
+        elif factor > 1:
+            # Quedó diferencia DESPUÉS de convertir: es real, pero hay que decir
+            # en qué unidad se comparó o los números no cierran a ojo.
+            obs = (f'Diferencia real convirtiendo el pack '
+                   f'(x{factor}: {g["cantidad_factura"]} facturado = '
+                   f'{cantidad_factura_conv} unidades)')
         elif g['match_type'] == 'descripcion':
             obs = 'Coincidencia por descripción (código de barra diferente)'
         elif g['match_type'] == 'mapping':
@@ -545,7 +599,10 @@ def compare_invoice_vs_erp(session, factura_id):
         differences.append({
             'codigo_barra': g['codigo_barra'],
             'descripcion': g['descripcion'],
-            'cantidad_factura': g['cantidad_factura'],
+            # Convertida, no la del PDF: si no, `diferencia` no cierra contra las
+            # dos columnas que se muestran y el operador ve una resta que no da.
+            # El factor queda dicho en `observaciones`.
+            'cantidad_factura': cantidad_factura_conv,
             'cantidad_erp': cantidad_erp,
             'diferencia': diferencia,
             'observaciones': obs,

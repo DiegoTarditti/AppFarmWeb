@@ -74,6 +74,21 @@ def _consultar(session, q, desde, hasta, prov_cuit):
                 'ingreso_verificado': it_r.ingreso_verificado,
             }
 
+    # Diferencias del cruce, por (factura, EAN). ResumenProveedorItem.ingreso_verificado
+    # es de la FACTURA ("el remito tiene alguna recepción"), y esta pantalla lista
+    # ARTÍCULOS: puesto en la fila de un artículo dice algo que no sabe. Caso real
+    # medido el 2026-09-03: la factura 00046-00317100 tiene recepción (1 MODIALEX),
+    # así que su renglón de OBETIDE 1,7 MG mostraba ✓ — y el cruce dice facturado 2 /
+    # ingresó 0, verificado contra DW.Recepciones (ninguna recepción de ese producto
+    # ese día salvo las 16 de OTRA factura). Un faltante de $301.338,70 con tilde de
+    # recibido.
+    from database import StockDifference
+    difs_por_item = {}
+    if fids:
+        for d in (session.query(StockDifference)
+                  .filter(StockDifference.factura_id.in_(fids)).all()):
+            difs_por_item[(d.factura_id, (d.codigo_barra or '').strip())] = d
+
     filas = []
     tot_u = 0
     tot_imp = 0.0
@@ -81,6 +96,14 @@ def _consultar(session, q, desde, hasta, prov_cuit):
     for it, inv in rows:
         dto = float(it.dto) if it.dto is not None else None
         ing = ingreso_por_factura.get(inv.id)
+        # Estado de ingreso DE ESTE RENGLÓN. `erp_carga_id` es lo que marca que la
+        # factura se cruzó alguna vez; sin eso no hay nada que afirmar (la ausencia
+        # de diferencias sería un falso ✓: no hay diferencias porque no se comparó).
+        dif = difs_por_item.get((inv.id, (it.codigo_barra or '').strip()))
+        if inv.erp_carga_id is None:
+            ingreso_item = None
+        else:
+            ingreso_item = dif is None
         filas.append({
             'invoice_id': inv.id,
             'fecha': inv.fecha,
@@ -94,7 +117,12 @@ def _consultar(session, q, desde, hasta, prov_cuit):
             'dto': dto,
             'importe': float(it.importe) if it.importe is not None else None,
             'numero_remito': ing['numero_remito'] if ing else '',
-            'ingreso_verificado': ing['ingreso_verificado'] if ing else None,
+            # De la FACTURA — se sigue exponiendo, pero solo para el tooltip.
+            'ingreso_factura': ing['ingreso_verificado'] if ing else None,
+            # De ESTE renglón: True cruzó sin diferencia, False difiere, None sin cruzar.
+            'ingreso_verificado': ingreso_item,
+            'ingreso_cant_erp': dif.cantidad_erp if dif is not None else None,
+            'ingreso_obs': dif.observaciones if dif is not None else None,
         })
         tot_u += it.cantidad or 0
         tot_imp += float(it.importe or 0)
@@ -129,7 +157,8 @@ def _xlsx(filas, q) -> bytes:
         cell.fill = PatternFill('solid', fgColor='1C1C1E')
         cell.alignment = Alignment(horizontal='center')
         ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
-    _ing_txt = {True: 'OK', False: 'DIFIERE', None: ''}
+    # Mismo criterio que la columna de la pantalla: es del RENGLÓN, no de la factura.
+    _ing_txt = {True: 'OK', False: 'DIFIERE', None: 'SIN CRUZAR'}
     for f in filas:
         ws.append([
             f['fecha'].strftime('%d/%m/%Y') if f['fecha'] else '',

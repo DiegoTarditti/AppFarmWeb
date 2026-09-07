@@ -750,6 +750,42 @@ def _eans_a_observer_ids(session, eans):
     return out
 
 
+def _contenido_por_ean(session, eans):
+    """Bulk EAN → (observer_id, cantidad_envase). Cuánto CONTENIDO trae el envase.
+
+    Reusa `_eans_a_observer_ids` para el EAN→producto (misma cascada de 3 pasos)
+    y le agrega `obs_productos.cantidad_envase`, que es lo que distingue un pack
+    de su unidad en el catálogo de ObServer: el pack de OPTAMOX
+    (7795345123103, "PACK X 10") tiene cantidad_envase=80 comprimidos y la
+    unidad suelta tiene 8 — el cociente 80/8 ES el factor del pack, sin
+    heurística de por medio.
+
+    No confundir con la descripción: ObServer ya trae la presentación dentro
+    del nombre ("COM x 80"), pero eso es texto libre. `cantidad_envase` es la
+    columna, y es la que hay que mirar.
+
+    Returns: dict {ean: (observer_id, cantidad_envase o None)}. Solo incluye
+    los EANs que resolvieron a un observer_id.
+    """
+    ean_a_oid = _eans_a_observer_ids(session, eans)
+    if not ean_a_oid:
+        return {}
+    envase_por_oid = {}
+    try:
+        from database import ObsProducto
+        rows = (session.query(ObsProducto.observer_id, ObsProducto.cantidad_envase)
+                .filter(ObsProducto.observer_id.in_(set(ean_a_oid.values()))).all())
+        for oid, ce in rows:
+            try:
+                ce = float(ce) if ce is not None else None
+            except (TypeError, ValueError):
+                ce = None
+            envase_por_oid[oid] = ce if (ce and ce > 0) else None
+    except Exception:
+        pass
+    return {ean: (oid, envase_por_oid.get(oid)) for ean, oid in ean_a_oid.items()}
+
+
 def _ensure_producto(session, codigo_barra, *, descripcion=None, precio_pvp=None,
                      laboratorio_id=None, fecha_compra=None, codigo_alfabeta=None):
     """Garantiza un Producto local para ``codigo_barra``.
