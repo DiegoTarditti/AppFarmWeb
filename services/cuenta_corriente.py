@@ -113,11 +113,21 @@ def resumen_por_factura(session, provider, inv_ids):
 
 
 def corte_resumenes(session, provider):
-    """Hasta qué fecha llegan los resúmenes importados de este proveedor.
+    """Hasta qué VENCIMIENTO llegan los resúmenes importados de este proveedor.
 
-    Sirve para leer los huecos: una factura POSTERIOR al corte que no está en
-    ningún resumen todavía no fue cobrada (normal); una ANTERIOR que no está es
-    una anomalía — o falta importar ese resumen, o la droguería nunca la incluyó.
+    ⚠ Trampa (costó una vuelta): el resumen semanal de Kellerhoff agrupa
+    comprobantes por FECHA DE VENCIMIENTO, no por fecha de factura — un
+    comprobante emitido hoy con 30 días de plazo entra en un resumen de
+    dentro de un mes, no en el de esta semana. Comparar este corte contra
+    `Invoice.fecha` (en vez de `Invoice.vencimiento`) genera falsos "sin
+    resumen" en masa para todo lo facturado a plazo.
+
+    Sirve para leer los huecos: un comprobante cuyo VENCIMIENTO es posterior
+    al corte y no está en ningún resumen todavía no venció (normal); uno
+    anterior que no está es una anomalía real — o falta importar ese
+    resumen, o la droguería nunca lo incluyó. Sin vencimiento cargado no se
+    puede afirmar nada (ver kellerhoff_cuenta_corriente.html, "vto. sin
+    cargar" vs "sin resumen"). Las NC no tienen vencimiento — no aplica.
     """
     return (session.query(func.max(database.ResumenProveedor.periodo_hasta))
             .filter(database.ResumenProveedor.proveedor_id == provider.id)
