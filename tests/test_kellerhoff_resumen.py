@@ -15,6 +15,7 @@ from helpers import clave_comprobante
 from services.cuenta_corriente import corte_resumenes, movimientos_proveedor
 from services.kellerhoff_resumen import (
     cruce_erp_map,
+    diferencias_count_map,
     estado_item,
     estado_resumen,
     item_tildado,
@@ -606,6 +607,58 @@ def test_verificar_ingresos_guarda_el_cruce_de_cantidades_cuando_difiere(tmp_pat
         assert checks['cruce_erp'] is False
         # Con diferencias de cantidad, el renglón no puede quedar tildado.
         assert item_tildado(it_refrescado, m) is False
+
+
+def test_cruce_erp_map_ignora_articulos_no_encontrados_en_erp(tmp_path):
+    """Un StockDifference que es puro hueco de catálogo ('Artículo no
+    encontrado en ERP') no cuenta como diferencia real — mismo criterio que
+    la alarma (alarmas.check_kellerhoff_diferencias_ingreso, PR #381). Antes
+    de este fix, una factura con solo huecos de catálogo (cero diferencias
+    reales) igual marcaba ✗ acá."""
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        inv = _con_item_factura(session, prov)
+        inv.erp_carga_id = 1
+        session.add(database.StockDifference(
+            factura_id=inv.id, codigo_barra='X', descripcion='Y',
+            cantidad_factura=1, cantidad_erp=0, diferencia=1,
+            observaciones='Artículo no encontrado en ERP'))
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+
+        items = _items(session, res['resumen_id'])
+        m = cruce_erp_map(session, items)
+        assert m[inv.id] is True
+
+        n = diferencias_count_map(session, items)
+        assert n.get(inv.id, 0) == 0
+
+
+def test_diferencias_count_map_cuenta_solo_diferencias_reales(tmp_path):
+    """Mezcla de 1 diferencia real + 1 hueco de catálogo en la misma
+    factura: el conteo (para el badge 'parcial · X de N') solo suma la
+    real, y cruce_erp_map sigue marcando False porque esa sí es genuina."""
+    with database.get_db() as session:
+        prov = _proveedor(session)
+        inv = _con_item_factura(session, prov)
+        inv.erp_carga_id = 1
+        session.add(database.StockDifference(
+            factura_id=inv.id, codigo_barra='A', descripcion='Real',
+            cantidad_factura=10, cantidad_erp=6, diferencia=4,
+            observaciones='No coincide con ERP'))
+        session.add(database.StockDifference(
+            factura_id=inv.id, codigo_barra='B', descripcion='Ruido',
+            cantidad_factura=1, cantidad_erp=0, diferencia=1,
+            observaciones='Artículo no encontrado en ERP'))
+        session.commit()
+        res = _importar(session, prov, tmp_path)
+
+        items = _items(session, res['resumen_id'])
+        n = diferencias_count_map(session, items)
+        assert n[inv.id] == 1
+
+        m = cruce_erp_map(session, items)
+        assert m[inv.id] is False
 
 
 def test_cruce_erp_map_no_incluye_facturas_nunca_cruzadas(tmp_path):
