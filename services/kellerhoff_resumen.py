@@ -208,13 +208,23 @@ def importar_resumen(session, pdf_path, proveedor_id, pdf_filename=None):
 CHECKS = ('comprobante', 'ingreso', 'cruce_erp', 'arca', 'pago')
 
 
+_OBS_NO_ENCONTRADO = 'Artículo no encontrado en ERP'
+
+
 def cruce_erp_map(session, items):
     """{factura_id: True|False} para los ítems con factura_id ligada.
 
     True = tiene ERP cargado y sin diferencias. False = tiene ERP cargado y
     hay diferencias. Ausente del dict = nunca se cruzó nada (mismo criterio
     que /results/<id>, ver templates/results.html) — NO es lo mismo que
-    "coincide", por eso no se completa con False."""
+    "coincide", por eso no se completa con False.
+
+    Excluye observaciones == 'Artículo no encontrado en ERP': es hueco de
+    catálogo (el EAN no se pudo identificar), no una diferencia real de
+    cantidad — mismo criterio que `alarmas.check_kellerhoff_diferencias_ingreso`
+    (medido 2026-09-03: ahí era el 95% del ruido). Antes de este fix, una
+    factura con solo huecos de catálogo (cero diferencias reales) igual
+    marcaba ✗ acá."""
     from database import Invoice, StockDifference
 
     fids = [it.factura_id for it in items if it.factura_id]
@@ -225,8 +235,29 @@ def cruce_erp_map(session, items):
     if not cargados:
         return {}
     con_diffs = {fid for fid, in session.query(StockDifference.factura_id)
-                .filter(StockDifference.factura_id.in_(cargados)).distinct()}
+                .filter(StockDifference.factura_id.in_(cargados),
+                        StockDifference.observaciones != _OBS_NO_ENCONTRADO)
+                .distinct()}
     return {fid: (fid not in con_diffs) for fid in cargados}
+
+
+def diferencias_count_map(session, items):
+    """{factura_id: cantidad de StockDifference reales} — mismo filtro de
+    ruido que `cruce_erp_map` (excluye huecos de catálogo). Complementa a
+    `cruce_erp_map`: donde esa da False, esto da el "cuántas" para mostrar
+    "parcial · X de N" en vez de un ✗ desnudo (ver kellerhoff_resumen_detalle.html)."""
+    from sqlalchemy import func as _func
+
+    from database import StockDifference
+
+    fids = [it.factura_id for it in items if it.factura_id]
+    if not fids:
+        return {}
+    filas = (session.query(StockDifference.factura_id, _func.count(StockDifference.id))
+             .filter(StockDifference.factura_id.in_(fids),
+                     StockDifference.observaciones != _OBS_NO_ENCONTRADO)
+             .group_by(StockDifference.factura_id).all())
+    return dict(filas)
 
 
 def estado_item(item, cruce_erp=None):

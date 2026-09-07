@@ -137,6 +137,26 @@ def init_app(app):
             )
             from helpers import detalle_facturas
             detalle = detalle_facturas(session, facturas_kh)
+
+            # Nº de remito + estado del cruce de ingreso, por factura — la
+            # clave contra la que ObServer registra la recepción es el
+            # remito, no la factura (ver ResumenProveedorItem.numero_remito),
+            # así que tenerlo a la vista acá evita saltar al resumen semanal
+            # solo para ver ese dato. cruce_erp_map espera objetos con
+            # `.factura_id`; Invoice los expone como `.id`, de ahí el adapter.
+            from types import SimpleNamespace
+
+            from services.kellerhoff_resumen import cruce_erp_map
+            fids = [f.id for f in facturas_kh]
+            remito_por_factura = dict(
+                session.query(ResumenProveedorItem.factura_id,
+                             ResumenProveedorItem.numero_remito)
+                .filter(ResumenProveedorItem.factura_id.in_(fids),
+                        ResumenProveedorItem.numero_remito.isnot(None))
+                .all()
+            ) if fids else {}
+            cruce_erp = cruce_erp_map(session, [SimpleNamespace(factura_id=fid) for fid in fids])
+
             facturas_data = [
                 {
                     'id': f.id,
@@ -147,6 +167,8 @@ def init_app(app):
                     'total': f.total,
                     'articulos': f.total_articulos or 0,
                     'origen': f.origen or 'manual',
+                    'numero_remito': remito_por_factura.get(f.id),
+                    'cruce_erp': cruce_erp.get(f.id),
                 }
                 for f in facturas_kh
             ]
@@ -354,13 +376,27 @@ def init_app(app):
                 flash('Resumen no encontrado', 'error')
                 return redirect(url_for('kellerhoff_resumenes'))
 
-            from services.kellerhoff_resumen import cruce_erp_map, estado_item, item_tildado
+            from helpers import conteo_items_por_factura
+            from services.kellerhoff_resumen import (
+                cruce_erp_map,
+                diferencias_count_map,
+                estado_item,
+                item_tildado,
+            )
 
             items_orm = (session.query(ResumenProveedorItem)
                         .filter_by(resumen_id=r.id)
                         .order_by(ResumenProveedorItem.fecha,
                                   ResumenProveedorItem.numero).all())
             cruce_erp = cruce_erp_map(session, items_orm)
+            # "Parcial": ingreso encontrado (vino remito) + cruce con
+            # diferencias es la firma de "vino un remito, pero lo que trajo
+            # no es lo que se facturó" — mostrar cuántos renglones de cuántos
+            # en vez de un ✗ desnudo que no dice si es 1 producto o toda la
+            # factura.
+            n_diffs = diferencias_count_map(session, items_orm)
+            n_totales = conteo_items_por_factura(
+                session, [it.factura_id for it in items_orm if it.factura_id])
             items = []
             for it in items_orm:
                 items.append({
@@ -372,6 +408,8 @@ def init_app(app):
                     'pago_ajuste_id': it.pago_ajuste_id,
                     'tildado': item_tildado(it, cruce_erp),
                     'checks': estado_item(it, cruce_erp),
+                    'n_diffs': n_diffs.get(it.factura_id, 0),
+                    'n_totales': n_totales.get(it.factura_id, 0),
                 })
             n_items, n_tildados, cerrado = _contar_items(session, r.id)
             cab = {

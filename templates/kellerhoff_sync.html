@@ -146,6 +146,8 @@
           <th>Nº Comprobante</th>
           <th class="th-center">Tipo</th>
           <th class="th-center">Detalle</th>
+          <th>Remito</th>
+          <th class="th-center">Ingreso</th>
           <th class="th-right">Total</th>
           <th class="th-center">Origen</th>
           <th></th>
@@ -165,6 +167,19 @@
             <td class="td-center">
               {% if f.detalle %}{% with d = f.detalle %}{% include '_badge_detalle.html' %}{% endwith %}
               {% else %}<span class="mono-xs" style="color:var(--ds-text-mute);">—</span>{% endif %}
+            </td>
+            <td class="mono-xs">
+              {% if f.numero_remito %}{{ f.numero_remito }}
+              {% else %}<span style="color:var(--ds-text-mute);">—</span>{% endif %}
+            </td>
+            <td class="td-center">
+              {% if f.cruce_erp is none %}
+              <span class="mono-xs" style="color:var(--ds-text-mute);">sin chequear</span>
+              {% elif f.cruce_erp %}
+              <span class="badge badge-mint">OK</span>
+              {% else %}
+              <a href="{{ url_for('show_results', invoice_id=f.id) }}" class="badge badge-danger" style="text-decoration:none;">✗ diferencias</a>
+              {% endif %}
             </td>
             <td class="td-right mono-xs" style="{% if f.total and f.total < 0 %}color:var(--ds-danger);{% else %}color:var(--ds-mint);{% endif %}">
               {% if f.total %}$ {{ '%.2f'|format(f.total) }}{% else %}—{% endif %}
