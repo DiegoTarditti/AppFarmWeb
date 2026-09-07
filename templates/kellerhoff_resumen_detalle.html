@@ -221,9 +221,12 @@
               {% if not it.factura_id %}
               <span class="badge" style="background:rgba(120,120,120,.12);color:var(--ds-text-mute);"
                     title="No hay factura ligada de nuestro lado — no hay ítems contra qué cruzar cantidades">N/A</span>
+              {% elif it.checks.ingreso is none %}
+              <span class="badge" style="background:rgba(120,120,120,.12);color:var(--ds-text-mute);"
+                    title="Todavía no se corrió «Verificar ingresos» para este comprobante">sin verificar</span>
               {% elif it.checks.cruce_erp is none %}
               <span class="badge" style="background:rgba(120,120,120,.12);color:var(--ds-text-mute);"
-                    title="Nunca se cruzó (ver «Verificar ingresos» arriba, o cruzalo a mano desde la factura)">sin cruzar</span>
+                    title="Se verificó y ObServer todavía no tiene el ingreso registrado — sin eso no hay nada contra qué cruzar cantidades">sin ingreso</span>
               {% elif it.checks.cruce_erp %}
               <a href="{{ url_for('show_results', invoice_id=it.factura_id) }}"
                  style="color:#22c55e;font-weight:700;text-decoration:none;" title="Coincide, sin diferencias">✓</a>
