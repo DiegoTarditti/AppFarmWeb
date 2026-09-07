@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-07 13:03 · rama `kellerhoff-resumenes-columna-facturas` · commit `26ba5de`
+Generado: 2026-09-07 16:04 · rama `feat/kellerhoff-boton-consulta-compras` · commit `cfbfd8c`
 
 **824 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
 
@@ -880,15 +880,15 @@ Generado: 2026-09-07 13:03 · rama `kellerhoff-resumenes-columna-facturas` · co
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/kellerhoff` | GET | [`kellerhoff_index`](../routes/kellerhoff_sync.py#L228) |
-| `/kellerhoff/cuenta-corriente` | GET | [`kellerhoff_cuenta_corriente`](../routes/kellerhoff_sync.py#L271) |
-| `/kellerhoff/resumen/<int:resumen_id>` | GET | [`kellerhoff_resumen_detalle`](../routes/kellerhoff_sync.py#L374) |
-| `/kellerhoff/resumen/<int:resumen_id>/verificar-ingresos` | POST | [`kellerhoff_resumen_verificar_ingresos`](../routes/kellerhoff_sync.py#L454) |
-| `/kellerhoff/resumenes` | GET | [`kellerhoff_resumenes`](../routes/kellerhoff_sync.py#L309) |
-| `/kellerhoff/resumenes/importar` | POST | [`kellerhoff_resumen_importar`](../routes/kellerhoff_sync.py#L337) |
+| `/kellerhoff/cuenta-corriente` | GET | [`kellerhoff_cuenta_corriente`](../routes/kellerhoff_sync.py#L279) |
+| `/kellerhoff/resumen/<int:resumen_id>` | GET | [`kellerhoff_resumen_detalle`](../routes/kellerhoff_sync.py#L382) |
+| `/kellerhoff/resumen/<int:resumen_id>/verificar-ingresos` | POST | [`kellerhoff_resumen_verificar_ingresos`](../routes/kellerhoff_sync.py#L462) |
+| `/kellerhoff/resumenes` | GET | [`kellerhoff_resumenes`](../routes/kellerhoff_sync.py#L317) |
+| `/kellerhoff/resumenes/importar` | POST | [`kellerhoff_resumen_importar`](../routes/kellerhoff_sync.py#L345) |
 | `/kellerhoff/sync` | GET | [`kellerhoff_sync`](../routes/kellerhoff_sync.py#L109) |
 | `/kellerhoff/sync/ejecutar` | POST | [`kellerhoff_sync_ejecutar`](../routes/kellerhoff_sync.py#L184) |
 | `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L221) |
-| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L489) |
+| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L497) |
 
 ### `routes/laboratorios.py`
 

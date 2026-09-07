@@ -256,6 +256,13 @@ def init_app(app):
                 saldo = resumen['saldo']
                 corte = corte_resumenes(session, prov)
                 resumen_ultimo = corte.strftime('%d/%m/%Y') if corte else None
+            # Atajo a /compras/consulta ya filtrado a Kellerhoff (mismo CUIT que
+            # usa el dropdown de proveedor) y al rango "mes anterior → hoy".
+            _hoy = date.today()
+            _desde = (_hoy.replace(day=1) - timedelta(days=1)).replace(day=1)
+            consulta_url = url_for('consulta_compras', desde=_desde.isoformat(),
+                                   hasta=_hoy.isoformat(),
+                                   proveedor=(prov.cuit or '') if prov is not None else '')
             panel = {
                 'pedidos_abiertos': pedidos_abiertos,
                 'facturas_sin_detalle': facturas_sin_detalle,
@@ -263,6 +270,7 @@ def init_app(app):
                 'saldo': saldo,
                 'resumen_ultimo': resumen_ultimo,
                 'ultimo_sync': _kh_lock_estado().get('ultimo'),
+                'consulta_url': consulta_url,
             }
         return render_template('kellerhoff_index.html', panel=panel)
 
