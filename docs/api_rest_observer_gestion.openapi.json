@@ -1,0 +1,475 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "API Rest ObServer Gestión",
+    "description": "APIs del sistema Rest de ObServer Gestión",
+    "contact": {
+      "name": "Julio Ineichen",
+      "email": "julio.ineichen@praxys.com.ar"
+    },
+    "license": {
+      "name": "Apache 2.0",
+      "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+    },
+    "version": "2.5.5.Build.1"
+  },
+  "servers": [
+    {
+      "url": "https://virtserver.swaggerhub.com/carlos.stizza/ObServerGestion/2.5.5.Build.1",
+      "description": "SwaggerHub API Auto Mocking"
+    },
+    {
+      "url": "http://localhost:60064/api",
+      "description": "Servidor de Producción"
+    }
+  ],
+  "tags": [
+    {
+      "name": "usuarios",
+      "description": "Operaciones habilitados a los usuarios externos"
+    },
+    {
+      "name": "desarrolladores",
+      "description": "Operaciones disponibles para los desarrolladores"
+    }
+  ],
+  "paths": {
+    "/paquetes": {
+      "post": {
+        "tags": [
+          "usuarios"
+        ],
+        "summary": "Crea un nuevo paquete",
+        "description": "Crea un nuevo paquete con los productos a vender y devuelve el IdPaquete creado.",
+        "operationId": "CrearPaquete",
+        "requestBody": {
+          "description": "Datos del paquete a crear",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaqueteDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/inline_response_200"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Los datos enviados del paquete son inválidos. La siguiente es la lista de los errores [Error:1] No se ha innformado el paquete. [Error:2] No se ha informado el dato \"Referencia\". [Error:3] El parámetro \"IdCajero\" (nnn) debe ser un número positivo. [Error:4] El parámetro \"IdCanalDeVenta\" (nnn) debe ser un número positivo. [Error:5] El parámetro \"IdFormaDePago\" (nnn) debe ser un número positivo. [Error:6] El parámetro \"IdCliente\" (nnn) debe ser un número positivo. [Error:7] El parámetro \"CostoEnvio\" (nnn.nn) debe ser un importe positivo mayor que cero. [Error:8] El parámetro \"DomicilioDeEntrega\" no se ha informado. [Error:9] No se han informado los productos. [Error:10] El parámetro \"NumeroRenglon\" (nn) debe ser un número positivo mayor que cero. [Error:11] El parámetro \"NumeroRenglon\" (nn) está fuera de secuencia. Se esperaba el valor xx. [Error:12] El parámetro \"IdProducto\" (nnn) del renglón xxx debe ser un número positivo mayor que cero. [Error:13] El parámetro \"Cantidad\" (nnn) del renglón xxx debe ser un número positivo entre 1 y 99. [Error:14] El parámetro \"Precio\" (nnn.nn) del renglón xxx debe ser un número positivo mayor que cero. [Error:15] El parámetro \"ImporteDescuentoAplicado\" (nnn.nn) del renglón xxx debe ser un número positivo mayor que cero. [Error:16] El parámetro \"PorcentajeDescuentoAplicado\" (nn) del renglón xxx debe ser un número positivo entre 1 y 99. [Error:20] "
+          },
+          "401": {
+            "description": "No autorizado para interactuar con información de paquetes."
+          },
+          "409": {
+            "description": "El paquete no puede ser procesado."
+          }
+        }
+      }
+    },
+    "/productos/{idProducto}": {
+      "get": {
+        "tags": [
+          "usuarios"
+        ],
+        "summary": "Obtiene el producto",
+        "description": "Obtiene el producto por su IdProducto",
+        "operationId": "ObtenerProductoPorId",
+        "parameters": [
+          {
+            "name": "idProducto",
+            "in": "path",
+            "description": "Identificador interno del producto",
+            "required": true,
+            "style": "simple",
+            "explode": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductoDTO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "El parámetro idProducto debe ser un número mayor que cero."
+          },
+          "401": {
+            "description": "No autorizado para obtener información de productos."
+          },
+          "404": {
+            "description": "El producto no existe."
+          }
+        }
+      }
+    },
+    "/productos": {
+      "get": {
+        "tags": [
+          "usuarios"
+        ],
+        "summary": "Obtiene el producto",
+        "description": "Obtiene el producto por código de barras",
+        "operationId": "ObtenerProductoPorCodigoBarras",
+        "parameters": [
+          {
+            "name": "codigoBarras",
+            "in": "query",
+            "description": "Código de barras del producto a obbtener",
+            "required": true,
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductoDTO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "El parámetro codigoBarras no es válido."
+          },
+          "401": {
+            "description": "No autorizado para obtener información de productos."
+          },
+          "404": {
+            "description": "El producto no existe."
+          }
+        }
+      }
+    },
+    "/productos/lote/{numeroLote}": {
+      "get": {
+        "tags": [
+          "usuarios"
+        ],
+        "summary": "Obtiene los productos por lote",
+        "description": "Obtiene un lote de productos sde acuerdo al número de lote",
+        "operationId": "ObtenerProductosPorLotes",
+        "parameters": [
+          {
+            "name": "numeroLote",
+            "in": "path",
+            "description": "Número del lote. Inicia en 1.",
+            "required": true,
+            "style": "simple",
+            "explode": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RespuestaObtenerProductosDTO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "El parámetro numeroLote no es válido."
+          },
+          "401": {
+            "description": "No autorizado para obtener información de productos."
+          },
+          "404": {
+            "description": "El numeroLote es mayor a la cantidad de lotes"
+          }
+        }
+      }
+    },
+    "/stocks/{idProducto}": {
+      "get": {
+        "tags": [
+          "usuarios"
+        ],
+        "summary": "Obtiene el stock consolidado y por farmacia de un producto",
+        "description": "Obtiene el stock consolidado de un producto por su IdProducto y los stocks de cada farmacia (en caso de ser una red)",
+        "operationId": "ObtenerStockPorId",
+        "parameters": [
+          {
+            "name": "idProducto",
+            "in": "path",
+            "description": "Identificador interno del producto",
+            "required": true,
+            "style": "simple",
+            "explode": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockDTO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "El parámetro idProducto debe ser un número mayor que cero."
+          },
+          "401": {
+            "description": "No autorizado para obtener información de stock de productos."
+          },
+          "404": {
+            "description": "El stock o el producto no existe."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PaqueteDTO": {
+        "required": [
+          "idCajero",
+          "productos",
+          "referencia"
+        ],
+        "type": "object",
+        "properties": {
+          "idPaquete": {
+            "type": "integer",
+            "description": "Identifica el paquete en el sistema de Gestión. Para la creación del paquete no se debe informar.",
+            "format": "int32"
+          },
+          "referencia": {
+            "maxLength": 20,
+            "type": "string",
+            "description": "Identifica la operación en el puesto de venta externo"
+          },
+          "idCajero": {
+            "type": "integer",
+            "description": "Identifica el cajero al cual se deriva el paquete para su cobranza.",
+            "format": "int16"
+          },
+          "idCanalDeVenta": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "idTipoFormaDePago": {
+            "type": "integer",
+            "format": "int8"
+          },
+          "idCliente": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "domicilioDeEntrega": {
+            "type": "string"
+          },
+          "costoEnvio": {
+            "type": "number"
+          },
+          "telefono": {
+            "type": "string"
+          },
+          "observaciones": {
+            "type": "string"
+          },
+          "productos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaqueteProductoDTO"
+            }
+          }
+        }
+      },
+      "PaqueteProductoDTO": {
+        "required": [
+          "cantidad",
+          "idProducto",
+          "numeroRenglon"
+        ],
+        "type": "object",
+        "properties": {
+          "numeroRenglon": {
+            "type": "integer",
+            "format": "int16"
+          },
+          "idProducto": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cantidad": {
+            "type": "integer",
+            "format": "int16"
+          },
+          "precio": {
+            "minimum": 0.01,
+            "type": "number",
+            "description": "Corresponde al precio unitario del producto sin el descuento incluído"
+          },
+          "importeDescuentoAplicado": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "porcentajeDescuentoAplicado": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          }
+        }
+      },
+      "ProductoDTO": {
+        "required": [
+          "descripcion",
+          "idProducto",
+          "precio"
+        ],
+        "type": "object",
+        "properties": {
+          "idProducto": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "troquel": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "codigoBarras": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "descripcion": {
+            "type": "string"
+          },
+          "stockSucursal": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "precio": {
+            "type": "number"
+          },
+          "categoria": {
+            "type": "string"
+          },
+          "rubro": {
+            "type": "string"
+          },
+          "subrubro": {
+            "type": "string"
+          },
+          "formaFarmaceutica": {
+            "type": "string"
+          },
+          "accionesTerapeuticas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "laboratorio": {
+            "type": "string"
+          },
+          "nombresDrogas": {
+            "type": "string"
+          }
+        }
+      },
+      "RespuestaObtenerProductosDTO": {
+        "required": [
+          "cantidadLotes"
+        ],
+        "type": "object",
+        "properties": {
+          "actualTS": {
+            "type": "integer",
+            "description": "Devuelve la cantidad total de lotes que deben ser solicitados para competar el listado completo de productos",
+            "format": "int32",
+            "example": 25
+          },
+          "comprobantes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductoDTO"
+            }
+          }
+        }
+      },
+      "StockDTO": {
+        "required": [
+          "idProducto",
+          "stockConsolidado"
+        ],
+        "type": "object",
+        "properties": {
+          "idProducto": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stockConsolidado": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stockFarmacias": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StockFarmaciaDTO"
+            }
+          }
+        }
+      },
+      "StockFarmaciaDTO": {
+        "required": [
+          "idFarmacia",
+          "stock"
+        ],
+        "type": "object",
+        "properties": {
+          "idFarmacia": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nombreFarmacia": {
+            "type": "string"
+          },
+          "stock": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      }
+    }
+  }
+}
