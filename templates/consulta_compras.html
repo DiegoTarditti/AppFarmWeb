@@ -78,7 +78,7 @@
           <tr class="border-t border-[color:var(--ds-surface-border)] hover:bg-white/[0.03]">
             <td class="px-3 py-1.5 whitespace-nowrap">{{ f.fecha.strftime('%d/%m/%Y') if f.fecha else '' }}</td>
             <td class="px-3 py-1.5 whitespace-nowrap font-mono text-xs">
-              <a href="{{ url_for('invoice_items', invoice_id=f.invoice_id) }}" class="text-[color:var(--ds-mint)] hover:underline">{{ f.numero }}</a>
+              <a href="{{ url_for('invoice_items', invoice_id=f.invoice_id, volver=request.full_path) }}" class="text-[color:var(--ds-mint)] hover:underline">{{ f.numero }}</a>
               {% if f.tipo == 'NCR' %}<span class="ml-1 text-[9px] font-bold text-rose-400">NCR</span>{% endif %}
             </td>
             <td class="px-3 py-1.5 text-[color:var(--ds-text-mute)]">{{ f.proveedor }}</td>
@@ -94,7 +94,7 @@
               {% elif f.ingreso_verificado %}
               <span class="text-[color:var(--ds-mint)] font-bold" title="Este artículo cruzó sin diferencia contra el ingreso de ObServer{% if f.numero_remito %} (remito {{ f.numero_remito }}){% endif %}">✓</span>
               {% else %}
-              <a href="{{ url_for('show_results', invoice_id=f.invoice_id) }}"
+              <a href="{{ url_for('show_results', invoice_id=f.invoice_id, volver=request.full_path) }}"
                  class="text-rose-400 font-bold" style="text-decoration:none;"
                  title="Facturado {{ f.cantidad }}, ingresó {{ f.ingreso_cant_erp if f.ingreso_cant_erp is not none else 0 }}{% if f.ingreso_obs %} · {{ f.ingreso_obs }}{% endif %} — ver el cruce completo">✗</a>
               {% endif %}

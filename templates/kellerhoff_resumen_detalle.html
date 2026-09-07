@@ -189,7 +189,7 @@
             </td>
             <td class="td-center">
               {% if it.factura_id %}
-              <a href="{{ url_for('show_results', invoice_id=it.factura_id) }}"
+              <a href="{{ url_for('show_results', invoice_id=it.factura_id, volver=request.full_path) }}"
                  class="badge" style="background:rgba(59,130,246,.14);color:#3b82f6;">{{ 'NC' if it.tipo == 'NCR' else 'factura' }}</a>
               {% elif it.pago_ajuste_id %}
               <span class="badge" style="background:rgba(168,85,247,.14);color:#a855f7;"
@@ -228,16 +228,16 @@
               <span class="badge" style="background:rgba(120,120,120,.12);color:var(--ds-text-mute);"
                     title="Se verificó y ObServer todavía no tiene el ingreso registrado — sin eso no hay nada contra qué cruzar cantidades">sin ingreso</span>
               {% elif it.checks.cruce_erp %}
-              <a href="{{ url_for('show_results', invoice_id=it.factura_id) }}"
+              <a href="{{ url_for('show_results', invoice_id=it.factura_id, volver=request.full_path) }}"
                  style="color:#22c55e;font-weight:700;text-decoration:none;" title="Coincide, sin diferencias">✓</a>
               {% elif it.checks.ingreso %}
-              <a href="{{ url_for('show_results', invoice_id=it.factura_id) }}"
+              <a href="{{ url_for('show_results', invoice_id=it.factura_id, volver=request.full_path) }}"
                  class="badge" style="background:rgba(234,88,12,.14);color:var(--ds-orange);text-decoration:none;"
                  title="Vino un remito, pero lo que trajo no coincide con lo facturado — {{ it.n_diffs }} de {{ it.n_totales }} renglones con diferencia">
                 parcial · {{ it.n_diffs }} de {{ it.n_totales }}
               </a>
               {% else %}
-              <a href="{{ url_for('show_results', invoice_id=it.factura_id) }}"
+              <a href="{{ url_for('show_results', invoice_id=it.factura_id, volver=request.full_path) }}"
                  style="color:#ef4444;font-weight:700;text-decoration:none;" title="Hay diferencias de cantidad — ver detalle">✗</a>
               {% endif %}
             </td>

@@ -178,7 +178,7 @@
               {% elif f.cruce_erp %}
               <span class="badge badge-mint">OK</span>
               {% else %}
-              <a href="{{ url_for('show_results', invoice_id=f.id) }}" class="badge badge-danger" style="text-decoration:none;">✗ diferencias</a>
+              <a href="{{ url_for('show_results', invoice_id=f.id, volver=request.full_path) }}" class="badge badge-danger" style="text-decoration:none;">✗ diferencias</a>
               {% endif %}
             </td>
             <td class="td-right mono-xs" style="{% if f.total and f.total < 0 %}color:var(--ds-danger);{% else %}color:var(--ds-mint);{% endif %}">
@@ -194,7 +194,7 @@
               {% endif %}
             </td>
             <td class="td-right">
-              <a href="{{ url_for('show_results', invoice_id=f.id) }}"
+              <a href="{{ url_for('show_results', invoice_id=f.id, volver=request.full_path) }}"
                  style="font-size:11px;color:var(--ds-text-mute);">ver →</a>
             </td>
           </tr>

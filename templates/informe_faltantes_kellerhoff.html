@@ -138,7 +138,7 @@
           <tr>
             <td>{{ f.fecha.strftime('%d/%m/%Y') if f.fecha else '—' }}</td>
             <td>
-              <a href="{{ url_for('show_results', invoice_id=f.invoice_id) }}"
+              <a href="{{ url_for('show_results', invoice_id=f.invoice_id, volver=request.full_path) }}"
                  class="fk-ean" style="color:var(--ds-mint);text-decoration:none;"
                  title="Ver el cruce completo">{{ f.numero }}</a>
             </td>
