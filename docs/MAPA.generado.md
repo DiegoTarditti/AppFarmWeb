@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-07 11:47 · rama `invoice-items-mostrar-remito` · commit `8a386fb`
+Generado: 2026-09-07 12:03 · rama `fix-sin-resumen-por-vencimiento` · commit `e2c8d1f`
 
 **824 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
 

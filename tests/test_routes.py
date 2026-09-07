@@ -2,6 +2,7 @@
 
 import datetime
 import io
+from datetime import date, timedelta
 import pytest
 import database
 from database import (
@@ -418,6 +419,72 @@ class TestInvoiceItemsRemito:
 
         resp = client.get(f'/invoice/{inv.id}/items')
         assert 'Remito' not in resp.data.decode('utf-8')
+
+
+class TestCuentaCorrienteSinResumen:
+    """El extracto de cuenta corriente marcaba "sin resumen" comparando
+    Invoice.fecha contra el corte — pero el resumen de la droguería agrupa
+    por VENCIMIENTO, no por fecha de factura. Corregido para distinguir:
+    "vto. sin cargar" (no se sabe), "sin resumen" (vence antes del corte y
+    genuinamente no está — anomalía real) y "—" (vence después, normal).
+    Las NC nunca tienen vencimiento y no deben marcarse como anomalía."""
+
+    def _resumen_con_corte(self, session, prov, hasta):
+        from database import ResumenProveedor
+        r = ResumenProveedor(proveedor_id=prov.id, numero='S00-2026',
+                             periodo_desde=hasta - timedelta(days=6),
+                             periodo_hasta=hasta)
+        session.add(r)
+        session.flush()
+        return r
+
+    def test_sin_vencimiento_dice_vto_sin_cargar_no_sin_resumen(self, client, db_session):
+        prov = _make_provider(db_session, razon='CC SIN VENC', cuit='30-CCV-1')
+        self._resumen_con_corte(db_session, prov, date(2026, 8, 28))
+        inv = _make_invoice(db_session, prov, numero='FCV01')
+        db_session.commit()
+
+        resp = client.get(f'/cuentas-corrientes/extracto?proveedor={prov.id}&desde=&hasta=')
+        body = resp.data.decode('utf-8')
+        assert 'vto. sin cargar' in body
+        assert 'sin resumen' not in body
+
+    def test_vencimiento_anterior_al_corte_sin_resumen_es_anomalia(self, client, db_session):
+        prov = _make_provider(db_session, razon='CC ANOMALA', cuit='30-CCA-1')
+        self._resumen_con_corte(db_session, prov, date(2026, 8, 28))
+        inv = _make_invoice(db_session, prov, numero='FCA01')
+        inv.vencimiento = date(2026, 8, 20)
+        db_session.commit()
+
+        resp = client.get(f'/cuentas-corrientes/extracto?proveedor={prov.id}&desde=&hasta=')
+        body = resp.data.decode('utf-8')
+        assert 'sin resumen' in body
+
+    def test_vencimiento_posterior_al_corte_no_marca_nada(self, client, db_session):
+        prov = _make_provider(db_session, razon='CC FUTURO', cuit='30-CCF-1')
+        self._resumen_con_corte(db_session, prov, date(2026, 8, 28))
+        inv = _make_invoice(db_session, prov, numero='FCF01')
+        inv.vencimiento = date(2026, 9, 15)
+        db_session.commit()
+
+        resp = client.get(f'/cuentas-corrientes/extracto?proveedor={prov.id}&desde=&hasta=')
+        body = resp.data.decode('utf-8')
+        assert 'sin resumen' not in body
+        assert 'vto. sin cargar' not in body
+
+    def test_nota_de_credito_nunca_se_marca_como_anomalia(self, client, db_session):
+        prov = _make_provider(db_session, razon='CC NCR', cuit='30-CCN-1')
+        self._resumen_con_corte(db_session, prov, date(2026, 8, 28))
+        inv = Invoice(numero_factura='NCC01', fecha=date(2026, 8, 10),
+                     proveedor_razon=prov.razon_social, proveedor_cuit=prov.cuit,
+                     tipo_comprobante='NCR', total=-100.0)
+        db_session.add(inv)
+        db_session.commit()
+
+        resp = client.get(f'/cuentas-corrientes/extracto?proveedor={prov.id}&desde=&hasta=')
+        body = resp.data.decode('utf-8')
+        assert 'sin resumen' not in body
+        assert 'vto. sin cargar' not in body
 
 
 class TestCompareViewSugerencias:

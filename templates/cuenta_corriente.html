@@ -204,11 +204,18 @@
                                class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors">
                                 {{ m.resumen.numero }}
                             </a>
-                            {% elif m.origen == 'factura' and m.tipo != 'PREFAC' and corte_resumenes and m.fecha and m.fecha <= corte_resumenes %}
-                            {# Anterior al último resumen importado y no figura: o falta ese
-                               resumen, o la droguería nunca lo incluyó. Vale mirarlo. #}
+                            {% elif m.origen == 'factura' and m.tipo not in ('PREFAC', 'NCR') and not m.vencimiento %}
+                            {# El resumen agrupa por VENCIMIENTO, no por fecha de factura — sin
+                               saber a cuándo vence, no se puede afirmar que "falta" el resumen.
+                               Las NC no tienen vencimiento y por diseño nunca están en un
+                               resumen — eso no es una anomalía. #}
+                            <span class="text-[#ccc]" title="Sin vencimiento cargado — no se puede saber si ya debería estar en un resumen">vto. sin cargar</span>
+                            {% elif m.origen == 'factura' and m.tipo not in ('PREFAC', 'NCR') and corte_resumenes and m.vencimiento and m.vencimiento <= corte_resumenes %}
+                            {# Vence antes o igual al corte de los resúmenes importados y no
+                               figura en ninguno: o falta ese resumen, o la droguería nunca lo
+                               incluyó. Vale mirarlo. #}
                             <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700"
-                                  title="No aparece en ningún resumen, y los resúmenes ya cubren hasta el {{ corte_resumenes.strftime('%d/%m/%Y') }}">
+                                  title="Vence el {{ m.vencimiento.strftime('%d/%m/%Y') }} y no aparece en ningún resumen, que ya cubren vencimientos hasta el {{ corte_resumenes.strftime('%d/%m/%Y') }}">
                                 sin resumen
                             </span>
                             {% else %}

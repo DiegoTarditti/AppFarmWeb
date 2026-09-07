@@ -84,12 +84,20 @@
                     background:rgba(59,130,246,.16);color:#93c5fd;text-decoration:none;">
             {{ m.resumen.numero }}
           </a>
-          {% elif m.origen == 'factura' and m.tipo != 'PREFAC' and corte_resumenes and m.fecha and m.fecha <= corte_resumenes %}
-          {# Anterior al último resumen importado y no figura: o falta ese
-             resumen, o Kellerhoff nunca lo incluyó. #}
+          {% elif m.origen == 'factura' and m.tipo not in ('PREFAC', 'NCR') and not m.vencimiento %}
+          {# El resumen agrupa por VENCIMIENTO, no por fecha de factura — sin
+             saber a cuándo vence, no se puede afirmar que "falta" el resumen.
+             Las NCR se excluyen aparte: estructuralmente no tienen vencimiento
+             (no son una deuda a pagar) y por diseño nunca van a estar en
+             ningún resumen — eso no es una anomalía. #}
+          <span style="color:var(--ds-text-mute);" title="Sin vencimiento cargado — no se puede saber si ya debería estar en un resumen">vto. sin cargar</span>
+          {% elif m.origen == 'factura' and m.tipo not in ('PREFAC', 'NCR') and corte_resumenes and m.vencimiento and m.vencimiento <= corte_resumenes %}
+          {# Vence antes o igual al corte de los resúmenes importados y no
+             figura en ninguno: o falta ese resumen, o Kellerhoff nunca lo
+             incluyó. #}
           <span style="display:inline-block;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;
                        background:rgba(234,88,12,.16);color:#fdba74;"
-                title="No aparece en ningún resumen, y los resúmenes ya cubren hasta el {{ corte_resumenes.strftime('%d/%m/%Y') }}">
+                title="Vence el {{ m.vencimiento.strftime('%d/%m/%Y') }} y no aparece en ningún resumen, que ya cubren vencimientos hasta el {{ corte_resumenes.strftime('%d/%m/%Y') }}">
             sin resumen
           </span>
           {% else %}
