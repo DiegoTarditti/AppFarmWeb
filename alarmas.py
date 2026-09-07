@@ -23,6 +23,7 @@ Cache:
 
 Spec: ver `c:/AppSeguimiento/mantenimiento-y-alarmas.md`.
 """
+import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -325,6 +326,19 @@ def invalidar_cache() -> None:
     _cache['alarmas'] = None
 
 
+def _checks_a_correr():
+    """CHECKS completo por default. En un deploy que no genera los datos que
+    algunos checks necesitan (ej. Render: no corre el sync de ObServer vía
+    DockerPanel, así que check_sync_observer_parado siempre da falso
+    positivo) se puede acotar con la env var `ALARMAS_CHECKS_INCLUIR`
+    (nombres de función separados por coma) — ver scripts/README-alarmas.md."""
+    incluir = os.environ.get('ALARMAS_CHECKS_INCLUIR', '').strip()
+    if not incluir:
+        return CHECKS
+    nombres = {n.strip() for n in incluir.split(',') if n.strip()}
+    return [c for c in CHECKS if c.__name__ in nombres]
+
+
 def evaluar_todas(session, force=False) -> list[Alarma]:
     """Corre todos los checks y devuelve solo los que dispararon, ordenados
     por severidad (críticos primero).
@@ -338,7 +352,7 @@ def evaluar_todas(session, force=False) -> list[Alarma]:
         return _cache['alarmas']
 
     alarmas = []
-    for check in CHECKS:
+    for check in _checks_a_correr():
         try:
             alarma = check(session)
             if alarma is not None:
