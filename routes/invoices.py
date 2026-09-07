@@ -861,9 +861,18 @@ def init_app(app):
                 'ok': abs(_suma_items - _esperado) < 1,
                 'con_impuestos': _impuestos > 0,
             }
+            # Nº de remito, si esta factura entró en algún resumen semanal
+            # (Kellerhoff u otro proveedor que use el mismo mecanismo) — es la
+            # clave contra la que ObServer registra la recepción de mercadería.
+            numero_remito = (
+                session.query(database.ResumenProveedorItem.numero_remito)
+                .filter(database.ResumenProveedorItem.factura_id == invoice_id,
+                        database.ResumenProveedorItem.numero_remito.isnot(None))
+                .scalar())
             return render_template('invoice_items.html', invoice=invoice,
                                    items=items, prod_info=prod_info,
-                                   converter_token=converter_token, control=control)
+                                   converter_token=converter_token, control=control,
+                                   numero_remito=numero_remito)
 
     @app.route('/invoice/<int:invoice_id>/refresh-numero', methods=['POST'])
     def invoice_refresh_numero(invoice_id):
