@@ -225,6 +225,43 @@ class ObsCodigoBarras(Base):
     sync_en           = Column(DateTime, default=now_ar)
 
 
+class ObsPrecioListaHist(Base):
+    """Histórico del PVP de ObServer: una fila por cada cambio de precio.
+
+    `ObsProducto.precio_lista` guarda sólo el valor ACTUAL, así que cada sync
+    pisa el anterior y el historial se pierde. Esta tabla lo va juntando: se
+    compara el precio vigente contra el último registrado y se agrega una fila
+    sólo cuando cambió, así que crece con los cambios y no con los productos.
+
+    Para qué sirve: `precio_lista_fecha_vigencia` mostró que cada laboratorio
+    aumenta un día fijo del mes — Gador el 31 (95% de sus 345 productos),
+    Lafedar el 19 (99%), Siegfried el 20 (92%), Casasco el 28 (89%). Pero ese
+    campo es un snapshot: dice cuándo fue el ÚLTIMO aumento de cada producto,
+    no que se repita todos los meses. Con dos o tres meses de esta tabla el
+    patrón queda confirmado o desmentido, y ahí sí se puede usar para decidir
+    cuándo comprar. De paso le da al análisis de rentabilidad un histórico de
+    PVP, que hoy no existe (`producto_precios_hist` es de precios de COMPRA).
+
+    `laboratorio_observer` se guarda desnormalizado a propósito: es el
+    laboratorio al momento del cambio, y un producto reasignado después no
+    debería reescribir la historia.
+    """
+    __tablename__ = 'obs_precios_lista_hist'
+    id                   = Column(Integer, primary_key=True)
+    producto_observer    = Column(Integer, ForeignKey('obs_productos.observer_id'),
+                                  nullable=False, index=True)
+    laboratorio_observer = Column(Integer, nullable=True, index=True)
+    precio_lista         = Column(DECIMAL(14, 2), nullable=False)
+    fecha_vigencia       = Column(DateTime, nullable=True, index=True)
+    variacion_pct        = Column(DECIMAL(8, 4), nullable=True)  # contra el precio anterior
+    detectado_en         = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        # Idempotencia: volver a correr la captura no duplica el mismo cambio.
+        UniqueConstraint('producto_observer', 'fecha_vigencia', 'precio_lista',
+                         name='uq_precio_lista_hist'),
+    )
+
+
 class ObsColegioMedico(Base):
     __tablename__ = 'obs_colegios_medicos'
     observer_id     = Column(Integer, primary_key=True, autoincrement=False)  # DW.ColegiosMedicos.IdColegioMedico
