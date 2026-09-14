@@ -12,9 +12,13 @@ from services.rentabilidad import (
     confianza_costo,
     costos_por_ean,
     margen,
+    sospecha_unidad,
+    ventas_por_ean,
+    ventas_por_obra_social,
 )
 
 HOY = date(2026, 9, 12)
+_NEXT_ID = 0
 
 
 def _compra(session, ean, fecha, precio, cantidad=1, dto=None, tipo='FAC',
@@ -177,11 +181,158 @@ def test_filtra_por_ean():
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
+# ── Cruce con ventas ────────────────────────────────────────────────────────
+
+def _producto(session, observer_id, descripcion='PROD'):
+    session.add(database.ObsProducto(observer_id=observer_id, descripcion=descripcion))
+    session.flush()
+
+
+def _codigo(session, producto, ean, orden=1):
+    global _NEXT_ID
+    _NEXT_ID += 1
+    session.add(database.ObsCodigoBarras(id_codigo_barras=_NEXT_ID,
+                                         producto_observer=producto,
+                                         codigo_barras=ean, orden=orden))
+
+
+def _venta(session, producto, fecha, cantidad, importe, neto=None, os_id=None,
+           particular=True, tipo='V'):
+    global _NEXT_ID
+    _NEXT_ID += 1
+    session.add(database.ObsVentaDetalle(
+        id_producto_vendido=_NEXT_ID,
+        producto_observer=producto, cantidad=cantidad, importe=importe,
+        importe_neto=neto, obra_social_observer=os_id,
+        es_venta_particular=particular, fecha_estadistica=fecha,
+        tipo_operacion=tipo, id_farmacia=1))
+
+
+def test_suma_las_ventas_de_todos_los_productos_que_comparten_ean():
+    """El mismo item esta cargado varias veces en ObServer (el algodon Estrella
+    esta 8 veces). Quedarse con uno solo subcuenta las ventas."""
+    s = database.SessionLocal()
+    try:
+        for pid in (10, 11, 12):
+            _producto(s, pid, f'ALGODON ESTRELLA v{pid}')
+            _codigo(s, pid, '779000111')
+            _venta(s, pid, date(2026, 9, 1), 5, 1000)
+        s.commit()
+        v = ventas_por_ean(s, eans=['779000111'])['779000111']
+        assert v['unidades'] == 15          # no 5
+        assert v['facturacion'] == 3000
+    finally:
+        s.close()
+
+
+def test_un_producto_con_dos_ean_comprados_no_se_cuenta_dos_veces():
+    s = database.SessionLocal()
+    try:
+        _producto(s, 20, 'NIVEA SOFT')
+        _codigo(s, 20, '400111', orden=1)
+        _codigo(s, 20, '400222', orden=2)
+        _venta(s, 20, date(2026, 9, 1), 8, 5000)
+        s.commit()
+        v = ventas_por_ean(s, eans=['400111', '400222'])
+        assert sum(x['unidades'] for x in v.values()) == 8
+        assert list(v) == ['400111']        # el menor, estable entre corridas
+    finally:
+        s.close()
+
+
+def test_las_devoluciones_restan_solas():
+    """Las 'D' vienen con cantidad e importe negativos desde ObServer."""
+    s = database.SessionLocal()
+    try:
+        _producto(s, 30)
+        _codigo(s, 30, '555')
+        _venta(s, 30, date(2026, 9, 1), 10, 20000)
+        _venta(s, 30, date(2026, 9, 5), -2, -4000, tipo='D')
+        s.commit()
+        v = ventas_por_ean(s, eans=['555'])['555']
+        assert v['unidades'] == 8
+        assert v['facturacion'] == 16000
+    finally:
+        s.close()
+
+
+def test_usa_el_importe_neto_y_avisa_cuanto_falta():
+    """`importe` es BRUTO y sobreestima hasta 5,95%. Donde hay neto se usa, y
+    `neto_pct` dice que parte del total tiene el dato bueno."""
+    s = database.SessionLocal()
+    try:
+        _producto(s, 40)
+        _codigo(s, 40, '666')
+        _venta(s, 40, date(2026, 9, 1), 1, 10000, neto=8000)   # con descuento
+        _venta(s, 40, date(2026, 8, 1), 1, 10000)              # sin sincronizar
+        s.commit()
+        v = ventas_por_ean(s, eans=['666'])['666']
+        assert v['facturacion'] == 18000     # 8000 neto + 10000 que cae a bruto
+        assert v['bruto'] == 20000
+        assert abs(v['neto_pct'] - 50) < 0.1
+    finally:
+        s.close()
+
+
+def test_respeta_el_rango_de_fechas():
+    s = database.SessionLocal()
+    try:
+        _producto(s, 50)
+        _codigo(s, 50, '777')
+        _venta(s, 50, date(2026, 6, 1), 3, 3000)
+        _venta(s, 50, date(2026, 9, 1), 7, 7000)
+        s.commit()
+        v = ventas_por_ean(s, desde=date(2026, 7, 1), eans=['777'])['777']
+        assert v['unidades'] == 7
+    finally:
+        s.close()
+
+
+def test_desglose_por_obra_social():
+    s = database.SessionLocal()
+    try:
+        s.add(database.ObsObraSocial(observer_id=1, descripcion='PAMI'))
+        s.add(database.ObsObraSocial(observer_id=2, descripcion='OSDE'))
+        _producto(s, 60)
+        _codigo(s, 60, '888')
+        _venta(s, 60, date(2026, 9, 1), 5, 50000, os_id=1, particular=False)
+        _venta(s, 60, date(2026, 9, 2), 14, 200000, os_id=2, particular=False)
+        _venta(s, 60, date(2026, 9, 3), 2, 20000, particular=True)
+        s.commit()
+        filas = ventas_por_obra_social(s, '888')
+        assert [f['obra_social'] for f in filas] == ['OSDE', 'PAMI', 'Particular']
+        assert filas[0]['unidades'] == 14
+        assert filas[-1]['particular'] is True
+    finally:
+        s.close()
+
+
+def test_sin_ean_no_consulta_nada():
+    s = database.SessionLocal()
+    try:
+        assert ventas_por_ean(s, eans=[]) == {}
+        assert ventas_por_obra_social(s, 'no-existe') == []
+    finally:
+        s.close()
+
+
 def test_margen():
     assert abs(margen(413519, 278269) - 32.7) < 0.1
     assert margen(0, 100) is None
     assert margen(1000, None) is None
     assert margen(21433, 22890) < 0        # se vende por debajo del costo
+
+
+def test_detecta_la_unidad_de_compra_distinta_de_la_de_venta():
+    """Caso real: PROFIL PRIME ZERO se compra de a caja ($41.952) y se vende
+    suelto ($4.500). El margen da −832% y en realidad es ~+22%."""
+    assert sospecha_unidad(4500, 41952) is True
+    # Una pérdida real, aunque grande, no es sospechosa: se muestra tal cual.
+    assert sospecha_unidad(21433, 22890) is False
+    assert sospecha_unidad(413519, 278269) is False
+    # Sin datos no se afirma nada.
+    assert sospecha_unidad(None, 1000) is False
+    assert sospecha_unidad(1000, 0) is False
 
 
 def test_confianza_por_antiguedad_del_costo():

@@ -31,8 +31,15 @@ Tres trampas que este módulo tiene que respetar:
 """
 from __future__ import annotations
 
+from sqlalchemy import case, func
+
 import database
 from services.inflacion import DTO_MAXIMO, PRECIO_MINIMO, ajustar
+
+# Operaciones que forman la venta NETA. Las 'D' (devolución) vienen con cantidad
+# e importe NEGATIVOS, así que restan solas al sumar. Mismo criterio que
+# `sync_ventas_mensuales`, para que los dos números sean comparables.
+TIPOS_VENTA = ('V', 'D')
 
 
 # Una compra que quedó dentro de este % del mejor precio no se marca como
@@ -143,11 +150,146 @@ def _marcar_sobreprecio(costeo, umbral_pct):
         costeo['sobreprecio_total'] += c['sobreprecio']
 
 
+# ── Cruce con ventas ────────────────────────────────────────────────────────
+
+def producto_por_ean(session, eans):
+    """{producto_observer: ean} — a qué EAN comprado se le imputan sus ventas.
+
+    Dos relaciones torcidas que hay que resolver acá:
+
+    · Un EAN puede apuntar a VARIOS productos (6,78% de los que compramos, hasta
+      8 casos). No son productos distintos: es el mismo item cargado varias veces
+      en ObServer — el algodón Estrella está 8 veces, la Nivea Soft 5. Así que
+      las ventas de todos ellos suman al mismo EAN; quedarse con uno solo, que
+      es lo que hace un `DISTINCT ON`, SUBCUENTA las ventas.
+
+    · Un producto puede tener VARIOS EAN (10.766 tienen 2, 2.132 tienen 3). Si
+      compramos bajo dos de ellos, sus ventas se contarían dos veces. Pasa en 6
+      productos, pero se resuelve igual: cada producto se imputa a un solo EAN,
+      el menor, que es estable entre corridas.
+    """
+    q = (session.query(database.ObsCodigoBarras.producto_observer,
+                       database.ObsCodigoBarras.codigo_barras)
+         .filter(database.ObsCodigoBarras.codigo_barras.in_(list(eans))))
+    elegido = {}
+    for producto, ean in q.all():
+        if producto not in elegido or ean < elegido[producto]:
+            elegido[producto] = ean
+    return elegido
+
+
+def ventas_por_ean(session, desde=None, hasta=None, eans=None):
+    """{ean: ventas} — unidades y facturación netas del período.
+
+    La facturación usa `importe_neto` (lo que realmente paga el cliente) y cae a
+    `importe` donde todavía no está sincronizado. `neto_pct` dice qué parte del
+    total tiene el dato bueno: `importe` es BRUTO y sobreestima ~2,1% en general
+    y hasta 5,95% en ventas particulares, así que sin ese aviso el margen queda
+    inflado sin que se note.
+    """
+    if not eans:
+        return {}
+    imputado = producto_por_ean(session, eans)
+    if not imputado:
+        return {}
+
+    V = database.ObsVentaDetalle
+    q = (session.query(
+            V.producto_observer,
+            func.sum(V.cantidad),
+            func.sum(func.coalesce(V.importe_neto, V.importe)),
+            func.sum(case((V.importe_neto.isnot(None), V.importe), else_=0)),
+            func.sum(V.importe),
+            func.sum(func.coalesce(V.importe_a_cargo_os, 0)))
+         .filter(V.producto_observer.in_(list(imputado)),
+                 V.tipo_operacion.in_(TIPOS_VENTA)))
+    if desde:
+        q = q.filter(V.fecha_estadistica >= desde)
+    if hasta:
+        q = q.filter(V.fecha_estadistica <= hasta)
+
+    out = {}
+    for producto, unidades, facturacion, con_neto, bruto, a_cargo_os in q.group_by(V.producto_observer):
+        ean = imputado[producto]
+        d = out.setdefault(ean, {'ean': ean, 'unidades': 0.0, 'facturacion': 0.0,
+                                 'bruto': 0.0, '_con_neto': 0.0, 'a_cargo_os': 0.0})
+        d['unidades'] += float(unidades or 0)
+        d['facturacion'] += float(facturacion or 0)
+        d['bruto'] += float(bruto or 0)
+        d['_con_neto'] += float(con_neto or 0)
+        d['a_cargo_os'] += float(a_cargo_os or 0)
+
+    for d in out.values():
+        d['precio_promedio'] = d['facturacion'] / d['unidades'] if d['unidades'] else None
+        d['neto_pct'] = 100 * d['_con_neto'] / d['bruto'] if d['bruto'] else 0.0
+        del d['_con_neto']
+    return out
+
+
+def ventas_por_obra_social(session, ean, desde=None, hasta=None):
+    """Desglose de un producto por convenio — el mismo deja distinto margen según quién cubre.
+
+    Importa porque el 47,5% de las ventas son por obra social: un producto puede
+    dejar 36% con una y perder plata con otra, y eso no se ve en el total.
+
+    `a_cargo_os` es lo que el convenio DEBERÍA pagar, no lo que liquidó: los
+    débitos por recetas devueltas no están conciliados (la tabla existe y está
+    vacía). Para el margen real de un convenio, es una cota superior.
+    """
+    imputado = producto_por_ean(session, [ean])
+    if not imputado:
+        return []
+
+    V = database.ObsVentaDetalle
+    q = (session.query(
+            V.obra_social_observer, V.es_venta_particular,
+            func.sum(V.cantidad),
+            func.sum(func.coalesce(V.importe_neto, V.importe)),
+            func.sum(func.coalesce(V.importe_a_cargo_os, 0)))
+         .filter(V.producto_observer.in_(list(imputado)),
+                 V.tipo_operacion.in_(TIPOS_VENTA)))
+    if desde:
+        q = q.filter(V.fecha_estadistica >= desde)
+    if hasta:
+        q = q.filter(V.fecha_estadistica <= hasta)
+
+    nombres = dict(session.query(database.ObsObraSocial.observer_id,
+                                 database.ObsObraSocial.descripcion).all())
+    filas = []
+    for os_id, particular, unidades, facturacion, a_cargo_os in q.group_by(
+            V.obra_social_observer, V.es_venta_particular):
+        filas.append({
+            'obra_social_id': os_id,
+            'obra_social': 'Particular' if particular else nombres.get(os_id, 'Sin identificar'),
+            'particular': bool(particular),
+            'unidades': float(unidades or 0),
+            'facturacion': float(facturacion or 0),
+            'a_cargo_os': float(a_cargo_os or 0),
+        })
+    return sorted(filas, key=lambda f: -f['facturacion'])
+
+
 def margen(precio_venta, costo):
     """% que queda sobre el precio de venta. None si falta alguno de los dos."""
     if not precio_venta or costo is None:
         return None
     return 100 * (float(precio_venta) - float(costo)) / float(precio_venta)
+
+
+def sospecha_unidad(precio_venta, costo, ratio=0.5):
+    """True si el precio de venta está tan por debajo del costo que lo más
+    probable es que la unidad de compra no sea la de venta.
+
+    Caso real: "PROFIL PRIME ZERO 12 X 3" se compra de a 1 caja a $41.952 y se
+    vende como "PRIME ZERO ENV x 3" a $4.500 — el margen sale −832% cuando en
+    realidad la caja trae 12 y el margen es ~+22%. No se corrige solo porque el
+    tamaño del pack no está en ningún campo: se marca para que nadie decida con
+    ese número. Son 2 de los 90 productos con margen negativo; los otros 83 son
+    pérdidas plausibles y hay que mostrarlas como tales.
+    """
+    if not precio_venta or not costo or costo <= 0:
+        return False
+    return float(precio_venta) < float(costo) * ratio
 
 
 def confianza_costo(dias):

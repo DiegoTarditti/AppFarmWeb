@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-14 08:48 · rama `feat/indice-inflacion-compras` · commit `27c8fec`
+Generado: 2026-09-14 08:55 · rama `feat/indice-inflacion-compras` · commit `40b0b57`
 
 **825 rutas** en 81 archivos · **135 modelos** · **22 syncs** · **44 services** · **11 parsers**
 
