@@ -2602,6 +2602,32 @@ class ProductoPrecioHist(Base):
     )
 
 
+class IndiceInflacion(Base):
+    """Variación mensual del COSTO DE COMPRA, para poder comparar precios de
+    fechas distintas en pesos de hoy.
+
+    Por qué no alcanza un promedio de precios por mes: el mix cambia (un mes con
+    más Ozempic sube el promedio sin que nada haya aumentado). Se mide como un
+    IPC de verdad — la variación del MISMO producto entre meses consecutivos,
+    mediana de todos los pares — así el mix no lo ensucia. Medido sobre 2026:
+    +1,96% jul→ago (471 pares) y +1,00% ago→sep (497).
+
+    Por qué importa: sin ajustar, el "sobreprecio" del trimestre daba $4.269.436
+    y ajustado da $2.241.314. Los $2.028.122 de diferencia eran inflación, no
+    malas compras — se le estarían marcando errores a quien compra que no cometió.
+
+    `origen='manual'` es un valor cargado a mano (por ejemplo un índice externo
+    de medicamentos): el recálculo automático NO lo pisa.
+    """
+    __tablename__ = 'indice_inflacion'
+    periodo       = Column(String(7), primary_key=True)     # 'YYYY-MM'
+    variacion_pct = Column(DECIMAL(8, 4), nullable=False)   # % contra el mes anterior
+    origen        = Column(String(10), nullable=False, default='propio')  # propio | manual
+    pares         = Column(Integer, nullable=True)          # productos comparados (sólo 'propio')
+    nota          = Column(String(200), nullable=True)
+    calculado_en  = Column(DateTime, default=now_ar)
+
+
 class AnalisisSesion(Base):
     """Registro de cada ejecución de análisis de ventas."""
     __tablename__ = 'analisis_sesiones'

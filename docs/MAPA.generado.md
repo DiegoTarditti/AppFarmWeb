@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-14 08:04 · rama `feat/importe-neto-ventas` · commit `996dd01`
+Generado: 2026-09-14 08:40 · rama `main` · commit `012c504`
 
-**825 rutas** en 81 archivos · **134 modelos** · **22 syncs** · **42 services** · **11 parsers**
+**825 rutas** en 81 archivos · **135 modelos** · **22 syncs** · **43 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -44,15 +44,15 @@ Generado: 2026-09-14 08:04 · rama `feat/importe-neto-ventas` · commit `996dd01
 |---|---|---|
 | `alarmas_notificadas` | `AlarmaNotificada` | [967](../database.py#L967) |
 | `analisis_ia_cache` | `AnalisisIaCache` | [2451](../database.py#L2451) |
-| `analisis_sesiones` | `AnalisisSesion` | [2605](../database.py#L2605) |
+| `analisis_sesiones` | `AnalisisSesion` | [2631](../database.py#L2631) |
 | `anunciantes` | `Anunciante` | [2329](../database.py#L2329) |
-| `api_keys` | `ApiKey` | [3264](../database.py#L3264) |
+| `api_keys` | `ApiKey` | [3290](../database.py#L3290) |
 | `archivos_compartidos` | `ArchivoCompartido` | [1274](../database.py#L1274) |
 | `backup_log` | `BackupLog` | [1155](../database.py#L1155) |
 | `barcode_mappings` | `BarcodeMapping` | [2058](../database.py#L2058) |
-| `bot_conversaciones` | `BotConversacion` | [3071](../database.py#L3071) |
-| `bot_interacciones` | `BotInteraccion` | [3239](../database.py#L3239) |
-| `bot_mensajes` | `BotMensaje` | [3133](../database.py#L3133) |
+| `bot_conversaciones` | `BotConversacion` | [3097](../database.py#L3097) |
+| `bot_interacciones` | `BotInteraccion` | [3265](../database.py#L3265) |
+| `bot_mensajes` | `BotMensaje` | [3159](../database.py#L3159) |
 | `cadencia_lab_snapshot` | `CadenciaLabSnapshot` | [2407](../database.py#L2407) |
 | `cadetes` | `Cadete` | [779](../database.py#L779) |
 | `ciudades` | `Ciudad` | [589](../database.py#L589) |
@@ -65,7 +65,7 @@ Generado: 2026-09-14 08:04 · rama `feat/importe-neto-ventas` · commit `996dd01
 | `cron_log` | `CronLog` | [949](../database.py#L949) |
 | `cuentas_pago` | `CuentaPago` | [644](../database.py#L644) |
 | `descuentos_base` | `DescuentoBase` | [1370](../database.py#L1370) |
-| `devolucion_receta` | `DevolucionReceta` | [2821](../database.py#L2821) |
+| `devolucion_receta` | `DevolucionReceta` | [2847](../database.py#L2847) |
 | `documentos_pendientes` | `DocumentoPendiente` | [2371](../database.py#L2371) |
 | `domicilios_cliente` | `DomicilioCliente` | [712](../database.py#L712) |
 | `envio_config` | `EnvioConfig` | [741](../database.py#L741) |
@@ -74,9 +74,9 @@ Generado: 2026-09-14 08:04 · rama `feat/importe-neto-ventas` · commit `996dd01
 | `equivalencias_compra` | `EquivalenciaCompra` | [2553](../database.py#L2553) |
 | `equivalencias_proveedor` | `EquivalenciaProveedor` | [2005](../database.py#L2005) |
 | `erp_stock` | `ErpStock` | [1928](../database.py#L1928) |
-| `estacionalidad_escenarios` | `EstacionalidadEscenario` | [2890](../database.py#L2890) |
-| `estacionalidad_productos` | `EstacionalidadProducto` | [2922](../database.py#L2922) |
-| `eventos_sla` | `EventoSLA` | [3196](../database.py#L3196) |
+| `estacionalidad_escenarios` | `EstacionalidadEscenario` | [2916](../database.py#L2916) |
+| `estacionalidad_productos` | `EstacionalidadProducto` | [2948](../database.py#L2948) |
+| `eventos_sla` | `EventoSLA` | [3222](../database.py#L3222) |
 | `export_templates` | `ExportTemplate` | [1195](../database.py#L1195) |
 | `factura_faltante` | `FacturaFaltante` | [1812](../database.py#L1812) |
 | `factura_items` | `InvoiceItem` | [1791](../database.py#L1791) |
@@ -84,7 +84,8 @@ Generado: 2026-09-14 08:04 · rama `feat/importe-neto-ventas` · commit `996dd01
 | `farmacias` | `Farmacia` | [1099](../database.py#L1099) |
 | `formas_pago` | `FormaPago` | [635](../database.py#L635) |
 | `home_card_clicks` | `HomeCardClick` | [2501](../database.py#L2501) |
-| `informe_enviado` | `InformeEnviado` | [3182](../database.py#L3182) |
+| `indice_inflacion` | `IndiceInflacion` | [2605](../database.py#L2605) |
+| `informe_enviado` | `InformeEnviado` | [3208](../database.py#L3208) |
 | `invoice_batches` | `InvoiceBatch` | [1710](../database.py#L1710) |
 | `kellerhoff_catalogo` | `KellerhoffCatalogo` | [1610](../database.py#L1610) |
 | `kellerhoff_equivalencia` | `KellerhoffEquivalencia` | [1634](../database.py#L1634) |
@@ -92,10 +93,10 @@ Generado: 2026-09-14 08:04 · rama `feat/importe-neto-ventas` · commit `996dd01
 | `kellerhoff_ofertas_fuente` | `KellerhoffOfertasFuente` | [1666](../database.py#L1666) |
 | `laboratorio_drogueria` | `LaboratorioDrogueria` | [1474](../database.py#L1474) |
 | `laboratorios` | `Laboratorio` | [91](../database.py#L91) |
-| `minimos_manuales` | `MinimoManual` | [3430](../database.py#L3430) |
+| `minimos_manuales` | `MinimoManual` | [3456](../database.py#L3456) |
 | `modulo_packs` | `ModuloPack` | [2213](../database.py#L2213) |
 | `modulos` | `Modulo` | [2200](../database.py#L2200) |
-| `motivo_devolucion` | `MotivoDevolucion` | [2669](../database.py#L2669) |
+| `motivo_devolucion` | `MotivoDevolucion` | [2695](../database.py#L2695) |
 | `mv_refresh_log` | `MvRefreshLog` | [1141](../database.py#L1141) |
 | `obs_categorias_clientes` | `ObsCategoriaCliente` | [349](../database.py#L349) |
 | `obs_clientes` | `ObsCliente` | [478](../database.py#L478) |
@@ -112,7 +113,7 @@ Generado: 2026-09-14 08:04 · rama `feat/importe-neto-ventas` · commit `996dd01
 | `obs_operadores` | `ObsOperador` | [330](../database.py#L330) |
 | `obs_planes` | `ObsPlan` | [374](../database.py#L374) |
 | `obs_productos` | `ObsProducto` | [142](../database.py#L142) |
-| `obs_rowa_productos` | `ObsRowaProducto` | [3400](../database.py#L3400) |
+| `obs_rowa_productos` | `ObsRowaProducto` | [3426](../database.py#L3426) |
 | `obs_rubros` | `ObsRubro` | [120](../database.py#L120) |
 | `obs_stock` | `ObsStock` | [181](../database.py#L181) |
 | `obs_stock_snapshot_diario` | `ObsStockSnapshotDiario` | [1176](../database.py#L1176) |
@@ -120,9 +121,9 @@ Generado: 2026-09-14 08:04 · rama `feat/importe-neto-ventas` · commit `996dd01
 | `obs_sync_log` | `ObsSyncLog` | [934](../database.py#L934) |
 | `obs_ventas_detalle` | `ObsVentaDetalle` | [258](../database.py#L258) |
 | `obs_ventas_mensuales` | `ObsVentaMensual` | [193](../database.py#L193) |
-| `ofertas_bot` | `OfertaBot` | [3146](../database.py#L3146) |
+| `ofertas_bot` | `OfertaBot` | [3172](../database.py#L3172) |
 | `ofertas_minimo` | `OfertaMinimo` | [1202](../database.py#L1202) |
-| `ofertas_registro` | `OfertaRegistro` | [3158](../database.py#L3158) |
+| `ofertas_registro` | `OfertaRegistro` | [3184](../database.py#L3184) |
 | `pack_equivalencias` | `PackEquivalencia` | [2515](../database.py#L2515) |
 | `pago_aplicaciones` | `PagoAplicacion` | [675](../database.py#L675) |
 | `pagos` | `Pago` | [658](../database.py#L658) |
@@ -137,9 +138,9 @@ Generado: 2026-09-14 08:04 · rama `feat/importe-neto-ventas` · commit `996dd01
 | `pedido_obs_presets` | `PedidoObsPreset` | [767](../database.py#L767) |
 | `pedidos` | `Pedido` | [2228](../database.py#L2228) |
 | `pedidos_reparto` | `PedidoReparto` | [821](../database.py#L821) |
-| `plantilla_campos` | `PlantillaCampo` | [2634](../database.py#L2634) |
-| `plantillas` | `Plantilla` | [2649](../database.py#L2649) |
-| `plantillas_exportacion` | `PlantillaExportacion` | [2620](../database.py#L2620) |
+| `plantilla_campos` | `PlantillaCampo` | [2660](../database.py#L2660) |
+| `plantillas` | `Plantilla` | [2675](../database.py#L2675) |
+| `plantillas_exportacion` | `PlantillaExportacion` | [2646](../database.py#L2646) |
 | `procesos_compra` | `ProcesoCompra` | [2297](../database.py#L2297) |
 | `product_analytics` | `ProductAnalytics` | [2386](../database.py#L2386) |
 | `producto_atributos` | `ProductoAtributo` | [2153](../database.py#L2153) |
@@ -153,16 +154,16 @@ Generado: 2026-09-14 08:04 · rama `feat/importe-neto-ventas` · commit `996dd01
 | `proveedores` | `Provider` | [1333](../database.py#L1333) |
 | `reclamo_items` | `ClaimItem` | [1985](../database.py#L1985) |
 | `reclamos` | `Claim` | [1967](../database.py#L1967) |
-| `rendicion_grupo` | `RendicionGrupo` | [2763](../database.py#L2763) |
-| `rendicion_grupo_os` | `RendicionGrupoOS` | [2784](../database.py#L2784) |
-| `rendicion_lote` | `RendicionLote` | [2687](../database.py#L2687) |
-| `respuestas_rapidas` | `RespuestaRapida` | [3171](../database.py#L3171) |
+| `rendicion_grupo` | `RendicionGrupo` | [2789](../database.py#L2789) |
+| `rendicion_grupo_os` | `RendicionGrupoOS` | [2810](../database.py#L2810) |
+| `rendicion_lote` | `RendicionLote` | [2713](../database.py#L2713) |
+| `respuestas_rapidas` | `RespuestaRapida` | [3197](../database.py#L3197) |
 | `resumen_proveedor` | `ResumenProveedor` | [1833](../database.py#L1833) |
 | `resumen_proveedor_item` | `ResumenProveedorItem` | [1890](../database.py#L1890) |
-| `rol_filtro_obra_social` | `RolFiltroObraSocial` | [2799](../database.py#L2799) |
-| `rowa_cargas` | `RowaCarga` | [3348](../database.py#L3348) |
-| `rowa_nuevos` | `RowaNuevo` | [3381](../database.py#L3381) |
-| `rowa_snapshots` | `RowaSnapshot` | [3334](../database.py#L3334) |
+| `rol_filtro_obra_social` | `RolFiltroObraSocial` | [2825](../database.py#L2825) |
+| `rowa_cargas` | `RowaCarga` | [3374](../database.py#L3374) |
+| `rowa_nuevos` | `RowaNuevo` | [3407](../database.py#L3407) |
+| `rowa_snapshots` | `RowaSnapshot` | [3360](../database.py#L3360) |
 | `rutas_reparto` | `RutaReparto` | [803](../database.py#L803) |
 | `stock_differences` | `StockDifference` | [1950](../database.py#L1950) |
 | `sucursales` | `Sucursal` | [1314](../database.py#L1314) |
@@ -173,9 +174,9 @@ Generado: 2026-09-14 08:04 · rama `feat/importe-neto-ventas` · commit `996dd01
 | `usuario_farmacias` | `UsuarioFarmacia` | [1123](../database.py#L1123) |
 | `usuarios` | `Usuario` | [2464](../database.py#L2464) |
 | `usuarios_pedidos` | `UsuarioPedido` | [1400](../database.py#L1400) |
-| `vendedor_bookmark` | `VendedorBookmark` | [2745](../database.py#L2745) |
-| `web_producto_imagen` | `WebProductoImagen` | [3318](../database.py#L3318) |
-| `web_rubros_publicados` | `WebRubroPublicado` | [3296](../database.py#L3296) |
+| `vendedor_bookmark` | `VendedorBookmark` | [2771](../database.py#L2771) |
+| `web_producto_imagen` | `WebProductoImagen` | [3344](../database.py#L3344) |
+| `web_rubros_publicados` | `WebRubroPublicado` | [3322](../database.py#L3322) |
 
 ## Rutas
 
@@ -1427,6 +1428,7 @@ Generado: 2026-09-14 08:04 · rama `feat/importe-neto-ventas` · commit `996dd01
 | [`farmacia.py`](../services/farmacia.py) | Resolución de la farmacia operativa (ObServer `id_farmacia`). |
 | [`flags.py`](../services/flags.py) | Source of truth de la presentación de flags (comportamientos excepcionales). |
 | [`horarios.py`](../services/horarios.py) | Helper para horarios de reparto por droguería. |
+| [`inflacion.py`](../services/inflacion.py) | Índice de inflación del costo de compra, y ajuste de precios a pesos de hoy. |
 | [`informes_bot.py`](../services/informes_bot.py) | Informes proactivos vía Telegram (mismo bot que el asistente). |
 | [`kellerhoff_analizador.py`](../services/kellerhoff_analizador.py) | Clasificador de comprobantes del portal Kellerhoff. |
 | [`kellerhoff_bulk_pdf.py`](../services/kellerhoff_bulk_pdf.py) | Parser del export masivo de comprobantes de Kellerhoff (un PDF con muchas |
