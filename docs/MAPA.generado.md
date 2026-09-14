@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-14 11:48 · rama `main` · commit `68df313`
+Generado: 2026-09-14 13:21 · rama `fix/rentabilidad-en-el-menu` · commit `d151d0f`
 
 **827 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **45 services** · **11 parsers**
 
@@ -1283,7 +1283,7 @@ Generado: 2026-09-14 11:48 · rama `main` · commit `68df313`
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/rentabilidad` | GET | [`rentabilidad_ranking`](../routes/rentabilidad.py#L45) |
-| `/rentabilidad/<ean>` | GET | [`rentabilidad_detalle`](../routes/rentabilidad.py#L85) |
+| `/rentabilidad/<ean>` | GET | [`rentabilidad_detalle`](../routes/rentabilidad.py#L91) |
 
 ### `routes/reparto.py`
 

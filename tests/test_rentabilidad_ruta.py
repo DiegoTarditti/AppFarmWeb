@@ -158,6 +158,52 @@ def test_avisa_de_la_pantalla_hermana_y_por_que_difieren():
 
 # ── Ficha de un producto ─────────────────────────────────────────────────────
 
+def _venta_os(s, pid, fecha, cantidad, importe, os_id=125):
+    """Venta por obra social con cobertura 100%: el paciente paga 0 y todo
+    queda 'a cargo' del convenio -- que liquida fuera de ObServer."""
+    if not s.get(database.ObsObraSocial, os_id):
+        s.add(database.ObsObraSocial(observer_id=os_id, descripcion='PAMI'))
+    _ID[0] += 1
+    s.add(database.ObsVentaDetalle(
+        id_producto_vendido=_ID[0], producto_observer=pid, cantidad=cantidad,
+        importe=importe, importe_neto=importe, importe_a_cargo_os=importe,
+        obra_social_observer=os_id, es_venta_particular=False,
+        fecha_estadistica=fecha, tipo_operacion='V', id_farmacia=1))
+
+
+def test_avisa_que_la_plata_de_obra_social_no_esta_cobrada():
+    """Las liquidaciones de PAMI y las OS no pasan por ObServer: sobre esa
+    facturacion el margen no se puede afirmar, y la pantalla tiene que decirlo."""
+    s = database.SessionLocal()
+    _catalogo(s, 70, '7798058930969', 'INSULINA NOVORAPID FLEXPEN')
+    _compra(s, '7798058930969', date.today(), 313089, cantidad=8)
+    _venta_os(s, 70, date.today(), 30, 7448875)
+    s.commit()
+    s.close()
+
+    c = _app().test_client()
+    for url in ('/rentabilidad', '/rentabilidad/7798058930969'):
+        html = c.get(url).get_data(as_text=True)
+        assert 'no es plata cobrada' in html, url
+        assert 'no pasan por ObServer' in html, url
+
+
+def test_no_pinta_en_rojo_el_margen_de_una_obra_social():
+    """Afirmar perdida sobre plata que no vemos liquidar seria mentir: la fila
+    del convenio va en gris y marcada, no en rojo como una perdida confirmada."""
+    s = database.SessionLocal()
+    _catalogo(s, 70, '7798058930969', 'INSULINA NOVORAPID FLEXPEN')
+    _compra(s, '7798058930969', date.today(), 313089, cantidad=8)
+    _venta_os(s, 70, date.today(), 30, 7448875)   # margen aparente -26%
+    s.commit()
+    s.close()
+
+    html = _app().test_client().get('/rentabilidad/7798058930969').get_data(as_text=True)
+    assert 'PAMI' in html
+    assert 'sin verificar' in html
+    assert 'Margen aparente' in html
+
+
 def test_la_pantalla_esta_en_el_menu():
     """Se habia construido sin entrada en el sidebar: solo se llegaba tipeando
     la URL, y el nav_active de los templates no iluminaba nada."""
@@ -204,7 +250,7 @@ def test_la_ficha_muestra_el_desglose_por_obra_social():
 
     html = _app().test_client().get('/rentabilidad/888').get_data(as_text=True)
     assert 'OSDE' in html
-    assert 'Margen por obra social' in html
+    assert 'Facturación por obra social' in html
 
 
 def test_la_ficha_de_un_ean_sin_compras_da_404():
