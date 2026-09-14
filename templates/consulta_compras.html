@@ -70,6 +70,8 @@
             <th class="text-right px-3 py-2">P. Unit.</th>
             <th class="text-right px-3 py-2">% Dto</th>
             <th class="text-right px-3 py-2">Importe</th>
+            <th class="text-right px-3 py-2 col-monroe hidden" title="Lo que cuesta ese producto en Monroe HOY. Ojo: compararlo contra una compra vieja infla la diferencia, porque en el medio hubo aumentos.">Monroe hoy</th>
+            <th class="text-right px-3 py-2 col-monroe hidden" title="Diferencia entre lo que pagaste y lo que cuesta hoy en Monroe. En rojo cuando Monroe está más barato: es donde conviene mirar.">Dif.</th>
             <th class="text-center px-3 py-2" title="Si ESTE artículo entró por el ingreso de ObServer, según el cruce de la factura — solo para Kellerhoff, ver «Verificar ingresos» en el resumen semanal">Ingreso</th>
           </tr>
         </thead>
@@ -88,6 +90,10 @@
             <td class="px-3 py-1.5 text-right font-mono">{% if f.precio_unitario is not none %}${{ '{:,.2f}'.format(f.precio_unitario).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}</td>
             <td class="px-3 py-1.5 text-right font-mono {% if f.dto %}text-[color:var(--ds-mint)] font-bold{% else %}text-[color:var(--ds-text-mute)]{% endif %}">{% if f.dto %}{{ '%g'|format(f.dto) }}%{% else %}—{% endif %}</td>
             <td class="px-3 py-1.5 text-right font-mono">{% if f.importe is not none %}${{ '{:,.2f}'.format(f.importe).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}</td>
+            <td class="px-3 py-1.5 text-right font-mono col-monroe hidden celda-monroe"
+                data-ean="{{ f.codigo_barra }}"
+                data-pagado="{{ f.precio_unitario if f.precio_unitario is not none else '' }}">—</td>
+            <td class="px-3 py-1.5 text-right font-mono col-monroe hidden celda-dif">—</td>
             <td class="px-3 py-1.5 text-center">
               {% if f.ingreso_verificado is none %}
               <span class="text-[color:var(--ds-text-mute)]" title="{% if f.numero_remito %}La factura todavía no se cruzó contra el ingreso{% if f.ingreso_factura %} (el remito {{ f.numero_remito }} sí tiene recepción, pero eso es de la factura entera, no de este artículo){% endif %}{% else %}No es de Kellerhoff, o sin remito capturado{% endif %}">—</span>
@@ -115,4 +121,84 @@
   </div>
   {% endif %}
 </div>
+
+<div class="mt-3 flex items-center gap-3">
+  <button id="btn-monroe" onclick="consultarMonroe()"
+          class="px-3 py-1.5 rounded-lg border border-[color:var(--ds-mint)] text-[color:var(--ds-mint)] text-xs font-bold hover:bg-white/5">
+    Consultar precios en Monroe
+  </button>
+  <span id="monroe-status" class="text-[11px] text-[color:var(--ds-text-mute)]"></span>
+</div>
+
+<script>
+// Pide a Monroe el precio de hoy de los EAN que estan en pantalla y completa
+// las dos columnas. Rojo = Monroe mas barato (ahi hay que mirar), verde =
+// la compra fue mejor. Es al reves de lo intuitivo a proposito: el rojo marca
+// donde se esta pagando de mas.
+async function consultarMonroe() {
+    const btn = document.getElementById('btn-monroe');
+    const status = document.getElementById('monroe-status');
+    const celdas = Array.from(document.querySelectorAll('.celda-monroe'));
+    const eans = [...new Set(celdas.map(c => c.dataset.ean).filter(Boolean))];
+    if (!eans.length) { status.textContent = 'No hay codigos de barra en la tabla.'; return; }
+
+    btn.disabled = true;
+    status.textContent = 'Consultando ' + eans.length + ' productos...';
+    let d;
+    try {
+        const r = await fetch('/api/compras/consulta/monroe', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin', body: JSON.stringify({eans}),
+        });
+        d = await r.json();
+    } catch (e) {
+        status.textContent = 'No se pudo consultar a Monroe.'; btn.disabled = false; return;
+    }
+    if (d.fuente_caida) {
+        status.textContent = 'Monroe no respondio: ' + (d.motivo || '');
+        btn.disabled = false; return;
+    }
+
+    document.querySelectorAll('.col-monroe').forEach(e => e.classList.remove('hidden'));
+    const fmt = n => '$' + n.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    let masBarato = 0, sinDato = 0;
+
+    celdas.forEach(celda => {
+        const p = (d.precios || {})[celda.dataset.ean];
+        const dif = celda.nextElementSibling;
+        if (!p || !p.reconocido) {
+            celda.textContent = '—';
+            celda.title = p ? (p.error || 'no lo distribuye') : 'sin respuesta';
+            dif.textContent = '—'; sinDato++; return;
+        }
+        if (p.estado_stock !== 'disponible') {
+            celda.textContent = p.costo ? fmt(p.costo) : '—';
+            celda.classList.add('opacity-50');
+            celda.title = 'Monroe: ' + (p.estado_stock_txt || 'sin stock');
+            dif.textContent = 'sin stock';
+            dif.classList.add('text-[10px]', 'opacity-60');
+            return;
+        }
+        celda.textContent = p.costo ? fmt(p.costo) : '—';
+        if (p.oferta) { celda.title = 'Oferta: ' + p.oferta; celda.classList.add('underline'); }
+
+        const pagado = parseFloat(celda.dataset.pagado);
+        if (!p.costo || !pagado) { dif.textContent = '—'; return; }
+        const pct = (pagado - p.costo) / pagado * 100;
+        dif.textContent = (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
+        dif.classList.remove('text-rose-400', 'text-emerald-400', 'font-bold');
+        if (pct > 0) { dif.classList.add('text-rose-400', 'font-bold'); masBarato++; }
+        else { dif.classList.add('text-emerald-400'); }
+        dif.title = pct > 0
+            ? 'Monroe esta ' + pct.toFixed(1) + '% mas barato que esta compra'
+            : 'Esta compra fue ' + Math.abs(pct).toFixed(1) + '% mejor que Monroe hoy';
+    });
+
+    status.innerHTML = 'Monroe mas barato en <b class="text-rose-400">' + masBarato + '</b> de '
+        + celdas.length + ' renglones'
+        + (sinDato ? ' &middot; ' + sinDato + ' sin datos' : '')
+        + ' &middot; <span class="opacity-70">precios de hoy: las compras viejas se comparan contra aumentos posteriores</span>';
+    btn.disabled = false;
+}
+</script>
 {% endblock %}
