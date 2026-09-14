@@ -207,3 +207,30 @@ def test_backfill_dry_run_no_escribe():
         assert s.query(ProductoPrecioHist).count() == 0
     finally:
         s.close()
+
+
+def test_backfill_retoma_despues_de_quedar_a_medias():
+    """Caso real: la primera corrida murió en la fila 2.000 (el commit dentro
+    del `yield_per` invalida el cursor server-side de Postgres). Al reintentar
+    tiene que completar lo que falta y no duplicar lo ya escrito."""
+    from scripts.backfill_precios_hist import backfill
+    s = database.SessionLocal()
+    try:
+        inv = _factura(s)
+        for ean in ('111', '222', '333'):
+            s.add(database.InvoiceItem(factura_id=inv.id, codigo_barra=ean,
+                                       descripcion='X', cantidad=1,
+                                       precio_unitario=100, importe=100))
+        s.commit()
+
+        # Simula la corrida que quedó a medias: una sola de las tres.
+        precios_hist.registrar(s, inv, codigo_barra='111', precio_unitario=100)
+        s.commit()
+
+        r = backfill(s)
+        assert r['escritos'] == 2 and r['saltados'] == 1
+        assert s.query(ProductoPrecioHist).count() == 3
+        eans = {h.codigo_barra for h in s.query(ProductoPrecioHist).all()}
+        assert eans == {'111', '222', '333'}
+    finally:
+        s.close()
