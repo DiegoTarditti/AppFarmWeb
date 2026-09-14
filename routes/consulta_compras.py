@@ -39,8 +39,15 @@ def _parse_fecha(s):
 
 
 def _consultar(session, q, desde, hasta, lab_id):
-    """(filas, resumen) de las compras que matchean. filas=[] si no hay término."""
-    if not q:
+    """(filas, resumen) de las compras que matchean.
+
+    Hace falta al menos un criterio: el texto o el laboratorio. Con el
+    laboratorio solo tiene sentido — "mostrame todo lo que le compré a Bagó" es
+    justo para lo que uno pone ese filtro — pero sin ninguno de los dos habría
+    que listar todas las compras de todos los tiempos, y el tope de 500 filas
+    devolvería un recorte arbitrario.
+    """
+    if not q and not lab_id:
         return [], None
     query = (session.query(InvoiceItem, Invoice)
              .join(Invoice, InvoiceItem.factura_id == Invoice.id))
