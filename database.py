@@ -1716,6 +1716,12 @@ class Invoice(Base):
     fecha = Column(Date, nullable=False)
     proveedor_razon = Column(String(100))
     proveedor_cuit = Column(String(20))
+    # Proveedor resuelto en el alta. `proveedor_cuit`/`proveedor_razon` son texto
+    # libre del comprobante y llegan en formatos distintos según la fuente (el
+    # parser de PDF pone guiones, ARCA y el scraper no), así que cruzarlos contra
+    # `proveedores` en cada consulta es frágil: acá queda el id, una sola vez.
+    # NULL = no se pudo resolver (proveedor que todavía no existe en la tabla).
+    proveedor_id = Column(Integer, ForeignKey('proveedores.id'), nullable=True)
     proveedor_domicilio = Column(String(200))
     cliente_codigo = Column(String(20))
     cliente_razon = Column(String(100))
@@ -4095,8 +4101,15 @@ def _ejecutar_backfills_async():
                             f.tipo_comprobante
                         FROM factura_items fi
                         JOIN facturas f ON f.id = fi.factura_id
+                        -- CUIT normalizado de los dos lados: el mismo proveedor
+                        -- queda guardado con y sin guiones según la fuente de la
+                        -- factura, y comparando crudo el JOIN no pega y el
+                        -- histórico queda sin proveedor_id (ver
+                        -- helpers.buscar_proveedor_por_cuit).
                         LEFT JOIN proveedores p ON (
-                            (p.cuit IS NOT NULL AND p.cuit = f.proveedor_cuit)
+                            (p.cuit IS NOT NULL
+                             AND replace(replace(replace(p.cuit, '-', ''), ' ', ''), '.', '')
+                               = replace(replace(replace(f.proveedor_cuit, '-', ''), ' ', ''), '.', ''))
                             OR (p.cuit IS NULL AND p.razon_social = f.proveedor_razon)
                         )
                         WHERE fi.codigo_barra IS NOT NULL AND fi.codigo_barra <> ''
@@ -4856,6 +4869,23 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE facturas ADD COLUMN IF NOT EXISTS batch_id INTEGER REFERENCES invoice_batches(id)"
     ))
+    # Proveedor resuelto de la factura (ver Invoice.proveedor_id). El backfill va
+    # por CUIT normalizado porque los formatos guardados no coinciden entre sí:
+    # 123 de los 124 proveedores tienen guiones y Kellerhoff —el único con
+    # renglones cargados— no. Corre una sola vez por fila: el WHERE lo limita a
+    # las que todavía no tienen id, así que no pisa una asignación manual.
+    for stmt in [
+        "ALTER TABLE facturas ADD COLUMN IF NOT EXISTS proveedor_id INTEGER",
+        """UPDATE facturas SET proveedor_id = (
+               SELECT p.id FROM proveedores p
+               WHERE p.cuit IS NOT NULL AND p.cuit <> ''
+                 AND replace(replace(replace(p.cuit, '-', ''), ' ', ''), '.', '')
+                   = replace(replace(replace(facturas.proveedor_cuit, '-', ''), ' ', ''), '.', '')
+               LIMIT 1)
+           WHERE proveedor_id IS NULL
+             AND proveedor_cuit IS NOT NULL AND proveedor_cuit <> ''""",
+    ]:
+        conn.execute(text(stmt))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_alta_min DECIMAL(6,1) NOT NULL DEFAULT 20.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_alta_tol DECIMAL(6,1) NOT NULL DEFAULT 0.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_media_min DECIMAL(6,1) NOT NULL DEFAULT 5.0"))
@@ -5908,6 +5938,17 @@ def _sqlite_add_columns(conn):
     existing_fac = {row[1] for row in conn.execute(text("PRAGMA table_info(facturas)"))}
     if existing_fac and 'erp_carga_id' not in existing_fac:
         conn.execute(text("ALTER TABLE facturas ADD COLUMN erp_carga_id BIGINT"))
+    if existing_fac and 'proveedor_id' not in existing_fac:
+        conn.execute(text("ALTER TABLE facturas ADD COLUMN proveedor_id INTEGER"))
+        conn.execute(text("""
+            UPDATE facturas SET proveedor_id = (
+                SELECT p.id FROM proveedores p
+                WHERE p.cuit IS NOT NULL AND p.cuit <> ''
+                  AND replace(replace(replace(p.cuit, '-', ''), ' ', ''), '.', '')
+                    = replace(replace(replace(facturas.proveedor_cuit, '-', ''), ' ', ''), '.', '')
+                LIMIT 1)
+            WHERE proveedor_cuit IS NOT NULL AND proveedor_cuit <> ''
+        """))
     existing_prov = {row[1] for row in conn.execute(text("PRAGMA table_info(proveedores)"))}
     if 'grabar_productos' not in existing_prov:
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN grabar_productos INTEGER NOT NULL DEFAULT 1"))

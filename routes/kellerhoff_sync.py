@@ -732,11 +732,13 @@ def _get_or_create_invoice(session, comp: dict) -> Invoice | None:
     # Crear provisional (puede enriquecerse después con el import ARCA)
     es_nc = comp.get('clase_doc', '').upper() in ('NCR', 'NC', 'NCA', 'NCB', 'NCC')
     signo = -1 if es_nc else 1
+    _prov = _kh_provider(session)
     inv = Invoice(
         numero_factura=nro,
         fecha=comp['fecha'],
         proveedor_razon='DROGUERIA KELLERHOFF S.A.',
         proveedor_cuit=KELLERHOFF_CUIT,
+        proveedor_id=_prov.id if _prov is not None else None,
         tipo_comprobante='NCR' if es_nc else 'FAC',
         total=signo * abs(comp.get('total', 0)),
         monto_exento=signo * abs(comp.get('monto_exento', 0)) or None,

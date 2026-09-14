@@ -360,8 +360,13 @@ def _normalizar_nombre_entidad(nombre):
         r'\bs\.?h\.?\b',
         r'\bltda\.?\b',
     ]
+    # El `\.?` antes del ancla es por el punto de cierre: en 's.a.' el `\b` del
+    # sufijo no puede cerrar contra el punto final, así que matchea 's.a' y deja
+    # el '.' colgando — y ahí `\s*$` ya no pega y el sufijo NO se quitaba. Sin
+    # esto 'Roemmers S.A.I.C.F.' daba 'roemmers s a i c f' (y no 'roemmers',
+    # como dice el ejemplo de arriba): sólo funcionaba la variante sin puntos.
     for sufijo in sufijos:
-        s = re.sub(sufijo + r'\s*$', '', s).strip()
+        s = re.sub(sufijo + r'\.?\s*$', '', s).strip()
     # Quitar prefijos genéricos (singular y plural: "Laboratorios Bagó" → "bago")
     prefijos = [r'^droguerias?\s+', r'^drog\.?\s+', r'^laboratorios?\s+', r'^lab\.?\s+']
     for pref in prefijos:
@@ -429,11 +434,43 @@ def get_or_create_laboratorio(session, nombre, observer_id=None, activo=True):
     return nuevo
 
 
+def buscar_proveedor_por_cuit(session, cuit):
+    """Provider cuyo CUIT es `cuit`. Exacto primero, y si no, normalizado.
+
+    El MISMO CUIT llega en dos formatos según de dónde venga: el parser de PDF
+    de Kellerhoff emite '30-53975649-0' y su fila de `proveedores` tiene
+    '30539756490' (que es como lo mandan ARCA y el scraper del portal, el
+    origen de sus facturas). 123 de los 124 proveedores cargados usan guiones y
+    ese es el único que no, así que comparar crudo encuentra al proveedor por
+    accidente, no por diseño.
+
+    No se puede caer al match por razón social: `_normalizar_nombre_entidad`
+    resuelve 'DROGUERÍA KELLERHOFF S.A' y 'DROGUERÍA KELLERHOFF S.A.' distinto
+    (el punto final), así que sin esto se crea un proveedor duplicado.
+
+    Devuelve None si no hay ninguno — el caller decide si crear.
+    """
+    cuit = (cuit or '').strip()
+    if not cuit:
+        return None
+    exacto = session.query(database.Provider).filter_by(cuit=cuit).first()
+    if exacto is not None:
+        return exacto
+    from services.cuenta_corriente import normalizar_cuit
+    objetivo = normalizar_cuit(cuit)
+    if not objetivo:
+        return None
+    return next(
+        (p for p in session.query(database.Provider)
+            .filter(database.Provider.cuit.isnot(None)).all()
+         if normalizar_cuit(p.cuit) == objetivo), None)
+
+
 def get_or_create_proveedor(session, razon_social, cuit=None, **extras):
     """Devuelve un Provider existente o crea uno nuevo.
 
     Match por orden:
-      1. CUIT exacto (si viene y existe)
+      1. CUIT exacto, y si no, CUIT normalizado (sin guiones/espacios/puntos)
       2. Razón social normalizada (sin acentos, sin sufijos societarios)
 
     Si encuentra match, devuelve el existente. Solo crea si genuinamente no hay.
@@ -445,9 +482,9 @@ def get_or_create_proveedor(session, razon_social, cuit=None, **extras):
     """
     razon_social = (razon_social or '').strip()
     cuit = (cuit or '').strip() or None
-    # 1. Match por CUIT
+    # 1. Match por CUIT (normalizado, ver `buscar_proveedor_por_cuit`)
     if cuit:
-        existente = session.query(database.Provider).filter_by(cuit=cuit).first()
+        existente = buscar_proveedor_por_cuit(session, cuit)
         if existente:
             # Completar campos vacíos del existente con los nuevos (no pisa lo que ya está).
             for k, v in extras.items():

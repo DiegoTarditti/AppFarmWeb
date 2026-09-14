@@ -962,7 +962,8 @@ def init_app(app):
             # Buscar si ya existe proveedor registrado
             prov = None
             if inv.proveedor_cuit:
-                prov = session.query(database.Provider).filter_by(cuit=inv.proveedor_cuit).first()
+                from helpers import buscar_proveedor_por_cuit
+                prov = buscar_proveedor_por_cuit(session, inv.proveedor_cuit)
             if not prov and inv.proveedor_razon:
                 prov = session.query(database.Provider).filter(
                     database.Provider.razon_social.ilike(f'%{inv.proveedor_razon}%')
@@ -1283,11 +1284,14 @@ def _guardar_factura_desde_aprendizaje(token, header, rows, tipo_comprobante='FA
                 'No pude copiar %s a UPLOAD_FOLDER: %s', path, e)
 
     with database.get_db() as session:
+        from helpers import buscar_proveedor_por_cuit
+        _prov = buscar_proveedor_por_cuit(session, header.get('cuit'))
         inv = database.Invoice(
             numero_factura=((header.get('numero') or 'SIN_NUMERO').strip())[:20],
             fecha=fecha,
             proveedor_razon=((header.get('razon_social') or '').strip() or None),
             proveedor_cuit=((header.get('cuit') or '').strip() or None),
+            proveedor_id=_prov.id if _prov is not None else None,
             tipo_comprobante=tipo_comprobante,
             total=(total or 0) * sign,
             total_articulos=len(items_data),
@@ -1442,11 +1446,14 @@ def _guardar_factura_desde_ia(token, data, tipo_override=None):
     prov_razon = (prov.get('razon_social') or '').strip()
     prov_cuit = (prov.get('cuit') or '').strip()
     with database.get_db() as session:
+        from helpers import buscar_proveedor_por_cuit
+        _prov = buscar_proveedor_por_cuit(session, prov_cuit)
         inv = database.Invoice(
             numero_factura=((enc.get('numero_factura') or 'SIN_NUMERO').strip())[:20],
             fecha=fecha,
             proveedor_razon=prov_razon or None,
             proveedor_cuit=prov_cuit[:20] or None,
+            proveedor_id=_prov.id if _prov is not None else None,
             proveedor_domicilio=((prov.get('domicilio') or '').strip()[:200] or None),
             cliente_codigo=((cli.get('codigo') or '').strip()[:20] or None),
             cliente_razon=((cli.get('razon_social') or '').strip()[:100] or None),

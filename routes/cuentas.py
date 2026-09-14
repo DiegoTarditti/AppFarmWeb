@@ -268,6 +268,7 @@ def init_app(app):
                         fecha=f['fecha'],
                         proveedor_razon=prov.razon_social,
                         proveedor_cuit=prov.cuit,
+                        proveedor_id=prov.id,
                         tipo_comprobante='NCR' if es_nc else 'FAC',
                         origen='arca',
                         arca_tipo_codigo=f['tipo_cod'],

@@ -56,7 +56,19 @@ def _consultar(session, q, desde, hasta, prov_cuit):
     if hasta:
         query = query.filter(Invoice.fecha <= hasta)
     if prov_cuit:
-        query = query.filter(Invoice.proveedor_cuit == prov_cuit)
+        # El dropdown manda `Provider.cuit`. Se filtra por `Invoice.proveedor_id`
+        # —resuelto en el alta— y se acepta además el CUIT normalizado para las
+        # facturas viejas que quedaron sin id. Comparar el CUIT crudo no alcanza:
+        # la factura guarda el texto del comprobante, que no usa el mismo formato
+        # que `proveedores` según la fuente (el parser de PDF pone guiones, ARCA
+        # y el scraper no), y el listado vacío se lee como "no le compramos esto".
+        from helpers import buscar_proveedor_por_cuit
+        from services.cuenta_corriente import _cuit_sql_normalizado, normalizar_cuit
+        cond = _cuit_sql_normalizado(Invoice.proveedor_cuit) == normalizar_cuit(prov_cuit)
+        prov = buscar_proveedor_por_cuit(session, prov_cuit)
+        if prov is not None:
+            cond = or_(Invoice.proveedor_id == prov.id, cond)
+        query = query.filter(cond)
     rows = (query.order_by(Invoice.fecha.desc(),
                            InvoiceItem.descripcion).limit(_LIMITE).all())
 
