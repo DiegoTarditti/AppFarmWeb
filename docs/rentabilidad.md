@@ -128,6 +128,44 @@ El tamaño del pack no está en ningún campo, así que no se corrige: se marca
 (`sospecha_unidad`). Son 2 de los 90 productos con margen negativo; los otros 83
 son pérdidas plausibles y se muestran como tales.
 
+### La mitad de la "facturación" no es plata cobrada (la trampa más grande)
+
+**Las liquidaciones de PAMI y las obras sociales no pasan por ObServer.**
+`importe_a_cargo_os` es lo que ObServer *anota* que el convenio debería pagar —
+no lo que pagó. No se cobra en el mostrador y el sistema nunca se entera del
+resultado de la liquidación.
+
+Medido sobre 90 días: de **$2.015,5M** de facturación, **$985,7M (49%)** son ese
+asiento. El desglose: obra social $1.479,0M (73,4%) de los cuales sólo $493,3M
+es copago real; particular $536,5M (26,6%).
+
+**Consecuencia dura: para una venta por obra social el margen no se puede
+afirmar**, ni bien ni mal. Un producto puede figurar en pérdida y estar dando
+ganancia, o al revés. Lo único verificado es la venta particular y el copago.
+
+Cómo se descubrió, porque la lección importa: la ficha mostraba la insulina
+NOVORAPID con **−26,1% en PAMI** y yo llegué a armar una lista de "140 productos
+que pierden $15,5M por trimestre" — con el detalle verificado venta por venta,
+el costo confirmado contra el total de la factura, las notas de crédito
+descartadas como compensación y el corte por plan de PAMI. Todo correcto sobre
+los datos disponibles, **y aun así la conclusión estaba mal**, porque el dato que
+faltaba no estaba en la base: lo que PAMI efectivamente liquida. Lo corrigió
+Diego con conocimiento del negocio, no los datos.
+
+Lo que sí quedó en pie de esa investigación, y sigue siendo útil: PAMI reconoce
+**89,4% del PVP** en 731 productos y **53,2%** en otros 141, comprándose todos al
+mismo descuento (~65% del PVP). Esa asimetría es real y es una buena pregunta
+para hacerle a PAMI — pero **no** permite concluir que se pierde plata.
+
+Por eso `os_pct` viaja hasta las dos pantallas y se muestra como aviso, la
+columna se llama **"margen aparente"**, y las filas de convenio no se pintan de
+rojo: afirmar pérdida sobre plata que no vemos liquidar sería mentir con cara de
+precisión.
+
+**Pendiente**: si alguna vez entra la liquidación real (archivo de PAMI, extracto
+del convenio), esto se puede cerrar de verdad. Hasta entonces, el margen por
+obra social es una comparación entre convenios, no un resultado.
+
 ### `importe` es BRUTO, no lo que entra a la caja
 
 Ver `docs/observer_ventas_reconciliacion.md`. Medido de tres formas

@@ -73,6 +73,12 @@ def init_app(app):
             'neto_pct': (sum(f['neto_pct'] * f['facturacion'] for f in filas)
                          / sum(f['facturacion'] for f in filas)
                          if sum(f['facturacion'] for f in filas) else 0),
+            # Trampa 4: qué parte de la facturación es expectativa y no cobro.
+            # Es el aviso más fuerte de la pantalla — sobre esa parte el margen
+            # no se puede afirmar, porque las OS liquidan fuera de ObServer.
+            'os_pct': (sum(f['os_pct'] * f['facturacion'] for f in filas)
+                       / sum(f['facturacion'] for f in filas)
+                       if sum(f['facturacion'] for f in filas) else 0),
         }
         return render_template('rentabilidad.html', filas=filas, resumen=resumen,
                                desde=desde.isoformat() if desde else '',

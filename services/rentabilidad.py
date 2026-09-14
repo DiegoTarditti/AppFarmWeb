@@ -28,6 +28,19 @@ Tres trampas que este módulo tiene que respetar:
 3. **Inflación.** Comparar contra el mejor precio del trimestre sin ajustar
    convierte la inflación en "mala compra": sobre jul-sep 2026 eso inflaba el
    sobreprecio de $2.241.314 a $4.269.436. Ver `services/inflacion.py`.
+
+4. **La mitad de la "facturación" no es plata cobrada.** `importe_a_cargo_os`
+   es lo que ObServer anota que el convenio debería pagar. **Las liquidaciones
+   de PAMI y las obras sociales no pasan por ObServer**, así que ese monto es
+   una expectativa: no se cobró en el mostrador y el sistema nunca se entera de
+   lo que finalmente se liquidó. Son $985,7M de $2.015,5M (**49%**) en 90 días.
+
+   Consecuencia dura: **para una venta por obra social el margen no se puede
+   afirmar**, ni bien ni mal. Un producto puede figurar con margen negativo y
+   estar dando ganancia, o al revés. Lo único verificado es la venta particular
+   y el copago. Por eso `os_pct` viaja hasta la pantalla y se muestra: sin ese
+   aviso el número miente con cara de precisión (medido: la insulina NovoRapid
+   figuraba -26% en PAMI sobre datos que no incluyen lo que PAMI liquida).
 """
 from __future__ import annotations
 
@@ -186,6 +199,12 @@ def ventas_por_ean(session, desde=None, hasta=None, eans=None):
     total tiene el dato bueno: `importe` es BRUTO y sobreestima ~2,1% en general
     y hasta 5,95% en ventas particulares, así que sin ese aviso el margen queda
     inflado sin que se note.
+
+    `os_pct` es el aviso más importante de los dos (ver trampa 4): qué parte de
+    la facturación es lo que ObServer anota a cargo del convenio. Esa plata NO
+    se cobra en el mostrador y su liquidación no pasa por ObServer, así que es
+    una expectativa, no un ingreso verificado. Sobre el 49% de la facturación
+    total, el margen no se puede afirmar.
     """
     if not eans:
         return {}
@@ -222,6 +241,9 @@ def ventas_por_ean(session, desde=None, hasta=None, eans=None):
     for d in out.values():
         d['precio_promedio'] = d['facturacion'] / d['unidades'] if d['unidades'] else None
         d['neto_pct'] = 100 * d['_con_neto'] / d['bruto'] if d['bruto'] else 0.0
+        # Qué parte de la facturación es expectativa y no cobro (trampa 4).
+        d['os_pct'] = (100 * d['a_cargo_os'] / d['facturacion']
+                       if d['facturacion'] else 0.0)
         del d['_con_neto']
     return out
 
@@ -305,7 +327,7 @@ def ranking(session, desde=None, hasta=None, factores=None, solo_vendidos=True,
         if solo_vendidos and not v:
             continue
         v = v or {'unidades': 0.0, 'facturacion': 0.0, 'precio_promedio': None,
-                  'neto_pct': 0.0, 'a_cargo_os': 0.0}
+                  'neto_pct': 0.0, 'a_cargo_os': 0.0, 'os_pct': 0.0}
         descripcion, laboratorio = nombres.get(ean, (None, None))
         pvp = v['precio_promedio']
         costo = c['costo_reposicion']
@@ -322,6 +344,7 @@ def ranking(session, desde=None, hasta=None, factores=None, solo_vendidos=True,
             'unidades_vendidas': v['unidades'],
             'facturacion': v['facturacion'],
             'neto_pct': v['neto_pct'],
+            'os_pct': v['os_pct'],
             'costo_reposicion': costo,
             'dias_costo': c['dias_costo'],
             'confianza': confianza_costo(c['dias_costo']),
@@ -353,7 +376,8 @@ def detalle(session, ean, desde=None, hasta=None, factores=None, hoy=None):
         return None
 
     v = ventas_por_ean(session, desde=desde, hasta=hasta, eans=[ean]).get(ean) or {
-        'unidades': 0.0, 'facturacion': 0.0, 'precio_promedio': None, 'neto_pct': 0.0,
+        'unidades': 0.0, 'facturacion': 0.0, 'precio_promedio': None,
+        'neto_pct': 0.0, 'os_pct': 0.0,
     }
     nombres = descripciones_por_ean(session, [ean])
     descripcion, laboratorio = nombres.get(ean, (None, None))
@@ -366,6 +390,7 @@ def detalle(session, ean, desde=None, hasta=None, factores=None, hoy=None):
         'unidades_vendidas': v['unidades'],
         'facturacion': v['facturacion'],
         'neto_pct': v['neto_pct'],
+        'os_pct': v['os_pct'],
         'precio_promedio': pvp,
         'costo_reposicion': costo,
         'fecha_costo': c['fecha_costo'],

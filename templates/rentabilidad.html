@@ -49,6 +49,17 @@
     y avisa cuando el <b>margen no es confiable</b> (costo viejo, o compra por caja vendida suelta).
   </div>
 
+  {# ---- Aviso de plata no cobrada: es el mas importante de la pantalla ---- #}
+  {% if resumen.os_pct >= 15 %}
+  <div class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 mb-4 text-[12px] leading-relaxed">
+    <b class="text-amber-400">El {{ '%.0f'|format(resumen.os_pct) }}% de esta facturación no es plata cobrada.</b>
+    Es lo que ObServer anota <b>a cargo de las obras sociales</b>, y las liquidaciones de PAMI y los
+    convenios <b>no pasan por ObServer</b>: nunca se entera de lo que finalmente se liquidó.
+    Donde pesa la obra social, <b>el margen no se puede afirmar</b> — un producto puede figurar en
+    pérdida y estar dando ganancia, o al revés. El margen firme es el de la <b>venta particular</b>.
+  </div>
+  {% endif %}
+
   {# ---- Aviso de ingreso bruto ---- #}
   {% if resumen.neto_pct < 50 %}
   <div class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 mb-4 text-[12px] leading-relaxed">

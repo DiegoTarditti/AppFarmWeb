@@ -63,6 +63,17 @@
   </div>
   {% endif %}
 
+  {% if d.os_pct and d.os_pct >= 15 %}
+  <div class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 mb-3 text-[12px] leading-relaxed">
+    <b class="text-amber-400">El {{ '%.0f'|format(d.os_pct) }}% de esta facturación no es plata cobrada.</b>
+    Es lo que ObServer anota <b>a cargo del convenio</b>. Las liquidaciones de PAMI y las obras
+    sociales <b>no pasan por ObServer</b>, así que ese monto es una expectativa: no se cobró en el
+    mostrador y el sistema nunca se entera de lo que finalmente se liquidó.
+    <b>El margen de abajo no se puede afirmar</b> — puede figurar en pérdida y estar dando ganancia,
+    o al revés. Lo único verificado es la venta particular y el copago.
+  </div>
+  {% endif %}
+
   {% if d.margen_pct is not none %}
   <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
     <div class="rounded-lg border border-[color:var(--ds-mint)]/40 bg-[color:var(--ds-mint)]/5 p-3">
@@ -149,8 +160,10 @@
     {# ---- Margen por obra social ---- #}
     <div class="rounded-lg border border-[color:var(--ds-surface-border)] overflow-hidden">
       <div class="px-3 py-2 border-b border-[color:var(--ds-surface-border)]">
-        <span class="text-[13px] font-semibold">Margen por obra social</span>
-        <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-0.5">El mismo producto deja distinto margen según quién lo cubre.</p>
+        <span class="text-[13px] font-semibold">Facturación por obra social</span>
+        <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-0.5">
+          El margen de un convenio <b>no es verificable</b>: lo que liquida no pasa por ObServer.
+          Sirve para comparar <b>precios entre convenios</b>, no para concluir que uno pierde plata.</p>
       </div>
       {% if not d.obras_sociales %}
       <div class="p-4 text-[12px] text-[color:var(--ds-text-mute)]">Sin ventas en el período.</div>
@@ -161,18 +174,28 @@
             <th class="text-left px-3 py-1.5">Obra social</th>
             <th class="text-right px-3 py-1.5">Unid.</th>
             <th class="text-right px-3 py-1.5">Facturación</th>
-            <th class="text-right px-3 py-1.5">Margen</th>
+            <th class="text-right px-3 py-1.5" title="Contra el costo de reposición, usando lo que ObServer anota a cargo del convenio. No incluye lo que la obra social liquida de verdad.">Margen aparente</th>
           </tr>
         </thead>
         <tbody>
           {% for os in d.obras_sociales %}
           {% set pvp_os = (os.facturacion / os.unidades) if os.unidades else none %}
           {% set m_os = ((pvp_os - d.costo_reposicion) / pvp_os * 100) if pvp_os and d.costo_reposicion is not none else none %}
-          <tr class="border-t border-[color:var(--ds-surface-border)] {{ 'bg-red-500/5' if m_os is not none and m_os < 0 }}">
-            <td class="px-3 py-1.5">{{ os.obra_social }}</td>
+          <tr class="border-t border-[color:var(--ds-surface-border)]">
+            <td class="px-3 py-1.5">
+              {{ os.obra_social }}
+              {% if not os.particular %}
+              <span class="text-[9px] text-[color:var(--ds-text-mute)] ml-1"
+                    title="Liquida fuera de ObServer: el margen de esta fila no es verificable">sin verificar</span>
+              {% endif %}
+            </td>
             <td class="px-3 py-1.5 text-right">{{ os.unidades|round|int }}</td>
             <td class="px-3 py-1.5 text-right">{{ pesos(os.facturacion) }}</td>
-            <td class="px-3 py-1.5 text-right font-semibold {{ 'text-red-400' if m_os is not none and m_os < 0 else 'text-[color:var(--ds-mint)]' if m_os is not none }}">
+            {# Sin rojo/verde: afirmar perdida sobre plata que no vemos liquidar seria mentir. #}
+            <td class="px-3 py-1.5 text-right font-semibold
+                       {{ 'text-[color:var(--ds-mint)]' if os.particular and m_os is not none and m_os >= 0
+                          else 'text-red-400' if os.particular and m_os is not none
+                          else 'text-[color:var(--ds-text-mute)]' }}">
               {{ '%.1f'|format(m_os) + '%' if m_os is not none else '—' }}
             </td>
           </tr>
