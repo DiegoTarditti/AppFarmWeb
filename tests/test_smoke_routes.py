@@ -462,3 +462,35 @@ def test_agregar_producto_a_mano_respeta_la_oferta_multi_lab(smoke_client):
         f'/api/pedidos/dia/buscar-producto?q=OFERTA+TEST+XYZ&prov={prov2_id}')
     data2 = resp2.get_json()
     assert data2['items'][0]['cubre_lab'] is False
+
+
+# ── /compare con observer_disponible=True (Eslabón 4) ───────────────────────
+# El resto de los smoke tests pegan con ObServer apagado (sin OBSERVER_HOST en
+# el entorno de test), así que nunca ejercitan el bloque nuevo de compare.html
+# gateado por observer_disponible. Sin esto un error de sintaxis Jinja/JS ahí
+# pasaría desapercibido hasta pisar producción.
+
+def test_compare_con_observer_disponible_no_revienta(smoke_client, monkeypatch):
+    import database
+    import observer_source
+    from datetime import date
+
+    monkeypatch.setattr(observer_source, 'observer_disponible', lambda: True)
+
+    with database.get_db() as session:
+        session.add(database.Provider(razon_social='DROGUERIA KELLERHOFF S.A.',
+                                      cuit='30539756490', tipo='drogueria',
+                                      activo=True, observer_id=1))
+        inv = database.Invoice(numero_factura='00046-00371609', fecha=date(2026, 9, 12),
+                               tipo_comprobante='FAC', proveedor_razon='Kellerhoff',
+                               proveedor_cuit='30539756490', total=1000, total_articulos=1)
+        session.add(inv)
+        session.commit()
+        invoice_id = inv.id
+
+    resp = smoke_client.get(f'/invoice/{invoice_id}/compare')
+    assert resp.status_code == 200
+    html = resp.data.decode('utf-8')
+    assert 'observer-sync-form' in html
+    assert 'id="observer-candidato"' in html
+    assert f'/observer/factura/{invoice_id}/candidatos' in html

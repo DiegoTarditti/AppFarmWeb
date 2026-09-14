@@ -138,3 +138,26 @@ def test_los_codigos_dados_de_baja_no_se_usan():
 def test_un_producto_sin_ean_no_aparece():
     assert obs._eans_por_producto([12345]) == {}
     assert obs._eans_por_producto([]) == {}
+
+
+# ── resolver_id_proveedor (mapeo Provider.observer_id, Eslabón 4) ──────────
+
+def test_resuelve_por_cuit_normalizado():
+    with database.get_db() as session:
+        session.add(database.Provider(razon_social='DROGUERIA KELLERHOFF S.A.',
+                                      cuit='30-53975649-0', tipo='drogueria',
+                                      observer_id=1))
+        session.commit()
+        assert obs.resolver_id_proveedor(session, '30539756490') == 1
+        assert obs.resolver_id_proveedor(session, '30-53975649-0') == 1
+
+
+def test_sin_mapeo_no_inventa_id():
+    with database.get_db() as session:
+        session.add(database.Provider(razon_social='DROGUERIA SIN MAPEO',
+                                      cuit='20-11111111-2', tipo='drogueria',
+                                      observer_id=None))
+        session.commit()
+        assert obs.resolver_id_proveedor(session, '20111111112') is None
+        assert obs.resolver_id_proveedor(session, '') is None
+        assert obs.resolver_id_proveedor(session, None) is None

@@ -55,6 +55,13 @@
         padding: 5px 8px; font-size: 12px; width: 160px;
     }
     .observer-input:focus { outline: none; border-color: #A78BFA; box-shadow: 0 0 0 3px rgba(167,139,250,.15); }
+    .observer-candidato {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        padding: 8px 14px; margin: 0 0 10px; font-size: 12px;
+        background: rgba(139,92,246,.08); border: 1px solid rgba(139,92,246,.25);
+        border-radius: var(--ds-r-sm); color: var(--ds-text);
+    }
+    .observer-candidato__txt { flex: 1; min-width: 200px; }
     .btn-violet {
         background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
         color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.3);
@@ -201,11 +208,13 @@
                         <span class="badge badge-warn badge-pill">{{ erp_items|length }}</span>
                         {% endif %}
                         {% if observer_disponible %}
-                        <form method="post" action="{{ url_for('observer_sync_factura', invoice_id=invoice.id) }}"
+                        <form id="observer-sync-form" method="post"
+                              action="{{ url_for('observer_sync_factura', invoice_id=invoice.id) }}"
                               class="ml-auto flex items-center gap-1.5"
                               onsubmit="return confirmObserverSync(this);">
+                            <input type="hidden" name="id_recepcion">
                             <input type="text" name="comprobante" placeholder="Nº comprobante ObServer"
-                                   value="{{ invoice.numero_factura or '' }}" required
+                                   value="{{ invoice.numero_factura or '' }}"
                                    title="Número del comprobante de recepción en ObServer"
                                    class="observer-input">
                             <button type="submit" class="btn btn-violet btn-sm">
@@ -217,6 +226,9 @@
                         </form>
                         {% endif %}
                     </div>
+                    {% if observer_disponible and not erp_de_esta_factura %}
+                    <div id="observer-candidato" class="observer-candidato" hidden></div>
+                    {% endif %}
                     <div class="compare-card__body">
                         {% if not erp_de_esta_factura %}
                         <div class="erp-aviso">
@@ -332,9 +344,38 @@ function usarSugerencia(erpId, nro, chip) {
 }
 
 function confirmObserverSync(form) {
+    const idRecepcion = (form.querySelector('input[name="id_recepcion"]').value || '').trim();
+    if (idRecepcion) {
+        return confirm('Traer la recepción sugerida desde ObServer?\n\nReemplaza los datos ERP actuales.');
+    }
     const nro = (form.querySelector('input[name="comprobante"]').value || '').trim();
     if (!nro) { alert('Ingresá el Nº de comprobante de ObServer.'); return false; }
     return confirm('Traer recepciones del comprobante "' + nro + '" desde ObServer?\n\nReemplaza los datos ERP actuales.');
+}
+
+// Sugerencia automática de candidato (Eslabón 4): reemplaza tener que
+// escribir el nro a mano cuando el proveedor tiene Provider.observer_id
+// cargado. No autocompleta sola -- el operador confirma con un click.
+const observerCandidatoEl = document.getElementById('observer-candidato');
+if (observerCandidatoEl) {
+    fetch('{{ url_for("observer_candidatos_factura", invoice_id=invoice.id) }}')
+        .then(r => r.json())
+        .then(data => {
+            const mejor = (data.candidatos || [])[0];
+            if (!mejor || mejor.score < 80) return;
+            const fecha = mejor.fecha ? mejor.fecha.slice(0, 10) : '?';
+            observerCandidatoEl.innerHTML =
+                `<span class="observer-candidato__txt">ObServer sugiere: recepción del ${fecha}` +
+                ` (${mejor.unidades} unid., ${mejor.renglones} renglones) — ${mejor.motivos.join(', ')}</span>` +
+                `<button type="button" class="btn btn-violet btn-sm" id="observer-usar-candidato">Usar esta recepción</button>`;
+            observerCandidatoEl.hidden = false;
+            document.getElementById('observer-usar-candidato').addEventListener('click', () => {
+                const form = document.getElementById('observer-sync-form');
+                form.querySelector('input[name="id_recepcion"]').value = mejor.id_recepcion;
+                if (form.requestSubmit) form.requestSubmit(); else form.submit();
+            });
+        })
+        .catch(() => {});
 }
 
 function highlightMatch(input, erpId) {
