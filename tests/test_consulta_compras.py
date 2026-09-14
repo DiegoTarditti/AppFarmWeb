@@ -2,7 +2,8 @@
 from datetime import date
 
 import database
-from database import Invoice, InvoiceItem
+from database import (Invoice, InvoiceItem, ObsCodigoBarras, ObsLaboratorio,
+                      ObsProducto)
 from flask import Flask, url_for as _real_url_for
 from flask_login import LoginManager, UserMixin
 
@@ -59,6 +60,19 @@ def _seed():
                       cantidad=3, precio_unitario=110, dto=None, importe=330))
     s.add(InvoiceItem(factura_id=inv1.id, codigo_barra='000', descripcion='ALGO QUE NO ES',
                       cantidad=1, precio_unitario=1, dto=None, importe=1))
+
+    # El laboratorio no esta en el renglon de factura: se llega por el EAN via
+    # el catalogo de ObServer, asi que el filtro necesita las tres tablas.
+    s.add(ObsLaboratorio(observer_id=7, descripcion='LABORATORIO UNO'))
+    s.add(ObsLaboratorio(observer_id=8, descripcion='LABORATORIO DOS'))
+    s.add(ObsProducto(observer_id=100, descripcion='OPTAMOX DUO 1G COM X 8',
+                      laboratorio_observer=7))
+    s.add(ObsProducto(observer_id=101, descripcion='ALGO QUE NO ES',
+                      laboratorio_observer=8))
+    s.add(ObsCodigoBarras(id_codigo_barras=1, producto_observer=100,
+                          codigo_barras='779123', orden=1))
+    s.add(ObsCodigoBarras(id_codigo_barras=2, producto_observer=101,
+                          codigo_barras='000', orden=1))
     s.commit()
 
 
@@ -83,28 +97,36 @@ def test_filtra_por_rango_de_fecha():
     assert '01/06/2026' not in html
 
 
-def test_filtra_por_proveedor():
+def test_filtra_por_laboratorio():
+    """Reemplaza al viejo filtro por proveedor.
+
+    Aquel no separaba nada: el detalle de factura existe casi sólo para
+    Kellerhoff, así que siempre daba lo mismo. Lo que sí divide el catálogo es
+    el laboratorio."""
     _seed()
     c = _app().test_client()
-    r = c.get('/compras/consulta?q=optamox&proveedor=30111111112')
+    r = c.get('/compras/consulta?q=optamox&laboratorio=7')
     html = r.get_data(as_text=True)
-    assert 'OTRA' in html
-    assert '01/06/2026' in html
-    assert '01/08/2026' not in html      # la de Kellerhoff queda afuera
+    assert 'OPTAMOX DUO 1G COM X 8' in html
 
 
-def test_filtra_por_proveedor_con_cuit_en_otro_formato():
-    """El dropdown manda `Provider.cuit` y la factura guarda el CUIT como vino de
-    su fuente: 123 de los 124 proveedores lo tienen con guiones y las facturas de
-    ARCA/scraper no. Con igualdad cruda el listado salía vacío, que se lee como
-    'no le compramos esto' — un resultado incorrecto, no un error visible."""
+def test_filtra_por_laboratorio_deja_afuera_los_de_otro():
     _seed()
     c = _app().test_client()
-    r = c.get('/compras/consulta?q=optamox&proveedor=30-11111111-2')
+    # El OPTAMOX es del laboratorio 7; pidiendo el 8 no tiene que aparecer.
+    r = c.get('/compras/consulta?q=optamox&laboratorio=8')
     html = r.get_data(as_text=True)
-    assert 'OTRA' in html
-    assert '01/06/2026' in html
-    assert '01/08/2026' not in html      # sigue filtrando: no trae la otra
+    assert 'OPTAMOX DUO 1G COM X 8' not in html
+
+
+def test_laboratorio_invalido_no_rompe():
+    """El valor llega de la query string: si alguien manda texto, se ignora y se
+    listan todas, en vez de reventar con un 500."""
+    _seed()
+    c = _app().test_client()
+    r = c.get('/compras/consulta?q=optamox&laboratorio=cualquiera')
+    assert r.status_code == 200
+    assert 'OPTAMOX DUO 1G COM X 8' in r.get_data(as_text=True)
 
 
 def test_sin_termino_no_lista():

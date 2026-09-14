@@ -23,8 +23,7 @@ from flask_login import login_required
 from sqlalchemy import or_
 
 import database
-from database import Invoice, InvoiceItem, get_db
-from helpers import get_providers
+from database import Invoice, InvoiceItem, ObsCodigoBarras, ObsLaboratorio, ObsProducto, get_db
 
 _LIMITE = 500
 
@@ -39,7 +38,7 @@ def _parse_fecha(s):
         return None
 
 
-def _consultar(session, q, desde, hasta, prov_cuit):
+def _consultar(session, q, desde, hasta, lab_id):
     """(filas, resumen) de las compras que matchean. filas=[] si no hay término."""
     if not q:
         return [], None
@@ -55,20 +54,21 @@ def _consultar(session, q, desde, hasta, prov_cuit):
         query = query.filter(Invoice.fecha >= desde)
     if hasta:
         query = query.filter(Invoice.fecha <= hasta)
-    if prov_cuit:
-        # El dropdown manda `Provider.cuit`. Se filtra por `Invoice.proveedor_id`
-        # —resuelto en el alta— y se acepta además el CUIT normalizado para las
-        # facturas viejas que quedaron sin id. Comparar el CUIT crudo no alcanza:
-        # la factura guarda el texto del comprobante, que no usa el mismo formato
-        # que `proveedores` según la fuente (el parser de PDF pone guiones, ARCA
-        # y el scraper no), y el listado vacío se lee como "no le compramos esto".
-        from helpers import buscar_proveedor_por_cuit
-        from services.cuenta_corriente import _cuit_sql_normalizado, normalizar_cuit
-        cond = _cuit_sql_normalizado(Invoice.proveedor_cuit) == normalizar_cuit(prov_cuit)
-        prov = buscar_proveedor_por_cuit(session, prov_cuit)
-        if prov is not None:
-            cond = or_(Invoice.proveedor_id == prov.id, cond)
-        query = query.filter(cond)
+    if lab_id:
+        # Antes acá había un filtro por proveedor. Se sacó porque el detalle de
+        # factura existe casi sólo para Kellerhoff (los demás proveedores tienen
+        # cabecera pero ningún renglón), así que filtrar por proveedor no separa
+        # nada: siempre es el mismo. Lo que sí sirve es el laboratorio.
+        #
+        # El laboratorio no está en el renglón de factura: se llega por el EAN,
+        # vía el catálogo de ObServer.
+        query = query.filter(InvoiceItem.codigo_barra.in_(
+            session.query(ObsCodigoBarras.codigo_barras)
+            .join(ObsProducto,
+                  ObsProducto.observer_id == ObsCodigoBarras.producto_observer)
+            .filter(ObsProducto.laboratorio_observer == lab_id,
+                    ObsCodigoBarras.fecha_baja.is_(None))
+        ))
     rows = (query.order_by(Invoice.fecha.desc(),
                            InvoiceItem.descripcion).limit(_LIMITE).all())
 
@@ -150,6 +150,25 @@ def _consultar(session, q, desde, hasta, prov_cuit):
     return filas, resumen
 
 
+def _laboratorios_con_compras(session):
+    """Sólo los laboratorios que aparecen en alguna factura.
+
+    La lista completa son más de mil y el 95% nunca se compró: un desplegable
+    así no se usa, se sufre.
+    """
+    return (session.query(ObsLaboratorio.observer_id, ObsLaboratorio.descripcion)
+            .join(ObsProducto,
+                  ObsProducto.laboratorio_observer == ObsLaboratorio.observer_id)
+            .join(ObsCodigoBarras,
+                  ObsCodigoBarras.producto_observer == ObsProducto.observer_id)
+            .join(InvoiceItem,
+                  InvoiceItem.codigo_barra == ObsCodigoBarras.codigo_barras)
+            .filter(ObsLaboratorio.fecha_baja.is_(None))
+            .distinct()
+            .order_by(ObsLaboratorio.descripcion)
+            .all())
+
+
 def _xlsx(filas, q) -> bytes:
     import io
 
@@ -192,14 +211,15 @@ def init_app(app):
         q = (request.args.get('q') or '').strip()
         desde = _parse_fecha(request.args.get('desde'))
         hasta = _parse_fecha(request.args.get('hasta'))
-        prov_cuit = (request.args.get('proveedor') or '').strip()
+        lab_id = (request.args.get('laboratorio') or '').strip()
+        lab_id = int(lab_id) if lab_id.isdigit() else None
         with get_db() as session:
-            proveedores = get_providers()
-            filas, resumen = _consultar(session, q, desde, hasta, prov_cuit)
+            laboratorios = _laboratorios_con_compras(session)
+            filas, resumen = _consultar(session, q, desde, hasta, lab_id)
         return render_template('consulta_compras.html', q=q,
                                desde=request.args.get('desde') or '',
                                hasta=request.args.get('hasta') or '',
-                               prov_cuit=prov_cuit, proveedores=proveedores,
+                               lab_id=lab_id, laboratorios=laboratorios,
                                filas=filas, resumen=resumen, hoy=_date.today())
 
     @app.route('/api/compras/consulta/monroe', methods=['POST'])
@@ -227,9 +247,10 @@ def init_app(app):
             abort(400, description='Falta el término de búsqueda.')
         desde = _parse_fecha(request.args.get('desde'))
         hasta = _parse_fecha(request.args.get('hasta'))
-        prov_cuit = (request.args.get('proveedor') or '').strip()
+        lab_id = (request.args.get('laboratorio') or '').strip()
+        lab_id = int(lab_id) if lab_id.isdigit() else None
         with get_db() as session:
-            filas, _ = _consultar(session, q, desde, hasta, prov_cuit)
+            filas, _ = _consultar(session, q, desde, hasta, lab_id)
         contenido = _xlsx(filas, q)
         slug = ''.join(c if c.isalnum() else '-' for c in q)[:30] or 'compras'
         nombre = f'Compras-{slug}-{_date.today():%Y-%m-%d}.xlsx'
