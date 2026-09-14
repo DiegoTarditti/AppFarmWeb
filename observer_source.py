@@ -1006,12 +1006,27 @@ def sync_precios_vigentes(session):
         session.flush()
     finally:
         conn.close()
+
+    # El histórico se registra ACÁ y no en un job aparte porque este UPDATE es
+    # justo lo que pisa el precio anterior: si el snapshot corre después, ya no
+    # hay contra qué comparar y el cambio se pierde para siempre.
+    # Ver services/precios_lista y docs/rentabilidad.md.
+    from services.precios_lista import registrar_cambios
+    try:
+        cambios = registrar_cambios(session)
+    except Exception as e:  # noqa: BLE001
+        # Que falle el histórico no puede tumbar el sync de precios, que es lo
+        # que le da precio al mostrador y al bot.
+        _log.warning('sync_precios_vigentes: no se pudo registrar el histórico (%s)', e)
+        cambios = 0
+
     duracion = int((time.time() - t0) * 1000)
     _log_sync(session, 'precios_vigentes', actualizados, duracion)
-    _log.info('sync_precios_vigentes: %d actualizados, %d sin_match local, %d ms',
-              actualizados, sin_match, duracion)
+    _log.info('sync_precios_vigentes: %d actualizados, %d sin_match local, '
+              '%d cambios al histórico, %d ms',
+              actualizados, sin_match, cambios, duracion)
     return {'upsert': actualizados, 'sin_match': sin_match,
-            'duracion_ms': duracion}
+            'cambios_historico': cambios, 'duracion_ms': duracion}
 
 
 def sync_condiciones_comerciales(session):

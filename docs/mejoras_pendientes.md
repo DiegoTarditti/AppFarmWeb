@@ -17,6 +17,59 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## 🐛 Pendiente — `/atencion`: el bot dice que la OS cubre mucho más de lo que cubre (2026-09-14)
+
+`services/os_inferida.py` → `get_precio_os()` calcula la cobertura como
+`importe_efectivo / importe`. **Sólo efectivo.** Pero el 42% de los pacientes con
+obra social paga con tarjeta, y ahí `importe_efectivo` queda en 0 y la cuenta
+concluye que el convenio cubrió el 100%.
+
+Medido sobre los últimos 12 meses (200.846 renglones con OS), el error es
+sistemático y grande:
+
+| Obra social | Ventas | Dice que cubre | Cubre en realidad | Error |
+|---|---|---|---|---|
+| Recetario Solidario | 9.078 | 72% | **39%** | 33 pp |
+| Amtae | 9.805 | 78% | **49%** | 29 pp |
+| OSDE | 4.206 | 89% | **62%** | 28 pp |
+| IAPOS | 8.551 | 89% | **62%** | 27 pp |
+| MEDIFE | 767 | 89% | 58% | 31 pp |
+
+En OSDE el chatbot le dice al paciente que paga el 11% y en realidad paga el 38%:
+sobre un producto de $100.000, $11.000 contra $38.000.
+
+El arreglo es sumar los cuatro medios de pago (`importe_efectivo + importe_tarjeta
++ importe_cheque + importe_cuenta_corriente`). De paso, dos cosas más en esa
+función: el docstring promete devolver `precio_paciente_estimado` y **no lo
+devuelve**, y el `.limit(200)` se aplica **antes** de promediar y sin `ORDER BY`,
+así que para un producto con muchas ventas toma 200 filas arbitrarias en vez de
+las más recientes.
+
+---
+
+## ⏳ Pendiente — Análisis de rentabilidad: faltan rutas y pantallas (2026-09-14)
+
+La capa de cálculo está construida y verificada contra producción (38 tests):
+`services/inflacion.py`, `services/rentabilidad.py`, `services/precios_lista.py`.
+
+**Todo el contexto está en [`docs/rentabilidad.md`](rentabilidad.md)** — las
+decisiones y por qué (costo de reposición vs promedio ponderado, por qué el
+indicador de calidad es la antigüedad y no la cobertura, el ajuste por
+inflación), las trampas medidas (NCR sin signo, renglones a costo cero,
+colisiones de EAN en los dos sentidos, unidad de compra ≠ unidad de venta) y las
+preguntas abiertas. **Leerlo antes de tocar el módulo.**
+
+Lo que falta, en orden: enganchar `precios_lista.registrar_cambios()` a algo que
+lo corra (hoy nadie la llama), las rutas y pantallas, que el sync de Kellerhoff
+escriba en `producto_precios_hist`, y normalizar el signo de las NCR en el alta.
+
+Hallazgo lateral que ya rinde solo: **cada laboratorio aumenta un día fijo del
+mes** — Lafedar el 19 (96,6% de sus 381 productos), Richet el 22 (94,2%), Gador
+el 31 (95%), Tuteur el 1°. Son 26 laboratorios con más del 80% de concentración.
+Si Lafedar aumenta el 19, conviene comprarle el 18.
+
+---
+
 ## ⏳ Pendiente — Control de ingresos de Kellerhoff: más datos a la vista (2026-09-03)
 
 Salió de revisar en producción por qué una compra aparecía como recibida cuando no
