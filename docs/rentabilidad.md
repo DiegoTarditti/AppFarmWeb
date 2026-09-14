@@ -3,8 +3,14 @@
 Módulo para responder, por producto: a cuánto lo compro, cuál fue el mejor precio
 que conseguí, cuánto margen deja, y con qué obra social conviene venderlo.
 
-**Estado al 2026-09-14**: la capa de cálculo está construida y verificada contra
-producción (38 tests). Faltan las rutas y las pantallas.
+**Estado al 2026-09-14 (cierre)**: capa de cálculo + las dos pantallas, en
+producción (`89d9a2c`). `/rentabilidad` (ranking) y `/rentabilidad/<ean>` (ficha
+por producto), linkeadas desde el menú en la sección Compras.
+`producto_precios_hist` pasó de 0 a 6.078 filas.
+
+**Antes de sacar conclusiones de estas pantallas, leer la sección "La mitad de la
+facturación no es plata cobrada"** más abajo: sobre el 49% de la facturación el
+margen no se puede afirmar.
 
 - `services/inflacion.py` — índice de inflación del costo de compra
 - `services/rentabilidad.py` — costeo, márgenes y cruce con ventas
