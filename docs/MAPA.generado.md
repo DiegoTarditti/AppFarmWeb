@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-14 09:39 · rama `feat/indice-inflacion-compras` · commit `e56c62f`
+Generado: 2026-09-14 09:58 · rama `main` · commit `3380c9d`
 
-**825 rutas** en 81 archivos · **136 modelos** · **22 syncs** · **45 services** · **11 parsers**
+**826 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **45 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -1277,6 +1277,12 @@ Generado: 2026-09-14 09:39 · rama `feat/indice-inflacion-compras` · commit `e5
 | `/purchase/save-order/<uid>` | POST | [`purchase_save_order`](../routes/purchase.py#L701) |
 | `/purchase/suggest` | GET | [`purchase_suggest`](../routes/purchase.py#L792) |
 | `/purchase/suggest/create-order` | POST | [`purchase_suggest_create_order`](../routes/purchase.py#L869) |
+
+### `routes/rentabilidad.py`
+
+| Ruta | Métodos | Función |
+|---|---|---|
+| `/rentabilidad` | GET | [`rentabilidad_ranking`](../routes/rentabilidad.py#L45) |
 
 ### `routes/reparto.py`
 
