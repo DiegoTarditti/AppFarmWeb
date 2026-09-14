@@ -234,3 +234,51 @@ def test_backfill_retoma_despues_de_quedar_a_medias():
         assert eans == {'111', '222', '333'}
     finally:
         s.close()
+
+
+def test_dos_renglones_del_mismo_producto_dejan_dos_filas():
+    """Una factura puede traer el mismo producto dos veces a precio distinto
+    (dos descuentos, o parte de una oferta): en produccion pasa en 74 facturas
+    y en 11 los precios difieren. Cada renglon es un punto historico propio."""
+    from scripts.backfill_precios_hist import backfill
+    s = database.SessionLocal()
+    try:
+        inv = _factura(s)
+        for precio in (14948, 12000):
+            s.add(database.InvoiceItem(factura_id=inv.id, codigo_barra='111',
+                                       descripcion='RIVOTRIL', cantidad=1,
+                                       precio_unitario=precio, importe=precio))
+        s.commit()
+
+        assert backfill(s)['escritos'] == 2
+        precios = sorted(float(h.precio_unitario)
+                         for h in s.query(ProductoPrecioHist).all())
+        assert precios == [12000, 14948]
+    finally:
+        s.close()
+
+
+def test_completa_el_segundo_renglon_si_la_corrida_anterior_dejo_uno():
+    """El caso exacto que dejo 3 renglones sin fila en produccion: el backfill
+    se corto a la mitad habiendo escrito UNA de las dos filas del par."""
+    from scripts.backfill_precios_hist import backfill
+    s = database.SessionLocal()
+    try:
+        inv = _factura(s)
+        for precio in (14948, 12000):
+            s.add(database.InvoiceItem(factura_id=inv.id, codigo_barra='111',
+                                       descripcion='RIVOTRIL', cantidad=1,
+                                       precio_unitario=precio, importe=precio))
+        s.commit()
+        # La corrida que se corto alcanzo a escribir una sola.
+        precios_hist.registrar(s, inv, codigo_barra='111', precio_unitario=14948)
+        s.commit()
+
+        r = backfill(s)
+        assert r['escritos'] == 1 and r['saltados'] == 1
+        assert s.query(ProductoPrecioHist).count() == 2
+        # Y una tercera corrida ya no escribe nada.
+        assert backfill(s)['escritos'] == 0
+        assert s.query(ProductoPrecioHist).count() == 2
+    finally:
+        s.close()
