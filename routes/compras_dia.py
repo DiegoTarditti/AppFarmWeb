@@ -683,6 +683,36 @@ def init_app(app):
                     }
         return jsonify({'ok': True, 'now': ahora.isoformat(), 'cierres': out})
 
+    @app.route('/api/pedidos/dia/contrastar', methods=['POST'])
+    @login_required
+    def api_contrastar_monroe():
+        """Contrasta el pedido armado contra Monroe, antes de cerrarlo.
+
+        Devuelve sólo los renglones donde Monroe conviene, más las
+        oportunidades por cantidad. No mueve nada: avisa y la decisión sigue
+        siendo de quien arma el pedido.
+
+        Si el motor o Monroe no contestan devuelve `fuente_caida` con 200: el
+        pedido se tiene que poder cerrar igual.
+        """
+        from services.contraste_monroe import contrastar
+        datos = request.get_json(silent=True) or {}
+        renglones = [r for r in (datos.get('renglones') or [])
+                     if r.get('ean') and int(r.get('cantidad') or 0) > 0]
+        if not renglones:
+            return jsonify({'ok': True, 'fuente_caida': False,
+                            'mas_barato_en_monroe': 0, 'ahorro_estimado': 0,
+                            'detalle': [], 'oportunidades_por_cantidad': [],
+                            'no_consultados': [], 'costos': {}})
+        with get_db() as session:
+            panel = contrastar(
+                session, renglones,
+                proveedor=datos.get('proveedor'),
+                umbral_pct=float(datos.get('umbral_pct') or 5.0),
+                umbral_pesos=float(datos.get('umbral_pesos') or 500.0),
+            )
+        return jsonify({'ok': True, **panel})
+
     @app.route('/api/pedidos/dia/horarios/<int:proveedor_id>', methods=['GET', 'POST', 'DELETE'])
     @login_required
     def api_horarios_crud(proveedor_id):
