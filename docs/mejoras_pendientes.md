@@ -17,7 +17,21 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
-## 🐛 Pendiente — `/atencion`: el bot dice que la OS cubre mucho más de lo que cubre (2026-09-14)
+## ✅ `/atencion`: el bot decía que la OS cubre mucho más de lo que cubre (2026-09-14)
+
+**Arreglado en el PR #411** y desplegado. Se suman los cuatro medios de pago, se
+agregó `ORDER BY fecha DESC` antes del `.limit(200)`, y el `INTERVAL '12 months'`
+(Postgres-only, que era la razón de que la función no tuviera tests) se
+reemplazó por `date.today() - timedelta(365)`. 6 tests nuevos.
+
+Queda un pendiente que salió de ahí: **`osPrecioCache` se escribe y nunca se
+lee** (`atencion.html:1835`). El endpoint se llama en un `for` con `await`
+adentro —hasta 12 requests en serie por búsqueda— y el resultado se descarta. O
+se muestra, o se sacan las llamadas.
+
+<details>
+<summary>El diagnóstico original</summary>
+
 
 `services/os_inferida.py` → `get_precio_os()` calcula la cobertura como
 `importe_efectivo / importe`. **Sólo efectivo.** Pero el 42% de los pacientes con
@@ -45,28 +59,85 @@ devuelve**, y el `.limit(200)` se aplica **antes** de promediar y sin `ORDER BY`
 así que para un producto con muchas ventas toma 200 filas arbitrarias en vez de
 las más recientes.
 
+</details>
+
 ---
 
-## ⏳ Pendiente — Análisis de rentabilidad: faltan rutas y pantallas (2026-09-14)
-
-La capa de cálculo está construida y verificada contra producción (38 tests):
-`services/inflacion.py`, `services/rentabilidad.py`, `services/precios_lista.py`.
+## 📊 Estado — Análisis de rentabilidad (2026-09-14, cierre del día)
 
 **Todo el contexto está en [`docs/rentabilidad.md`](rentabilidad.md)** — las
-decisiones y por qué (costo de reposición vs promedio ponderado, por qué el
-indicador de calidad es la antigüedad y no la cobertura, el ajuste por
-inflación), las trampas medidas (NCR sin signo, renglones a costo cero,
-colisiones de EAN en los dos sentidos, unidad de compra ≠ unidad de venta) y las
-preguntas abiertas. **Leerlo antes de tocar el módulo.**
+decisiones y por qué, las trampas medidas y las preguntas abiertas. **Leerlo
+antes de tocar el módulo.**
 
-Lo que falta, en orden: enganchar `precios_lista.registrar_cambios()` a algo que
-lo corra (hoy nadie la llama), las rutas y pantallas, que el sync de Kellerhoff
-escriba en `producto_precios_hist`, y normalizar el signo de las NCR en el alta.
+### Lo que quedó andando
 
-Hallazgo lateral que ya rinde solo: **cada laboratorio aumenta un día fijo del
-mes** — Lafedar el 19 (96,6% de sus 381 productos), Richet el 22 (94,2%), Gador
-el 31 (95%), Tuteur el 1°. Son 26 laboratorios con más del 80% de concentración.
-Si Lafedar aumenta el 19, conviene comprarle el 18.
+| | Dónde | PR |
+|---|---|---|
+| Capa de cálculo | `services/{inflacion,rentabilidad,precios_lista}.py` | #411 |
+| Ranking | `/rentabilidad` | #412 |
+| Ficha por producto | `/rentabilidad/<ean>` | #413 |
+| Link en el menú (sección Compras) | `templates/base.html` | #414 |
+| Aviso de que el margen por OS no es afirmable | las dos pantallas | #415 |
+| Histórico de precio desde Kellerhoff | `services/precios_hist.py` | #416, #417 |
+
+Producción: `producto_precios_hist` pasó de **0 a 6.078 filas** (2.916 productos,
+613 facturas, jul→sep 2026). Desplegado en `89d9a2c`.
+
+### ⚠️ La trampa más grande que se encontró
+
+**Las liquidaciones de PAMI y las obras sociales NO pasan por ObServer.**
+`importe_a_cargo_os` es lo que el sistema *anota* que el convenio debería pagar —
+no lo que pagó. Son **$985,7M de $2.015,5M (49%)** de la facturación de 90 días.
+
+Consecuencia: **para una venta por obra social el margen no se puede afirmar**,
+ni bien ni mal. Sobre esos datos se había armado una lista de "140 productos que
+pierden $15,5M por trimestre" que **estaba mal**. Lo corrigió Diego con
+conocimiento del negocio, no los datos. Detalle completo en `rentabilidad.md`.
+
+Lo que sí quedó en pie: PAMI reconoce **89,4% del PVP** en 731 productos y
+**53,2%** en otros 141, comprándose todos al mismo descuento (~65%). Es buena
+pregunta para PAMI, pero no prueba pérdida.
+
+### Pendientes del módulo
+
+- **`precio_publico` quedó NULL en las 6.078 filas del backfill** (a propósito:
+  no se inventa un dato que la droguería no informó). El gráfico de precios de la
+  ficha ya anda, pero **`services/pedido_estacional.py` sigue sin datos** porque
+  usa `precio_publico`; sólo los va a tener de las compras nuevas en adelante.
+  Existe `--derivar-pvp` (`precio_unitario/(1-dto/100)`, fórmula verificada
+  exacta) — es decisión de negocio si conviene un dato derivado o ninguno.
+- **Normalizar el signo de las NCR en el alta**, para que cada consumidor no
+  tenga que acordarse de firmar por `tipo_comprobante`.
+- Los otros **cinco caminos** que crean renglones de factura (los 3 de
+  `routes/invoices.py`, más `data_extract.py` y los 2 de `converter.py` que ya lo
+  hacían a mano) podrían usar `services/precios_hist.py` en vez de su propia
+  copia. Hoy sólo se enganchó Kellerhoff.
+- **Conseguir la liquidación real de PAMI**: es lo que convertiría el margen por
+  obra social de comparación a resultado.
+- `obs_precios_lista_hist` tiene **una sola foto** (2026-08-31). En unos meses va
+  a permitir probar si PAMI reconoce sobre un PVP viejo — la hipótesis que hoy no
+  se pudo testear.
+
+### Dos bugs que los tests no agarraron, del mismo tipo
+
+Los dos son **SQLite pasa / Postgres falla**, que es el punto ciego de la suite:
+
+1. `yield_per` + `commit()` adentro del loop → *"named cursor isn't valid
+   anymore"*. Murió en la fila 2.000 del backfill (PR #417). SQLite no usa
+   cursores server-side.
+2. Chequear presencia en vez de contar → salteaba el segundo renglón de un
+   producto repetido en la misma factura (PR #418). En 11 de 74 casos los dos
+   renglones tienen **precio distinto**, así que no son redundantes.
+
+Es la contracara del `INTERVAL '12 months'` de `os_inferida`: allá el código
+Postgres-only no corría en los tests; acá corre, pasa, y falla en producción.
+
+### Hallazgo lateral que ya rinde solo
+
+**Cada laboratorio aumenta un día fijo del mes** — Lafedar el 19 (96,6% de sus
+381 productos), Richet el 22 (94,2%), Gador el 31 (95%), Tuteur el 1°. Son 26
+laboratorios con más del 80% de concentración. Si Lafedar aumenta el 19, conviene
+comprarle el 18. El costo de la droguería se mueve 0-3 días DESPUÉS del PVP.
 
 ---
 
