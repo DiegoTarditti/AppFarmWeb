@@ -924,10 +924,11 @@
     <div id="panel-monroe" class="mt-4 hidden"></div>
 
     <div class="mt-4 flex items-center justify-end gap-3">
-        <span id="monroe-status" class="text-[11px] text-[#666]"></span>
+        <span id="monroe-status" class="text-[11px]" style="color:var(--ds-text-mute)"></span>
         <button id="btn-monroe" onclick="contrastarMonroe()"
                 title="Antes de cerrar: pregunta a Monroe el precio de cada renglón y avisa si hay algo más barato. No mueve nada."
-                class="border border-[#3f6650] text-[#3f6650] font-bold px-3 py-2 rounded-lg hover:bg-[#3f6650]/10">
+                class="border font-bold px-3 py-2 rounded-lg hover:bg-white/5"
+                style="border-color:var(--ds-mint);color:var(--ds-mint)">
             Contrastar con Monroe
         </button>
         <span id="emitir-status" class="text-[11px] text-[#3f6650]"></span>
@@ -2243,38 +2244,40 @@ async function contrastarMonroe() {
 
     if (!det.length && !ops.length) {
         panel.classList.remove('hidden');
-        panel.innerHTML = `<div class="rounded-lg border border-[#d8e3dc] bg-[#f6faf8] px-4 py-3 text-sm text-[#3f6650]">
+        panel.innerHTML = `<div class="rounded-lg border px-4 py-3 text-sm"
+            style="border-color:var(--ds-line);background:var(--ds-surface);color:var(--ds-text-soft)">
             Nada que avisar: sobre ${renglones.length} renglones, Monroe no mejora ninguno.
             ${_monroePie(d)}</div>`;
         return;
     }
 
-    let html = `<div class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">`;
+    let html = `<div class="rounded-lg border px-4 py-3"
+        style="border-color:var(--ds-warn);background:var(--ds-surface);color:var(--ds-text)">`;
     if (det.length) {
-        html += `<div class="font-bold text-amber-900 text-sm mb-2">
+        html += `<div class="font-bold text-sm mb-2" style="color:var(--ds-warn)">
             Monroe está más barato en ${det.length} de ${renglones.length} renglones
             — ${fmt(d.ahorro_estimado)}</div>
-            <table class="w-full text-[12px]"><thead><tr class="text-[10px] uppercase text-amber-800">
+            <table class="w-full text-[12px]"><thead><tr class="text-[10px] uppercase" style="color:var(--ds-text-mute)">
             <th class="text-left py-1">Producto</th><th class="text-right">Cant.</th>
             <th class="text-right">Acá</th><th class="text-right">Monroe</th>
             <th class="text-right">Dif.</th><th class="text-left pl-3">Por qué</th></tr></thead><tbody>`;
         det.forEach(x => {
-            html += `<tr class="border-t border-amber-200">
+            html += `<tr class="border-t" style="border-color:var(--ds-line)">
                 <td class="py-1">${_esc(x.nombre || x.ean)}</td>
                 <td class="text-right font-mono">${x.unidades}</td>
                 <td class="text-right font-mono">${fmt(x.costo_actual)}</td>
-                <td class="text-right font-mono text-rose-700 font-bold">${fmt(x.costo_monroe)}</td>
-                <td class="text-right font-mono text-rose-700 font-bold">${fmt(x.diferencia_total)}<span class="text-[10px] font-normal"> (${x.porcentaje}%)</span></td>
-                <td class="pl-3 text-[11px] text-amber-900">${_esc(x.oferta_monroe || '')}
+                <td class="text-right font-mono font-bold" style="color:var(--ds-danger)">${fmt(x.costo_monroe)}</td>
+                <td class="text-right font-mono font-bold" style="color:var(--ds-danger)">${fmt(x.diferencia_total)}<span class="text-[10px] font-normal"> (${x.porcentaje}%)</span></td>
+                <td class="pl-3 text-[11px]" style="color:var(--ds-text-soft)">${_esc(x.oferta_monroe || '')}
                     ${x.descuento_actual_desde ? `<span class="text-[10px] opacity-70">· tu costo es del ${x.descuento_actual_desde}</span>` : ''}</td></tr>`;
         });
         html += `</tbody></table>`;
     }
     if (ops.length) {
-        html += `<div class="mt-3 pt-2 border-t border-amber-300">
-            <div class="font-bold text-amber-900 text-sm mb-1">Llevando un poco más entra una oferta</div>`;
+        html += `<div class="mt-3 pt-2 border-t" style="border-color:var(--ds-line)">
+            <div class="font-bold text-sm mb-1" style="color:var(--ds-warn)">Llevando un poco más entra una oferta</div>`;
         ops.slice(0, 8).forEach(o => {
-            html += `<div class="text-[12px] text-amber-900 py-0.5">
+            html += `<div class="text-[12px] py-0.5" style="color:var(--ds-text)">
                 <b>${_esc(o.nombre || o.ean)}</b>: tenés ${o.unidades_actuales},
                 con ${o.unidades_necesarias} (faltan ${o.faltan}) ahorrás
                 <b>${fmt(o.ahorro_total)}</b> <span class="opacity-70">— ${_esc(o.oferta || '')}</span></div>`;
@@ -2296,7 +2299,7 @@ function _monroePie(d) {
     if (c.costo_invalido) partes.push(`${c.costo_invalido} con costo mal cargado`);
     if (sin) partes.push(`${sin} sin datos en Monroe`);
     return partes.length
-        ? `<div class="mt-2 text-[10px] text-[#666]">Base de comparación: ${partes.join(' · ')}.</div>`
+        ? `<div class="mt-2 text-[10px]" style="color:var(--ds-text-mute)">Base de comparación: ${partes.join(' · ')}.</div>`
         : '';
 }
 
