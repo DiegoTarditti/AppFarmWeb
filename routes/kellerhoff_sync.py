@@ -22,6 +22,7 @@ from database import (
     ResumenProveedorItem,
     get_db,
 )
+from services import precios_hist
 from services.cuenta_corriente import (
     corte_resumenes,
     movimientos_proveedor,
@@ -769,6 +770,16 @@ def _crear_items(session, inv: Invoice, items: list[dict]) -> None:
             dto=it.get('dto_pct') or None,
             importe=it.get('importe', 0),
         ))
+        # El portal informa el precio público del día y no lo vuelve a publicar:
+        # si no se guarda acá, se pierde (`InvoiceItem` no tiene dónde ponerlo).
+        precios_hist.registrar(
+            session, inv,
+            codigo_barra=it.get('barcode', ''),
+            precio_publico=it.get('precio_pub'),
+            dto_pct=it.get('dto_pct'),
+            precio_unitario=it.get('precio_unitario') or it.get('precio_pub'),
+            importe=it.get('importe'),
+        )
     inv.total_articulos = len(items)
     inv.total_unidades = sum(it.get('cantidad', 0) for it in items)
 

@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-14 13:27 · rama `fix/margen-obra-social-no-afirmable` · commit `54c6fba`
+Generado: 2026-09-14 13:37 · rama `feat/precios-hist-kellerhoff` · commit `c06fc60`
 
-**827 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **45 services** · **11 parsers**
+**827 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **46 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -881,16 +881,16 @@ Generado: 2026-09-14 13:27 · rama `fix/margen-obra-social-no-afirmable` · comm
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/kellerhoff` | GET | [`kellerhoff_index`](../routes/kellerhoff_sync.py#L228) |
-| `/kellerhoff/cuenta-corriente` | GET | [`kellerhoff_cuenta_corriente`](../routes/kellerhoff_sync.py#L279) |
-| `/kellerhoff/resumen/<int:resumen_id>` | GET | [`kellerhoff_resumen_detalle`](../routes/kellerhoff_sync.py#L382) |
-| `/kellerhoff/resumen/<int:resumen_id>/verificar-ingresos` | POST | [`kellerhoff_resumen_verificar_ingresos`](../routes/kellerhoff_sync.py#L462) |
-| `/kellerhoff/resumenes` | GET | [`kellerhoff_resumenes`](../routes/kellerhoff_sync.py#L317) |
-| `/kellerhoff/resumenes/importar` | POST | [`kellerhoff_resumen_importar`](../routes/kellerhoff_sync.py#L345) |
-| `/kellerhoff/sync` | GET | [`kellerhoff_sync`](../routes/kellerhoff_sync.py#L109) |
-| `/kellerhoff/sync/ejecutar` | POST | [`kellerhoff_sync_ejecutar`](../routes/kellerhoff_sync.py#L184) |
-| `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L221) |
-| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L497) |
+| `/kellerhoff` | GET | [`kellerhoff_index`](../routes/kellerhoff_sync.py#L229) |
+| `/kellerhoff/cuenta-corriente` | GET | [`kellerhoff_cuenta_corriente`](../routes/kellerhoff_sync.py#L280) |
+| `/kellerhoff/resumen/<int:resumen_id>` | GET | [`kellerhoff_resumen_detalle`](../routes/kellerhoff_sync.py#L383) |
+| `/kellerhoff/resumen/<int:resumen_id>/verificar-ingresos` | POST | [`kellerhoff_resumen_verificar_ingresos`](../routes/kellerhoff_sync.py#L463) |
+| `/kellerhoff/resumenes` | GET | [`kellerhoff_resumenes`](../routes/kellerhoff_sync.py#L318) |
+| `/kellerhoff/resumenes/importar` | POST | [`kellerhoff_resumen_importar`](../routes/kellerhoff_sync.py#L346) |
+| `/kellerhoff/sync` | GET | [`kellerhoff_sync`](../routes/kellerhoff_sync.py#L110) |
+| `/kellerhoff/sync/ejecutar` | POST | [`kellerhoff_sync_ejecutar`](../routes/kellerhoff_sync.py#L185) |
+| `/kellerhoff/sync/estado` | GET | [`kellerhoff_sync_estado`](../routes/kellerhoff_sync.py#L222) |
+| `/kellerhoff/sync/ligar` | POST | [`kellerhoff_sync_ligar`](../routes/kellerhoff_sync.py#L498) |
 
 ### `routes/laboratorios.py`
 
@@ -1450,6 +1450,7 @@ Generado: 2026-09-14 13:27 · rama `fix/margen-obra-social-no-afirmable` · comm
 | [`os_inferida.py`](../services/os_inferida.py) | Consultas de OS inferida por cliente y precio estimado con cobertura OS. |
 | [`pedido_analisis.py`](../services/pedido_analisis.py) | Análisis IA del resumen final de un pedido (Claude Haiku 4.5). |
 | [`pedido_estacional.py`](../services/pedido_estacional.py) | Calculo de sugerido con ajuste estacional para /pedido/prueba. |
+| [`precios_hist.py`](../services/precios_hist.py) | Snapshot de precio por renglón de factura (`producto_precios_hist`). |
 | [`precios_lista.py`](../services/precios_lista.py) | Captura del histórico de PVP de ObServer y patrón de aumento por laboratorio. |
 | [`producto_metrics.py`](../services/producto_metrics.py) | Source of truth UNICO de las metricas de venta/stock de un producto. |
 | [`referencia_ia.py`](../services/referencia_ia.py) | Análisis IA de los informes de referencia de mercado (portfolio líder vs |
