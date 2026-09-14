@@ -158,6 +158,14 @@ def test_avisa_de_la_pantalla_hermana_y_por_que_difieren():
 
 # ── Ficha de un producto ─────────────────────────────────────────────────────
 
+def test_la_pantalla_esta_en_el_menu():
+    """Se habia construido sin entrada en el sidebar: solo se llegaba tipeando
+    la URL, y el nav_active de los templates no iluminaba nada."""
+    html = _app().test_client().get('/rentabilidad').get_data(as_text=True)
+    # El link del menu, no el titulo de la pantalla ni la nota cruzada.
+    assert 'Margen por producto contra el costo de reposición' in html
+
+
 def test_el_nombre_del_ranking_linkea_a_la_ficha():
     s = database.SessionLocal()
     _seed_ozempic(s)
