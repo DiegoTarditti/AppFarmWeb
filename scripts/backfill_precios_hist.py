@@ -38,9 +38,22 @@ LOTE = 2000
 
 
 def _ya_tienen(session):
-    """{(factura_id, codigo_barra)} de lo ya registrado."""
-    return set(session.query(database.ProductoPrecioHist.factura_id,
-                             database.ProductoPrecioHist.codigo_barra).all())
+    """Counter de (factura_id, codigo_barra) → filas ya registradas.
+
+    Cuenta, no presencia, y la diferencia es real: una misma factura puede traer
+    **dos renglones del mismo producto**, y no son redundantes — en 11 de los 74
+    casos de producción los dos tienen precio distinto (dos descuentos, o parte
+    de una oferta). Cada renglón es un punto histórico propio.
+
+    Con un `set` de presencia el resultado dependía de en cuántas corridas se
+    hiciera el trabajo: dentro de una misma pasada se escribían los dos
+    renglones (ninguno estaba en el set inicial), pero si la primera pasada ya
+    había escrito uno, el segundo se salteaba para siempre. Así quedaron 3
+    renglones sin fila cuando el backfill se cortó a la mitad y se retomó.
+    """
+    from collections import Counter
+    return Counter(session.query(database.ProductoPrecioHist.factura_id,
+                                 database.ProductoPrecioHist.codigo_barra).all())
 
 
 def _pvp_derivado(precio_unitario, dto):
@@ -77,7 +90,11 @@ def backfill(session, derivar_pvp=False, dry_run=False):
         if not cb:
             sin_ean += 1
             continue
-        if (inv.id, cb[:20]) in ya:
+        clave = (inv.id, cb[:20])
+        if ya[clave] > 0:
+            # Consume un cupo: si la factura trae dos renglones de este producto
+            # y sólo hay una fila, el segundo igual se escribe.
+            ya[clave] -= 1
             saltados += 1
             continue
         if not dry_run:
