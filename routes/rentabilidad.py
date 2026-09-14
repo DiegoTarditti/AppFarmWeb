@@ -15,12 +15,12 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from flask import render_template, request
+from flask import abort, render_template, request
 from flask_login import login_required
 
 from database import get_db
 from services.inflacion import factores_a_hoy
-from services.rentabilidad import ranking
+from services.rentabilidad import detalle, ranking
 
 # El histórico de compras arranca el 2026-07-01 (antes no se cargaban con
 # detalle), así que un default más largo no agrega nada y sí tarda más.
@@ -79,3 +79,19 @@ def init_app(app):
                                hasta=hasta.isoformat() if hasta else '',
                                q=request.args.get('q') or '',
                                solo_vendidos=solo_vendidos, hoy=hoy)
+
+    @app.route('/rentabilidad/<ean>')
+    @login_required
+    def rentabilidad_detalle(ean):
+        hoy = date.today()
+        desde = _parse_fecha(request.args.get('desde')) or (hoy - timedelta(days=30 * MESES_DEFAULT))
+        hasta = _parse_fecha(request.args.get('hasta'))
+
+        with get_db() as session:
+            d = detalle(session, ean, desde=desde, hasta=hasta,
+                       factores=factores_a_hoy(session), hoy=hoy)
+        if d is None:
+            abort(404, description=f'No hay compras registradas del EAN {ean}.')
+        return render_template('rentabilidad_detalle.html', d=d,
+                               desde=desde.isoformat() if desde else '',
+                               hasta=hasta.isoformat() if hasta else '')

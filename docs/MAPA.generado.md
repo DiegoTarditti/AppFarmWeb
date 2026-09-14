@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-14 09:58 · rama `main` · commit `3380c9d`
+Generado: 2026-09-14 11:21 · rama `feat/pantalla-rentabilidad` · commit `25365c9`
 
-**826 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **45 services** · **11 parsers**
+**827 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **45 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -1283,6 +1283,7 @@ Generado: 2026-09-14 09:58 · rama `main` · commit `3380c9d`
 | Ruta | Métodos | Función |
 |---|---|---|
 | `/rentabilidad` | GET | [`rentabilidad_ranking`](../routes/rentabilidad.py#L45) |
+| `/rentabilidad/<ean>` | GET | [`rentabilidad_detalle`](../routes/rentabilidad.py#L85) |
 
 ### `routes/reparto.py`
 
