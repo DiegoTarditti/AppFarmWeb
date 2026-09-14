@@ -17,6 +17,82 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## 🔄 Histórico de PVP: cambia el objetivo — ObServer ya lo tiene (2026-09-14)
+
+**Decisión: dejamos de construir el histórico y pasamos a leer el que ya existe.**
+
+`services/precios_lista.py` arranca de cero y espera "dos o tres meses" para
+confirmar el patrón de aumento por laboratorio. `producto_precios_hist` hoy tiene
+6.078 filas.
+
+**`Gestion.ProductosPrecios` tiene 3.931.232 filas y 124.755 productos**, desde
+hace años. En los últimos 12 meses: **334.357 cambios de precio**. Es la tabla que
+alimenta las grillas "Precios vigentes" y "Cambios de precios" de la ficha de
+producto de ObServer; se verificó contra la pantalla con el producto 102277
+(OZEMPIC 1 mg/ds 3 ml) y los importes coinciden uno a uno.
+
+Las dos tablas:
+
+| Tabla | Qué es | Filas |
+|---|---|---|
+| `Gestion.ProductosPrecios` | historial completo | 3.931.232 |
+| `Gestion.ProductosPreciosVigentes` | el precio actual | 124.815 |
+
+Columnas útiles: `IdProducto`, `FechaVigencia`, `FechaIngresoEnDatos`, `Precio`,
+`CostoReposicion`, `Utilidad`, `AlicuotaIVA`, `IdTipoPrecio`, `Observacion`.
+Se joinea por `Gestion.Productos.IdProducto` y `Gestion.Laboratorios` (la columna
+de nombre es **`Nombre`**, no `Descripcion` — `Descripcion` es la de `DW.Laboratorios`).
+
+### El patrón de aumento es una VENTANA, no un día fijo
+
+Medido sobre los 12 meses, el patrón que afirma el docstring de
+`services/precios_lista.py` no se sostiene en dos de los tres casos:
+
+| Laboratorio | Dice el docstring | Dice el histórico |
+|---|---|---|
+| Gador | día 31 | **día 25** (707 cambios), después el 29 (683) |
+| Lafedar | día 19 | **día 18** (1.119), pero el 17 tiene 1.110 y el 19 sólo 753 |
+| Siegfried | día 20 | día 20 (1.519) ✓, con el 19 cerca (1.066) |
+
+**Gador es el caso peligroso**: una regla de "comprar antes del 31" compraría seis
+días *después* del aumento.
+
+No es un error de método menor: `precio_lista_fecha_vigencia` es un **snapshot del
+último aumento**, así que por construcción muestra un día por producto y no puede
+mostrar la dispersión. El propio docstring lo advierte.
+
+Hay laboratorios con patrón casi perfecto — **Amn 100 % el día 1, Denver Farma
+96,8 %, Nutricia-Bagó 95,3 %, Rontag 91,6 %** — y otros repartidos. La forma
+correcta de la regla es **ventana + concentración como nivel de confianza**, y
+actuar sólo donde la confianza es alta.
+
+Forma general del mes: el día 1 concentra el 10 % de los cambios (el doble que el
+segundo día) y el borde 28→1 junta el 19,6 %. O sea que hay sesgo al cambio de
+mes, pero el 80 % de los aumentos cae en otros días.
+
+### Lo que NO sirve: el aviso anticipado
+
+Se evaluó usar `FechaIngresoEnDatos` para avisar de un aumento antes de que rija.
+**No alcanza:** sobre 80.303 cambios de los últimos 90 días la anticipación
+promedio es de **0,4 días** (máximo 5), y al 14/09 no había ningún precio cargado
+con vigencia futura. Da horas, no días.
+
+### Corrección a este mismo doc
+
+Arriba dice que el esquema `Gestion` **requiere SA**. No es así: todo lo anterior
+se leyó con **`usuarioDW`**, el usuario que ya usa `observer_source.py`. Esa nota
+es la que estaba frenando el acceso a esta tabla.
+
+### Qué hacer
+
+1. Backfill de `ObsPrecioListaHist` desde `Gestion.ProductosPrecios` en vez de
+   esperar a acumular. La captura incremental puede quedar como está o apagarse.
+2. Recalcular el patrón por laboratorio como ventana + confianza, y usarlo sólo
+   donde la concentración lo justifique.
+3. Corregir el docstring de `services/precios_lista.py` y la nota de SA de este doc.
+
+---
+
 ## ✅ `/atencion`: el bot decía que la OS cubre mucho más de lo que cubre (2026-09-14)
 
 **Arreglado en el PR #411** y desplegado. Se suman los cuatro medios de pago, se
