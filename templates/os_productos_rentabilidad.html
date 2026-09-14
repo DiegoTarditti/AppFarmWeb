@@ -68,6 +68,15 @@
 
 <div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5 max-w-7xl mx-auto w-full">
 
+  <div class="rounded-lg border border-[#e0e0e0] bg-[#fafafa] p-3 text-[11px] leading-relaxed text-[#6f6f6f]">
+    Para decidir qué conviene <b>seguir comprando</b> (no sólo por OS), ver
+    <a href="{{ url_for('rentabilidad_ranking') }}" class="text-emerald-700 hover:underline">Rentabilidad por producto</a>.
+    Esta pantalla toma el costo por el <b>último ID de factura cargado</b>, sin distinguir notas de crédito;
+    la otra lo toma por <b>fecha real</b>, descarta notas de crédito del costo, y ajusta por <b>inflación</b>
+    (compara todo en pesos de hoy) — por eso el margen de un mismo producto puede diferir entre las dos.
+  </div>
+
+
     <!-- KPIs -->
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <div class="kpi-card">

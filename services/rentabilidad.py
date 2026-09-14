@@ -269,6 +269,74 @@ def ventas_por_obra_social(session, ean, desde=None, hasta=None):
     return sorted(filas, key=lambda f: -f['facturacion'])
 
 
+def descripciones_por_ean(session, eans):
+    """{ean: (descripcion, laboratorio)} desde el catálogo de ObServer."""
+    imputado = producto_por_ean(session, eans)
+    if not imputado:
+        return {}
+    labs = dict(session.query(database.ObsLaboratorio.observer_id,
+                              database.ObsLaboratorio.descripcion).all())
+    out = {}
+    for p in (session.query(database.ObsProducto)
+              .filter(database.ObsProducto.observer_id.in_(list(imputado)))):
+        out[imputado[p.observer_id]] = (p.descripcion,
+                                        labs.get(p.laboratorio_observer))
+    return out
+
+
+def ranking(session, desde=None, hasta=None, factores=None, solo_vendidos=True,
+            hoy=None):
+    """Una fila por producto, lista para la pantalla.
+
+    Junta las tres piezas: costeo de compras, ventas cruzadas por EAN, y el
+    catálogo para poner nombre. Devuelve todo lo que la pantalla necesita para
+    decidir, incluidos los avisos (`confianza`, `sospecha_unidad`, `neto_pct`)
+    — el número solo no alcanza para decidir, ver docs/rentabilidad.md.
+    """
+    costos = costos_por_ean(session, factores=factores, hoy=hoy)
+    if not costos:
+        return []
+    ventas = ventas_por_ean(session, desde=desde, hasta=hasta, eans=list(costos))
+    nombres = descripciones_por_ean(session, list(costos))
+
+    filas = []
+    for ean, c in costos.items():
+        v = ventas.get(ean)
+        if solo_vendidos and not v:
+            continue
+        v = v or {'unidades': 0.0, 'facturacion': 0.0, 'precio_promedio': None,
+                  'neto_pct': 0.0, 'a_cargo_os': 0.0}
+        descripcion, laboratorio = nombres.get(ean, (None, None))
+        pvp = v['precio_promedio']
+        costo = c['costo_reposicion']
+        m = margen(pvp, costo)
+        # Cobertura: qué parte de lo vendido tiene su compra registrada. NO es
+        # la confianza del margen (eso es la antigüedad del costo), sino el
+        # aviso de que la ganancia del período está incompleta.
+        cobertura = (c['unidades_compradas'] / v['unidades']
+                     if v['unidades'] else None)
+        filas.append({
+            'ean': ean,
+            'descripcion': descripcion or '(sin nombre en ObServer)',
+            'laboratorio': laboratorio,
+            'unidades_vendidas': v['unidades'],
+            'facturacion': v['facturacion'],
+            'neto_pct': v['neto_pct'],
+            'costo_reposicion': costo,
+            'dias_costo': c['dias_costo'],
+            'confianza': confianza_costo(c['dias_costo']),
+            'margen_pct': m,
+            'ganancia_periodo': ((pvp - costo) * min(c['unidades_compradas'], v['unidades'])
+                                 if pvp is not None and costo is not None else None),
+            'unidades_compradas': c['unidades_compradas'],
+            'cobertura': cobertura,
+            'mejor_precio': c['mejor_precio'],
+            'sobreprecio': c['sobreprecio_total'],
+            'sospecha_unidad': sospecha_unidad(pvp, costo),
+        })
+    return sorted(filas, key=lambda f: -f['facturacion'])
+
+
 def margen(precio_venta, costo):
     """% que queda sobre el precio de venta. None si falta alguno de los dos."""
     if not precio_venta or costo is None:

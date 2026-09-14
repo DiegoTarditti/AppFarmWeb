@@ -175,23 +175,44 @@ Uso: si Lafedar aumenta el 19, conviene comprarle el 18.
 
 ## Lo que falta implementar
 
-En orden sugerido.
+Hecho: el índice de inflación, el costeo, el cruce con ventas, el histórico de
+PVP enganchado al sync, y la pantalla `/rentabilidad` (`routes/rentabilidad.py`
++ `templates/rentabilidad.html`).
 
-1. **Enganchar `precios_lista.registrar_cambios()` a algo que lo corra.** Hoy es
-   una función que nadie llama. El lugar natural es después del sync de precios.
-   Primera corrida: 75.423 filas; después sólo los cambios.
+1. **Falta la ficha por producto** (la pantalla de detalle: gráfico de costo vs.
+   venta, historial de compras, desglose por obra social). El diseño está hecho
+   y validado con datos reales; `ranking()` en `services/rentabilidad.py` ya
+   trae casi todo lo que necesita, falta el detalle de compras individuales
+   (`costos_por_ean(...)['compras']` ya lo tiene) y `ventas_por_obra_social()`.
 
-2. **Rutas y pantallas.** El diseño está hecho y validado con datos reales (tres
-   pantallas: ficha por producto, ranking, y cobertura de datos). La capa de
-   abajo ya devuelve todo lo que necesitan.
-
-3. **Que el sync de Kellerhoff escriba en `producto_precios_hist`.** Hoy las
+2. **Que el sync de Kellerhoff escriba en `producto_precios_hist`.** Hoy las
    compras del portal no dejan histórico, y ahí se pierde el `precio_publico`
    (el PVP sugerido de la droguería), que permitiría comparar el precio de venta
    contra el sugerido. No bloquea nada de lo anterior.
 
-4. **Normalizar el signo de las notas de crédito en el alta**, para no depender
+3. **Normalizar el signo de las notas de crédito en el alta**, para no depender
    de que cada consumidor se acuerde de firmar por `tipo_comprobante`.
+
+### Ya existía una pantalla parecida: `/obras-sociales/productos-rentabilidad`
+
+Se descubrió tarde — después de construir `/rentabilidad` — que ya había un
+"Top productos por margen" haciendo el mismo cruce (compra vs. venta) desde
+`routes/obras_sociales.py`. **Se decidió dejar las dos**, con una nota cruzada
+en cada pantalla explicando por qué pueden dar números distintos. Sirven para
+cosas distintas: la vieja para elegir qué OS conviene, la nueva para decidir
+qué conviene seguir comprando.
+
+Medido contra producción, la pantalla vieja tiene dos defectos que la nueva no:
+toma el costo por el **último `id` de `factura_items`** en vez de por fecha de
+factura (en 111 de 2.836 productos eso da una compra más vieja que la real), y
+no filtra por `tipo_comprobante` (en **30 productos** la "última compra" que usa
+es en realidad una **nota de crédito**). No se tocó esa pantalla más allá de la
+nota — arreglar sus bugs es trabajo aparte, si algún día se decide unificarlas.
+
+**Lección para la próxima sesión que toque esto**: `CLAUDE.md` dice explícito
+"mirar el mapa generado antes de grepear a ciegas" — no se hizo, y por eso pasó
+esto. Antes de tocar algo de rentabilidad, `grep -n rentabilidad
+docs/MAPA.generado.md` primero.
 
 ---
 

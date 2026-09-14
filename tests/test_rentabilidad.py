@@ -13,6 +13,7 @@ from services.rentabilidad import (
     costos_por_ean,
     margen,
     sospecha_unidad,
+    ranking,
     ventas_por_ean,
     ventas_por_obra_social,
 )
@@ -312,6 +313,85 @@ def test_sin_ean_no_consulta_nada():
     try:
         assert ventas_por_ean(s, eans=[]) == {}
         assert ventas_por_obra_social(s, 'no-existe') == []
+    finally:
+        s.close()
+
+
+# ── Ranking (lo que consume la pantalla) ────────────────────────────────────
+
+def _ozempic(session):
+    """El caso real: 16 compradas, 37 vendidas, costo de hace 3 días."""
+    session.add(database.ObsLaboratorio(observer_id=3, descripcion='NOVO NORDISK'))
+    session.add(database.ObsProducto(observer_id=70, descripcion='OZEMPIC 1 mg/ds 3 ml',
+                                     laboratorio_observer=3))
+    session.flush()
+    _codigo(session, 70, '7798058931843')
+    _compra(session, '7798058931843', date(2026, 8, 12), 273148, cantidad=4)
+    _compra(session, '7798058931843', date(2026, 9, 9), 278269, cantidad=12)
+    _venta(session, 70, date(2026, 9, 10), 37, 15300230)
+
+
+def test_ranking_junta_costo_venta_y_nombre():
+    s = database.SessionLocal()
+    try:
+        _ozempic(s)
+        s.commit()
+        f = ranking(s, hoy=HOY)[0]
+        assert f['descripcion'] == 'OZEMPIC 1 mg/ds 3 ml'
+        assert f['laboratorio'] == 'NOVO NORDISK'
+        assert f['unidades_vendidas'] == 37
+        assert f['costo_reposicion'] == 278269      # el último, no el más barato
+        assert f['dias_costo'] == 3
+        assert f['confianza'] == 'confiable'
+        assert abs(f['margen_pct'] - 32.7) < 0.5
+    finally:
+        s.close()
+
+
+def test_ranking_avisa_cobertura_parcial_sin_ocultar_el_margen():
+    """16 compradas contra 37 vendidas: la cobertura avisa, pero el margen se
+    muestra igual porque su confianza depende de la antigüedad del costo."""
+    s = database.SessionLocal()
+    try:
+        _ozempic(s)
+        s.commit()
+        f = ranking(s, hoy=HOY)[0]
+        assert abs(f['cobertura'] - 16 / 37) < 0.01
+        assert f['margen_pct'] is not None
+        assert f['confianza'] == 'confiable'
+    finally:
+        s.close()
+
+
+def test_ranking_marca_la_unidad_sospechosa():
+    """PROFIL PRIME ZERO: caja a $41.952, se vende suelto a $4.500."""
+    s = database.SessionLocal()
+    try:
+        _producto(s, 80, 'PROFIL PRIME ZERO 12 X 3')
+        _codigo(s, 80, '7791519702754')
+        _compra(s, '7791519702754', date(2026, 9, 10), 41952, cantidad=1)
+        _venta(s, 80, date(2026, 9, 11), 10, 45000)
+        s.commit()
+        f = ranking(s, hoy=HOY)[0]
+        assert f['sospecha_unidad'] is True
+        assert f['margen_pct'] < 0
+    finally:
+        s.close()
+
+
+def test_ranking_ordena_por_facturacion_y_puede_incluir_no_vendidos():
+    s = database.SessionLocal()
+    try:
+        _ozempic(s)
+        _producto(s, 90, 'ALGO QUE NO SE VENDIO')
+        _codigo(s, 90, '999888')
+        _compra(s, '999888', date(2026, 9, 1), 5000, cantidad=3)
+        s.commit()
+        assert [f['ean'] for f in ranking(s, hoy=HOY)] == ['7798058931843']
+        todos = ranking(s, hoy=HOY, solo_vendidos=False)
+        assert len(todos) == 2
+        assert todos[0]['facturacion'] > todos[1]['facturacion']
+        assert todos[1]['margen_pct'] is None      # sin venta no hay margen
     finally:
         s.close()
 
