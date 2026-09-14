@@ -23,8 +23,7 @@ from flask_login import login_required
 from sqlalchemy import or_
 
 import database
-from database import (Invoice, InvoiceItem, ObsCodigoBarras, ObsLaboratorio,
-                      ObsProducto, get_db)
+from database import Invoice, InvoiceItem, ObsCodigoBarras, ObsLaboratorio, ObsProducto, get_db
 
 _LIMITE = 500
 
