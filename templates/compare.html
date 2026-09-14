@@ -356,13 +356,20 @@ function confirmObserverSync(form) {
 // Sugerencia automática de candidato (Eslabón 4): reemplaza tener que
 // escribir el nro a mano cuando el proveedor tiene Provider.observer_id
 // cargado. No autocompleta sola -- el operador confirma con un click.
+//
+// Umbral 50, no 80: el número de comprobante casi nunca coincide del lado de
+// ObServer (7 de 400 medido, ver docs/controles_kellerhoff.md), así que pedir
+// número+algo (>=80) deja la sugerencia vacía en el caso normal. La señal
+// confiable es unidades+renglones+misma fecha (30+15+5=50) -- verificado en
+// vivo contra facturas reales de Kellerhoff el 13/09/2026: es exactamente lo
+// que da el match correcto cuando no hay coincidencia de número.
 const observerCandidatoEl = document.getElementById('observer-candidato');
 if (observerCandidatoEl) {
     fetch('{{ url_for("observer_candidatos_factura", invoice_id=invoice.id) }}')
         .then(r => r.json())
         .then(data => {
             const mejor = (data.candidatos || [])[0];
-            if (!mejor || mejor.score < 80) return;
+            if (!mejor || mejor.score < 50) return;
             const fecha = mejor.fecha ? mejor.fecha.slice(0, 10) : '?';
             observerCandidatoEl.innerHTML =
                 `<span class="observer-candidato__txt">ObServer sugiere: recepción del ${fecha}` +
