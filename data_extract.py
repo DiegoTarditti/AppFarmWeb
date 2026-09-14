@@ -211,7 +211,8 @@ def _resolve_provider_from_invoice(session, invoice):
     if not invoice:
         return None
     if invoice.proveedor_cuit:
-        prov = session.query(Provider).filter_by(cuit=invoice.proveedor_cuit).first()
+        from helpers import buscar_proveedor_por_cuit
+        prov = buscar_proveedor_por_cuit(session, invoice.proveedor_cuit)
         if prov:
             return prov
     if invoice.proveedor_razon:
@@ -245,6 +246,7 @@ def save_invoice_to_db(session, invoice_data, pdf_filename=None, tipo_comprobant
     prov = get_or_create_proveedor(session, invoice.proveedor_razon, invoice.proveedor_cuit,
                                    domicilio=invoice.proveedor_domicilio)
     prov_id = prov.id if prov is not None else None
+    invoice.proveedor_id = prov_id
     for item in invoice_data['items']:
         pu = item.get('precio_unitario')
         im = item.get('importe')

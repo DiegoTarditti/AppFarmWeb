@@ -93,6 +93,20 @@ def test_filtra_por_proveedor():
     assert '01/08/2026' not in html      # la de Kellerhoff queda afuera
 
 
+def test_filtra_por_proveedor_con_cuit_en_otro_formato():
+    """El dropdown manda `Provider.cuit` y la factura guarda el CUIT como vino de
+    su fuente: 123 de los 124 proveedores lo tienen con guiones y las facturas de
+    ARCA/scraper no. Con igualdad cruda el listado salía vacío, que se lee como
+    'no le compramos esto' — un resultado incorrecto, no un error visible."""
+    _seed()
+    c = _app().test_client()
+    r = c.get('/compras/consulta?q=optamox&proveedor=30-11111111-2')
+    html = r.get_data(as_text=True)
+    assert 'OTRA' in html
+    assert '01/06/2026' in html
+    assert '01/08/2026' not in html      # sigue filtrando: no trae la otra
+
+
 def test_sin_termino_no_lista():
     _seed()
     c = _app().test_client()
