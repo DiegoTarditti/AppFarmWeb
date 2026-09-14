@@ -129,12 +129,26 @@ def test_laboratorio_invalido_no_rompe():
     assert 'OPTAMOX DUO 1G COM X 8' in r.get_data(as_text=True)
 
 
-def test_sin_termino_no_lista():
+def test_solo_laboratorio_sin_texto_igual_lista():
+    """"Mostrame todo lo que le compré a este laboratorio" es justo para lo que
+    uno pone ese filtro. Antes cortaba antes de mirarlo y devolvía vacío, que se
+    lee como "no le compré nada" — un resultado incorrecto, no un error visible."""
+    _seed()
+    c = _app().test_client()
+    r = c.get('/compras/consulta?q=&laboratorio=7')
+    assert r.status_code == 200
+    assert 'OPTAMOX DUO 1G COM X 8' in r.get_data(as_text=True)
+
+
+def test_sin_termino_ni_laboratorio_no_lista():
+    """Sin ningún criterio habría que listar todas las compras de todos los
+    tiempos, y el tope de 500 filas devolvería un recorte arbitrario."""
     _seed()
     c = _app().test_client()
     r = c.get('/compras/consulta')
     html = r.get_data(as_text=True)
     assert 'Escribí un producto' in html
+    assert 'OPTAMOX DUO 1G COM X 8' not in html
     assert 'OPTAMOX' not in html
 
 
