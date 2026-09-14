@@ -110,7 +110,8 @@
         <tr class="border-t border-[color:var(--ds-surface-border)]
                    {% if f.sospecha_unidad %}bg-amber-500/5{% elif f.margen_pct is not none and f.margen_pct < 0 %}bg-red-500/5{% endif %}">
           <td class="px-3 py-2">
-            <div class="font-medium">{{ f.descripcion }}</div>
+            <a href="{{ url_for('rentabilidad_detalle', ean=f.ean, desde=desde, hasta=hasta) }}"
+               class="font-medium hover:text-[color:var(--ds-mint)] hover:underline">{{ f.descripcion }}</a>
             <div class="text-[10px] text-[color:var(--ds-text-mute)] font-mono">{{ f.ean }}</div>
           </td>
           <td class="px-3 py-2 text-[color:var(--ds-text-mute)]">{{ f.laboratorio or '—' }}</td>

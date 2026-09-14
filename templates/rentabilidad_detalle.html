@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% set nav_active = "rentabilidad" %}
+{% block title %}{{ d.descripcion }} · Rentabilidad{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% macro pesos(n) %}{% if n is none %}—{% else %}$ {{ '{:,.0f}'.format(n|round|int).replace(',','.') }}{% endif %}{% endmacro %}
+{% macro fecha(d) %}{{ d.strftime('%d/%m/%Y') if d else '—' }}{% endmacro %}
+
+{% block main %}
+<div class="max-w-[1200px] mx-auto px-4 py-6">
+
+  <a href="{{ url_for('rentabilidad_ranking', desde=desde, hasta=hasta) }}"
+     class="text-[12px] text-[color:var(--ds-text-mute)] hover:text-[color:var(--ds-mint)] inline-flex items-center gap-1 mb-3">
+    ← Volver al ranking</a>
+
+  <div class="flex items-baseline gap-3 mb-1">
+    <h1 class="text-xl font-bold">{{ d.descripcion }}</h1>
+    {% if d.laboratorio %}
+    <span class="text-[11px] px-2 py-0.5 rounded-full bg-[color:var(--ds-mint)]/15 text-[color:var(--ds-mint)] font-semibold">{{ d.laboratorio }}</span>
+    {% endif %}
+  </div>
+  <div class="text-[11px] text-[color:var(--ds-text-mute)] font-mono mb-4">{{ d.ean }}</div>
+
+  {# ---- KPIs ---- #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="rounded-lg border border-[color:var(--ds-surface-border)] p-3">
+      <div class="text-[10px] uppercase tracking-wide text-[color:var(--ds-text-mute)]">Margen de reposición</div>
+      {% if d.margen_pct is none %}
+        <div class="text-lg text-[color:var(--ds-text-mute)] mt-1">sin ventas</div>
+      {% else %}
+        <div class="text-2xl font-bold mt-1 {{ 'text-red-400' if d.margen_pct < 0 else 'text-[color:var(--ds-mint)]' }}">
+          {{ '%.1f'|format(d.margen_pct) }}%</div>
+      {% endif %}
+    </div>
+    <div class="rounded-lg border border-[color:var(--ds-surface-border)] p-3">
+      <div class="text-[10px] uppercase tracking-wide text-[color:var(--ds-text-mute)]">Costo de reposición</div>
+      <div class="text-xl font-bold mt-1">{{ pesos(d.costo_reposicion) }}</div>
+      {% if d.dias_costo is not none %}
+      {% set col = {'confiable':'text-emerald-400','aceptable':'text-[color:var(--ds-mint)]',
+                    'optimista':'text-amber-400','no_decidir':'text-red-400'}.get(d.confianza,'') %}
+      <div class="text-[10px] {{ col }} mt-0.5">● hace {{ d.dias_costo }} días · {{ d.proveedor_costo or '—' }}</div>
+      {% endif %}
+    </div>
+    <div class="rounded-lg border border-[color:var(--ds-surface-border)] p-3">
+      <div class="text-[10px] uppercase tracking-wide text-[color:var(--ds-text-mute)]">Precio de venta promedio</div>
+      <div class="text-xl font-bold mt-1">{{ pesos(d.precio_promedio) }}</div>
+      <div class="text-[10px] text-[color:var(--ds-text-mute)] mt-0.5">neto de descuentos</div>
+    </div>
+    <div class="rounded-lg border border-[color:var(--ds-surface-border)] p-3">
+      <div class="text-[10px] uppercase tracking-wide text-[color:var(--ds-text-mute)]">Vendidas</div>
+      <div class="text-xl font-bold mt-1">{{ d.unidades_vendidas|round|int }} u.</div>
+      <div class="text-[10px] text-[color:var(--ds-text-mute)] mt-0.5">{{ d.unidades_compradas|round|int }} compradas en el período</div>
+    </div>
+  </div>
+
+  {# ---- Avisos ---- #}
+  {% if d.sospecha_unidad %}
+  <div class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 mb-3 text-[12px] leading-relaxed">
+    <b class="text-amber-400">El margen de esta ficha no es confiable.</b>
+    El precio de venta está muy por debajo del costo — lo más probable es que se compre por caja o pack
+    y se venda suelto (la unidad de compra no coincide con la de venta). No se puede corregir solo porque
+    el tamaño del pack no está en ningún campo.
+  </div>
+  {% endif %}
+
+  {% if d.margen_pct is not none %}
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+    <div class="rounded-lg border border-[color:var(--ds-mint)]/40 bg-[color:var(--ds-mint)]/5 p-3">
+      <div class="text-[10px] uppercase tracking-wide text-[color:var(--ds-mint)] font-semibold mb-1">Para decidir</div>
+      <div class="text-[13px] font-semibold mb-1">Margen de reposición · {{ '%.1f'|format(d.margen_pct) }}%</div>
+      <p class="text-[12px] text-[color:var(--ds-text-mute)] leading-relaxed">
+        Lo que deja vender <b>una unidad más hoy</b>, contra lo que cuesta reponerla hoy
+        ({{ pesos(d.costo_reposicion) }}, comprado hace {{ d.dias_costo }} días).
+        No importa cuántas se vendieron de stock viejo: el costo de reponerlo es el mismo.
+      </p>
+    </div>
+    <div class="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+      <div class="text-[10px] uppercase tracking-wide text-amber-400 font-semibold mb-1">Para contabilidad</div>
+      <div class="text-[13px] font-semibold mb-1">Ganancia del período · {{ pesos(d.ganancia_periodo) }}</div>
+      <p class="text-[12px] text-[color:var(--ds-text-mute)] leading-relaxed">
+        Sólo sobre las <b>{{ d.unidades_compradas|round|int }} unidades</b> con compra registrada.
+        {% if d.cobertura is not none and d.cobertura < 1 %}
+        Se vendieron <b>{{ d.unidades_vendidas|round|int }}</b>: las otras
+        {{ (d.unidades_vendidas - d.unidades_compradas)|round|int }} salieron de stock anterior al período.
+        {% endif %}
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if d.neto_pct < 50 and d.unidades_vendidas > 0 %}
+  <div class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 mb-3 text-[12px] leading-relaxed">
+    <b class="text-amber-400">El precio de venta puede estar inflado.</b>
+    Sólo el {{ '%.0f'|format(d.neto_pct) }}% de la facturación tiene el ingreso neto sincronizado;
+    el resto usa el importe bruto, que sobreestima entre 2% y 6%.
+  </div>
+  {% endif %}
+
+  {% if d.unidades_devueltas %}
+  <div class="rounded-lg border border-[color:var(--ds-surface-border)] p-3 mb-4 text-[12px] text-[color:var(--ds-text-mute)]">
+    Hubo {{ d.unidades_devueltas|round|int }} unidades devueltas a la droguería (notas de crédito) en el período —
+    no cuentan como compra ni afectan el costo de reposición.
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+    {# ---- Historial de compras ---- #}
+    <div class="rounded-lg border border-[color:var(--ds-surface-border)] overflow-hidden">
+      <div class="px-3 py-2 border-b border-[color:var(--ds-surface-border)] flex items-center justify-between">
+        <span class="text-[13px] font-semibold">Compras</span>
+        <span class="text-[11px] text-[color:var(--ds-text-mute)]">{{ d.compras|length }} comprobante(s)</span>
+      </div>
+      {% if not d.compras %}
+      <div class="p-4 text-[12px] text-[color:var(--ds-text-mute)]">Sin compras a precio de mercado en el período.</div>
+      {% else %}
+      <table class="w-full text-[12px]">
+        <thead>
+          <tr class="text-[10px] uppercase text-[color:var(--ds-text-mute)]">
+            <th class="text-left px-3 py-1.5">Fecha</th>
+            <th class="text-left px-3 py-1.5">Proveedor</th>
+            <th class="text-right px-3 py-1.5">Cant.</th>
+            <th class="text-right px-3 py-1.5">Costo</th>
+            <th class="text-right px-3 py-1.5" title="Sobre el mejor precio propio, ajustado por inflación">De más</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in d.compras %}
+          <tr class="border-t border-[color:var(--ds-surface-border)] {{ 'bg-[color:var(--ds-mint)]/5' if c.fecha == d.fecha_mejor }}">
+            <td class="px-3 py-1.5">{{ fecha(c.fecha) }}</td>
+            <td class="px-3 py-1.5 text-[color:var(--ds-text-mute)]">{{ c.proveedor or '—' }}</td>
+            <td class="px-3 py-1.5 text-right">{{ c.cantidad|round|int }}</td>
+            <td class="px-3 py-1.5 text-right">
+              {{ pesos(c.precio) }}
+              {% if c.fecha == d.fecha_mejor %}
+              <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-[color:var(--ds-mint)]/15 text-[color:var(--ds-mint)] font-semibold">mejor</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-right {{ 'text-amber-400 font-semibold' if c.sobreprecio > 0 }}">
+              {{ pesos(c.sobreprecio) if c.sobreprecio > 0 else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+
+    {# ---- Margen por obra social ---- #}
+    <div class="rounded-lg border border-[color:var(--ds-surface-border)] overflow-hidden">
+      <div class="px-3 py-2 border-b border-[color:var(--ds-surface-border)]">
+        <span class="text-[13px] font-semibold">Margen por obra social</span>
+        <p class="text-[11px] text-[color:var(--ds-text-mute)] mt-0.5">El mismo producto deja distinto margen según quién lo cubre.</p>
+      </div>
+      {% if not d.obras_sociales %}
+      <div class="p-4 text-[12px] text-[color:var(--ds-text-mute)]">Sin ventas en el período.</div>
+      {% else %}
+      <table class="w-full text-[12px]">
+        <thead>
+          <tr class="text-[10px] uppercase text-[color:var(--ds-text-mute)]">
+            <th class="text-left px-3 py-1.5">Obra social</th>
+            <th class="text-right px-3 py-1.5">Unid.</th>
+            <th class="text-right px-3 py-1.5">Facturación</th>
+            <th class="text-right px-3 py-1.5">Margen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for os in d.obras_sociales %}
+          {% set pvp_os = (os.facturacion / os.unidades) if os.unidades else none %}
+          {% set m_os = ((pvp_os - d.costo_reposicion) / pvp_os * 100) if pvp_os and d.costo_reposicion is not none else none %}
+          <tr class="border-t border-[color:var(--ds-surface-border)] {{ 'bg-red-500/5' if m_os is not none and m_os < 0 }}">
+            <td class="px-3 py-1.5">{{ os.obra_social }}</td>
+            <td class="px-3 py-1.5 text-right">{{ os.unidades|round|int }}</td>
+            <td class="px-3 py-1.5 text-right">{{ pesos(os.facturacion) }}</td>
+            <td class="px-3 py-1.5 text-right font-semibold {{ 'text-red-400' if m_os is not none and m_os < 0 else 'text-[color:var(--ds-mint)]' if m_os is not none }}">
+              {{ '%.1f'|format(m_os) + '%' if m_os is not none else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

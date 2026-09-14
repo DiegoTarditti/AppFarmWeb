@@ -337,6 +337,57 @@ def ranking(session, desde=None, hasta=None, factores=None, solo_vendidos=True,
     return sorted(filas, key=lambda f: -f['facturacion'])
 
 
+def detalle(session, ean, desde=None, hasta=None, factores=None, hoy=None):
+    """Todo lo que necesita la ficha de UN producto: costeo, historial de
+    compras, ventas y desglose por obra social. None si nunca se compró.
+
+    Es exactamente `ranking()` pero para un solo EAN, más el historial de
+    compras individuales (`compras`, ya viene de `costos_por_ean`) y el
+    desglose por convenio (`ventas_por_obra_social`), que ahí no se traía
+    porque hacerlo para los ~2.600 productos del ranking sería una consulta
+    por producto.
+    """
+    costos = costos_por_ean(session, factores=factores, eans=[ean], hoy=hoy)
+    c = costos.get(ean)
+    if c is None:
+        return None
+
+    v = ventas_por_ean(session, desde=desde, hasta=hasta, eans=[ean]).get(ean) or {
+        'unidades': 0.0, 'facturacion': 0.0, 'precio_promedio': None, 'neto_pct': 0.0,
+    }
+    nombres = descripciones_por_ean(session, [ean])
+    descripcion, laboratorio = nombres.get(ean, (None, None))
+    pvp, costo = v['precio_promedio'], c['costo_reposicion']
+
+    return {
+        'ean': ean,
+        'descripcion': descripcion or '(sin nombre en ObServer)',
+        'laboratorio': laboratorio,
+        'unidades_vendidas': v['unidades'],
+        'facturacion': v['facturacion'],
+        'neto_pct': v['neto_pct'],
+        'precio_promedio': pvp,
+        'costo_reposicion': costo,
+        'fecha_costo': c['fecha_costo'],
+        'dias_costo': c['dias_costo'],
+        'proveedor_costo': c['proveedor_costo'],
+        'confianza': confianza_costo(c['dias_costo']),
+        'margen_pct': margen(pvp, costo),
+        'unidades_compradas': c['unidades_compradas'],
+        'unidades_devueltas': c['unidades_devueltas'],
+        'cobertura': (c['unidades_compradas'] / v['unidades'] if v['unidades'] else None),
+        'mejor_precio': c['mejor_precio'],
+        'fecha_mejor': c['fecha_mejor'],
+        'sobreprecio_total': c['sobreprecio_total'],
+        'ganancia_periodo': ((pvp - costo) * min(c['unidades_compradas'], v['unidades'])
+                             if pvp is not None and costo is not None else None),
+        'sospecha_unidad': sospecha_unidad(pvp, costo),
+        # Compras ordenadas de más reciente a más vieja: es como se lee una ficha.
+        'compras': sorted(c['compras'], key=lambda x: x['fecha'], reverse=True),
+        'obras_sociales': ventas_por_obra_social(session, ean, desde=desde, hasta=hasta),
+    }
+
+
 def margen(precio_venta, costo):
     """% que queda sobre el precio de venta. None si falta alguno de los dos."""
     if not precio_venta or costo is None:

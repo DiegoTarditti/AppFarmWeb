@@ -10,6 +10,7 @@ import database
 from database import Invoice, InvoiceItem
 from services.rentabilidad import (
     confianza_costo,
+    detalle,
     costos_por_ean,
     margen,
     sospecha_unidad,
@@ -422,3 +423,75 @@ def test_confianza_por_antiguedad_del_costo():
     assert confianza_costo(34) == 'optimista'
     assert confianza_costo(71) == 'no_decidir'
     assert confianza_costo(None) == 'sin_costo'
+
+
+# ── Detalle de un producto (la ficha) ────────────────────────────────────────
+
+def test_detalle_devuelve_none_si_nunca_se_compro():
+    s = database.SessionLocal()
+    try:
+        assert detalle(s, 'no-existe', hoy=HOY) is None
+    finally:
+        s.close()
+
+
+def test_detalle_trae_costeo_ventas_y_nombre():
+    s = database.SessionLocal()
+    try:
+        _ozempic(s)
+        s.commit()
+        d = detalle(s, '7798058931843', hoy=HOY)
+        assert d['descripcion'] == 'OZEMPIC 1 mg/ds 3 ml'
+        assert d['laboratorio'] == 'NOVO NORDISK'
+        assert d['unidades_vendidas'] == 37
+        assert d['unidades_compradas'] == 16
+        assert d['costo_reposicion'] == 278269
+        assert d['dias_costo'] == 3
+        assert abs(d['cobertura'] - 16 / 37) < 0.01
+        assert abs(d['margen_pct'] - 32.7) < 0.5
+    finally:
+        s.close()
+
+
+def test_detalle_trae_el_historial_de_compras_mas_reciente_primero():
+    s = database.SessionLocal()
+    try:
+        _ozempic(s)
+        s.commit()
+        d = detalle(s, '7798058931843', hoy=HOY)
+        fechas = [c['fecha'] for c in d['compras']]
+        assert fechas == sorted(fechas, reverse=True)
+        assert fechas[0] == date(2026, 9, 9)
+    finally:
+        s.close()
+
+
+def test_detalle_trae_el_desglose_por_obra_social():
+    s = database.SessionLocal()
+    try:
+        s.add(database.ObsObraSocial(observer_id=1, descripcion='OSDE'))
+        _producto(s, 60, 'X')
+        _codigo(s, 60, '888')
+        _compra(s, '888', date(2026, 9, 1), 1000, cantidad=5)
+        _venta(s, 60, date(2026, 9, 2), 3, 4500, os_id=1, particular=False)
+        _venta(s, 60, date(2026, 9, 3), 2, 3000, particular=True)
+        s.commit()
+        d = detalle(s, '888', hoy=HOY)
+        nombres = {f['obra_social'] for f in d['obras_sociales']}
+        assert nombres == {'OSDE', 'Particular'}
+    finally:
+        s.close()
+
+
+def test_detalle_marca_unidad_sospechosa():
+    s = database.SessionLocal()
+    try:
+        _producto(s, 80, 'PROFIL PRIME ZERO 12 X 3')
+        _codigo(s, 80, '7791519702754')
+        _compra(s, '7791519702754', date(2026, 9, 10), 41952, cantidad=1)
+        _venta(s, 80, date(2026, 9, 11), 10, 45000)
+        s.commit()
+        d = detalle(s, '7791519702754', hoy=HOY)
+        assert d['sospecha_unidad'] is True
+    finally:
+        s.close()

@@ -154,3 +154,63 @@ def test_avisa_de_la_pantalla_hermana_y_por_que_difieren():
     html = _app().test_client().get('/rentabilidad').get_data(as_text=True)
     assert 'Top productos por margen' in html
     assert 'inflaci' in html.lower()
+
+
+# ── Ficha de un producto ─────────────────────────────────────────────────────
+
+def test_el_nombre_del_ranking_linkea_a_la_ficha():
+    s = database.SessionLocal()
+    _seed_ozempic(s)
+    s.commit()
+    s.close()
+
+    html = _app().test_client().get('/rentabilidad').get_data(as_text=True)
+    assert '/rentabilidad/7798058931843' in html
+
+
+def test_la_ficha_renderiza_con_costeo_ventas_y_avisos():
+    s = database.SessionLocal()
+    _seed_ozempic(s)
+    s.commit()
+    s.close()
+
+    html = _app().test_client().get('/rentabilidad/7798058931843').get_data(as_text=True)
+    assert 'OZEMPIC 1 mg/ds 3 ml' in html
+    assert 'NOVO NORDISK' in html
+    assert 'Margen de reposición' in html
+    assert 'Para decidir' in html and 'Para contabilidad' in html
+
+
+def test_la_ficha_muestra_el_desglose_por_obra_social():
+    s = database.SessionLocal()
+    s.add(database.ObsObraSocial(observer_id=1, descripcion='OSDE'))
+    _catalogo(s, 60, '888', 'ALGO')
+    _compra(s, '888', date.today(), 1000, cantidad=5)
+    _ID[0] += 1
+    s.add(database.ObsVentaDetalle(
+        id_producto_vendido=_ID[0], producto_observer=60, cantidad=3, importe=4500,
+        importe_neto=4500, obra_social_observer=1, es_venta_particular=False,
+        fecha_estadistica=date.today(), tipo_operacion='V', id_farmacia=1))
+    s.commit()
+    s.close()
+
+    html = _app().test_client().get('/rentabilidad/888').get_data(as_text=True)
+    assert 'OSDE' in html
+    assert 'Margen por obra social' in html
+
+
+def test_la_ficha_de_un_ean_sin_compras_da_404():
+    r = _app().test_client().get('/rentabilidad/no-existe')
+    assert r.status_code == 404
+
+
+def test_la_ficha_marca_la_compra_devuelta_y_la_unidad_dudosa():
+    s = database.SessionLocal()
+    _catalogo(s, 80, '7791519702754', 'PROFIL PRIME ZERO 12 X 3', lab_id=9, lab='PROFIL')
+    _compra(s, '7791519702754', date.today(), 41952, cantidad=1)
+    _venta(s, 80, date.today(), 10, 45000, neto=45000)
+    s.commit()
+    s.close()
+
+    html = _app().test_client().get('/rentabilidad/7791519702754').get_data(as_text=True)
+    assert 'no es confiable' in html
