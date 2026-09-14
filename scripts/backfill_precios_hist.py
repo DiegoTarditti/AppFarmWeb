@@ -61,8 +61,18 @@ def backfill(session, derivar_pvp=False, dry_run=False):
                  database.InvoiceItem.codigo_barra != '',
                  database.Invoice.fecha.isnot(None)))
 
+    # Se materializa TODO antes de escribir, a propósito. Con `yield_per` el
+    # cursor vive del lado del servidor y un `commit()` en medio de la
+    # iteración lo invalida: en Postgres eso corta con "named cursor isn't
+    # valid anymore" y deja el backfill a medias (pasó: murió en la fila
+    # 2.000). SQLite no usa cursores server-side, así que los tests NO lo
+    # detectan — el commit de a lotes tiene que quedar fuera del recorrido.
+    # Son ~6.000 filas, entran de sobra en memoria.
+    renglones = q.all()
+
     escritos = saltados = sin_ean = 0
-    for i, (item, inv) in enumerate(q.yield_per(LOTE), 1):
+    pendientes = 0
+    for item, inv in renglones:
         cb = (item.codigo_barra or '').strip()
         if not cb:
             sin_ean += 1
@@ -78,9 +88,11 @@ def backfill(session, derivar_pvp=False, dry_run=False):
                 dto_pct=item.dto,
                 precio_unitario=item.precio_unitario,
                 importe=item.importe)
+            pendientes += 1
+            if pendientes >= LOTE:
+                session.commit()
+                pendientes = 0
         escritos += 1
-        if not dry_run and i % LOTE == 0:
-            session.commit()
     if not dry_run:
         session.commit()
     return {'escritos': escritos, 'saltados': saltados, 'sin_ean': sin_ean}
