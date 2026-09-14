@@ -287,7 +287,15 @@ class ObsVentaDetalle(Base):
     cantidad                       = Column(DECIMAL(10, 3), nullable=True)
     cantidad_reconocida_principal  = Column(DECIMAL(10, 3), nullable=True)
     # Importes
+    # OJO: `importe` es BRUTO (precio de lista), NO lo que entra a la caja.
+    # `importe_neto` es el mismo renglón ya con el descuento comercial aplicado
+    # — es el que hay que usar para ingresos y rentabilidad. Medido sobre
+    # jun-ago 2026 la diferencia es 2,0-2,3% del total facturado (~$14M/mes) y
+    # sube a 5,95% si se miran sólo las ventas particulares con pago propio.
+    # Es la misma columna que `sync_ventas_mensuales` ya venía sumando para
+    # llenar `obs_ventas_mensuales.monto`.
     importe                        = Column(DECIMAL(12, 2), nullable=True)
+    importe_neto                   = Column(DECIMAL(12, 2), nullable=True)
     importe_a_cargo_os             = Column(DECIMAL(12, 2), nullable=True)
     a_cargo_plan_principal         = Column(DECIMAL(12, 2), nullable=True)
     importe_efectivo               = Column(DECIMAL(12, 2), nullable=True)
@@ -5457,6 +5465,14 @@ def _pg_add_columns(conn):
     # 'V' hasta que un re-sync las pise con el tipo real (V/D/NC).
     conn.execute(text(
         "ALTER TABLE obs_ventas_detalle ADD COLUMN IF NOT EXISTS tipo_operacion VARCHAR(2) DEFAULT 'V'"
+    ))
+    # Ingreso real del renglón (ver ObsVentaDetalle.importe_neto). Queda NULL en
+    # las filas ya sincronizadas: sólo la ventana de resolape del sync incremental
+    # las vuelve a tocar. Para llenar el histórico hay que forzar un sync con
+    # `desde_fecha` viejo — por eso todo consumidor tiene que tolerar el NULL y
+    # no asumir que `importe_neto` está siempre.
+    conn.execute(text(
+        "ALTER TABLE obs_ventas_detalle ADD COLUMN IF NOT EXISTS importe_neto DECIMAL(12,2)"
     ))
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_ovd_tipo ON obs_ventas_detalle(tipo_operacion)"
