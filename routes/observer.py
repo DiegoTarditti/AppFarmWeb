@@ -1254,13 +1254,47 @@ def init_app(app):
             )
             return jsonify({'ok': True, 'items': items, 'count': len(items)})
 
+    @app.route('/observer/factura/<int:invoice_id>/candidatos')
+    @login_required
+    def observer_candidatos_factura(invoice_id):
+        """Recepciones candidatas a ser el ingreso de esta factura, puntuadas.
+
+        Reemplaza tener que escribir el nro de comprobante a mano: si el
+        proveedor de la factura tiene `Provider.observer_id` cargado, se le
+        puede pedir a ObServer los candidatos por fecha+unidades+renglones
+        (ver `observer_source.buscar_recepciones_candidatas`). Sin mapeo,
+        devuelve lista vacía (no es error: la UI cae al campo manual).
+        """
+        if not _user_tiene_observer(current_user):
+            return jsonify({'ok': False, 'error': 'Sin acceso a ObServer'}), 403
+        if not observer_source.observer_disponible():
+            return jsonify({'ok': False, 'error': 'ObServer no disponible'}), 503
+        if not _recepciones_implementadas():
+            return jsonify({'ok': False, 'error': _RECEPCIONES_PENDIENTE}), 501
+        with database.get_db() as session:
+            inv = session.get(database.Invoice, invoice_id)
+            if not inv:
+                return jsonify({'ok': False, 'error': 'Factura no encontrada'}), 404
+            id_proveedor = observer_source.resolver_id_proveedor(session, inv.proveedor_cuit)
+            if not id_proveedor:
+                return jsonify({'ok': True, 'candidatos': [], 'motivo': 'sin_mapeo_proveedor'})
+            candidatos = observer_source.buscar_recepciones_candidatas(
+                inv.fecha, id_proveedor,
+                numero=inv.numero_factura, unidades=inv.total_unidades,
+                renglones=inv.total_articulos)
+            for c in candidatos:
+                c['fecha'] = c['fecha'].isoformat() if c['fecha'] else None
+            return jsonify({'ok': True, 'candidatos': candidatos})
+
     @app.route('/observer/factura/<int:invoice_id>/sync', methods=['POST'])
     @login_required
     def observer_sync_factura(invoice_id):
-        """Trae las recepciones de ObServer usando el nro de comprobante indicado por el usuario.
+        """Trae las recepciones de ObServer, por candidato sugerido o por nro a mano.
 
-        Por ahora el nro de comprobante de ObServer se pide manualmente al usuario
-        (parámetro `comprobante`). Más adelante se resolverá de dónde sale automáticamente.
+        `id_recepcion` (viene del selector de candidatos de /compare) es el
+        camino confiable y tiene prioridad; sin él, cae al nro de comprobante
+        tipeado a mano en `comprobante` (flujo original, se mantiene como
+        fallback -- ver observer_candidatos_factura).
         """
         from data_extract import compare_invoice_vs_erp, save_differences, save_erp_to_db
         if not _user_tiene_observer(current_user):
@@ -1274,8 +1308,9 @@ def init_app(app):
             flash(_RECEPCIONES_PENDIENTE, 'error')
             return redirect(url_for('compare_view', invoice_id=invoice_id))
 
+        id_recepcion = (request.form.get('id_recepcion') or '').strip()
         comprobante = (request.form.get('comprobante') or '').strip()
-        if not comprobante:
+        if not id_recepcion and not comprobante:
             flash('Ingresá el número de comprobante de recepción de ObServer.', 'error')
             return redirect(url_for('compare_view', invoice_id=invoice_id))
 
@@ -1285,10 +1320,11 @@ def init_app(app):
                 flash('Factura no encontrada.', 'error')
                 return redirect(url_for('index'))
             recepciones = observer_source.get_recepciones_factura(
-                comprobante, inv.proveedor_cuit
+                comprobante, inv.proveedor_cuit, id_recepcion=id_recepcion or None
             )
             if not recepciones:
-                flash(f'ObServer: sin recepciones para el comprobante "{comprobante}" '
+                referencia = f'recepción #{id_recepcion}' if id_recepcion else f'comprobante "{comprobante}"'
+                flash(f'ObServer: sin recepciones para {referencia} '
                       f'(proveedor {inv.proveedor_cuit or "—"}).', 'warning')
                 return redirect(url_for('compare_view', invoice_id=invoice_id))
 

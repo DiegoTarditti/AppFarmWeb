@@ -1352,6 +1352,10 @@ class Provider(Base):
     # Marca para que aparezca en el dropdown de "Pedido a droguería" en /atencion y /pedido/nuevo.
     # Default False: el operador prende solo las que usa habitualmente (no las 20+).
     activa_ped      = Column(Boolean, nullable=False, default=False, server_default='false')
+    # IdProveedor de ObServer (DW.Recepciones/DW.Proveedores). NULL = sin mapear.
+    # No hay forma de derivarlo del CUIT del lado de ObServer (DW.Proveedores no
+    # tiene columna CUIT) -- se carga a mano, una vez por droguería.
+    observer_id     = Column(Integer, nullable=True)
     claims = relationship('Claim', back_populates='provider')
 
 
@@ -5535,6 +5539,18 @@ def _pg_add_columns(conn):
         "razon_social ILIKE '%del sud%')",
     ]:
         conn.execute(text(stmt))
+    # IdProveedor de ObServer, para poder llamar buscar_recepciones_candidatas
+    # desde /compare (Eslabón 4, 2026-09-13). Seed verificado en vivo contra
+    # DW.Proveedores: Kellerhoff=1, 20 de Junio=2. Monroe/Del Sud existen en
+    # ObServer (5 y 6) pero no tienen fila Provider con tipo='drogueria' hoy.
+    for stmt in [
+        "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS observer_id INTEGER",
+        "UPDATE proveedores SET observer_id = 1 "
+        "WHERE observer_id IS NULL AND razon_social ILIKE '%kellerho%'",
+        "UPDATE proveedores SET observer_id = 2 "
+        "WHERE observer_id IS NULL AND tipo = 'drogueria' AND razon_social ILIKE '%20 de jun%'",
+    ]:
+        conn.execute(text(stmt))
     # Migración PedidoReparto — campos de la planilla real (2026-06-07)
     for stmt in [
         "ALTER TABLE pedidos_reparto ADD COLUMN IF NOT EXISTS tomo VARCHAR(35)",
@@ -5895,6 +5911,8 @@ def _sqlite_add_columns(conn):
     existing_prov = {row[1] for row in conn.execute(text("PRAGMA table_info(proveedores)"))}
     if 'grabar_productos' not in existing_prov:
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN grabar_productos INTEGER NOT NULL DEFAULT 1"))
+    if 'observer_id' not in existing_prov:
+        conn.execute(text("ALTER TABLE proveedores ADD COLUMN observer_id INTEGER"))
     if 'activo' not in existing_prov:
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN activo BOOLEAN NOT NULL DEFAULT 1"))
     existing_lab = {row[1] for row in conn.execute(text("PRAGMA table_info(laboratorios)"))}

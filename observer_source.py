@@ -55,6 +55,27 @@ def _connect(timeout=30):
     )
 
 
+def resolver_id_proveedor(session, cuit):
+    """Provider.observer_id a partir de un CUIT suelto (el que trae Invoice).
+
+    DW.Proveedores no tiene columna CUIT (ver docstring de
+    `get_recepciones_factura`), así que el mapeo vive de nuestro lado en
+    `Provider.observer_id` (cargado a mano, una vez por droguería). Devuelve
+    None si el CUIT no matchea ningún Provider mapeado -- el caller tiene que
+    degradar a la carga manual, no asumir que siempre hay candidato.
+    """
+    import database
+    from services.cuenta_corriente import normalizar_cuit
+    objetivo = normalizar_cuit(cuit)
+    if not objetivo:
+        return None
+    for p in session.query(database.Provider).filter(
+            database.Provider.observer_id.isnot(None)).all():
+        if normalizar_cuit(p.cuit) == objetivo:
+            return p.observer_id
+    return None
+
+
 # Cache module-level del resultado de "¿puedo leer schema Gestion?". Lo
 # probamos UNA vez por proceso para no spammear el server con tests cada
 # vez que arranca un sync premium. Se invalida en restart (cuando cambian
