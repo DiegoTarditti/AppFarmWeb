@@ -160,9 +160,17 @@ def main(path):
             actualizados += result.rowcount if result.rowcount and result.rowcount > 0 else 0
         s.commit()
 
+        # El histórico va acá, no en un job aparte: el UPDATE de arriba es lo
+        # que pisa el precio anterior, así que si el snapshot corre después ya
+        # no hay contra qué comparar. Ver docs/rentabilidad.md.
+        from services.precios_lista import registrar_cambios
+        cambios = registrar_cambios(s)
+        s.commit()
+
     print(f'\n✓ Actualizados:   {actualizados:,}')
     print(f'• Sin cambio:     {sin_cambio:,} (mismo precio que ya estaba)')
     print(f'• Sin match local:{sin_match:,} (no están en obs_productos)')
+    print(f'• Al histórico:   {cambios:,} cambios de precio registrados')
     print('\nListo. El buscador en /atencion ya usa los precios nuevos.')
     return 0
 

@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-14 09:17 · rama `feat/indice-inflacion-compras` · commit `7afeb23`
+Generado: 2026-09-14 09:39 · rama `feat/indice-inflacion-compras` · commit `e56c62f`
 
 **825 rutas** en 81 archivos · **136 modelos** · **22 syncs** · **45 services** · **11 parsers**
 
@@ -22,21 +22,21 @@ Generado: 2026-09-14 09:17 · rama `feat/indice-inflacion-compras` · commit `7a
 | `sync_nombres_drogas` | `DW.NombresDrogas` | [860](../observer_source.py#L860) |
 | `sync_productos` | `DW.Productos` | [888](../observer_source.py#L888) |
 | `sync_precios_vigentes` ⭐ | `Gestion.ProductosPreciosVigentes` | [937](../observer_source.py#L937) |
-| `sync_condiciones_comerciales` ⭐ | `Gestion.CondicionesComerciales` | [1017](../observer_source.py#L1017) |
-| `sync_fraccionado_master` | — | [1137](../observer_source.py#L1137) |
-| `sync_colegios_medicos` | `DW.ColegiosMedicos` | [1210](../observer_source.py#L1210) |
-| `sync_medicos` | `DW.Medicos` | [1238](../observer_source.py#L1238) |
-| `sync_medicos_matriculas` | `DW.MedicosMatriculas` | [1268](../observer_source.py#L1268) |
-| `sync_ventas_detalle` | `DW.ProductosVendidos` | [1307](../observer_source.py#L1307) |
-| `sync_operadores` | `DW.OperadoresVenta` | [1492](../observer_source.py#L1492) |
-| `sync_grupos_clientes` | `DW.GruposClientes` | [1523](../observer_source.py#L1523) |
-| `sync_categorias_clientes` | `DW.CategoriasClientes` | [1549](../observer_source.py#L1549) |
-| `sync_obras_sociales` | `DW.ObrasSociales` | [1575](../observer_source.py#L1575) |
-| `sync_convenios` | `DW.Convenios` | [1601](../observer_source.py#L1601) |
-| `sync_planes` | `DW.Planes` | [1633](../observer_source.py#L1633) |
-| `sync_clientes` | `DW.Clientes` | [1666](../observer_source.py#L1666) |
-| `sync_stock` | `DW.StockFarmaciasProductos` | [1726](../observer_source.py#L1726) |
-| `sync_ventas_mensuales` | `DW.ProductosVendidos` | [1777](../observer_source.py#L1777) |
+| `sync_condiciones_comerciales` ⭐ | `Gestion.CondicionesComerciales` | [1032](../observer_source.py#L1032) |
+| `sync_fraccionado_master` | — | [1152](../observer_source.py#L1152) |
+| `sync_colegios_medicos` | `DW.ColegiosMedicos` | [1225](../observer_source.py#L1225) |
+| `sync_medicos` | `DW.Medicos` | [1253](../observer_source.py#L1253) |
+| `sync_medicos_matriculas` | `DW.MedicosMatriculas` | [1283](../observer_source.py#L1283) |
+| `sync_ventas_detalle` | `DW.ProductosVendidos` | [1322](../observer_source.py#L1322) |
+| `sync_operadores` | `DW.OperadoresVenta` | [1507](../observer_source.py#L1507) |
+| `sync_grupos_clientes` | `DW.GruposClientes` | [1538](../observer_source.py#L1538) |
+| `sync_categorias_clientes` | `DW.CategoriasClientes` | [1564](../observer_source.py#L1564) |
+| `sync_obras_sociales` | `DW.ObrasSociales` | [1590](../observer_source.py#L1590) |
+| `sync_convenios` | `DW.Convenios` | [1616](../observer_source.py#L1616) |
+| `sync_planes` | `DW.Planes` | [1648](../observer_source.py#L1648) |
+| `sync_clientes` | `DW.Clientes` | [1681](../observer_source.py#L1681) |
+| `sync_stock` | `DW.StockFarmaciasProductos` | [1741](../observer_source.py#L1741) |
+| `sync_ventas_mensuales` | `DW.ProductosVendidos` | [1792](../observer_source.py#L1792) |
 
 ## Modelos (`database.py`)
 

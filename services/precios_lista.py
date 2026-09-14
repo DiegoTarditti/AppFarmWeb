@@ -16,8 +16,6 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import func
-
 import database
 
 # Los productos sin precio real cargado arrastran una fecha centinela vieja
@@ -34,15 +32,15 @@ def registrar_cambios(session, lote=5000):
     H = database.ObsPrecioListaHist
     P = database.ObsProducto
 
-    # Último precio registrado de cada producto, para comparar.
-    sub = (session.query(H.producto_observer,
-                         func.max(H.detectado_en).label('ult'))
-           .group_by(H.producto_observer).subquery())
+    # Último precio registrado de cada producto. Se traen TUPLAS y no entidades
+    # ORM a propósito: esto corre pegado al sync de precios, que dispara varias
+    # veces por día, y materializar 75k objetos en cada corrida para descartar
+    # casi todos es caro al pedo.
     ultimos = {}
-    for h in (session.query(H)
-              .join(sub, (sub.c.producto_observer == H.producto_observer)
-                    & (sub.c.ult == H.detectado_en)).all()):
-        ultimos[h.producto_observer] = h
+    for prod_id, precio, vig, detectado in session.query(
+            H.producto_observer, H.precio_lista, H.fecha_vigencia, H.detectado_en
+    ).order_by(H.producto_observer, H.detectado_en):
+        ultimos[prod_id] = (precio, vig)      # el ORDER BY deja el más nuevo
 
     nuevos = 0
     q = (session.query(P)
@@ -52,14 +50,13 @@ def registrar_cambios(session, lote=5000):
                  P.precio_lista_fecha_vigencia >= FECHA_MINIMA))
     for prod in q.yield_per(lote):
         previo = ultimos.get(prod.observer_id)
-        if (previo is not None
-                and previo.precio_lista == prod.precio_lista
-                and previo.fecha_vigencia == prod.precio_lista_fecha_vigencia):
+        if previo is not None and previo == (prod.precio_lista,
+                                             prod.precio_lista_fecha_vigencia):
             continue
         variacion = None
-        if previo is not None and previo.precio_lista:
+        if previo is not None and previo[0]:
             variacion = round(
-                (Decimal(prod.precio_lista) / Decimal(previo.precio_lista) - 1) * 100, 4)
+                (Decimal(prod.precio_lista) / Decimal(previo[0]) - 1) * 100, 4)
         session.add(H(producto_observer=prod.observer_id,
                       laboratorio_observer=prod.laboratorio_observer,
                       precio_lista=prod.precio_lista,
