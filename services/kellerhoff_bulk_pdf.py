@@ -191,6 +191,7 @@ def backfill(session, comps, kh_cuit, log=None) -> dict:
     Devuelve estadísticas.
     """
     from database import Invoice, InvoiceItem
+    from services import precios_hist
 
     def _log(m):
         if log:
@@ -228,6 +229,15 @@ def backfill(session, comps, kh_cuit, log=None) -> dict:
                     precio_unitario=it['precio_unitario'],
                     dto=(it['dto_pct'] or None),
                     importe=it['importe']))
+                # El PDF trae el precio público del día; `InvoiceItem` no tiene
+                # dónde guardarlo, así que si no va al histórico se pierde.
+                precios_hist.registrar(
+                    session, inv,
+                    codigo_barra=it['barcode'],
+                    precio_publico=it.get('precio_pub'),
+                    dto_pct=it.get('dto_pct'),
+                    precio_unitario=it['precio_unitario'],
+                    importe=it['importe'])
             inv.total_articulos = len(c['items'])
             inv.total_unidades = sum(x['cantidad'] for x in c['items'])
             st['items_creados'] += len(c['items'])
