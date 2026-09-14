@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-14 16:35 · rama `feat/contraste-monroe-armar` · commit `62577ad`
+Generado: 2026-09-14 16:46 · rama `fix/consulta-filtro-laboratorio` · commit `6c146f2`
 
 **829 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **47 services** · **11 parsers**
 
@@ -452,9 +452,9 @@ Generado: 2026-09-14 16:35 · rama `feat/contraste-monroe-armar` · commit `6257
 
 | Ruta | Métodos | Función |
 |---|---|---|
-| `/api/compras/consulta/monroe` | POST | [`consulta_compras_monroe`](../routes/consulta_compras.py#L207) |
-| `/compras/consulta` | GET | [`consulta_compras`](../routes/consulta_compras.py#L191) |
-| `/compras/consulta/export.xlsx` | GET | [`consulta_compras_export`](../routes/consulta_compras.py#L224) |
+| `/api/compras/consulta/monroe` | POST | [`consulta_compras_monroe`](../routes/consulta_compras.py#L228) |
+| `/compras/consulta` | GET | [`consulta_compras`](../routes/consulta_compras.py#L211) |
+| `/compras/consulta/export.xlsx` | GET | [`consulta_compras_export`](../routes/consulta_compras.py#L245) |
 
 ### `routes/consulta_droga.py`
 

@@ -31,11 +31,17 @@
              class="px-2 py-2 text-sm rounded border border-[color:var(--ds-surface-border)]" style="background:#2c2c2e;color:inherit">
     </div>
     <div>
-      <label class="block text-[10px] uppercase tracking-wide text-[color:var(--ds-text-mute)] mb-1">Proveedor</label>
-      <select name="proveedor" class="px-2 py-2 text-sm rounded border border-[color:var(--ds-surface-border)]" style="background:#2c2c2e;color:inherit">
+      <label class="block text-[10px] uppercase tracking-wide text-[color:var(--ds-text-mute)] mb-1">Laboratorio</label>
+      {# Antes acá había un filtro por proveedor. No separaba nada: el detalle de
+         factura existe casi sólo para Kellerhoff, así que siempre era el mismo.
+         El autocomplete del navegador además dejaba elegido un proveedor
+         cualquiera al recargar, y el listado salía vacío sin explicación. #}
+      <select name="laboratorio" autocomplete="off"
+              class="px-2 py-2 text-sm rounded border border-[color:var(--ds-surface-border)]"
+              style="background:#2c2c2e;color:inherit">
         <option value="">Todos</option>
-        {% for p in proveedores %}
-        <option value="{{ p.cuit }}" {% if p.cuit == prov_cuit %}selected{% endif %}>{{ p.razon_social }}</option>
+        {% for l_id, l_nombre in laboratorios %}
+        <option value="{{ l_id }}" {% if lab_id == l_id %}selected{% endif %}>{{ l_nombre }}</option>
         {% endfor %}
       </select>
     </div>
@@ -52,7 +58,7 @@
       <span class="px-3 py-1.5 rounded bg-white/5 border border-[color:var(--ds-surface-border)]" title="Descuento mínimo / promedio / máximo entre las compras con dto">
         Dto {{ '%g'|format(resumen.dto_min) }}% · <b>{{ '%.1f'|format(resumen.dto_prom) }}%</b> · {{ '%g'|format(resumen.dto_max) }}%</span>
       {% endif %}
-      <a href="{{ url_for('consulta_compras_export', q=q, desde=desde, hasta=hasta, proveedor=prov_cuit) }}"
+      <a href="{{ url_for('consulta_compras_export', q=q, desde=desde, hasta=hasta, laboratorio=lab_id) }}"
          class="px-3 py-1.5 rounded border border-[color:var(--ds-surface-border)] text-[color:var(--ds-text-mute)] hover:text-white ml-auto"
          title="Descargar estas compras en Excel">📊 Excel</a>
     </div>
