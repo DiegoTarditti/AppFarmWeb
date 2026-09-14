@@ -1405,7 +1405,7 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
                        EsVentaParticular, IdObraSocialPrincipal, IdPlanPrincipal,
                        IdPlanComplemento1, IdPlanComplemento2, IdPlanComplemento3,
                        Cantidad, CantidadReconocidaPlanPrincipal,
-                       Importe, ImporteACargoOS, ACargoPlanPrincipal,
+                       Importe, ImporteNeto, ImporteACargoOS, ACargoPlanPrincipal,
                        ImporteEfectivo, ImporteTarjeta, ImporteCheque, ImporteCuentaCorriente,
                        FechaDeOperacion, FechaEstadistica, [Año] AS Anio, Mes, Dia,
                        IdFarmacia, IdCanalDeVenta, IdTipoOperacion, IdOperador
@@ -1452,6 +1452,9 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
                         'cantidad': r['Cantidad'],
                         'cantidad_reconocida_principal': r['CantidadReconocidaPlanPrincipal'],
                         'importe': r['Importe'],
+                        # Neto de descuento comercial: el ingreso real del renglón
+                        # (ver ObsVentaDetalle.importe_neto). `Importe` es bruto.
+                        'importe_neto': r['ImporteNeto'],
                         'importe_a_cargo_os': r['ImporteACargoOS'],
                         'a_cargo_plan_principal': r['ACargoPlanPrincipal'],
                         'importe_efectivo': r['ImporteEfectivo'],
