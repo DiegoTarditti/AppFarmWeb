@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import date as _date
 from datetime import datetime as _dt
 
-from flask import Response, abort, render_template, request
+from flask import Response, abort, jsonify, render_template, request
 from flask_login import login_required
 from sqlalchemy import or_
 
@@ -201,6 +201,23 @@ def init_app(app):
                                hasta=request.args.get('hasta') or '',
                                prov_cuit=prov_cuit, proveedores=proveedores,
                                filas=filas, resumen=resumen, hoy=_date.today())
+
+    @app.route('/api/compras/consulta/monroe', methods=['POST'])
+    @login_required
+    def consulta_compras_monroe():
+        """Precio de Monroe HOY para los EAN que están en pantalla.
+
+        No decide nada: devuelve el número para que la tabla lo muestre al lado
+        de lo que se pagó. Comparar una compra de hace tres meses contra el
+        precio de hoy infla la diferencia, por eso la columna se titula
+        "Monroe hoy" y no "diferencia real".
+        """
+        from services.contraste_monroe import cotizar_monroe
+        eans = (request.get_json(silent=True) or {}).get('eans') or []
+        eans = [str(e).strip() for e in eans if str(e).strip()][:500]
+        if not eans:
+            return jsonify({'ok': True, 'precios': {}})
+        return jsonify({'ok': True, **cotizar_monroe(eans)})
 
     @app.route('/compras/consulta/export.xlsx')
     @login_required

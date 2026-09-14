@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-14 13:37 · rama `feat/precios-hist-kellerhoff` · commit `c06fc60`
+Generado: 2026-09-14 16:35 · rama `feat/contraste-monroe` · commit `35f7a05`
 
-**827 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **46 services** · **11 parsers**
+**828 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **47 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -451,8 +451,9 @@ Generado: 2026-09-14 13:37 · rama `feat/precios-hist-kellerhoff` · commit `c06
 
 | Ruta | Métodos | Función |
 |---|---|---|
+| `/api/compras/consulta/monroe` | POST | [`consulta_compras_monroe`](../routes/consulta_compras.py#L207) |
 | `/compras/consulta` | GET | [`consulta_compras`](../routes/consulta_compras.py#L191) |
-| `/compras/consulta/export.xlsx` | GET | [`consulta_compras_export`](../routes/consulta_compras.py#L207) |
+| `/compras/consulta/export.xlsx` | GET | [`consulta_compras_export`](../routes/consulta_compras.py#L224) |
 
 ### `routes/consulta_droga.py`
 
@@ -1426,6 +1427,7 @@ Generado: 2026-09-14 13:37 · rama `feat/precios-hist-kellerhoff` · commit `c06
 | [`calculo_pedido.py`](../services/calculo_pedido.py) | Motor unificado de cálculo de cantidad a pedir por tipo de pedido. |
 | [`comparativa_ventas.py`](../services/comparativa_ventas.py) | Comparativa de ventas semanales entre sucursales (Pieri vs Badia). |
 | [`compartido_sync.py`](../services/compartido_sync.py) | Sync peer-to-peer de archivos compartidos (sin hub). |
+| [`contraste_monroe.py`](../services/contraste_monroe.py) | Contraste de un pedido armado contra Monroe. |
 | [`control_gondola_export.py`](../services/control_gondola_export.py) | Export de la planilla de Control de stock por laboratorio (PDF y XLSX). |
 | [`cuenta_corriente.py`](../services/cuenta_corriente.py) | Cálculo único de movimientos y saldo de la cuenta corriente de proveedores. |
 | [`dashboard_snapshot.py`](../services/dashboard_snapshot.py) | Refresco del snapshot product_analytics para el dashboard. |
