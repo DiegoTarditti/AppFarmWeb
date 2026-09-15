@@ -210,6 +210,15 @@
               {% elif it.checks.ingreso is none %}
               <span class="badge" style="background:rgba(120,120,120,.12);color:var(--ds-text-mute);"
                     title="Todavía no se corrió «Verificar ingresos» para este resumen">sin verificar</span>
+              {% elif it.checks.ingreso and it.checks.remito_observer %}
+              {# Entró, pero el remito no coincide: en ObServer lo cargaron mal
+                 y ese dato no se puede corregir del lado de ellos. El tilde va
+                 igual —la recepción se confirmó comparando los productos— y al
+                 lado queda el número real para que se entienda por qué. #}
+              <span style="color:#22c55e;font-weight:700;"
+                    title="ObServer tiene la recepción, pero cargada con otro número de remito">✓</span>
+              <span class="badge" style="background:rgba(245,158,11,.16);color:#f59e0b;"
+                    title="En ObServer el remito quedó como {{ it.checks.remito_observer }} en vez de {{ it.numero_remito }}. Se confirmó igual porque todos los productos recibidos están en esta factura. No se puede corregir en ObServer.">remito ≠</span>
               {% elif it.checks.ingreso %}
               <span style="color:#22c55e;font-weight:700;" title="ObServer tiene una recepción para este comprobante">✓</span>
               {% else %}
