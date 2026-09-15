@@ -2853,3 +2853,129 @@ def buscar_recetas_por_afiliado(numero_afiliado, desde=None, hasta=None,
             'productos':            productos_por_receta.get(r['IdReceta'], []),
         })
     return out
+
+# ── Rescate de remitos mal tipeados ───────────────────────────────────────
+# En ObServer el remito se carga a mano y se come dígitos. Caso real del
+# 31/08/2026: la recepción 207994 quedó como R004700033082 cuando el remito era
+# R004700330825 — le faltaba el 5 final y ObServer completó con ceros. Esa
+# factura figuraba como "no entró" aunque la mercadería estaba, y el faltante
+# real que traía (2 de 4 renglones) no lo vio nadie.
+#
+# No se puede corregir en ObServer, así que se rescata acá. La regla es exigir
+# DOS señales independientes, porque cada una sola se equivoca:
+#   · el número parecido (una edición de distancia), y
+#   · que TODOS los productos recibidos estén en la factura.
+# Aparear por número solo termina en un reclamo a la droguería por el ingreso de
+# otra factura. Aparear por productos solo confunde dos entregas parecidas del
+# mismo proveedor en la misma semana.
+
+
+def _digitos(numero):
+    """Sólo los dígitos, sin ceros a la izquierda.
+
+    `R0047-00330825` y `R004700330825` tienen que dar lo mismo, y el relleno de
+    ceros de ObServer no puede contar como diferencia.
+    """
+    if not numero:
+        return ''
+    return ''.join(c for c in str(numero) if c.isdigit()).lstrip('0')
+
+
+def _una_edicion(a, b):
+    """True si `a` y `b` difieren en a lo sumo una edición (Levenshtein <= 1).
+
+    Cubre el dígito que falta, el que sobra y el que salió cambiado, que es el
+    100% de los errores de tipeo que vimos.
+    """
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:                      # un dígito cambiado
+        return sum(1 for x, y in zip(a, b) if x != y) == 1
+    corta, larga = (a, b) if la < lb else (b, a)
+    i = j = 0
+    saltos = 0
+    while i < len(corta) and j < len(larga):
+        if corta[i] == larga[j]:
+            i += 1
+        else:
+            saltos += 1
+            if saltos > 1:
+                return False
+        j += 1
+    return True
+
+
+def rescatar_recepcion_mal_tipeada(numero_remito, fecha_factura, id_proveedor,
+                                   eans_factura, id_farmacia=None,
+                                   dias=3):
+    """Busca la recepción de una factura cuyo remito quedó mal cargado.
+
+    Devuelve `None` si no hay una sola candidata que cumpla las DOS señales, o
+    un dict con la recepción, su número tal como está en ObServer y los ítems.
+
+    Si hay más de una candidata que cumple, devuelve None a propósito: ante la
+    duda preferimos que la factura siga figurando sin cruzar (falso negativo)
+    antes que darla por recibida contra la entrega equivocada.
+    """
+    objetivo = _digitos(numero_remito)
+    esperados = {str(e).strip() for e in (eans_factura or []) if str(e).strip()}
+    if not objetivo or not esperados:
+        return None
+
+    conn = _connect()
+    if conn is None:
+        raise RuntimeError('ObServer no configurado o pymssql no disponible')
+    cfg = _config()
+    id_farmacia = id_farmacia or cfg['id_farmacia']
+    desde = fecha_factura - timedelta(days=dias)
+    hasta = fecha_factura + timedelta(days=dias)
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("""
+                SELECT IdRecepcion, MIN(FechaRecepcion) fecha, MIN(NumeroRemito) nro_rem
+                FROM DW.Recepciones
+                WHERE IdProveedor = %s AND IdFarmacia = %s
+                  AND FechaRecepcion >= %s AND FechaRecepcion < %s
+                  AND NumeroRemito IS NOT NULL
+                GROUP BY IdRecepcion
+            """, (id_proveedor, id_farmacia, desde, hasta))
+            candidatas = [f for f in cur.fetchall()
+                          if _una_edicion(objetivo, _digitos(f['nro_rem']))]
+            if len(candidatas) != 1:
+                return None          # cero o ambiguo: no se decide sola
+
+            elegida = candidatas[0]
+            cur.execute("""
+                SELECT IdProducto, CantidadRecepcionada qty, PrecioUnitario precio
+                FROM DW.Recepciones
+                WHERE IdRecepcion = %s AND IdFarmacia = %s
+            """, (elegida['IdRecepcion'], id_farmacia))
+            filas = list(cur.fetchall())
+            prod_ids = sorted({int(f['IdProducto']) for f in filas if f['IdProducto']})
+            descripciones = _descripciones_observer(cur, prod_ids)
+    finally:
+        conn.close()
+
+    if not prod_ids:
+        return None
+    eans = _eans_por_producto(prod_ids, esperados)
+    recibidos = {eans.get(p, '') for p in prod_ids}
+    # La segunda señal: todo lo que entró tiene que estar en la factura. Si
+    # sobra algo, es otra entrega.
+    if not recibidos or not recibidos <= esperados:
+        return None
+
+    return {
+        'id_recepcion': elegida['IdRecepcion'],
+        'fecha': elegida['fecha'],
+        'remito_observer': (elegida['nro_rem'] or '').strip(),
+        'items': [{
+            'codigo_barra': eans.get(int(f['IdProducto']), ''),
+            'descripcion': descripciones.get(int(f['IdProducto']), ''),
+            'cantidad': int(f['qty'] or 0),
+            'precio_unitario': float(f['precio'] or 0),
+        } for f in filas if f['IdProducto']],
+    }

@@ -278,6 +278,11 @@ def estado_item(item, cruce_erp=None):
         # NC no tienen remito y no generan ingreso: quedan en None (no
         # aplica) para siempre, nunca se les corre la verificación.
         'ingreso': item.ingreso_verificado,
+        # Cuando el tilde de arriba salió de un rescate, acá está el remito tal
+        # como quedó en ObServer. Que esté cargado significa: "entró, pero el
+        # número no coincide con el de la factura" — el dato no se puede
+        # corregir del lado de ObServer, así que se muestra.
+        'remito_observer': item.remito_observer,
         # Cruce de cantidades (StockDifference) — hoy se completa solo cuando
         # "Verificar ingresos" encontró una recepción y pudo cruzarla (ver
         # verificar_ingresos_resumen); antes de eso, o si nunca hubo Excel/
@@ -366,6 +371,17 @@ def verificar_ingresos_resumen(session, resumen_id):
             # que reintentar, no que "no está".
             conteo['errores'] += 1
             continue
+        if not recepciones:
+            # El remito se carga a mano en ObServer y se comen dígitos. Antes de
+            # darlo por no ingresado, se intenta rescatarlo: ver
+            # `rescatar_recepcion_mal_tipeada`, que exige número parecido Y que
+            # todos los productos recibidos estén en la factura.
+            rescate = _rescatar(session, it)
+            if rescate:
+                recepciones = rescate['items']
+                it.remito_observer = rescate['remito_observer']
+                conteo['rescatados'] = conteo.get('rescatados', 0) + 1
+
         it.ingreso_verificado = bool(recepciones)
         it.ingreso_verificado_en = ahora
         if recepciones:
@@ -512,3 +528,35 @@ def _indice_ajustes(session):
         del por_clave[clave]
         log.warning('[KH-RESUMEN] clave %s ambigua (2+ ajustes) — no se liga', clave)
     return por_clave
+
+def _rescatar(session, item):
+    """Intenta encontrar la recepción de un ítem cuyo remito no cruzó.
+
+    Devuelve None si no se puede afirmar. No inventa: si hay más de una
+    candidata posible, prefiere dejar la factura sin cruzar antes que darla por
+    recibida contra la entrega equivocada (regla del proyecto: falso negativo
+    antes que falso positivo).
+    """
+    import observer_source
+    from database import Invoice, InvoiceItem
+
+    if not item.factura_id:
+        return None
+    factura = session.get(Invoice, item.factura_id)
+    if factura is None or not factura.fecha:
+        return None
+    # Mismo camino que usa la búsqueda de candidatas en routes/observer.py.
+    id_prov = observer_source.resolver_id_proveedor(session, factura.proveedor_cuit)
+    if not id_prov:
+        return None
+    eans = [e for (e,) in session.query(InvoiceItem.codigo_barra)
+            .filter(InvoiceItem.factura_id == item.factura_id).all() if e]
+    if not eans:
+        return None
+    try:
+        return observer_source.rescatar_recepcion_mal_tipeada(
+            item.numero_remito, factura.fecha, id_prov, eans)
+    except Exception:
+        # Un error de ObServer acá no puede tumbar la verificación entera: el
+        # ítem queda como no encontrado, que es el estado previo.
+        return None
