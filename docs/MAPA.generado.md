@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-15 15:41 · rama `fix/api-401-json` · commit `c467ec5`
+Generado: 2026-09-15 15:45 · rama `feat/cruce-bidireccional` · commit `c8fa366`
 
 **829 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **47 services** · **11 parsers**
 

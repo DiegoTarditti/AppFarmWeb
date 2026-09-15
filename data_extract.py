@@ -609,7 +609,81 @@ def compare_invoice_vs_erp(session, factura_id):
             'diferencia': diferencia,
             'observaciones': obs,
         })
+
+    # El barrido inverso sólo vale si los dos lados son el MISMO universo: la
+    # factura y la recepción de esa factura. Cuando el ERP cargado es un Excel
+    # del stock completo, o un lote compartido entre varias facturas, lo que
+    # "sobra" es normal y no significa nada — emparejar ahí inventa relaciones.
+    from services.kellerhoff_resumen import MARCA_CRUCE_AUTOMATICO
+    if invoice is not None and invoice.erp_filename == MARCA_CRUCE_AUTOMATICO:
+        _barrido_inverso(differences, grupos, orden, all_erp)
     return differences
+
+
+def _barrido_inverso(differences, grupos, orden, all_erp):
+    """Mira lo que entró y la factura NO explica, y empareja los sobrantes.
+
+    El cruce va en un solo sentido: por cada renglón de la factura busca su par
+    en el ingreso. Eso encuentra lo facturado que no entró, pero es ciego a lo
+    contrario — y ahí está la información que falta.
+
+    Caso real (factura 00046-00316136, 31/08/2026): el DACTILUS figuraba como
+    «Artículo no encontrado en ERP» y se iba a reclamar. Pero había entrado: lo
+    que pasa es que Kellerhoff lo factura con el EAN 7796285287405 y ObServer lo
+    tiene con 5000456063647 — otro GTIN, no un dígito mal tipeado, así que
+    ningún puente de códigos lo salva.
+
+    **Lo que sí lo resuelve es el descarte.** De 112 renglones cruzaron 111 y
+    sobró exactamente uno de cada lado, con la misma cantidad. No hay otra
+    explicación posible: es el mismo producto con códigos distintos. Los totales
+    lo confirmaban — 112 productos y 180 unidades de cada lado.
+
+    Por eso el emparejamiento se hace SÓLO cuando es inequívoco: uno de cada
+    lado y las cantidades iguales. Con dos y dos ya hay que elegir, y elegir mal
+    convierte un faltante real en invisible — peor que un reclamo de más.
+
+    Y sólo corre cuando el ERP cargado ES la recepción de esta factura (marca
+    `MARCA_CRUCE_AUTOMATICO`). Con un Excel del stock completo, o con un lote
+    compartido entre facturas, los dos lados no son el mismo universo: ahí lo
+    que sobra es normal y emparejarlo inventa relaciones que no existen. Lo
+    detectaron cinco tests que ya estaban.
+    """
+    # Lo del ingreso que ya quedó explicado por algún renglón de la factura.
+    usados = {id(grupos[k]['erp']) for k in orden if grupos[k]['erp'] is not None}
+    sobran_erp = [e for e in all_erp
+                  if id(e) not in usados and (e.cantidad or 0) > 0]
+    # Y lo de la factura que no encontró par.
+    sin_par = [d for d in differences
+               if d['observaciones'] == 'Artículo no encontrado en ERP']
+
+    if len(sobran_erp) == 1 and len(sin_par) == 1:
+        erp, d = sobran_erp[0], sin_par[0]
+        if (erp.cantidad or 0) == d['cantidad_factura']:
+            # Inequívoco: no es un faltante, es un código que no está mapeado.
+            d['cantidad_erp'] = erp.cantidad
+            d['diferencia'] = 0
+            d['observaciones'] = (
+                f'Entró con otro código: el ERP lo tiene como '
+                f'{erp.codigo_barra or "(sin código)"} '
+                f'«{(erp.descripcion or "").strip()[:40]}». '
+                f'Cantidades iguales, no es un faltante.')
+            return
+
+    # Lo que entró y la factura no explica. Hoy esto no lo ve nadie: puede ser
+    # mercadería de otra factura o un ingreso cargado contra el remito
+    # equivocado, y en los dos casos conviene saberlo.
+    for erp in sobran_erp:
+        differences.append({
+            'codigo_barra': erp.codigo_barra,
+            'descripcion': erp.descripcion,
+            'cantidad_factura': 0,
+            'cantidad_erp': erp.cantidad,
+            'diferencia': -(erp.cantidad or 0),
+            'observaciones': ('Entró pero no está en la factura'
+                              + (f' — hay {len(sin_par)} renglón(es) sin cruzar, '
+                                 'puede ser el mismo producto con otro código'
+                                 if sin_par else '')),
+        })
 
 
 def save_differences(session, factura_id, differences):
