@@ -263,7 +263,7 @@ def _sin_sesion():
     PERMANENT_SESSION_LIFETIME): al cerrar Chrome se pierde, y una pestaña que
     quedó abierta sigue mostrando la pantalla aunque la sesión ya no exista.
     """
-    from flask import jsonify, redirect, request, url_for
+    from flask import jsonify, request
 
     es_api = (request.path.startswith('/api/')
               or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
