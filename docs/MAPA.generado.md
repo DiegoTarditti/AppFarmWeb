@@ -5,7 +5,7 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-15 15:52 · rama `fix/barrido-solo-si-remito-exclusivo` · commit `741e508`
+Generado: 2026-09-15 16:03 · rama `fix/normalizar-remito` · commit `a6f08ce`
 
 **829 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **47 services** · **11 parsers**
 

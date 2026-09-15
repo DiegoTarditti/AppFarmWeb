@@ -2870,15 +2870,27 @@ def buscar_recetas_por_afiliado(numero_afiliado, desde=None, hasta=None,
 # mismo proveedor en la misma semana.
 
 
-def _digitos(numero):
-    """Sólo los dígitos, sin ceros a la izquierda.
+# El remito es [sucursal de 4][número de 8]. Los dos sistemas lo guardan con
+# estructura distinta y hay que quedarse con el número, no con la concatenación:
+#
+#   appfarmweb  0047R00330825  -> sucursal 0047 + numero 00330825
+#   ObServer    R004700033082  -> R + sucursal 0047 + numero 00033082
+#
+# Sacando los ceros de la cadena entera quedaban 4700330825 y 4700033082, que
+# difieren en CINCO posiciones y no en una: el rescate no encontraba nada.
+LARGO_NUMERO_REMITO = 8
 
-    `R0047-00330825` y `R004700330825` tienen que dar lo mismo, y el relleno de
-    ceros de ObServer no puede contar como diferencia.
+
+def _digitos(numero):
+    """El número del remito, sin sucursal y sin ceros a la izquierda.
+
+    Se toman los últimos 8 dígitos porque es ahí donde vive el número; el
+    relleno de ceros de ObServer no puede contar como diferencia.
     """
     if not numero:
         return ''
-    return ''.join(c for c in str(numero) if c.isdigit()).lstrip('0')
+    solo = ''.join(c for c in str(numero) if c.isdigit())
+    return solo[-LARGO_NUMERO_REMITO:].lstrip('0')
 
 
 def _una_edicion(a, b):
