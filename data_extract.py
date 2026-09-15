@@ -610,7 +610,13 @@ def compare_invoice_vs_erp(session, factura_id):
             'observaciones': obs,
         })
 
-    _barrido_inverso(differences, grupos, orden, all_erp)
+    # El barrido inverso sólo vale si los dos lados son el MISMO universo: la
+    # factura y la recepción de esa factura. Cuando el ERP cargado es un Excel
+    # del stock completo, o un lote compartido entre varias facturas, lo que
+    # "sobra" es normal y no significa nada — emparejar ahí inventa relaciones.
+    from services.kellerhoff_resumen import MARCA_CRUCE_AUTOMATICO
+    if invoice is not None and invoice.erp_filename == MARCA_CRUCE_AUTOMATICO:
+        _barrido_inverso(differences, grupos, orden, all_erp)
     return differences
 
 
@@ -635,6 +641,12 @@ def _barrido_inverso(differences, grupos, orden, all_erp):
     Por eso el emparejamiento se hace SÓLO cuando es inequívoco: uno de cada
     lado y las cantidades iguales. Con dos y dos ya hay que elegir, y elegir mal
     convierte un faltante real en invisible — peor que un reclamo de más.
+
+    Y sólo corre cuando el ERP cargado ES la recepción de esta factura (marca
+    `MARCA_CRUCE_AUTOMATICO`). Con un Excel del stock completo, o con un lote
+    compartido entre facturas, los dos lados no son el mismo universo: ahí lo
+    que sobra es normal y emparejarlo inventa relaciones que no existen. Lo
+    detectaron cinco tests que ya estaban.
     """
     # Lo del ingreso que ya quedó explicado por algún renglón de la factura.
     usados = {id(grupos[k]['erp']) for k in orden if grupos[k]['erp'] is not None}
