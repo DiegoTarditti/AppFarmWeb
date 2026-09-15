@@ -616,11 +616,11 @@ def compare_invoice_vs_erp(session, factura_id):
     # "sobra" es normal y no significa nada — emparejar ahí inventa relaciones.
     from services.kellerhoff_resumen import MARCA_CRUCE_AUTOMATICO
     if invoice is not None and invoice.erp_filename == MARCA_CRUCE_AUTOMATICO:
-        _barrido_inverso(differences, grupos, orden, all_erp)
+        _barrido_inverso(differences, grupos, orden, all_erp, len(invoice_items))
     return differences
 
 
-def _barrido_inverso(differences, grupos, orden, all_erp):
+def _barrido_inverso(differences, grupos, orden, all_erp, renglones_factura=0):
     """Mira lo que entró y la factura NO explica, y empareja los sobrantes.
 
     El cruce va en un solo sentido: por cada renglón de la factura busca su par
@@ -642,12 +642,27 @@ def _barrido_inverso(differences, grupos, orden, all_erp):
     lado y las cantidades iguales. Con dos y dos ya hay que elegir, y elegir mal
     convierte un faltante real en invisible — peor que un reclamo de más.
 
-    Y sólo corre cuando el ERP cargado ES la recepción de esta factura (marca
-    `MARCA_CRUCE_AUTOMATICO`). Con un Excel del stock completo, o con un lote
-    compartido entre facturas, los dos lados no son el mismo universo: ahí lo
-    que sobra es normal y emparejarlo inventa relaciones que no existen. Lo
-    detectaron cinco tests que ya estaban.
+    Y sólo corre cuando los dos lados son el mismo universo. Hacen falta DOS
+    condiciones:
+
+    1. Que el ERP cargado sea la recepción de esta factura (marca
+       `MARCA_CRUCE_AUTOMATICO`). Con un Excel del stock completo, o con un lote
+       compartido entre facturas, lo que sobra es normal.
+    2. Que el remito no traiga MÁS renglones que la factura. **Kellerhoff emite
+       un remito por entrega y varias facturas contra él**: medido el 15/09/2026,
+       el remito 0047R00269365 tiene 138 renglones y su factura declara 45 — las
+       otras 93 son de otras facturas del mismo reparto. Sin esta condición, el
+       barrido reportaba esas 93 como "entró de más": 427 filas de ruido en la
+       primera corrida.
+
+    El caso del DACTILUS funcionaba porque ahí el remito sí era uno a uno (112
+    renglones de cada lado). Generalizar desde ese caso fue el error.
     """
+    # Si el ingreso trae más renglones que la factura, ese remito cubre varias
+    # facturas y el descarte no significa nada. Ver el docstring.
+    if renglones_factura and len(all_erp) > renglones_factura:
+        return
+
     # Lo del ingreso que ya quedó explicado por algún renglón de la factura.
     usados = {id(grupos[k]['erp']) for k in orden if grupos[k]['erp'] is not None}
     sobran_erp = [e for e in all_erp

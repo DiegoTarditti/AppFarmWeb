@@ -29,7 +29,7 @@ def test_el_caso_real_deja_de_ser_un_faltante():
     grupos = {'k': {'erp': cruzado}}
     difs = [_dif('7796285287405', 'DACTILUS 10 MG CPR X 28', 1)]
 
-    _barrido_inverso(difs, grupos, ['k'], [cruzado, sobrante])
+    _barrido_inverso(difs, grupos, ['k'], [cruzado, sobrante], renglones_factura=2)
 
     assert len(difs) == 1                      # no se agrega un faltante nuevo
     d = difs[0]
@@ -44,7 +44,7 @@ def test_si_las_cantidades_no_coinciden_no_empareja():
     sobrante = _erp('5000456063647', 'DACTILUS 10 mg Rec.', 1)
     difs = [_dif('7796285287405', 'DACTILUS 10 MG CPR X 28', 2)]
 
-    _barrido_inverso(difs, grupos={}, orden=[], all_erp=[sobrante])
+    _barrido_inverso(difs, grupos={}, orden=[], all_erp=[sobrante], renglones_factura=1)
 
     assert difs[0]['observaciones'] == 'Artículo no encontrado en ERP'
     assert difs[0]['diferencia'] == 2
@@ -58,7 +58,7 @@ def test_con_dos_sobrantes_de_cada_lado_no_decide():
     s2 = _erp('BBB', 'OTRO', 1)
     difs = [_dif('111', 'UNO FACTURADO', 1), _dif('222', 'OTRO FACTURADO', 1)]
 
-    _barrido_inverso(difs, grupos={}, orden=[], all_erp=[s1, s2])
+    _barrido_inverso(difs, grupos={}, orden=[], all_erp=[s1, s2], renglones_factura=2)
 
     faltantes = [d for d in difs if d['observaciones'] == 'Artículo no encontrado en ERP']
     assert len(faltantes) == 2                 # ninguno se dio por resuelto
@@ -72,7 +72,7 @@ def test_lo_que_entra_de_mas_se_reporta():
     sobrante = _erp('999', 'ALGO QUE NADIE FACTURO', 3)
     difs = []
 
-    _barrido_inverso(difs, grupos={}, orden=[], all_erp=[sobrante])
+    _barrido_inverso(difs, grupos={}, orden=[], all_erp=[sobrante], renglones_factura=1)
 
     assert len(difs) == 1
     assert difs[0]['cantidad_factura'] == 0
@@ -84,5 +84,24 @@ def test_lo_que_entra_de_mas_se_reporta():
 def test_no_toca_nada_si_cruzo_todo():
     cruzado = _erp('111', 'TODO BIEN', 5)
     difs = []
-    _barrido_inverso(difs, grupos={'k': {'erp': cruzado}}, orden=['k'], all_erp=[cruzado])
+    _barrido_inverso(difs, grupos={'k': {'erp': cruzado}}, orden=['k'], all_erp=[cruzado], renglones_factura=1)
     assert difs == []
+
+
+def test_no_barre_si_el_remito_cubre_varias_facturas():
+    """Kellerhoff emite un remito por entrega y varias facturas contra el.
+
+    Medido el 15/09/2026: el remito 0047R00269365 tiene 138 renglones y su
+    factura declara 45 — las otras 93 son de otras facturas del mismo reparto.
+    Sin este corte, esas 93 se reportaban como "entró de más": en la primera
+    corrida del backfill fueron 427 filas de ruido.
+    """
+    # 5 productos en el ingreso, 2 renglones en la factura -> no se barre.
+    sobrantes = [_erp(str(i), f'PROD {i}', 1) for i in range(5)]
+    difs = [_dif('111', 'ALGO', 1)]
+
+    _barrido_inverso(difs, grupos={}, orden=[], all_erp=sobrantes,
+                     renglones_factura=2)
+
+    assert len(difs) == 1                                  # no se agrego nada
+    assert difs[0]['observaciones'] == 'Artículo no encontrado en ERP'
