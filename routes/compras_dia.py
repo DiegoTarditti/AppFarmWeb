@@ -2822,15 +2822,30 @@ def init_app(app):
             # Resolver EANs reales desde obs_codigos_barras
             obs_ids = [it.observer_id for it in ped.items if it.observer_id]
             ean_map = {}
+            sin_codigo_conocido = []
             if obs_ids:
                 from database import ObsCodigoBarras
+                from services.ean_proveedor import mapear_eans
+
+                # TODOS los códigos de cada producto, en orden de ObServer. Antes
+                # se tomaba el primero y listo; el problema es que un producto
+                # puede tener varios (packs, presentaciones, orígenes distintos) y
+                # el primero no siempre es el que la droguería entiende.
+                candidatos = {}
                 for oid, cb in (session.query(ObsCodigoBarras.producto_observer,
                                               ObsCodigoBarras.codigo_barras)
                                 .filter(ObsCodigoBarras.producto_observer.in_(obs_ids),
                                         ObsCodigoBarras.fecha_baja.is_(None))
                                 .order_by(ObsCodigoBarras.orden.asc()).all()):
-                    if oid not in ean_map and cb:
-                        ean_map[oid] = cb
+                    if cb:
+                        candidatos.setdefault(oid, []).append(cb)
+
+                # Se prefiere el que el proveedor usa en SUS facturas: si lo
+                # factura así, su sistema lo entiende. Medido sobre un pedido real
+                # del 15/09: de 139 renglones, 33 volvieron "REGISTRO ERRONEO", y
+                # 10 de esos tenían un código alternativo que Kellerhoff factura.
+                ean_map, sin_codigo_conocido = mapear_eans(
+                    session, ped.proveedor_id, candidatos)
 
             # Fallback al master local: donde viven los EANs backfilleados
             # (Kellerhoff / farmacia hermana) cuando ObServer no tiene
@@ -2966,8 +2981,9 @@ def init_app(app):
                 wb.save(buf)
                 buf.seek(0)
                 fname = f'Pedido_{drog}_{fecha_str}.xlsx'
-                return send_file(buf, as_attachment=True, download_name=fname,
+                resp = send_file(buf, as_attachment=True, download_name=fname,
                                  mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                return _avisar_sin_codigo(resp, sin_codigo_conocido)
 
             # txt_fijo
             campos = sorted(cfg.get('campos', []), key=lambda c: c.get('col_inicio', 0))
@@ -3164,3 +3180,17 @@ def init_app(app):
             p.excluido_armado_actual = False
             session.commit()
         return jsonify({'ok': True})
+
+def _avisar_sin_codigo(resp, sin_codigo):
+    """Deja en un header cuántos renglones la droguería no va a reconocer.
+
+    El archivo se descarga igual: no es motivo para no mandar el pedido. Pero
+    esos renglones vuelven como "REGISTRO ERRONEO" con $0,00 y no se piden, y
+    es mucho mejor saberlo antes de subirlo al portal que después.
+
+    Va en un header porque la respuesta es el archivo: no hay JSON donde
+    meterlo.
+    """
+    if sin_codigo:
+        resp.headers['X-Renglones-Sin-Codigo'] = str(len(sin_codigo))
+    return resp

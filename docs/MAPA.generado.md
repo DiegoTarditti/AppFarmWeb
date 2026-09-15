@@ -5,9 +5,9 @@
 > se note. Lo que el código NO dice (decisiones, trampas, por qué) va en
 > [CLAUDE.md](../CLAUDE.md), no acá.
 
-Generado: 2026-09-15 15:52 · rama `fix/barrido-solo-si-remito-exclusivo` · commit `741e508`
+Generado: 2026-09-15 16:17 · rama `feat/ean-que-el-proveedor-entiende` · commit `a6f08ce`
 
-**829 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **47 services** · **11 parsers**
+**829 rutas** en 82 archivos · **136 modelos** · **22 syncs** · **48 services** · **11 parsers**
 
 ## Syncs de ObServer (`observer_source.py`)
 
@@ -407,7 +407,7 @@ Generado: 2026-09-15 15:52 · rama `fix/barrido-solo-si-remito-exclusivo` · com
 | `/api/matriz/drog-visible` | POST | [`api_matriz_drog_visible`](../routes/compras_dia.py#L2326) |
 | `/api/pedido-emitido/<int:pedido_id>` | DELETE | [`api_pedido_emitido_borrar`](../routes/compras_dia.py#L652) |
 | `/api/pedido-emitido/<int:pedido_id>/export-plantilla` | GET | [`api_pedido_emitido_export_plantilla`](../routes/compras_dia.py#L2796) |
-| `/api/pedido-emitido/<int:pedido_id>/export-xls` | GET | [`api_pedido_emitido_export_xls`](../routes/compras_dia.py#L3021) |
+| `/api/pedido-emitido/<int:pedido_id>/export-xls` | GET | [`api_pedido_emitido_export_xls`](../routes/compras_dia.py#L3037) |
 | `/api/pedido-emitido/<int:pedido_id>/importar-xls` | POST | [`api_pedido_importar_xls`](../routes/compras_dia.py#L2728) |
 | `/api/pedido-emitido/<int:pedido_id>/mapear-ean` | POST | [`api_pedido_mapear_ean`](../routes/compras_dia.py#L2659) |
 | `/api/pedido-emitido/<int:pedido_id>/recepcion` | POST | [`api_pedido_recepcion`](../routes/compras_dia.py#L2620) |
@@ -417,10 +417,10 @@ Generado: 2026-09-15 15:52 · rama `fix/barrido-solo-si-remito-exclusivo` · com
 | `/api/pedidos/dia/countdown` | GET | [`api_compras_dia_countdown`](../routes/compras_dia.py#L666) |
 | `/api/pedidos/dia/emitir` | POST | [`api_compras_dia_emitir`](../routes/compras_dia.py#L2424) |
 | `/api/pedidos/dia/horarios/<int:proveedor_id>` | GET/POST/DELETE | [`api_horarios_crud`](../routes/compras_dia.py#L718) |
-| `/api/producto/<int:prod_id>/excluir` | POST | [`api_producto_excluir`](../routes/compras_dia.py#L3135) |
-| `/api/producto/<int:prod_id>/reactivar` | POST | [`api_producto_reactivar`](../routes/compras_dia.py#L3156) |
-| `/api/usuarios-pedidos` | GET/POST | [`api_usuarios_pedidos`](../routes/compras_dia.py#L3094) |
-| `/api/usuarios-pedidos/<int:uid>` | DELETE | [`api_usuarios_pedidos_borrar`](../routes/compras_dia.py#L3124) |
+| `/api/producto/<int:prod_id>/excluir` | POST | [`api_producto_excluir`](../routes/compras_dia.py#L3151) |
+| `/api/producto/<int:prod_id>/reactivar` | POST | [`api_producto_reactivar`](../routes/compras_dia.py#L3172) |
+| `/api/usuarios-pedidos` | GET/POST | [`api_usuarios_pedidos`](../routes/compras_dia.py#L3110) |
+| `/api/usuarios-pedidos/<int:uid>` | DELETE | [`api_usuarios_pedidos_borrar`](../routes/compras_dia.py#L3140) |
 | `/compras/armar/exportar-minimos` | GET | [`compras_armar_exportar_minimos`](../routes/compras_dia.py#L1847) |
 | `/compras/laboratorio` | GET | [`compras_laboratorio`](../routes/compras_dia.py#L375) |
 | `/compras/laboratorio/<int:obs_lab_id>/comprar-modulos` | POST | [`compras_laboratorio_comprar_modulos`](../routes/compras_dia.py#L465) |
@@ -1433,6 +1433,7 @@ Generado: 2026-09-15 15:52 · rama `fix/barrido-solo-si-remito-exclusivo` · com
 | [`cuenta_corriente.py`](../services/cuenta_corriente.py) | Cálculo único de movimientos y saldo de la cuenta corriente de proveedores. |
 | [`dashboard_snapshot.py`](../services/dashboard_snapshot.py) | Refresco del snapshot product_analytics para el dashboard. |
 | [`descuentos.py`](../services/descuentos.py) | Lógica de descuentos para el flujo de compra rápida. |
+| [`ean_proveedor.py`](../services/ean_proveedor.py) | Elegir, entre los códigos de barra de un producto, el que el proveedor entiende. |
 | [`equivalencias_compra.py`](../services/equivalencias_compra.py) | Detección de candidatos a equivalencia venta↔compra. |
 | [`eventos_sla.py`](../services/eventos_sla.py) | Helper para registrar eventos SLA (Diego 2026-06-22). |
 | [`factura_ia.py`](../services/factura_ia.py) | Extracción de facturas de droguerías a JSON estructurado vía Claude (Vision). |
