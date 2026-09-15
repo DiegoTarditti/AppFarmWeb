@@ -2094,7 +2094,7 @@ async function _renderOpLista() {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         d = await r.json();
     } catch(e) {
-        lista.innerHTML = `<p class="text-[11px] text-rose-600 py-1">⚠ Error al cargar (${e.message}). Escribí un nombre abajo.</p>`;
+        lista.innerHTML = `<p class="text-[11px] text-rose-600 py-1">⚠ ${_msgError(e)}</p>`;
         setTimeout(() => document.getElementById('modal-op-inp').focus(), 50);
         return;
     }
@@ -2137,6 +2137,18 @@ async function _borrarOp(id, btn) {
     await _renderOpLista();
 }
 
+// Una sesión vencida llegaba como "Unexpected token '<'": el fetch recibía el
+// HTML del login y el JSON.parse moría. Ahora el servidor contesta 401 JSON
+// (ver auth.py), pero igual dejamos la traducción por si algún endpoint viejo
+// sigue devolviendo HTML.
+const _MSG_SESION = 'Se venció la sesión. Recargá la página para volver a entrar.';
+
+function _msgError(e) {
+    const m = String(e && e.message || e || '');
+    if (m.includes('Unexpected token') || m.includes('JSON')) return _MSG_SESION;
+    return `Error al cargar (${m}). Escribí un nombre abajo.`;
+}
+
 async function _pedirOperador(titulo = '¿Quién realiza esta operación?') {
     document.getElementById('modal-op-titulo').textContent = titulo;
     document.getElementById('modal-op-inp').value = '';
@@ -2157,7 +2169,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok || !d.ok) {
-            document.getElementById('modal-op-err').textContent = d.error || 'Error al guardar';
+            document.getElementById('modal-op-err').textContent =
+                d.error || (r.status === 401 ? _MSG_SESION : 'Error al guardar');
             return;
         }
         document.getElementById('modal-op-err').textContent = '';
