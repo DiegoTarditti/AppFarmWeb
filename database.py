@@ -1955,6 +1955,12 @@ class ResumenProveedorItem(Base):
     # False = se buscó y NO está (ver services/kellerhoff_resumen.estado_item).
     ingreso_verificado = Column(Boolean, nullable=True)
     ingreso_verificado_en = Column(DateTime, nullable=True)
+    # El remito tal como quedó cargado en ObServer, SÓLO cuando no coincide con
+    # el de la factura. Se carga a mano allá y se comen dígitos; no se puede
+    # corregir del lado de ObServer, así que el cruce se rescata acá y el número
+    # real queda a la vista para que se entienda por qué el tilde está puesto
+    # aunque los números no sean iguales.
+    remito_observer = Column(String(25), nullable=True)
     __table_args__ = (
         Index('idx_resumen_item_resumen', 'resumen_id'),
         Index('idx_resumen_item_clave', 'clave'),
@@ -5993,6 +5999,8 @@ def _pg_add_columns(conn):
         "REFERENCES pagos_ajustes_cc(id) ON DELETE SET NULL"))
     conn.execute(text(
         "ALTER TABLE resumen_proveedor_item ADD COLUMN IF NOT EXISTS ingreso_verificado BOOLEAN"))
+    conn.execute(text(
+        "ALTER TABLE resumen_proveedor_item ADD COLUMN IF NOT EXISTS remito_observer VARCHAR(25)"))
     conn.execute(text(
         "ALTER TABLE resumen_proveedor_item ADD COLUMN IF NOT EXISTS ingreso_verificado_en TIMESTAMP"))
     # Mismo caso en el módulo Rowa: la columna se sumó al modelo `RowaNuevo`
