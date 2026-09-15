@@ -249,6 +249,34 @@ login_manager.login_message = 'Iniciá sesión para continuar.'
 login_manager.login_message_category = 'warning'
 
 
+@login_manager.unauthorized_handler
+def _sin_sesion():
+    """Sin sesión: a una pantalla se la manda al login; a una API se le contesta JSON.
+
+    Por defecto Flask-Login redirige SIEMPRE al login, y eso a un `fetch` le
+    llega como el HTML de la pantalla de login. El JS intenta parsearlo y muere
+    con "Unexpected token '<'", que no le dice nada a quien lo ve: el caso real
+    fue el diálogo de "¿Quién emite el pedido?", que mostraba ese texto en vez
+    de "se te venció la sesión".
+
+    Pasa seguido porque la cookie de sesión es de navegador (no hay
+    PERMANENT_SESSION_LIFETIME): al cerrar Chrome se pierde, y una pestaña que
+    quedó abierta sigue mostrando la pantalla aunque la sesión ya no exista.
+    """
+    from flask import jsonify, redirect, request, url_for
+
+    es_api = (request.path.startswith('/api/')
+              or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+              or request.accept_mimetypes.best == 'application/json')
+    if es_api:
+        return jsonify({
+            'ok': False,
+            'sesion_expirada': True,
+            'error': 'Se venció la sesión. Recargá la página para volver a entrar.',
+        }), 401
+    return redirect(url_for('auth_login', next=request.full_path))
+
+
 @login_manager.user_loader
 def _load_user(user_id):
     with database.get_db() as session:
