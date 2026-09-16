@@ -1874,6 +1874,13 @@ async function _descargarPlantillaPedido(pedidoId, status) {
     try {
         const rp = await fetch(`/api/pedido-emitido/${pedidoId}/export-plantilla`, {credentials: 'same-origin'});
         if (!rp.ok) return false;
+        // Renglones cuyo código la droguería no va a reconocer: vuelven como
+        // "REGISTRO ERRONEO" con $0,00 y no se piden. Mejor saberlo antes de
+        // subir el archivo al portal que descubrirlo ahí.
+        const sinCodigo = parseInt(rp.headers.get('X-Renglones-Sin-Codigo') || 0);
+        if (sinCodigo > 0 && status) {
+            status.innerHTML += ` <span style="color:var(--ds-warn)" title="Esos códigos no aparecen en ninguna factura de esta droguería, así que su sistema los va a rechazar. Hay que cargarles el código que ellos usan.">⚠ ${sinCodigo} renglón(es) sin código que la droguería reconozca</span>`;
+        }
         const ct  = rp.headers.get('Content-Type') || '';
         const blob = await rp.blob();
         const cd  = rp.headers.get('Content-Disposition') || '';
